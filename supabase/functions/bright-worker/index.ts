@@ -52,10 +52,23 @@ OUTPUT FORMAT (USE THESE HEADERS EXACTLY):
 ...
 
 ### ANSWER KEY:
-...
+- For EACH question, use this exact structure:
+  1. Correct Answer: <letter or short answer>
+     Explanation:
+     <clear why, with evidence from passage/problem>
+     Common Mistake:
+     <why a student might pick a wrong answer>
+     Parent Tip:
+     <simple practical coaching step for a parent>
+
+- Keep language parent-friendly:
+  - short, clear sentences
+  - no educational jargon
+  - specific help, not generic advice
+  - concise but still rigorous in reasoning
 
 ### PARENT HELP:
-...
+- Give 3-5 short coaching tips parents can use right away based on common errors in this set.
 `;
 
     const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY");

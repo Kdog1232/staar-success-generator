@@ -296,6 +296,37 @@
       background: #f4f8ff;
     }
 
+    .view-toggle {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .view-toggle-btn {
+      flex: 1;
+      border: 1px solid #cfd8e3;
+      background: #fff;
+      color: #1e334a;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .view-toggle-btn.active {
+      background: #eaf1ff;
+      border-color: #7aa3ee;
+      color: #123567;
+    }
+
+    .view-section-label {
+      margin: 0 0 8px;
+      font-family: "Inter", "Segoe UI", Arial, sans-serif;
+      font-size: 1rem;
+      color: #142033;
+    }
+
     @media (max-width: 760px) {
       body {
         padding: 20px 12px 40px;
@@ -392,6 +423,10 @@
     </section>
 
     <section class="worksheet-card">
+      <div class="view-toggle" id="view-toggle" style="display: none;">
+        <button id="student-tab" class="view-toggle-btn active" type="button" onclick="toggleView('student')">Student Practice</button>
+        <button id="answer-tab" class="view-toggle-btn" type="button" onclick="toggleView('answer')">Answer Key</button>
+      </div>
       <div id="output">Your STAAR practice will appear here...</div>
     </section>
 
@@ -401,6 +436,17 @@
   </div>
 
   <script>
+    // 🔓 Detect unlock from Gumroad
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("unlocked") === "true") {
+      localStorage.setItem("paid", "true");
+      alert("🎉 You now have unlimited access!");
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    if (localStorage.getItem("paid") === "true") {
+      localStorage.setItem("uses", 0);
+    }
+
     const subjectSkills = {
       Reading: [
         "Finding the main idea",
@@ -438,6 +484,44 @@
       Science: "🔬 Science",
       "Social Studies": "🌎 Social Studies"
     };
+    let currentView = "student";
+
+    function extractSection(text, marker, nextMarker) {
+      const markerIndex = text.indexOf(marker);
+      if (markerIndex === -1) return "";
+
+      const startIndex = markerIndex + marker.length;
+      const endIndex = nextMarker ? text.indexOf(nextMarker, startIndex) : -1;
+      const section = endIndex === -1 ? text.slice(startIndex) : text.slice(startIndex, endIndex);
+      return section.trim();
+    }
+
+    function formatSectionContent(content) {
+      if (!content) return "";
+      return content
+        .replaceAll("Correct Answer:", "<strong>Correct Answer:</strong>")
+        .replaceAll("Explanation:", "<strong>Explanation:</strong>")
+        .replaceAll("Common Mistake:", "<strong>Common Mistake:</strong>")
+        .replaceAll("Parent Tip:", "<strong>Parent Tip:</strong>")
+        .replaceAll(/\n/g, "<br>");
+    }
+
+    function toggleView(view) {
+      const studentSection = document.getElementById("student-section");
+      const answerSection = document.getElementById("answer-section");
+      const studentTab = document.getElementById("student-tab");
+      const answerTab = document.getElementById("answer-tab");
+
+      currentView = view === "answer" ? "answer" : "student";
+
+      if (!studentSection || !answerSection || !studentTab || !answerTab) return;
+
+      const showingStudent = currentView === "student";
+      studentSection.style.display = showingStudent ? "block" : "none";
+      answerSection.style.display = showingStudent ? "none" : "block";
+      studentTab.classList.toggle("active", showingStudent);
+      answerTab.classList.toggle("active", !showingStudent);
+    }
 
     function setActiveSubject(subject) {
       document.getElementById("subject").value = subject;
@@ -480,23 +564,30 @@
     async function generate() {
       const outputDiv = document.getElementById("output");
       const generateBtn = document.getElementById("generate-btn");
+      const viewToggle = document.getElementById("view-toggle");
+      viewToggle.style.display = "none";
 
+      const paid = localStorage.getItem("paid");
       const uses = Number(localStorage.getItem("uses") || 0);
 
-      if (uses >= 2) {
+      if (!paid && uses >= 2) {
         outputDiv.innerHTML = `
           <div class="locked">
-            <strong>🔒 You’ve used your free practice packs</strong>
-            Most students struggle on STAAR because they don’t practice the right way.<br>
-            👉 Unlock unlimited STAAR practice for just $5
-            <br>
-            <a class="unlock-btn" href="https://gumroad.com/l/staar" target="_blank" rel="noopener noreferrer">Unlock Now</a>
+            <h3>🔒 Free Trial Complete</h3>
+            <p>Most students struggle on STAAR because they don’t practice the right way.</p>
+            <p>You just saw how easy it is to generate real STAAR-style practice.</p>
+            <p><strong>👉 Unlock unlimited STAAR practice for just $5</strong></p>
+            <button class="unlock-btn" onclick="window.open('https://garyverse68.gumroad.com/l/uvqtl', '_blank')">
+              🔓 Unlock Now
+            </button>
           </div>
         `;
         return;
       }
 
-      localStorage.setItem("uses", String(uses + 1));
+      if (!paid) {
+        localStorage.setItem("uses", String(uses + 1));
+      }
 
       const grade = document.getElementById("grade").value;
       const subject = document.getElementById("subject").value;
@@ -530,14 +621,34 @@
           return;
         }
 
-        const formatted = data.text
-          .replaceAll("### PASSAGE OR CONTEXT:", "<h3>📖 Passage</h3>")
-          .replaceAll("### QUESTIONS:", "<h3>❓ Questions</h3>")
-          .replaceAll("### ANSWER KEY:", "<h3>✅ Answer Key</h3>")
-          .replaceAll("### PARENT HELP:", "<h3>👨‍👩‍👧 Parent Help</h3>")
-          .replaceAll(/\n/g, "<br>");
+        const rawText = data.text || "";
+        const passage = extractSection(rawText, "### PASSAGE OR CONTEXT:", "### QUESTIONS:");
+        const questions = extractSection(rawText, "### QUESTIONS:", "### ANSWER KEY:");
+        const answerKey = extractSection(rawText, "### ANSWER KEY:", "### PARENT HELP:");
+        const parentHelp = extractSection(rawText, "### PARENT HELP:");
 
-        outputDiv.innerHTML = `<div class="worksheet">${formatted}</div>`;
+        outputDiv.innerHTML = `
+          <div class="worksheet">
+            <div id="student-section">
+              <h4 class="view-section-label">📘 Student Practice</h4>
+              <h3>📖 Passage</h3>
+              ${formatSectionContent(passage)}
+              <h3>❓ Questions</h3>
+              ${formatSectionContent(questions)}
+            </div>
+            <div id="answer-section" style="display: none;">
+              <h4 class="view-section-label">🧠 Teacher / Parent Answer Key</h4>
+              <p style="font-style: italic; color: #555;">Review answers after your child completes the practice.</p>
+              <h3>✅ Answer Key</h3>
+              ${formatSectionContent(answerKey)}
+              <h3>👨‍👩‍👧 Parent Help</h3>
+              ${formatSectionContent(parentHelp)}
+            </div>
+          </div>
+        `;
+
+        viewToggle.style.display = "flex";
+        toggleView(currentView);
       } catch (err) {
         outputDiv.innerText = "Error: " + err.message;
       } finally {
