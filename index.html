@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>STAAR Smart Generator</title>
+  <style>
+    body {
+      font-family: Arial;
+      max-width: 800px;
+      margin: auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+
+    h2 {
+      text-align: center;
+    }
+
+    select, button {
+      padding: 10px;
+      margin: 10px 5px 10px 0;
+      font-size: 16px;
+    }
+
+    #output {
+      margin-top: 30px;
+      padding: 25px;
+      border: 1px solid #ccc;
+      background: #fff;
+      line-height: 1.6;
+      min-height: 200px;
+      border-radius: 8px;
+    }
+
+    .print-btn {
+      margin-top: 15px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+
+    .generate-btn {
+      background: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+
+    .locked {
+      text-align: center;
+      font-size: 18px;
+      color: red;
+    }
+
+    @media print {
+      button, select, h2 { display: none; }
+      body { margin: 0; background: white; }
+      #output { border: none; }
+    }
+  </style>
+</head>
+
+<body>
+
+<h2>STAAR Smart Generator</h2>
+
+<label>Grade:</label>
+<select id="grade">
+  <option>3</option>
+  <option>4</option>
+  <option>5</option>
+</select>
+
+<label>Skill:</label>
+<select id="skill">
+  <option>Main Idea</option>
+  <option>Inference</option>
+  <option>Context Clues</option>
+  <option>Theme</option>
+</select>
+
+<label>Level:</label>
+<select id="level">
+  <option>Below</option>
+  <option>On Level</option>
+  <option>Advanced</option>
+</select>
+
+<br/>
+
+<button class="generate-btn" onclick="generate()">Generate STAAR Pack</button>
+
+<div id="output">Your STAAR practice will appear here...</div>
+
+<button class="print-btn" onclick="window.print()">Download / Print PDF</button>
+
+<script>
+async function generate() {
+  const outputDiv = document.getElementById("output");
+
+  // 💰 PAYWALL LOGIC
+  let uses = localStorage.getItem("uses") || 0;
+
+  if (uses >= 2) {
+    outputDiv.innerHTML = `
+      <div class="locked">
+        🔒 You’ve used your free tries<br><br>
+        Unlock unlimited STAAR packs for just $5 💡<br><br>
+        (Message me or click purchase link)
+      </div>
+    `;
+    return;
+  }
+
+  localStorage.setItem("uses", parseInt(uses) + 1);
+
+  const grade = document.getElementById("grade").value;
+  const skill = document.getElementById("skill").value;
+  const level = document.getElementById("level").value;
+
+  outputDiv.innerHTML = "Generating your STAAR pack... ⏳";
+
+  try {
+    const res = await fetch("https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFhZGZlaGlja2trdmlydGNuc2thIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NTQ0NTcsImV4cCI6MjA5MTIzMDQ1N30.G9YhkEije7yI7rCC2nFfZ5j1btUUIci81VZhLQ48JJ4",
+        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFhZGZlaGlja2trdmlydGNuc2thIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NTQ0NTcsImV4cCI6MjA5MTIzMDQ1N30.G9YhkEije7yI7rCC2nFfZ5j1btUUIci81VZhLQ48JJ4"
+      },
+      body: JSON.stringify({
+        grade,
+        skill,
+        level
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      outputDiv.innerText = "Error: " + (data.error || "Something went wrong");
+      return;
+    }
+
+    // 🔥 FORMAT OUTPUT NICELY
+    const formatted = data.text
+      .replaceAll("### PASSAGE:", "<h2>📖 Passage</h2>")
+      .replaceAll("### QUESTIONS:", "<h2>❓ Questions</h2>")
+      .replaceAll("### ANSWER KEY:", "<h2>✅ Answer Key</h2>")
+      .replaceAll("### PARENT HELP:", "<h2>👨‍👩‍👧 Parent Help</h2>")
+      .replaceAll(/\n/g, "<br>");
+
+    outputDiv.innerHTML = `<div style="font-family: Georgia;">${formatted}</div>`;
+
+  } catch (err) {
+    outputDiv.innerText = "Error: " + err.message;
+  }
+}
+</script>
+
+</body>
+</html>
