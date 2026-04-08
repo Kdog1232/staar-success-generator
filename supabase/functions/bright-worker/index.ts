@@ -32,7 +32,8 @@ RIGOR RULES (ALWAYS):
 - Match STAAR rigor and wording.
 - Write plausible, high-quality distractors.
 - Include reasoning-based items, not only recall.
-- Mix DOK 1, DOK 2, and DOK 3.
+- Include a mix of easy, medium, and challenging questions
+- Do NOT label questions with DOK levels
 - Keep each question aligned to the selected skill focus.
 
 SUBJECT-SPECIFIC REQUIREMENTS:
