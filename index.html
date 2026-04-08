@@ -1,162 +1,409 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>STAAR Smart Generator</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>STAAR Success Generator</title>
   <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --text: #1b2430;
+      --muted: #5f6b7a;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --border: #dbe3ee;
+      --shadow: 0 14px 36px rgba(16, 24, 40, 0.08);
+      --radius: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
     body {
-      font-family: Arial;
-      max-width: 800px;
-      margin: auto;
-      padding: 20px;
-      background: #f5f5f5;
+      margin: 0;
+      font-family: "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background:
+        radial-gradient(circle at 15% 10%, #eef3ff 0%, rgba(238, 243, 255, 0) 40%),
+        radial-gradient(circle at 85% 20%, #f2f8ff 0%, rgba(242, 248, 255, 0) 35%),
+        var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 32px 16px 56px;
     }
 
-    h2 {
+    .container {
+      width: 100%;
+      max-width: 920px;
+      margin: 0 auto;
+    }
+
+    .header {
       text-align: center;
+      margin-bottom: 22px;
     }
 
-    select, button {
-      padding: 10px;
-      margin: 10px 5px 10px 0;
-      font-size: 16px;
+    .header h1 {
+      margin: 0;
+      font-size: clamp(1.9rem, 2.8vw, 2.7rem);
+      letter-spacing: -0.02em;
     }
 
-    #output {
-      margin-top: 30px;
-      padding: 25px;
-      border: 1px solid #ccc;
+    .header p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: clamp(1rem, 1.9vw, 1.15rem);
+      font-weight: 500;
+    }
+
+    .value-card,
+    .generator-card,
+    .worksheet-card,
+    .print-row {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .value-card {
+      margin: 0 auto 20px;
+      padding: 18px 20px;
+    }
+
+    .value-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .value-list li {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      color: #1f3347;
+      font-weight: 600;
+      font-size: 0.95rem;
+      padding: 10px 12px;
+      background: #f8fbff;
+      border: 1px solid #e5edf7;
+      border-radius: 12px;
+    }
+
+    .value-list li span {
+      font-size: 1.05rem;
+    }
+
+    .generator-card {
+      padding: 22px;
+      margin-bottom: 20px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .field label {
+      font-size: 0.92rem;
+      color: #344154;
+      font-weight: 600;
+    }
+
+    .field select {
+      width: 100%;
+      appearance: none;
+      border: 1px solid #cfd8e3;
+      border-radius: 12px;
       background: #fff;
-      line-height: 1.6;
-      min-height: 200px;
-      border-radius: 8px;
+      color: var(--text);
+      padding: 11px 12px;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
 
-    .print-btn {
-      margin-top: 15px;
-      background: #4CAF50;
-      color: white;
-      border: none;
-      cursor: pointer;
+    .field select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
     }
 
     .generate-btn {
-      background: #007bff;
-      color: white;
+      width: 100%;
       border: none;
+      border-radius: 12px;
+      padding: 13px 16px;
+      background: linear-gradient(180deg, #2f6df2 0%, #2563eb 100%);
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
       cursor: pointer;
+      transition: transform 0.08s ease, background 0.2s ease, box-shadow 0.2s ease;
+      box-shadow: 0 10px 24px rgba(37, 99, 235, 0.28);
+    }
+
+    .generate-btn:hover:not(:disabled) {
+      background: linear-gradient(180deg, #2a62d8 0%, #1d4ed8 100%);
+      transform: translateY(-1px);
+    }
+
+    .generate-btn:disabled {
+      opacity: 0.72;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .worksheet-card {
+      margin-top: 0;
+      padding: 26px;
+      min-height: 220px;
+      background: #fff;
+      border-left: 4px solid #dbe8ff;
+    }
+
+    #output {
+      color: #203040;
+      font-size: 1rem;
+    }
+
+    .worksheet {
+      font-family: Georgia, "Times New Roman", serif;
+      color: #1a2433;
+      line-height: 1.75;
+    }
+
+    .worksheet h3 {
+      margin: 24px 0 10px;
+      font-size: 1.25rem;
+      font-family: "Inter", "Segoe UI", Arial, sans-serif;
+      color: #142033;
+      letter-spacing: -0.01em;
+    }
+
+    .worksheet h3:first-child {
+      margin-top: 0;
     }
 
     .locked {
       text-align: center;
-      font-size: 18px;
-      color: red;
+      background: #fff8f4;
+      border: 1px solid #ffd8c5;
+      color: #8a3300;
+      border-radius: 14px;
+      padding: 28px 20px;
+      max-width: 540px;
+      margin: 8px auto;
+      font-size: 1.03rem;
+      line-height: 1.65;
+      box-shadow: 0 8px 20px rgba(138, 51, 0, 0.08);
+    }
+
+    .locked strong {
+      display: block;
+      font-size: 1.18rem;
+      color: #6d2200;
+      margin-bottom: 8px;
+    }
+
+    .print-row {
+      margin-top: 14px;
+      padding: 14px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .print-btn {
+      border: 1px solid #b9c9df;
+      background: #fff;
+      color: #1e3a5f;
+      padding: 10px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s ease;
+    }
+
+    .print-btn:hover {
+      background: #f4f8ff;
+    }
+
+    @media (max-width: 760px) {
+      body {
+        padding: 20px 12px 40px;
+      }
+
+      .form-grid,
+      .value-list {
+        grid-template-columns: 1fr;
+      }
+
+      .generator-card,
+      .worksheet-card,
+      .value-card {
+        padding: 16px;
+      }
     }
 
     @media print {
-      button, select, h2 { display: none; }
-      body { margin: 0; background: white; }
-      #output { border: none; }
+      .header,
+      .value-card,
+      .generator-card,
+      .print-row {
+        display: none;
+      }
+
+      body {
+        background: #fff;
+        padding: 0;
+      }
+
+      .worksheet-card {
+        border: none;
+        box-shadow: none;
+        padding: 0;
+      }
     }
   </style>
 </head>
-
 <body>
+  <div class="container">
+    <header class="header">
+      <h1>STAAR Success Generator</h1>
+      <p>Instant STAAR-style reading practice for Grades 3–5</p>
+    </header>
 
-<h2>STAAR Smart Generator</h2>
+    <section class="value-card" aria-label="Key benefits">
+      <ul class="value-list">
+        <li><span>✅</span>Aligned to STAAR rigor</li>
+        <li><span>📘</span>Builds reading confidence</li>
+        <li><span>⏱️</span>Takes less than 10 minutes</li>
+      </ul>
+    </section>
 
-<label>Grade:</label>
-<select id="grade">
-  <option>3</option>
-  <option>4</option>
-  <option>5</option>
-</select>
+    <section class="generator-card" aria-label="Worksheet generator settings">
+      <div class="form-grid">
+        <div class="field">
+          <label for="grade">Grade</label>
+          <select id="grade">
+            <option>3</option>
+            <option>4</option>
+            <option>5</option>
+          </select>
+        </div>
 
-<label>Skill:</label>
-<select id="skill">
-  <option>Main Idea</option>
-  <option>Inference</option>
-  <option>Context Clues</option>
-  <option>Theme</option>
-</select>
+        <div class="field">
+          <label for="skill">Skill</label>
+          <select id="skill">
+            <option>Main Idea</option>
+            <option>Inference</option>
+            <option>Context Clues</option>
+            <option>Theme</option>
+          </select>
+        </div>
 
-<label>Level:</label>
-<select id="level">
-  <option>Below</option>
-  <option>On Level</option>
-  <option>Advanced</option>
-</select>
-
-<br/>
-
-<button class="generate-btn" onclick="generate()">Generate STAAR Pack</button>
-
-<div id="output">Your STAAR practice will appear here...</div>
-
-<button class="print-btn" onclick="window.print()">Download / Print PDF</button>
-
-<script>
-async function generate() {
-  const outputDiv = document.getElementById("output");
-
-  // 💰 PAYWALL LOGIC
-  let uses = localStorage.getItem("uses") || 0;
-
-  if (uses >= 2) {
-    outputDiv.innerHTML = `
-      <div class="locked">
-        🔒 You’ve used your free tries<br><br>
-        Unlock unlimited STAAR packs for just $5 💡<br><br>
-        (Message me or click purchase link)
+        <div class="field">
+          <label for="level">Level</label>
+          <select id="level">
+            <option>Below</option>
+            <option>On Level</option>
+            <option>Advanced</option>
+          </select>
+        </div>
       </div>
-    `;
-    return;
-  }
 
-  localStorage.setItem("uses", parseInt(uses) + 1);
+      <button id="generate-btn" class="generate-btn" onclick="generate()">Generate STAAR Pack</button>
+    </section>
 
-  const grade = document.getElementById("grade").value;
-  const skill = document.getElementById("skill").value;
-  const level = document.getElementById("level").value;
+    <section class="worksheet-card">
+      <div id="output">Your STAAR practice will appear here...</div>
+    </section>
 
-  outputDiv.innerHTML = "Generating your STAAR pack... ⏳";
+    <div class="print-row">
+      <button class="print-btn" onclick="window.print()">Download / Print PDF</button>
+    </div>
+  </div>
 
-  try {
-    const res = await fetch("https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFhZGZlaGlja2trdmlydGNuc2thIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NTQ0NTcsImV4cCI6MjA5MTIzMDQ1N30.G9YhkEije7yI7rCC2nFfZ5j1btUUIci81VZhLQ48JJ4",
-        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFhZGZlaGlja2trdmlydGNuc2thIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NTQ0NTcsImV4cCI6MjA5MTIzMDQ1N30.G9YhkEije7yI7rCC2nFfZ5j1btUUIci81VZhLQ48JJ4"
-      },
-      body: JSON.stringify({
-        grade,
-        skill,
-        level
-      })
-    });
+  <script>
+    async function generate() {
+      const outputDiv = document.getElementById("output");
+      const generateBtn = document.getElementById("generate-btn");
 
-    const data = await res.json();
+      // 💰 PAYWALL LOGIC
+      let uses = localStorage.getItem("uses") || 0;
 
-    if (!res.ok) {
-      outputDiv.innerText = "Error: " + (data.error || "Something went wrong");
-      return;
+      if (uses >= 2) {
+        outputDiv.innerHTML = `
+          <div class="locked">
+            <strong>🔒 Unlock unlimited STAAR practice for $5</strong>
+            You’ve used your free tries.<br>
+            Get unlimited STAAR-style worksheets anytime your child needs extra reading support.
+          </div>
+        `;
+        return;
+      }
+
+      localStorage.setItem("uses", parseInt(uses) + 1);
+
+      const grade = document.getElementById("grade").value;
+      const skill = document.getElementById("skill").value;
+      const level = document.getElementById("level").value;
+
+      generateBtn.disabled = true;
+      generateBtn.textContent = "Generating...";
+      outputDiv.innerHTML = "Generating your STAAR pack... ⏳";
+
+      try {
+        const res = await fetch("https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFhZGZlaGlja2trdmlydGNuc2thIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NTQ0NTcsImV4cCI6MjA5MTIzMDQ1N30.G9YhkEije7yI7rCC2nFfZ5j1btUUIci81VZhLQ48JJ4",
+            "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFhZGZlaGlja2trdmlydGNuc2thIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NTQ0NTcsImV4cCI6MjA5MTIzMDQ1N30.G9YhkEije7yI7rCC2nFfZ5j1btUUIci81VZhLQ48JJ4"
+          },
+          body: JSON.stringify({
+            grade,
+            skill,
+            level
+          })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          outputDiv.innerText = "Error: " + (data.error || "Something went wrong");
+          return;
+        }
+
+        // 🔥 FORMAT OUTPUT NICELY
+        const formatted = data.text
+          .replaceAll("### PASSAGE:", "<h3>📖 Passage</h3>")
+          .replaceAll("### QUESTIONS:", "<h3>❓ Questions</h3>")
+          .replaceAll("### ANSWER KEY:", "<h3>✅ Answer Key</h3>")
+          .replaceAll("### PARENT HELP:", "<h3>👨‍👩‍👧 Parent Help</h3>")
+          .replaceAll(/\n/g, "<br>");
+
+        outputDiv.innerHTML = `<div class="worksheet">${formatted}</div>`;
+      } catch (err) {
+        outputDiv.innerText = "Error: " + err.message;
+      } finally {
+        generateBtn.disabled = false;
+        generateBtn.textContent = "Generate STAAR Pack";
+      }
     }
-
-    // 🔥 FORMAT OUTPUT NICELY
-    const formatted = data.text
-      .replaceAll("### PASSAGE:", "<h2>📖 Passage</h2>")
-      .replaceAll("### QUESTIONS:", "<h2>❓ Questions</h2>")
-      .replaceAll("### ANSWER KEY:", "<h2>✅ Answer Key</h2>")
-      .replaceAll("### PARENT HELP:", "<h2>👨‍👩‍👧 Parent Help</h2>")
-      .replaceAll(/\n/g, "<br>");
-
-    outputDiv.innerHTML = `<div style="font-family: Georgia;">${formatted}</div>`;
-
-  } catch (err) {
-    outputDiv.innerText = "Error: " + err.message;
-  }
-}
-</script>
-
+  </script>
 </body>
 </html>
