@@ -105,7 +105,7 @@
 
     .form-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 14px;
       margin-bottom: 18px;
     }
@@ -140,6 +140,39 @@
       box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
     }
 
+    .subject-selector {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .subject-btn {
+      border: 1px solid #cfd8e3;
+      border-radius: 999px;
+      background: #fff;
+      color: #1e334a;
+      padding: 9px 12px;
+      font-size: 0.96rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      flex: 1 1 calc(50% - 8px);
+      min-width: 150px;
+    }
+
+    .subject-btn:hover {
+      border-color: #9ab4db;
+      background: #f6f9ff;
+    }
+
+    .subject-btn.active {
+      background: #eaf1ff;
+      border-color: #7aa3ee;
+      color: #123567;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.14);
+    }
+
     .generate-btn {
       width: 100%;
       border: none;
@@ -148,7 +181,7 @@
       background: linear-gradient(180deg, #2f6df2 0%, #2563eb 100%);
       color: #fff;
       font-size: 1rem;
-      font-weight: 700;
+      font-weight: 800;
       letter-spacing: 0.01em;
       cursor: pointer;
       transition: transform 0.08s ease, background 0.2s ease, box-shadow 0.2s ease;
@@ -184,6 +217,10 @@
       font-family: Georgia, "Times New Roman", serif;
       color: #1a2433;
       line-height: 1.75;
+      background: #fffcf5;
+      border: 1px solid #f2ead7;
+      border-radius: 12px;
+      padding: 18px;
     }
 
     .worksheet h3 {
@@ -192,6 +229,8 @@
       font-family: "Inter", "Segoe UI", Arial, sans-serif;
       color: #142033;
       letter-spacing: -0.01em;
+      border-bottom: 1px solid #e5ebf2;
+      padding-bottom: 6px;
     }
 
     .worksheet h3:first-child {
@@ -200,12 +239,12 @@
 
     .locked {
       text-align: center;
-      background: #fff8f4;
+      background: linear-gradient(180deg, #fff8f4 0%, #fff 100%);
       border: 1px solid #ffd8c5;
       color: #8a3300;
       border-radius: 14px;
       padding: 28px 20px;
-      max-width: 540px;
+      max-width: 560px;
       margin: 8px auto;
       font-size: 1.03rem;
       line-height: 1.65;
@@ -217,6 +256,22 @@
       font-size: 1.18rem;
       color: #6d2200;
       margin-bottom: 8px;
+    }
+
+    .unlock-btn {
+      display: inline-block;
+      margin-top: 12px;
+      border: none;
+      border-radius: 10px;
+      background: #f97316;
+      color: #fff;
+      padding: 11px 18px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .unlock-btn:hover {
+      background: #ea580c;
     }
 
     .print-row {
@@ -256,6 +311,10 @@
       .value-card {
         padding: 16px;
       }
+
+      .subject-btn {
+        flex-basis: 100%;
+      }
     }
 
     @media print {
@@ -282,14 +341,14 @@
 <body>
   <div class="container">
     <header class="header">
-      <h1>STAAR Success Generator</h1>
-      <p>Instant STAAR-style reading practice for Grades 3–5</p>
+      <h1>Help Your Child Pass the STAAR Test</h1>
+      <p>Generate real STAAR-style practice in seconds (Grades 3–8)</p>
     </header>
 
     <section class="value-card" aria-label="Key benefits">
       <ul class="value-list">
         <li><span>✅</span>Aligned to STAAR rigor</li>
-        <li><span>📘</span>Builds reading confidence</li>
+        <li><span>💪</span>Builds confidence before test day</li>
         <li><span>⏱️</span>Takes less than 10 minutes</li>
       </ul>
     </section>
@@ -302,17 +361,21 @@
             <option>3</option>
             <option>4</option>
             <option>5</option>
+            <option>6</option>
+            <option>7</option>
+            <option>8</option>
           </select>
         </div>
 
         <div class="field">
-          <label for="skill">Skill</label>
-          <select id="skill">
-            <option>Main Idea</option>
-            <option>Inference</option>
-            <option>Context Clues</option>
-            <option>Theme</option>
-          </select>
+          <label>Subject</label>
+          <div class="subject-selector" id="subject-selector" role="radiogroup" aria-label="Subject"></div>
+          <input type="hidden" id="subject" value="Reading" />
+        </div>
+
+        <div class="field">
+          <label for="skill">What does your child need help with?</label>
+          <select id="skill"></select>
         </div>
 
         <div class="field">
@@ -338,27 +401,105 @@
   </div>
 
   <script>
+    const subjectSkills = {
+      Reading: [
+        "Finding the main idea",
+        "Making inferences",
+        "Understanding theme",
+        "Vocabulary in context",
+        "Comparing texts"
+      ],
+      Math: [
+        "Word problems",
+        "Fractions & decimals",
+        "Algebra basics",
+        "Geometry",
+        "Data & graphs"
+      ],
+      Science: [
+        "Force & motion",
+        "Energy",
+        "Earth & space",
+        "Life science",
+        "Scientific thinking"
+      ],
+      "Social Studies": [
+        "History & events",
+        "Cause & effect",
+        "Geography",
+        "Government",
+        "Economics"
+      ]
+    };
+
+    const subjectButtons = {
+      Reading: "📚 Reading",
+      Math: "➗ Math",
+      Science: "🔬 Science",
+      "Social Studies": "🌎 Social Studies"
+    };
+
+    function setActiveSubject(subject) {
+      document.getElementById("subject").value = subject;
+      document.querySelectorAll(".subject-btn").forEach((button) => {
+        const isActive = button.dataset.subject === subject;
+        button.classList.toggle("active", isActive);
+        button.setAttribute("aria-checked", isActive ? "true" : "false");
+      });
+      populateSkills(subject);
+    }
+
+    function populateSubjectButtons() {
+      const subjectSelector = document.getElementById("subject-selector");
+      Object.keys(subjectSkills).forEach((subject) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "subject-btn";
+        button.dataset.subject = subject;
+        button.setAttribute("role", "radio");
+        button.setAttribute("aria-checked", "false");
+        button.textContent = subjectButtons[subject] || subject;
+        button.addEventListener("click", () => setActiveSubject(subject));
+        subjectSelector.appendChild(button);
+      });
+      setActiveSubject("Reading");
+    }
+
+    function populateSkills(subject) {
+      const skillSelect = document.getElementById("skill");
+      skillSelect.innerHTML = "";
+
+      (subjectSkills[subject] || []).forEach((skill) => {
+        const option = document.createElement("option");
+        option.value = skill;
+        option.textContent = skill;
+        skillSelect.appendChild(option);
+      });
+    }
+
     async function generate() {
       const outputDiv = document.getElementById("output");
       const generateBtn = document.getElementById("generate-btn");
 
-      // 💰 PAYWALL LOGIC
-      let uses = localStorage.getItem("uses") || 0;
+      const uses = Number(localStorage.getItem("uses") || 0);
 
       if (uses >= 2) {
         outputDiv.innerHTML = `
           <div class="locked">
-            <strong>🔒 Unlock unlimited STAAR practice for $5</strong>
-            You’ve used your free tries.<br>
-            Get unlimited STAAR-style worksheets anytime your child needs extra reading support.
+            <strong>🔒 You’ve used your free practice packs</strong>
+            Most students struggle on STAAR because they don’t practice the right way.<br>
+            👉 Unlock unlimited STAAR practice for just $5
+            <br>
+            <a class="unlock-btn" href="https://gumroad.com/l/staar" target="_blank" rel="noopener noreferrer">Unlock Now</a>
           </div>
         `;
         return;
       }
 
-      localStorage.setItem("uses", parseInt(uses) + 1);
+      localStorage.setItem("uses", String(uses + 1));
 
       const grade = document.getElementById("grade").value;
+      const subject = document.getElementById("subject").value;
       const skill = document.getElementById("skill").value;
       const level = document.getElementById("level").value;
 
@@ -376,6 +517,7 @@
           },
           body: JSON.stringify({
             grade,
+            subject,
             skill,
             level
           })
@@ -388,9 +530,8 @@
           return;
         }
 
-        // 🔥 FORMAT OUTPUT NICELY
         const formatted = data.text
-          .replaceAll("### PASSAGE:", "<h3>📖 Passage</h3>")
+          .replaceAll("### PASSAGE OR CONTEXT:", "<h3>📖 Passage</h3>")
           .replaceAll("### QUESTIONS:", "<h3>❓ Questions</h3>")
           .replaceAll("### ANSWER KEY:", "<h3>✅ Answer Key</h3>")
           .replaceAll("### PARENT HELP:", "<h3>👨‍👩‍👧 Parent Help</h3>")
@@ -404,6 +545,8 @@
         generateBtn.textContent = "Generate STAAR Pack";
       }
     }
+
+    populateSubjectButtons();
   </script>
 </body>
 </html>
