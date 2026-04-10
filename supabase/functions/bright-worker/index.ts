@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -12,6 +13,50 @@ serve(async (req) => {
   }
 
   try {
+
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+    {
+      global: {
+        headers: {
+          Authorization: req.headers.get("Authorization")!,
+        },
+      },
+    }
+  );
+
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error || !user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("plan, generations_used")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile) {
+    return new Response(JSON.stringify({ error: "Profile not found" }), {
+      status: 404,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  if (profile.plan !== "paid" && profile.generations_used >= 2) {
+    return new Response(JSON.stringify({ error: "Free limit reached" }), {
+      status: 403,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
     const { grade, subject, skill, level } = await req.json();
 
     const prompt = `
@@ -103,6 +148,13 @@ OUTPUT FORMAT (USE THESE HEADERS EXACTLY):
     }
 
     const text = data.output?.[0]?.content?.[0]?.text || "No response generated";
+
+    await supabase
+      .from("profiles")
+      .update({
+        generations_used: profile.generations_used + 1,
+      })
+      .eq("id", user.id);
 
     return new Response(JSON.stringify({ text }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
