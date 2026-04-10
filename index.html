@@ -703,6 +703,22 @@
           })
         });
 
+        if (res.status === 403) {
+          outputDiv.innerHTML = `
+            <div class="locked">
+              <strong>You’ve used your 2 free STAAR packs</strong>
+              Most parents see improvement in just 10 minutes a day.
+
+              <br><br>
+
+              <a href="${GUMROAD_URL}" class="unlock-btn" target="_blank">
+                Unlock Full Access for $12
+              </a>
+            </div>
+          `;
+          return;
+        }
+
         const data = await res.json();
 
         if (!res.ok) {
