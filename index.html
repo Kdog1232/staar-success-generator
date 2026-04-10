@@ -585,7 +585,23 @@
       }
 
       if (profile.plan !== "paid" && profile.generations_used >= 2) {
-        window.location.href = GUMROAD_URL;
+        outputDiv.innerHTML = `
+          <div class="locked">
+            <strong>You’ve used your 2 free STAAR packs</strong>
+            Most parents see improvement in just 10 minutes a day.
+
+            <br><br>
+
+            <a href="${GUMROAD_URL}" class="unlock-btn" target="_blank">
+              Unlock Full Access for $12
+            </a>
+
+            <br><br>
+            <span style="font-size: 0.9rem; color: #555;">
+              Already purchased? Log back in with your email to unlock instantly.
+            </span>
+          </div>
+        `;
         return;
       }
 
@@ -621,13 +637,6 @@
           outputDiv.innerText = "Error: " + (data.error || "Something went wrong");
           return;
         }
-
-        await supabase
-          .from("profiles")
-          .update({
-            generations_used: profile.generations_used + 1
-          })
-          .eq("id", user.id);
 
         const rawText = data.text || "";
         const passage = extractSection(rawText, "### PASSAGE OR CONTEXT:", "### QUESTIONS:");
