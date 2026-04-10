@@ -632,17 +632,9 @@
       const viewToggle = document.getElementById("view-toggle");
       viewToggle.style.display = "none";
 
-      let {
+      const {
         data: { session }
       } = await supabase.auth.getSession();
-
-      if (!session) {
-        // retry once (fixes race condition)
-        await new Promise(r => setTimeout(r, 300));
-
-        const retry = await supabase.auth.getSession();
-        session = retry.data.session;
-      }
 
       if (!session) {
         outputDiv.innerHTML = `
@@ -672,7 +664,7 @@
 
             <br><br>
 
-            <a href="${GUMROAD_URL}" class="unlock-btn" target="_blank">
+            <a href="${GUMROAD_URL}" class="unlock-btn" target="_blank" rel="noopener noreferrer">
               Unlock Full Access for $12
             </a>
 
