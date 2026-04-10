@@ -51,7 +51,10 @@ serve(async (req) => {
 
     const { error: updateError } = await supabase
       .from("profiles")
-      .update({ plan: "paid" })
+      .update({
+        plan: "paid",
+        generations_used: 0,
+      })
       .eq("id", profile.id);
 
     if (updateError) {
