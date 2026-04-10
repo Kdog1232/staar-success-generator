@@ -622,6 +622,13 @@
           return;
         }
 
+        await supabase
+          .from("profiles")
+          .update({
+            generations_used: profile.generations_used + 1
+          })
+          .eq("id", user.id);
+
         const rawText = data.text || "";
         const passage = extractSection(rawText, "### PASSAGE OR CONTEXT:", "### QUESTIONS:");
         const questions = extractSection(rawText, "### QUESTIONS:", "### ANSWER KEY:");
