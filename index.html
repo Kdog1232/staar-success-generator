@@ -419,6 +419,19 @@
         </div>
       </div>
 
+      <div id="auth-box" style="margin-bottom: 16px;">
+        <input id="email" placeholder="Enter email" style="padding:10px; width:100%; margin-bottom:8px;" />
+        <input id="password" type="password" placeholder="Enter password" style="padding:10px; width:100%; margin-bottom:8px;" />
+
+        <button onclick="signUp()" class="generate-btn" style="margin-bottom:6px;">
+          Sign Up
+        </button>
+
+        <button onclick="signIn()" class="generate-btn">
+          Log In
+        </button>
+      </div>
+
       <button id="generate-btn" class="generate-btn" onclick="generate()">Generate STAAR Pack</button>
     </section>
 
@@ -558,6 +571,49 @@
       });
     }
 
+    async function signUp() {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+
+      const { error } = await supabase.auth.signUp({
+        email,
+        password
+      });
+
+      if (error) {
+        alert(error.message);
+      } else {
+        alert("Check your email to confirm signup!");
+      }
+    }
+
+    async function signIn() {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        alert(error.message);
+      } else {
+        alert("Logged in successfully!");
+        location.reload();
+      }
+    }
+
+    async function updateAuthBoxVisibility() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        document.getElementById("auth-box").style.display = "none";
+      }
+    }
+
     async function generate() {
       const outputDiv = document.getElementById("output");
       const generateBtn = document.getElementById("generate-btn");
@@ -569,7 +625,18 @@
       } = await supabase.auth.getUser();
 
       if (!user) {
-        window.location.href = "/login.html";
+        outputDiv.innerHTML = `
+          <div class="locked">
+            <strong>Please log in to continue</strong>
+            Create an account to generate STAAR practice.
+
+            <br><br>
+
+            <button onclick="location.reload()" class="unlock-btn">
+              Refresh / Try Again
+            </button>
+          </div>
+        `;
         return;
       }
 
@@ -676,7 +743,10 @@
 
     window.toggleView = toggleView;
     window.generate = generate;
+    window.signUp = signUp;
+    window.signIn = signIn;
     populateSubjectButtons();
+    updateAuthBoxVisibility();
   </script>
 </body>
 </html>
