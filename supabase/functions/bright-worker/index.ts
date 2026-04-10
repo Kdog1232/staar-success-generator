@@ -13,6 +13,7 @@ serve(async (req) => {
   }
 
   try {
+  console.log("AUTH HEADER:", req.headers.get("Authorization"));
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL") ?? "",

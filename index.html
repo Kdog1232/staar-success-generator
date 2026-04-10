@@ -687,21 +687,40 @@
       outputDiv.innerHTML = "Generating your STAAR pack... ⏳";
 
       try {
+        const {
+          data: { session }
+        } = await supabase.auth.getSession();
+
+        // 🔥 HARD STOP if no session
+        if (!session || !session.access_token) {
+          outputDiv.innerHTML = `
+            <div class="locked">
+              <strong>Your session expired</strong>
+              Please log in again.
+            </div>
+          `;
+          return;
+        }
+
         console.log("SESSION:", session);
 
-        const res = await fetch("https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            grade,
-            subject,
-            skill,
-            level
-          })
-        });
+        const res = await fetch(
+          "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+              apikey: SUPABASE_ANON_KEY
+            },
+            body: JSON.stringify({
+              grade,
+              subject,
+              skill,
+              level
+            })
+          }
+        );
 
         if (res.status === 403) {
           outputDiv.innerHTML = `
