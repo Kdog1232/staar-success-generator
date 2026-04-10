@@ -420,8 +420,8 @@
       </div>
 
       <div id="auth-box" style="margin-bottom: 16px;">
-        <input id="email" placeholder="Enter email" style="padding:10px; width:100%; margin-bottom:8px;" />
-        <input id="password" type="password" placeholder="Enter password" style="padding:10px; width:100%; margin-bottom:8px;" />
+        <input id="email" type="email" autocomplete="email" placeholder="Enter email" style="padding:10px; width:100%; margin-bottom:8px;" />
+        <input id="password" type="password" autocomplete="current-password" placeholder="Enter password" style="padding:10px; width:100%; margin-bottom:8px;" />
 
         <button onclick="signUp()" class="generate-btn" style="margin-bottom:6px;">
           Sign Up
@@ -582,8 +582,20 @@
 
       if (error) {
         alert(error.message);
+        return;
+      }
+
+      // Auto-login immediately after signup
+      const { error: loginError } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (loginError) {
+        alert(loginError.message);
       } else {
-        alert("Check your email to confirm signup!");
+        alert("Account created!");
+        location.reload();
       }
     }
 
@@ -606,10 +618,10 @@
 
     async function updateAuthBoxVisibility() {
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
+        data: { session },
+      } = await supabase.auth.getSession();
 
-      if (user) {
+      if (session) {
         document.getElementById("auth-box").style.display = "none";
       }
     }
@@ -620,21 +632,22 @@
       const viewToggle = document.getElementById("view-toggle");
       viewToggle.style.display = "none";
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      let {
+        data: { session }
+      } = await supabase.auth.getSession();
 
-      if (!user) {
+      if (!session) {
+        // retry once (fixes race condition)
+        await new Promise(r => setTimeout(r, 300));
+
+        const retry = await supabase.auth.getSession();
+        session = retry.data.session;
+      }
+
+      if (!session) {
         outputDiv.innerHTML = `
           <div class="locked">
-            <strong>Please log in to continue</strong>
-            Create an account to generate STAAR practice.
-
-            <br><br>
-
-            <button onclick="location.reload()" class="unlock-btn">
-              Refresh / Try Again
-            </button>
+            <strong>Please log in first</strong>
           </div>
         `;
         return;
@@ -643,7 +656,7 @@
       const { data: profile } = await supabase
         .from("profiles")
         .select("plan, generations_used")
-        .eq("id", user.id)
+        .eq("id", session.user.id)
         .single();
 
       if (!profile) {
@@ -682,13 +695,13 @@
       outputDiv.innerHTML = "Generating your STAAR pack... ⏳";
 
       try {
-        const session = await supabase.auth.getSession();
+        console.log("SESSION:", session);
 
         const res = await fetch("https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${session.data.session?.access_token ?? ""}`,
+            Authorization: `Bearer ${session.access_token}`,
           },
           body: JSON.stringify({
             grade,
@@ -697,6 +710,22 @@
             level
           })
         });
+
+        if (res.status === 403) {
+          outputDiv.innerHTML = `
+            <div class="locked">
+              <strong>You’ve used your 2 free STAAR packs</strong>
+              Most parents see improvement in just 10 minutes a day.
+
+              <br><br>
+
+              <a href="${GUMROAD_URL}" class="unlock-btn" target="_blank">
+                Unlock Full Access for $12
+              </a>
+            </div>
+          `;
+          return;
+        }
 
         const data = await res.json();
 
