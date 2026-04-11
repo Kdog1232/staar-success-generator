@@ -320,6 +320,44 @@
       color: #123567;
     }
 
+    .mode-status {
+      margin: 0 0 12px;
+      font-family: "Inter", "Segoe UI", Arial, sans-serif;
+      font-size: 0.95rem;
+      color: #2a3f5e;
+      font-weight: 700;
+      background: #eef4ff;
+      border: 1px solid #d4e2ff;
+      border-radius: 10px;
+      padding: 8px 10px;
+    }
+
+    .progress-feel {
+      margin: 0 0 14px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid #d6e7ff;
+      background: #f6faff;
+      font-family: "Inter", "Segoe UI", Arial, sans-serif;
+      color: #1e3554;
+      line-height: 1.55;
+      font-size: 0.95rem;
+    }
+
+    .tutor-card {
+      margin: 12px 0;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid #d6e2f3;
+      background: #fbfdff;
+      font-family: "Inter", "Segoe UI", Arial, sans-serif;
+      line-height: 1.6;
+    }
+
+    .tutor-card p {
+      margin: 8px 0 0;
+    }
+
     .view-section-label {
       margin: 0 0 8px;
       font-family: "Inter", "Segoe UI", Arial, sans-serif;
@@ -372,8 +410,9 @@
 <body>
   <div class="container">
     <header class="header">
-      <h1>Help Your Child Pass the STAAR Test</h1>
-      <p>Generate real STAAR-style practice in seconds (Grades 3–8)</p>
+      <h1>10-Minute Daily Practice That Feels Like Tutoring</h1>
+      <p>Aligned to TEKS standards and STAAR expectations</p>
+      <p>Ideal for parents, teachers, tutors, and homeschool educators</p>
     </header>
 
     <section class="value-card" aria-label="Key benefits">
@@ -437,8 +476,9 @@
 
     <section class="worksheet-card">
       <div class="view-toggle" id="view-toggle" style="display: none;">
-        <button id="student-tab" class="view-toggle-btn active" type="button" onclick="toggleView('student')">Student Practice</button>
-        <button id="answer-tab" class="view-toggle-btn" type="button" onclick="toggleView('answer')">Answer Key</button>
+        <button id="practice-tab" class="view-toggle-btn active" type="button" onclick="toggleView('practice')">👨‍🎓 Practice Mode</button>
+        <button id="tutor-tab" class="view-toggle-btn" type="button" onclick="toggleView('tutor')">👨‍🏫 Tutor Mode</button>
+        <button id="answer-tab" class="view-toggle-btn" type="button" onclick="toggleView('answer')">🧠 Answer Key</button>
       </div>
       <div id="output">Your STAAR practice will appear here...</div>
     </section>
@@ -494,7 +534,7 @@
       Science: "🔬 Science",
       "Social Studies": "🌎 Social Studies"
     };
-    let currentView = "student";
+    let currentView = "practice";
 
     function extractSection(text, marker, nextMarker) {
       const markerIndex = text.indexOf(marker);
@@ -516,21 +556,73 @@
         .replaceAll(/\n/g, "<br>");
     }
 
+    function getTodayKey() {
+      const now = new Date();
+      return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
+    }
+
+    function incrementDailyProgress() {
+      const todayKey = getTodayKey();
+      const progressState = JSON.parse(localStorage.getItem("staar-progress") || "{}");
+      const completedToday = progressState.date === todayKey ? (progressState.count || 0) + 1 : 1;
+      const updated = { date: todayKey, count: completedToday };
+      localStorage.setItem("staar-progress", JSON.stringify(updated));
+      return completedToday;
+    }
+
+    function buildTutorGuidance(questions, answerKey) {
+      const questionBlocks = questions
+        .split(/\n\s*\n/)
+        .map((block) => block.trim())
+        .filter((block) => /^\d+[\.\)]/.test(block));
+      const answerBlocks = answerKey
+        .split(/\n\s*\n/)
+        .map((block) => block.trim())
+        .filter((block) => /Correct Answer:/i.test(block));
+
+      if (!questionBlocks.length) {
+        return `<div class="tutor-card"><strong>Hint:</strong> Read each question and underline keywords before choosing an answer.<p><strong>Think like this:</strong> Ask, “What evidence in the passage supports this?”</p><p><strong>Step-by-step:</strong> 1) Read the question. 2) Eliminate wrong choices. 3) Prove your choice from the text.</p></div>`;
+      }
+
+      return questionBlocks.map((question, index) => {
+        const matchedAnswer = answerBlocks[index] || "";
+        const explanationMatch = matchedAnswer.match(/Explanation:\s*([\s\S]*?)(?:Common Mistake:|Parent Tip:|$)/i);
+        const explanation = explanationMatch?.[1]?.trim() || "Use text evidence to justify the best answer.";
+        return `
+          <div class="tutor-card">
+            <strong>Question ${index + 1}</strong><br>
+            ${formatSectionContent(question)}
+            <p><strong>Hint:</strong> Focus on what the question is asking most directly before checking choices.</p>
+            <p><strong>Think like this:</strong> Which part of the passage best proves my answer?</p>
+            <p><strong>Step-by-step:</strong> ${formatSectionContent(explanation)}</p>
+          </div>
+        `;
+      }).join("");
+    }
+
     function toggleView(view) {
-      const studentSection = document.getElementById("student-section");
+      const practiceSection = document.getElementById("practice-section");
+      const tutorSection = document.getElementById("tutor-section");
       const answerSection = document.getElementById("answer-section");
-      const studentTab = document.getElementById("student-tab");
+      const practiceTab = document.getElementById("practice-tab");
+      const tutorTab = document.getElementById("tutor-tab");
       const answerTab = document.getElementById("answer-tab");
+      const modeStatus = document.getElementById("mode-status");
 
-      currentView = view === "answer" ? "answer" : "student";
+      currentView = ["practice", "tutor", "answer"].includes(view) ? view : "practice";
 
-      if (!studentSection || !answerSection || !studentTab || !answerTab) return;
+      if (!practiceSection || !tutorSection || !answerSection || !practiceTab || !tutorTab || !answerTab || !modeStatus) return;
 
-      const showingStudent = currentView === "student";
-      studentSection.style.display = showingStudent ? "block" : "none";
-      answerSection.style.display = showingStudent ? "none" : "block";
-      studentTab.classList.toggle("active", showingStudent);
-      answerTab.classList.toggle("active", !showingStudent);
+      const showingPractice = currentView === "practice";
+      const showingTutor = currentView === "tutor";
+      const showingAnswer = currentView === "answer";
+      practiceSection.style.display = showingPractice ? "block" : "none";
+      tutorSection.style.display = showingTutor ? "block" : "none";
+      answerSection.style.display = showingAnswer ? "block" : "none";
+      practiceTab.classList.toggle("active", showingPractice);
+      tutorTab.classList.toggle("active", showingTutor);
+      answerTab.classList.toggle("active", showingAnswer);
+      modeStatus.textContent = `Mode: ${showingTutor ? "Tutor Mode ON" : showingPractice ? "Practice Mode ON" : "Answer Key ON"}`;
     }
 
     function setActiveSubject(subject) {
@@ -758,15 +850,31 @@
         const questions = extractSection(rawText, "### QUESTIONS:", "### ANSWER KEY:");
         const answerKey = extractSection(rawText, "### ANSWER KEY:", "### PARENT HELP:");
         const parentHelp = extractSection(rawText, "### PARENT HELP:");
+        const tutorGuidance = buildTutorGuidance(questions, answerKey);
+        const progressCount = incrementDailyProgress();
 
         outputDiv.innerHTML = `
           <div class="worksheet">
-            <div id="student-section">
-              <h4 class="view-section-label">📘 Student Practice</h4>
+            <p class="mode-status" id="mode-status">Mode: Practice Mode ON</p>
+            <div class="progress-feel">
+              <strong>Skill:</strong> ${skill}<br>
+              <strong>Level:</strong> ${level}<br>
+              <strong>Progress:</strong> ${progressCount} Skill${progressCount === 1 ? "" : "s"} Completed Today ✔
+            </div>
+            <div id="practice-section">
+              <h4 class="view-section-label">👨‍🎓 Practice Mode</h4>
               <h3>📖 Passage</h3>
               ${formatSectionContent(passage)}
               <h3>❓ Questions</h3>
               ${formatSectionContent(questions)}
+            </div>
+            <div id="tutor-section" style="display: none;">
+              <h4 class="view-section-label">👨‍🏫 Tutor Mode</h4>
+              <p style="font-style: italic; color: #555;">Same content, plus hints and guided reasoning.</p>
+              <h3>📖 Passage</h3>
+              ${formatSectionContent(passage)}
+              <h3>🧠 Think Like This</h3>
+              ${tutorGuidance}
             </div>
             <div id="answer-section" style="display: none;">
               <h4 class="view-section-label">🧠 Teacher / Parent Answer Key</h4>
