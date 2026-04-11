@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>STAAR Success Generator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg: #f4f7fb;
@@ -31,12 +32,30 @@
       color: var(--text);
       line-height: 1.5;
       padding: 32px 16px 56px;
+      position: relative;
+      min-height: 100vh;
     }
 
-    .container {
+    .hero-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(4px);
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .app-container {
       width: 100%;
-      max-width: 920px;
-      margin: 0 auto;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 24px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .section {
+      margin-bottom: 20px;
     }
 
     .header {
@@ -173,24 +192,30 @@
       box-shadow: 0 4px 14px rgba(37, 99, 235, 0.14);
     }
 
+    .main-card {
+      background: white;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.08);
+      border: 1px solid #e2e8f0;
+    }
+
     .generate-btn {
       width: 100%;
-      border: none;
-      border-radius: 12px;
-      padding: 13px 16px;
-      background: linear-gradient(180deg, #2f6df2 0%, #2563eb 100%);
-      color: #fff;
-      font-size: 1rem;
+      padding: 14px;
+      font-size: 1.05rem;
       font-weight: 800;
-      letter-spacing: 0.01em;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: #fff;
+      border: none;
       cursor: pointer;
-      transition: transform 0.08s ease, background 0.2s ease, box-shadow 0.2s ease;
-      box-shadow: 0 10px 24px rgba(37, 99, 235, 0.28);
+      transition: all 0.2s ease;
     }
 
     .generate-btn:hover:not(:disabled) {
-      background: linear-gradient(180deg, #2a62d8 0%, #1d4ed8 100%);
       transform: translateY(-1px);
+      box-shadow: 0 10px 20px rgba(37,99,235,0.2);
     }
 
     .generate-btn:disabled {
@@ -302,10 +327,34 @@
       justify-content: space-between;
       gap: 10px;
       margin-bottom: 14px;
-      padding: 12px;
-      border: 1px solid #dbe3ee;
-      border-radius: 12px;
-      background: #f8fbff;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      padding: 14px;
+    }
+
+    .auth-box {
+      margin-bottom: 16px;
+    }
+
+    .auth-input {
+      padding: 10px;
+      width: 100%;
+      margin-bottom: 8px;
+      border: 1px solid #cfd8e3;
+      border-radius: 10px;
+      font: inherit;
+    }
+
+    .forgot-btn {
+      margin-top: 8px;
+      background: none;
+      border: none;
+      color: #2563eb;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: underline;
+      padding: 0;
     }
 
     .profile-meta {
@@ -477,15 +526,16 @@
   </style>
 </head>
 <body>
-  <div class="container">
+  <div class="hero-overlay" aria-hidden="true"></div>
+  <div class="app-container">
     <div id="upgrade-banner" class="upgrade-banner">🎉 You now have unlimited access!</div>
-    <header class="header">
+    <header class="header section">
       <h1>10-Minute Daily Practice That Feels Like Tutoring</h1>
       <p>Aligned to TEKS standards and STAAR expectations</p>
       <p>Ideal for parents, teachers, tutors, and homeschool educators</p>
     </header>
 
-    <section class="value-card" aria-label="Key benefits">
+    <section class="value-card section" aria-label="Key benefits">
       <ul class="value-list">
         <li><span>✅</span>Aligned to STAAR rigor</li>
         <li><span>💪</span>Builds confidence before test day</li>
@@ -493,7 +543,8 @@
       </ul>
     </section>
 
-    <section class="generator-card" aria-label="Worksheet generator settings">
+    <div class="main-card section">
+    <section class="generator-card section" aria-label="Worksheet generator settings">
       <div id="profile-section" class="profile-section">
         <div class="profile-meta">
           <p class="profile-email" id="logged-in-email">Logged in as: —</p>
@@ -537,9 +588,9 @@
         </div>
       </div>
 
-      <div id="auth-box" style="margin-bottom: 16px;">
-        <input id="email" type="email" autocomplete="email" placeholder="Enter email" style="padding:10px; width:100%; margin-bottom:8px;" />
-        <input id="password" type="password" autocomplete="current-password" placeholder="Enter password" style="padding:10px; width:100%; margin-bottom:8px;" />
+      <div id="auth-box" class="auth-box">
+        <input id="email" class="auth-input" type="email" autocomplete="email" placeholder="Enter email" />
+        <input id="password" class="auth-input" type="password" autocomplete="current-password" placeholder="Enter password" />
 
         <button onclick="signUp()" class="generate-btn" style="margin-bottom:6px;">
           Sign Up
@@ -548,7 +599,7 @@
         <button onclick="signIn()" class="generate-btn">
           Log In
         </button>
-        <button type="button" onclick="forgotPassword()" style="margin-top:8px; background:none; border:none; color:#2563eb; font-weight:700; cursor:pointer; text-decoration:underline; padding:0;">
+        <button type="button" onclick="forgotPassword()" class="forgot-btn">
           Forgot Password?
         </button>
         <div id="auth-feedback" style="display:none; margin-top:8px; padding:10px; border-radius:10px; font-weight:600;"></div>
@@ -561,7 +612,7 @@
       <p id="usage-status" style="margin-top:8px; color:#1e3a5f; font-weight:600;"></p>
     </section>
 
-    <section class="worksheet-card">
+    <section class="worksheet-card section">
       <div class="view-toggle" id="view-toggle" style="display: none;">
         <button id="practice-tab" class="view-toggle-btn active" type="button" onclick="toggleView('practice')">👨‍🎓 Practice Mode</button>
         <button id="tutor-tab" class="view-toggle-btn" type="button" onclick="toggleView('tutor')">👨‍🏫 Tutor Mode</button>
@@ -572,6 +623,7 @@
 
     <div class="print-row">
       <button class="print-btn" onclick="window.print()">Download / Print PDF</button>
+    </div>
     </div>
   </div>
 
@@ -982,13 +1034,11 @@
     }
 
     async function logout() {
-      const logoutConfirmed = window.confirm("Are you sure you want to log out?");
-      if (!logoutConfirmed) return;
-
       const logoutBtn = document.getElementById("logout-btn");
       const originalLabel = logoutBtn.textContent;
       logoutBtn.disabled = true;
       logoutBtn.textContent = "Logging out...";
+      showAuthFeedback("Logging you out…", "info");
 
       try {
         const { error } = await supabase.auth.signOut();
@@ -999,7 +1049,7 @@
         stopProfileUpdatesSubscription();
         setAppAuthenticatedState(false);
         resetProtectedUI();
-        showAuthFeedback("You have been logged out.", "success");
+        window.location.href = "/";
       } catch {
         showAuthFeedback("Could not log out right now. Please try again.", "error");
       } finally {
@@ -1222,7 +1272,10 @@
     supabase.auth.onAuthStateChange(async (event) => {
       if (event === "SIGNED_OUT") {
         stopProfileUpdatesSubscription();
+        setAppAuthenticatedState(false);
         resetProtectedUI();
+        window.location.href = "/";
+        return;
       }
       const currentUser = await requireAuth({ showPrompt: false });
       if (currentUser) {
