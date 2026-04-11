@@ -58,7 +58,7 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-    const { grade, subject, skill, level } = await req.json();
+    const { grade, subject, skill, level, tutorMode = false } = await req.json();
 
     const prompt = `
 You are a Texas STAAR assessment expert.
@@ -116,6 +116,16 @@ OUTPUT FORMAT (USE THESE HEADERS EXACTLY):
 
 ### PARENT HELP:
 - Give 3-5 short coaching tips parents can use right away based on common errors in this set.
+
+TUTOR MODE UPGRADE (APPLY ONLY IF tutorMode = true):
+${tutorMode ? `- Add a section titled "### TUTOR MODE:"
+- For EACH question include:
+  - Hint: Reference exact words/phrases from the passage or context. Avoid generic hints.
+  - Think like this: 1-2 short coaching lines that model real student thinking using evidence from THIS passage/context.
+  - Correct Answer: Include answer choice and short label when possible (example: C) Excited).
+  - Why: 1-2 concise sentences that quote or paraphrase the strongest textual/math/science evidence.
+- Keep tone like a live tutor guiding one child through one exact question.` : `- tutorMode is false. Do not include a TUTOR MODE section.`}
+
 `;
 
     const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY");
