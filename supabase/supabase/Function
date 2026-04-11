@@ -51,7 +51,7 @@ serve(async (req) => {
     });
   }
 
-  if (profile.plan !== "paid" && profile.generations_used >= 2) {
+  if (profile.plan !== "paid" && profile.generations_used >= 5) {
     return new Response(JSON.stringify({ error: "Free limit reached" }), {
       status: 403,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

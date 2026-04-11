@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reset Password | STAAR Success Generator</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --text: #1b2430;
+      --primary: #2563eb;
+      --border: #dbe3ee;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 460px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: 0 14px 36px rgba(16, 24, 40, 0.08);
+      padding: 22px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.5rem;
+    }
+
+    p {
+      margin: 0 0 16px;
+      color: #4b5563;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    input {
+      border: 1px solid #cfd8e3;
+      border-radius: 10px;
+      padding: 11px;
+      font-size: 1rem;
+    }
+
+    button {
+      width: 100%;
+      border: none;
+      border-radius: 10px;
+      padding: 12px;
+      background: var(--primary);
+      color: #fff;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+
+    .message {
+      display: none;
+      margin-top: 12px;
+      padding: 10px;
+      border-radius: 10px;
+      font-weight: 600;
+    }
+
+    .message.error {
+      display: block;
+      background: #fff1f2;
+      border: 1px solid #fecdd3;
+      color: #9f1239;
+    }
+
+    .message.success {
+      display: block;
+      background: #ecfdf3;
+      border: 1px solid #bbf7d0;
+      color: #166534;
+    }
+
+    .back-link {
+      display: inline-block;
+      margin-top: 14px;
+      color: #1d4ed8;
+      text-decoration: none;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Reset your password</h1>
+    <p id="subtitle">Open your reset link from email to continue.</p>
+
+    <form id="reset-form" style="display:none;">
+      <div class="field">
+        <label for="new-password">New password</label>
+        <input id="new-password" type="password" autocomplete="new-password" placeholder="Enter new password" required />
+      </div>
+
+      <div class="field">
+        <label for="confirm-password">Confirm new password</label>
+        <input id="confirm-password" type="password" autocomplete="new-password" placeholder="Confirm new password" required />
+      </div>
+
+      <button id="update-btn" type="submit">Update Password</button>
+    </form>
+
+    <div id="message" class="message"></div>
+    <a class="back-link" href="/">← Back to login</a>
+  </main>
+
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+    const SUPABASE_URL = "https://qadfehickkkvirtcnska.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFhZGZlaGlja2trdmlydGNuc2thIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NTQ0NTcsImV4cCI6MjA5MTIzMDQ1N30.G9YhkEije7yI7rCC2nFfZ5j1btUUIci81VZhLQ48JJ4";
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const resetForm = document.getElementById("reset-form");
+    const subtitle = document.getElementById("subtitle");
+    const message = document.getElementById("message");
+    const updateBtn = document.getElementById("update-btn");
+
+    function showMessage(text, type) {
+      message.textContent = text;
+      message.className = `message ${type}`;
+    }
+
+    function showResetForm() {
+      resetForm.style.display = "block";
+      subtitle.textContent = "Enter your new password below.";
+    }
+
+    async function initializeRecoveryState() {
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
+
+      if (session) {
+        showResetForm();
+      }
+    }
+
+    supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
+        showResetForm();
+        showMessage("Recovery session verified. Set your new password.", "success");
+      }
+    });
+
+    resetForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const newPassword = document.getElementById("new-password").value;
+      const confirmPassword = document.getElementById("confirm-password").value;
+
+      if (newPassword.length < 6) {
+        showMessage("Password must be at least 6 characters.", "error");
+        return;
+      }
+
+      if (newPassword !== confirmPassword) {
+        showMessage("Passwords do not match.", "error");
+        return;
+      }
+
+      updateBtn.disabled = true;
+      updateBtn.textContent = "Updating...";
+
+      try {
+        const { error } = await supabase.auth.updateUser({
+          password: newPassword
+        });
+
+        if (error) {
+          showMessage("Could not update password. Please request a new reset link.", "error");
+          return;
+        }
+
+        showMessage("Password updated successfully. You can now log in.", "success");
+        resetForm.reset();
+      } catch {
+        showMessage("Could not update password. Please request a new reset link.", "error");
+      } finally {
+        updateBtn.disabled = false;
+        updateBtn.textContent = "Update Password";
+      }
+    });
+
+    initializeRecoveryState();
+  </script>
+</body>
+</html>

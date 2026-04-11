@@ -296,6 +296,75 @@
       background: #f4f8ff;
     }
 
+    .profile-section {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding: 12px;
+      border: 1px solid #dbe3ee;
+      border-radius: 12px;
+      background: #f8fbff;
+    }
+
+    .profile-meta {
+      min-width: 0;
+    }
+
+    .profile-email {
+      margin: 0;
+      font-weight: 700;
+      color: #1e3350;
+      font-size: 0.95rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .profile-plan {
+      margin: 4px 0 0;
+      color: #4b5f7a;
+      font-size: 0.86rem;
+      font-weight: 600;
+    }
+
+    .upgrade-banner {
+      display: none;
+      background: linear-gradient(90deg, #22c55e, #16a34a);
+      color: #fff;
+      padding: 12px;
+      text-align: center;
+      font-weight: 800;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      animation: fadeIn 0.4s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .logout-btn {
+      border: 1px solid #b9c9df;
+      background: #fff;
+      color: #1e3a5f;
+      padding: 8px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .logout-btn:hover:not(:disabled) {
+      background: #f4f8ff;
+    }
+
+    .logout-btn:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+
     .view-toggle {
       display: flex;
       gap: 8px;
@@ -409,6 +478,7 @@
 </head>
 <body>
   <div class="container">
+    <div id="upgrade-banner" class="upgrade-banner">🎉 You now have unlimited access!</div>
     <header class="header">
       <h1>10-Minute Daily Practice That Feels Like Tutoring</h1>
       <p>Aligned to TEKS standards and STAAR expectations</p>
@@ -424,6 +494,15 @@
     </section>
 
     <section class="generator-card" aria-label="Worksheet generator settings">
+      <div id="profile-section" class="profile-section">
+        <div class="profile-meta">
+          <p class="profile-email" id="logged-in-email">Logged in as: —</p>
+          <p class="profile-plan" id="profile-plan">Plan: Free</p>
+        </div>
+        <button id="logout-btn" class="logout-btn" type="button" onclick="logout()">
+          Log Out
+        </button>
+      </div>
       <div class="form-grid">
         <div class="field">
           <label for="grade">Grade</label>
@@ -469,9 +548,17 @@
         <button onclick="signIn()" class="generate-btn">
           Log In
         </button>
+        <button type="button" onclick="forgotPassword()" style="margin-top:8px; background:none; border:none; color:#2563eb; font-weight:700; cursor:pointer; text-decoration:underline; padding:0;">
+          Forgot Password?
+        </button>
+        <div id="auth-feedback" style="display:none; margin-top:8px; padding:10px; border-radius:10px; font-weight:600;"></div>
       </div>
 
       <button id="generate-btn" class="generate-btn" onclick="generate()">Generate STAAR Pack</button>
+      <p id="auth-required-note" style="display:none; margin-top:10px; color:#7a2e00; font-weight:600;">
+        Please sign up or log in to generate a STAAR pack.
+      </p>
+      <p id="usage-status" style="margin-top:8px; color:#1e3a5f; font-weight:600;"></p>
     </section>
 
     <section class="worksheet-card">
@@ -494,6 +581,7 @@
     const SUPABASE_URL = "https://qadfehickkkvirtcnska.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFhZGZlaGlja2trdmlydGNuc2thIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NTQ0NTcsImV4cCI6MjA5MTIzMDQ1N30.G9YhkEije7yI7rCC2nFfZ5j1btUUIci81VZhLQ48JJ4";
     const GUMROAD_URL = "https://garyverse68.gumroad.com/l/uvqtl";
+    const FREE_PLAN_LIMIT = 5;
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -535,6 +623,175 @@
       "Social Studies": "🌎 Social Studies"
     };
     let currentView = "practice";
+    let profileUpdatesChannel = null;
+    let profileUpdatesUserId = null;
+    let bannerTimeoutId = null;
+
+    function showUpgradeBanner() {
+      const banner = document.getElementById("upgrade-banner");
+      banner.style.display = "block";
+      if (bannerTimeoutId) {
+        clearTimeout(bannerTimeoutId);
+      }
+      bannerTimeoutId = setTimeout(() => {
+        banner.style.display = "none";
+      }, 5000);
+    }
+
+    function handleProfileUpdate(profile, previousProfile = null) {
+      const previousPlan = previousProfile?.plan ?? null;
+      const nextPlan = profile?.plan ?? null;
+      const isUpgrade = previousPlan !== "paid" && nextPlan === "paid";
+
+      updateProfileSection({ email: profile?.email }, profile);
+      renderUsageStatus(profile);
+
+      if (isUpgrade) {
+        showUpgradeBanner();
+      }
+    }
+
+    function stopProfileUpdatesSubscription() {
+      if (!profileUpdatesChannel) return;
+      supabase.removeChannel(profileUpdatesChannel);
+      profileUpdatesChannel = null;
+      profileUpdatesUserId = null;
+    }
+
+    function startProfileUpdatesSubscription(userId) {
+      if (!userId) return;
+      if (profileUpdatesChannel && profileUpdatesUserId === userId) return;
+      stopProfileUpdatesSubscription();
+
+      profileUpdatesUserId = userId;
+      profileUpdatesChannel = supabase
+        .channel("profile-updates")
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "profiles"
+          },
+          (payload) => {
+            if (payload?.new?.id !== profileUpdatesUserId) return;
+            handleProfileUpdate(payload.new, payload.old);
+          }
+        )
+        .subscribe();
+    }
+
+    function showAuthFeedback(message, type = "info") {
+      const feedback = document.getElementById("auth-feedback");
+      if (!feedback) return;
+      feedback.style.display = message ? "block" : "none";
+      feedback.textContent = message || "";
+      if (type === "error") {
+        feedback.style.background = "#fff1f2";
+        feedback.style.border = "1px solid #fecdd3";
+        feedback.style.color = "#9f1239";
+      } else if (type === "success") {
+        feedback.style.background = "#ecfdf3";
+        feedback.style.border = "1px solid #bbf7d0";
+        feedback.style.color = "#166534";
+      } else {
+        feedback.style.background = "#eff6ff";
+        feedback.style.border = "1px solid #bfdbfe";
+        feedback.style.color = "#1e3a8a";
+      }
+    }
+
+    function setAppAuthenticatedState(isAuthenticated) {
+      const authBox = document.getElementById("auth-box");
+      const generateBtn = document.getElementById("generate-btn");
+      const authRequiredNote = document.getElementById("auth-required-note");
+      const profileSection = document.getElementById("profile-section");
+
+      authBox.style.display = isAuthenticated ? "none" : "block";
+      generateBtn.disabled = !isAuthenticated;
+      authRequiredNote.style.display = isAuthenticated ? "none" : "block";
+      profileSection.style.display = isAuthenticated ? "flex" : "none";
+    }
+
+    function updateProfileSection(user, profile = null) {
+      const emailLabel = document.getElementById("logged-in-email");
+      const profilePlan = document.getElementById("profile-plan");
+
+      emailLabel.textContent = `Logged in as: ${user?.email || "Unknown user"}`;
+      profilePlan.textContent = profile?.plan === "paid" ? "Plan: Paid (Unlimited)" : "Plan: Free";
+    }
+
+    function resetProtectedUI() {
+      const outputDiv = document.getElementById("output");
+      const viewToggle = document.getElementById("view-toggle");
+      const usageStatus = document.getElementById("usage-status");
+      const emailLabel = document.getElementById("logged-in-email");
+      const profilePlan = document.getElementById("profile-plan");
+      const banner = document.getElementById("upgrade-banner");
+      outputDiv.innerText = "Your STAAR practice will appear here...";
+      viewToggle.style.display = "none";
+      usageStatus.textContent = "";
+      emailLabel.textContent = "Logged in as: —";
+      profilePlan.textContent = "Plan: Free";
+      banner.style.display = "none";
+    }
+
+    function renderUsageStatus(profile) {
+      const usageStatus = document.getElementById("usage-status");
+      const plan = profile?.plan || "free";
+      const used = Number(profile?.generations_used || 0);
+
+      if (plan === "paid") {
+        usageStatus.textContent = "Plan: Paid (Unlimited generations)";
+        return;
+      }
+
+      const remaining = Math.max(0, FREE_PLAN_LIMIT - used);
+      usageStatus.textContent = `Plan: Free (${used}/${FREE_PLAN_LIMIT} used, ${remaining} remaining)`;
+    }
+
+    async function refreshUsageStatus(userId) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("plan, generations_used, email")
+        .eq("id", userId)
+        .single();
+
+      if (profile) {
+        updateProfileSection({ email: profile.email }, profile);
+        renderUsageStatus(profile);
+      }
+    }
+
+    async function requireAuth({ showPrompt = true } = {}) {
+      try {
+        const {
+          data: { user },
+          error
+        } = await supabase.auth.getUser();
+
+        if (error || !user) {
+          setAppAuthenticatedState(false);
+          stopProfileUpdatesSubscription();
+          if (showPrompt) {
+            showAuthFeedback("Please log in to continue.", "info");
+          }
+          return null;
+        }
+
+        setAppAuthenticatedState(true);
+        updateProfileSection(user);
+        startProfileUpdatesSubscription(user.id);
+        return user;
+      } catch {
+        setAppAuthenticatedState(false);
+        stopProfileUpdatesSubscription();
+        if (showPrompt) {
+          showAuthFeedback("Could not verify your login. Please sign in again.", "error");
+        }
+        return null;
+      }
+    }
 
     function extractSection(text, marker, nextMarker) {
       const markerIndex = text.indexOf(marker);
@@ -664,57 +921,113 @@
     }
 
     async function signUp() {
-      const email = document.getElementById("email").value;
-      const password = document.getElementById("password").value;
+      try {
+        const email = document.getElementById("email").value.trim().toLowerCase();
+        const password = document.getElementById("password").value;
 
-      const { error } = await supabase.auth.signUp({
-        email,
-        password
-      });
+        if (!email || !password) {
+          showAuthFeedback("Please enter both email and password.", "error");
+          return;
+        }
 
-      if (error) {
-        alert(error.message);
-        return;
-      }
+        if (password.length < 6) {
+          showAuthFeedback("Password must be at least 6 characters.", "error");
+          return;
+        }
 
-      // Auto-login immediately after signup
-      const { error: loginError } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${window.location.origin}${window.location.pathname}`
+          }
+        });
 
-      if (loginError) {
-        alert(loginError.message);
-      } else {
-        alert("Account created!");
-        location.reload();
+        if (error) {
+          showAuthFeedback("Signup failed. Please check your details and try again.", "error");
+          return;
+        }
+
+        if (data.session) {
+          showAuthFeedback("Account created! You are now logged in.", "success");
+          await requireAuth({ showPrompt: false });
+          return;
+        }
+
+        showAuthFeedback("Account created. You can log in now.", "success");
+      } catch {
+        showAuthFeedback("Signup failed. Please try again in a moment.", "error");
       }
     }
 
     async function signIn() {
-      const email = document.getElementById("email").value;
-      const password = document.getElementById("password").value;
+      try {
+        const email = document.getElementById("email").value.trim().toLowerCase();
+        const password = document.getElementById("password").value;
 
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
 
-      if (error) {
-        alert(error.message);
-      } else {
-        alert("Logged in successfully!");
-        location.reload();
+        if (error) {
+          showAuthFeedback("Login failed. Check your email/password and try again.", "error");
+        } else {
+          showAuthFeedback("Logged in successfully!", "success");
+          await requireAuth({ showPrompt: false });
+        }
+      } catch {
+        showAuthFeedback("Login failed. Please try again in a moment.", "error");
       }
     }
 
-    async function updateAuthBoxVisibility() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+    async function logout() {
+      const logoutConfirmed = window.confirm("Are you sure you want to log out?");
+      if (!logoutConfirmed) return;
 
-      if (session) {
-        document.getElementById("auth-box").style.display = "none";
+      const logoutBtn = document.getElementById("logout-btn");
+      const originalLabel = logoutBtn.textContent;
+      logoutBtn.disabled = true;
+      logoutBtn.textContent = "Logging out...";
+
+      try {
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+          showAuthFeedback("Could not log out right now. Please try again.", "error");
+          return;
+        }
+        stopProfileUpdatesSubscription();
+        setAppAuthenticatedState(false);
+        resetProtectedUI();
+        showAuthFeedback("You have been logged out.", "success");
+      } catch {
+        showAuthFeedback("Could not log out right now. Please try again.", "error");
+      } finally {
+        logoutBtn.disabled = false;
+        logoutBtn.textContent = originalLabel;
+      }
+    }
+
+    async function forgotPassword() {
+      const email = document.getElementById("email").value.trim().toLowerCase();
+      if (!email) {
+        showAuthFeedback("Enter your email first, then tap Forgot Password.", "error");
+        return;
+      }
+
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/reset-password`
+        });
+
+        if (error) {
+          showAuthFeedback("We couldn't send a reset email right now. Please try again.", "error");
+          return;
+        }
+
+        showAuthFeedback("Check your email for a reset link.", "success");
+      } catch {
+        showAuthFeedback("We couldn't send a reset email right now. Please try again.", "error");
       }
     }
 
@@ -724,14 +1037,11 @@
       const viewToggle = document.getElementById("view-toggle");
       viewToggle.style.display = "none";
 
-      const {
-        data: { session }
-      } = await supabase.auth.getSession();
-
-      if (!session) {
+      const user = await requireAuth();
+      if (!user) {
         outputDiv.innerHTML = `
           <div class="locked">
-            <strong>Please log in first</strong>
+            <strong>Please log in to generate a STAAR pack</strong>
           </div>
         `;
         return;
@@ -740,7 +1050,7 @@
       const { data: profile } = await supabase
         .from("profiles")
         .select("plan, generations_used")
-        .eq("id", session.user.id)
+        .eq("id", user.id)
         .single();
 
       if (!profile) {
@@ -748,22 +1058,16 @@
         return;
       }
 
-      if (profile.plan !== "paid" && profile.generations_used >= 2) {
+      renderUsageStatus(profile);
+
+      const currentGenerations = Number(profile.generations_used || 0);
+      if (profile.plan !== "paid" && currentGenerations >= FREE_PLAN_LIMIT) {
         outputDiv.innerHTML = `
           <div class="locked">
-            <strong>You’ve used your 2 free STAAR packs</strong>
-            Most parents see improvement in just 10 minutes a day.
-
-            <br><br>
-
+            <strong>You've reached your free limit. Upgrade to continue.</strong>
             <a href="${GUMROAD_URL}" class="unlock-btn" target="_blank" rel="noopener noreferrer">
               Unlock Full Access for $12
             </a>
-
-            <br><br>
-            <span style="font-size: 0.9rem; color: #555;">
-              Already purchased? Log back in with your email to unlock instantly.
-            </span>
           </div>
         `;
         return;
@@ -782,9 +1086,7 @@
         const {
           data: { session }
         } = await supabase.auth.getSession();
-
-        // 🔥 HARD STOP if no session
-        if (!session || !session.access_token) {
+        if (!session?.access_token) {
           outputDiv.innerHTML = `
             <div class="locked">
               <strong>Your session expired</strong>
@@ -793,8 +1095,6 @@
           `;
           return;
         }
-
-        console.log("SESSION:", session);
 
         const res = await fetch(
           "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
@@ -817,11 +1117,7 @@
         if (res.status === 403) {
           outputDiv.innerHTML = `
             <div class="locked">
-              <strong>You’ve used your 2 free STAAR packs</strong>
-              Most parents see improvement in just 10 minutes a day.
-
-              <br><br>
-
+              <strong>You've reached your free limit. Upgrade to continue.</strong>
               <a href="${GUMROAD_URL}" class="unlock-btn" target="_blank">
                 Unlock Full Access for $12
               </a>
@@ -841,11 +1137,24 @@
         }
 
         if (!res.ok) {
-          outputDiv.innerText = "Error: " + text;
+          outputDiv.innerText = "We couldn't generate your pack right now. Please try again.";
           return;
         }
 
         const rawText = data.text || "";
+        if (profile.plan !== "paid") {
+          const nextGenerationsUsed = currentGenerations + 1;
+          const { error: usageUpdateError } = await supabase
+            .from("profiles")
+            .update({ generations_used: nextGenerationsUsed })
+            .eq("id", user.id);
+
+          if (!usageUpdateError) {
+            profile.generations_used = nextGenerationsUsed;
+            renderUsageStatus(profile);
+          }
+        }
+
         const passage = extractSection(rawText, "### PASSAGE OR CONTEXT:", "### QUESTIONS:");
         const questions = extractSection(rawText, "### QUESTIONS:", "### ANSWER KEY:");
         const answerKey = extractSection(rawText, "### ANSWER KEY:", "### PARENT HELP:");
@@ -890,7 +1199,7 @@
         viewToggle.style.display = "flex";
         toggleView(currentView);
       } catch (err) {
-        outputDiv.innerText = "Error: " + err.message;
+        outputDiv.innerText = "Something went wrong while generating your pack. Please try again.";
       } finally {
         generateBtn.disabled = false;
         generateBtn.textContent = "Generate STAAR Pack";
@@ -901,8 +1210,25 @@
     window.generate = generate;
     window.signUp = signUp;
     window.signIn = signIn;
+    window.logout = logout;
+    window.forgotPassword = forgotPassword;
     populateSubjectButtons();
-    updateAuthBoxVisibility();
+    setAppAuthenticatedState(false);
+    const initialUser = await requireAuth({ showPrompt: false });
+    if (initialUser) {
+      refreshUsageStatus(initialUser.id);
+    }
+
+    supabase.auth.onAuthStateChange(async (event) => {
+      if (event === "SIGNED_OUT") {
+        stopProfileUpdatesSubscription();
+        resetProtectedUI();
+      }
+      const currentUser = await requireAuth({ showPrompt: false });
+      if (currentUser) {
+        refreshUsageStatus(currentUser.id);
+      }
+    });
   </script>
 </body>
 </html>
