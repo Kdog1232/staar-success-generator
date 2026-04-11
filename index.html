@@ -7,11 +7,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #f4f7fb;
+      --bg: #f8fafc;
       --card: #ffffff;
-      --text: #1b2430;
+      --text: #1e293b;
       --muted: #5f6b7a;
       --primary: #2563eb;
+      --accent: #16a34a;
       --primary-hover: #1d4ed8;
       --border: #dbe3ee;
       --shadow: 0 14px 36px rgba(16, 24, 40, 0.08);
@@ -24,34 +25,22 @@
 
     body {
       margin: 0;
-      font-family: "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-family: "Inter", sans-serif;
       background:
-        radial-gradient(circle at 15% 10%, #eef3ff 0%, rgba(238, 243, 255, 0) 40%),
-        radial-gradient(circle at 85% 20%, #f2f8ff 0%, rgba(242, 248, 255, 0) 35%),
-        var(--bg);
+        linear-gradient(180deg, rgba(248,250,252,0.92), rgba(241,245,249,0.95)),
+        url('/background.jpg') no-repeat center center fixed;
+      background-size: cover;
       color: var(--text);
       line-height: 1.5;
       padding: 32px 16px 56px;
-      position: relative;
       min-height: 100vh;
-    }
-
-    .hero-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(255, 255, 255, 0.85);
-      backdrop-filter: blur(4px);
-      z-index: 0;
-      pointer-events: none;
     }
 
     .app-container {
       width: 100%;
       max-width: 900px;
-      margin: 40px auto;
+      margin: 80px auto;
       padding: 24px;
-      position: relative;
-      z-index: 1;
     }
 
     .section {
@@ -194,9 +183,11 @@
 
     .main-card {
       background: white;
-      border-radius: 16px;
-      padding: 24px;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.08);
+      border-radius: 18px;
+      padding: 28px;
+      box-shadow:
+        0 10px 30px rgba(0,0,0,0.05),
+        0 20px 60px rgba(0,0,0,0.08);
       border: 1px solid #e2e8f0;
     }
 
@@ -215,7 +206,7 @@
 
     .generate-btn:hover:not(:disabled) {
       transform: translateY(-1px);
-      box-shadow: 0 10px 20px rgba(37,99,235,0.2);
+      box-shadow: 0 10px 20px rgba(37,99,235,0.25);
     }
 
     .generate-btn:disabled {
@@ -330,7 +321,7 @@
       background: #f1f5f9;
       border: 1px solid #e2e8f0;
       border-radius: 14px;
-      padding: 14px;
+      padding: 16px;
     }
 
     .auth-box {
@@ -396,17 +387,17 @@
     }
 
     .logout-btn {
-      border: 1px solid #b9c9df;
-      background: #fff;
-      color: #1e3a5f;
-      padding: 8px 12px;
+      background: #eef2ff;
+      color: #1d4ed8;
+      border: none;
+      padding: 8px 14px;
       border-radius: 10px;
       cursor: pointer;
       font-weight: 700;
     }
 
     .logout-btn:hover:not(:disabled) {
-      background: #f4f8ff;
+      background: #dbeafe;
     }
 
     .logout-btn:disabled {
@@ -526,7 +517,6 @@
   </style>
 </head>
 <body>
-  <div class="hero-overlay" aria-hidden="true"></div>
   <div class="app-container">
     <div id="upgrade-banner" class="upgrade-banner">🎉 You now have unlimited access!</div>
     <header class="header section">
@@ -678,6 +668,15 @@
     let profileUpdatesChannel = null;
     let profileUpdatesUserId = null;
     let bannerTimeoutId = null;
+    let isRedirectingToLogin = false;
+
+    function redirectToLogin() {
+      if (isRedirectingToLogin) return;
+      isRedirectingToLogin = true;
+      setTimeout(() => {
+        window.location.replace("/");
+      }, 300);
+    }
 
     function showUpgradeBanner() {
       const banner = document.getElementById("upgrade-banner");
@@ -1049,7 +1048,7 @@
         stopProfileUpdatesSubscription();
         setAppAuthenticatedState(false);
         resetProtectedUI();
-        window.location.href = "/";
+        redirectToLogin();
       } catch {
         showAuthFeedback("Could not log out right now. Please try again.", "error");
       } finally {
@@ -1274,7 +1273,7 @@
         stopProfileUpdatesSubscription();
         setAppAuthenticatedState(false);
         resetProtectedUI();
-        window.location.href = "/";
+        redirectToLogin();
         return;
       }
       const currentUser = await requireAuth({ showPrompt: false });
