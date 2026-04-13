@@ -1545,12 +1545,14 @@
           outputDiv.innerHTML = "Adding explanations... 🧠";
         }, 2400));
         viewToggle.style.display = "none";
+const user = await requireAuth();
 
-        const user = await requireAuth();
-        if (!user) {
-          throw new Error("User not authenticated");
-        }
-        await checkAndUpgradeUser(user);
+if (!user) {
+  outputDiv.innerHTML = "Please log in to continue.";
+  return;
+}
+
+await checkAndUpgradeUser(user);
 
         const { data: profile } = await supabase
           .from("profiles")
