@@ -907,7 +907,6 @@
         .update({
           plan: "paid",
           generations_used: 0,
-          upgraded_via: "gumroad_manual",
           upgraded_at: new Date().toISOString()
         })
         .eq("id", profile.id);
@@ -1481,11 +1480,6 @@
 
         const data = await res.json();
 
-        if (!data || !data.standard || !data.cross) {
-          console.error("❌ INVALID RESPONSE FORMAT:", data);
-          throw new Error("No content returned from server");
-        }
-
         if (!res.ok) {
           throw new Error("Generation request failed");
         }
@@ -1503,8 +1497,14 @@
           }
         }
 
-        standardContent = data.standard || "";
+        standardContent = data.standard || data.text || "";
         crossContent = data.cross || "";
+
+        if (!standardContent && !crossContent) {
+          console.error("❌ INVALID RESPONSE FORMAT:", data);
+          outputDiv.innerText = "No questions generated. Try again.";
+          return;
+        }
         lastGeneratedContentMode = "both";
         const progressCount = incrementDailyProgress();
 
