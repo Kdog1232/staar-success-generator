@@ -122,19 +122,27 @@ Use this schema:
       "choices": ["A", "B", "C", "D"],
       "correct_answer": "A",
       "explanation": "string",
-      "skill": "string",
-      "level": "Below | On | Above"
+      "hint": "string",
+      "think": "string",
+      "step_by_step": "string",
+      "common_mistake": "string",
+      "parent_tip": "string"
     }
   ]
 }
 
 Rules:
 - Exactly 5 questions
-- Each question must be STAAR-style
-- Include 4 answer choices
+- Each question must include ALL fields in the schema
+- Each question must be STAAR-style and match requested skill/level
+- Include exactly 4 answer choices
 - Correct answer must match one of the choices
 - Explanation must explain WHY the answer is correct
-- Skill must match the requested skill
+- Hint must be simple and student-friendly
+- Think must be a guiding question
+- Step_by_step must be clear and concise (1-3 steps)
+- Common_mistake must be realistic
+- Parent_tip must be helpful and actionable
 - No extra text outside JSON
 `;
 
@@ -191,8 +199,22 @@ Rules:
       })
       .eq("id", user.id);
 
+    const normalizedQuestions = Array.isArray(parsed.questions)
+      ? parsed.questions.map((q: Record<string, unknown>) => ({
+        question: String(q.question ?? ""),
+        choices: Array.isArray(q.choices) ? q.choices.slice(0, 4).map((choice) => String(choice)) : [],
+        correct_answer: String(q.correct_answer ?? ""),
+        explanation: String(q.explanation ?? ""),
+        hint: String(q.hint ?? ""),
+        think: String(q.think ?? ""),
+        step_by_step: String(q.step_by_step ?? ""),
+        common_mistake: String(q.common_mistake ?? ""),
+        parent_tip: String(q.parent_tip ?? ""),
+      }))
+      : [];
+
     return new Response(JSON.stringify({
-      questions: parsed.questions || [],
+      questions: normalizedQuestions,
       fallback: parsed.fallback || ""
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
