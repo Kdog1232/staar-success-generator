@@ -1081,6 +1081,10 @@
       structuredQuestions = [];
     }
 
+    function showFallbackUI() {
+      return `<div class="question-block">No structured questions available yet. Try generating again.</div>`;
+    }
+
     function getTodayKey() {
       const now = new Date();
       return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
@@ -1151,9 +1155,6 @@
       ], ["### QUESTIONS:", "### QUESTION SET:"]);
 
       const questions = extractSection(content, ["### QUESTIONS:", "### QUESTION SET:"], ["### ANSWER KEY:", "### ANSWER KEY", "### ANSWERS:", "### ANSWERS"]);
-      const answerKey = extractSection(content, ["### ANSWER KEY:", "### ANSWER KEY", "### ANSWERS:", "### ANSWERS"], ["### PARENT HELP:", "### PARENT SUPPORT:", "### FAMILY HELP:"]);
-      const parentHelp = extractSection(content, ["### PARENT HELP:", "### PARENT SUPPORT:", "### FAMILY HELP:"]);
-      const tutorGuidance = buildTutorGuidance(questions, answerKey);
       const subject = document.getElementById("subject").value || "";
       const selectedSubject = subject.toLowerCase();
       const isReadingSubject = selectedSubject === "reading" || selectedSubject === "elar";
@@ -1191,19 +1192,42 @@
 
       tutorSection.innerHTML = `
         <h4 class="view-section-label">👨‍🏫 Tutor Mode</h4>
-        <p style="font-style: italic; color: #555;">Same content, plus hints and guided reasoning.</p>
+        <p style="font-style: italic; color: #555;">
+          Same content, plus hints and guided reasoning.
+        </p>
         <h3>🧠 Think Like This</h3>
-        ${tutorGuidance}
+        ${
+          structuredQuestions.map((q, i) => `
+            <div class="question-card">
+              <strong>Q${i + 1}:</strong> ${q.question}<br><br>
+              <em>Hint:</em> Look for evidence in the passage.<br>
+              <em>Think:</em> Why is "${q.correct_answer}" correct?<br>
+              <em>Explanation:</em> ${q.explanation}
+            </div>
+          `).join("")
+        }
       `;
 
       answerSection.innerHTML = `
         <h4 class="view-section-label">🧠 Teacher / Parent Answer Key</h4>
-        <p style="font-style: italic; color: #555;">Review answers after your child completes the practice.</p>
+        <p style="font-style: italic; color: #555;">
+          Review answers after your child completes the practice.
+        </p>
         <h3>✅ Answer Key</h3>
-        ${formatAnswerKey(cleanText(answerKey))}
-        <h3>👨‍👩‍👧 Parent Help</h3>
-        <div class="question-block">${formatSectionContent(cleanText(parentHelp))}</div>
+        ${
+          structuredQuestions.map((q, i) => `
+            <div class="question-card">
+              <strong>Q${i + 1}:</strong> ${q.correct_answer}<br>
+              <strong>Explanation:</strong> ${q.explanation}
+            </div>
+          `).join("")
+        }
       `;
+
+      if (!structuredQuestions.length) {
+        tutorSection.innerHTML = showFallbackUI();
+        answerSection.innerHTML = showFallbackUI();
+      }
 
       const showingPractice = activeTab === "practice";
       const showingCross = activeTab === "cross";
