@@ -885,12 +885,29 @@
       }
     }
 
-    function extractSection(text, marker, nextMarker) {
-      const markerIndex = text.indexOf(marker);
-      if (markerIndex === -1) return "";
+    function findFirstMarkerIndex(text, markers, fromIndex = 0) {
+      const variants = (Array.isArray(markers) ? markers : [markers]).filter(Boolean);
+      let foundIndex = -1;
+      let foundMarker = "";
 
-      const startIndex = markerIndex + marker.length;
-      const endIndex = nextMarker ? text.indexOf(nextMarker, startIndex) : -1;
+      for (const marker of variants) {
+        const index = text.indexOf(marker, fromIndex);
+        if (index !== -1 && (foundIndex === -1 || index < foundIndex)) {
+          foundIndex = index;
+          foundMarker = marker;
+        }
+      }
+
+      return { index: foundIndex, marker: foundMarker };
+    }
+
+    function extractSection(text, marker, nextMarker) {
+      const startMatch = findFirstMarkerIndex(text, marker);
+      if (startMatch.index === -1) return "";
+
+      const startIndex = startMatch.index + startMatch.marker.length;
+      const nextMatch = nextMarker ? findFirstMarkerIndex(text, nextMarker, startIndex) : { index: -1 };
+      const endIndex = nextMatch.index;
       const section = endIndex === -1 ? text.slice(startIndex) : text.slice(startIndex, endIndex);
       return section.trim();
     }
@@ -1270,27 +1287,63 @@
           }
         }
 
-        const outputEl = document.getElementById("output");
+        const rawText = data.text || "";
+        const passage = extractSection(
+          rawText,
+          ["### PASSAGE OR CONTEXT:", "### PASSAGE:", "### CONTEXT:"],
+          ["### QUESTIONS:", "### QUESTION SET:"]
+        );
+        const questions = extractSection(
+          rawText,
+          ["### QUESTIONS:", "### QUESTION SET:"],
+          ["### ANSWER KEY:", "### ANSWER KEY", "### ANSWERS:", "### ANSWERS"]
+        );
+        const answerKey = extractSection(
+          rawText,
+          ["### ANSWER KEY:", "### ANSWER KEY", "### ANSWERS:", "### ANSWERS"],
+          ["### PARENT HELP:", "### PARENT SUPPORT:", "### FAMILY HELP:"]
+        );
+        const parentHelp = extractSection(rawText, ["### PARENT HELP:", "### PARENT SUPPORT:", "### FAMILY HELP:"]);
+        const tutorGuidance = buildTutorGuidance(questions, answerKey);
+        const progressCount = incrementDailyProgress();
 
-        if (!outputEl) {
-          console.error("❌ OUTPUT ELEMENT NOT FOUND");
-          alert("UI error: output container missing.");
-          return;
-        }
+        outputDiv.innerHTML = `
+          <div class="worksheet">
+            <p class="mode-status" id="mode-status">Mode: Practice Mode ON</p>
 
-        // Force UI update
-        outputEl.innerHTML = "";
+            <div class="progress-feel">
+              <strong>Skill:</strong> ${skill}<br>
+              <strong>Level:</strong> ${level}<br>
+              <strong>Progress:</strong> ${progressCount} Skill${progressCount === 1 ? "" : "s"} Completed Today ✔
+            </div>
 
-        const contentWrapper = document.createElement("div");
-        contentWrapper.className = "generated-content";
+            <div id="practice-section">
+              <h4 class="view-section-label">👨‍🎓 Practice Mode</h4>
+              <h3>📖 Passage</h3>
+              ${formatSectionContent(passage)}
+              <h3>❓ Questions</h3>
+              ${formatSectionContent(questions)}
+            </div>
 
-        const pre = document.createElement("pre");
-        pre.textContent = data.text;
+            <div id="tutor-section" style="display: none;">
+              <h4 class="view-section-label">👨‍🏫 Tutor Mode</h4>
+              <p style="font-style: italic; color: #555;">Same content, plus hints and guided reasoning.</p>
+              <h3>📖 Passage</h3>
+              ${formatSectionContent(passage)}
+              <h3>🧠 Think Like This</h3>
+              ${tutorGuidance}
+            </div>
 
-        contentWrapper.appendChild(pre);
-        outputEl.appendChild(contentWrapper);
-
-        console.log("✅ UI SUCCESSFULLY UPDATED");
+            <div id="answer-section" style="display: none;">
+              <h4 class="view-section-label">🧠 Teacher / Parent Answer Key</h4>
+              <p style="font-style: italic; color: #555;">Review answers after your child completes the practice.</p>
+              <h3>✅ Answer Key</h3>
+              ${formatSectionContent(answerKey)}
+              <h3>👨‍👩‍👧 Parent Help</h3>
+              ${formatSectionContent(parentHelp)}
+            </div>
+          </div>
+        `;
 
         viewToggle.style.display = "flex";
       } catch (err) {
