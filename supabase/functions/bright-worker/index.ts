@@ -63,7 +63,6 @@ serve(async (req) => {
         .update({
           plan: "paid",
           generations_used: 0,
-          upgraded_via: "gumroad_manual",
         })
         .eq("id", user.id);
     }
@@ -450,10 +449,8 @@ Use this sentence starter: "One way culture helps a community is..."
 7. A group of settlers must choose between building near a trade road or near farmland. Which location should they choose and why?
 Use this sentence starter: "The better location is... because..."`;
 
-    const [standardOutput, crossOutput] = await Promise.all([
-      generateContent("standard"),
-      generateContent("cross_curricular"),
-    ]);
+    const standardOutput = await generateContent("standard");
+    const crossOutput = await generateContent("cross_curricular");
 
     let finalStandard = standardOutput;
 
