@@ -1377,18 +1377,28 @@
       const outputDiv = document.getElementById("output");
       const generateBtn = document.getElementById("generate-btn");
       const viewToggle = document.getElementById("view-toggle");
+      const progressTimers = [];
 
       try {
+        generateBtn.disabled = true;
+        generateBtn.textContent = "Generating...";
+        outputDiv.innerHTML = `
+          Generating your STAAR pack... ⏳<br>
+          <small>This usually takes 10–15 seconds to build a high-quality set.</small>
+          <br>
+          <small>Used by teachers for Do Now, MTSS, and STAAR prep.</small>
+        `;
+        progressTimers.push(setTimeout(() => {
+          outputDiv.innerHTML = "Building questions... 📚";
+        }, 1200));
+        progressTimers.push(setTimeout(() => {
+          outputDiv.innerHTML = "Adding explanations... 🧠";
+        }, 2400));
         viewToggle.style.display = "none";
 
         const user = await requireAuth();
         if (!user) {
-          outputDiv.innerHTML = `
-            <div class="locked">
-              <strong>Please log in to generate a STAAR pack</strong>
-            </div>
-          `;
-          return;
+          throw new Error("User not authenticated");
         }
         await checkAndUpgradeUser(user);
 
@@ -1399,8 +1409,7 @@
           .single();
 
         if (!profile) {
-          outputDiv.innerText = "Could not load your profile. Please try again.";
-          return;
+          throw new Error("Could not load profile");
         }
 
         renderUsageStatus(profile);
@@ -1423,23 +1432,17 @@
         const skill = document.getElementById("skill").value;
         const level = document.getElementById("level").value;
 
-        generateBtn.disabled = true;
-        generateBtn.textContent = "Generating...";
-        outputDiv.innerHTML = "Generating your STAAR pack... ⏳";
+        standardContent = "";
+        crossContent = "";
 
         const {
           data: { session }
         } = await supabase.auth.getSession();
         if (!session?.access_token) {
-          outputDiv.innerHTML = `
-            <div class="locked">
-              <strong>Your session expired</strong>
-              Please log in again.
-            </div>
-          `;
-          return;
+          throw new Error("User session missing or expired");
         }
 
+        const startTime = Date.now();
         const res = await fetch(
           "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
           {
@@ -1457,6 +1460,12 @@
             })
           }
         );
+        const elapsed = Date.now() - startTime;
+        const minDelay = 1500;
+        if (elapsed < minDelay) {
+          await new Promise((r) => setTimeout(r, minDelay - elapsed));
+        }
+        progressTimers.forEach((timer) => clearTimeout(timer));
 
         if (res.status === 403) {
           outputDiv.innerHTML = `
@@ -1474,13 +1483,11 @@
 
         if (!data || !data.standard || !data.cross) {
           console.error("❌ INVALID RESPONSE FORMAT:", data);
-          alert("No content returned from server.");
-          return;
+          throw new Error("No content returned from server");
         }
 
         if (!res.ok) {
-          outputDiv.innerText = "We couldn't generate your pack right now. Please try again.";
-          return;
+          throw new Error("Generation request failed");
         }
 
         if (profile.plan !== "paid") {
@@ -1521,9 +1528,15 @@
         viewToggle.style.display = "flex";
         renderCurrentView();
       } catch (err) {
-        console.error("❌ GENERATE FAILED:", err);
-        alert("Something went wrong. Please try again.");
+        progressTimers.forEach((timer) => clearTimeout(timer));
+        console.error("Generate failed:", err);
+        outputDiv.innerHTML = `
+          <div class="locked">
+            <strong>Something went wrong. Please try again.</strong>
+          </div>
+        `;
       } finally {
+        progressTimers.forEach((timer) => clearTimeout(timer));
         isGenerating = false;
         generateBtn.disabled = false;
         generateBtn.textContent = "Generate STAAR Pack";
