@@ -137,13 +137,22 @@ CONTENT MODE RULES (MANDATORY):
   - Science stays direct-concept first + short scenario.
   - Social Studies stays short stimulus based.
 - If contentMode = "cross_curricular":
-  - ALWAYS include one 250-400 word passage/context for ALL subjects.
-  - Passage must be based on the selected subject (${subject}), not generic reading.
-  - ALL questions must depend on that passage/context.
+  - CROSS-CURRICULAR MODE (REQUIRED):
+  - Include ONE passage (250-350 words).
+  - The passage should clearly relate to the selected subject (${subject}).
+  - Most questions should reference or depend on the passage.
+  - Avoid standalone questions unless needed for clarity.
   - Preserve subject rigor inside the passage:
     - Math: calculations and multi-step quantitative reasoning from passage details.
     - Science: cause/effect and evidence-based scientific reasoning from passage details.
     - Social Studies: historical/civic reasoning and interpretation from passage details.
+  - RIGOR UPGRADE:
+    - Avoid simple recall questions.
+    - Require reasoning, explanation, or evidence.
+    - Prefer stems such as:
+      - "Based on the passage..."
+      - "What can be concluded..."
+      - "Which evidence supports..."
 
 SUBJECT FORMAT RULES (STRICT):
 1) READING / ELAR
@@ -171,7 +180,7 @@ SUBJECT FORMAT RULES (STRICT):
   - Then include one short scenario (experiment, observation, or real-world situation).
   - Add 1-2 questions tied to that scenario.
 - If contentMode = "cross_curricular":
-  - Use a 250-400 word subject-based passage/context and derive all science items from it.
+  - Use a 250-400 word subject-based real-world science passage/context and derive all science items from it.
 - Emphasize cause/effect, scientific reasoning, and evidence use.
 
 4) SOCIAL STUDIES
