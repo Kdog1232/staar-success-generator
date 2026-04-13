@@ -674,6 +674,8 @@
     let upgradeChecked = false;
     let isGenerating = false;
     let lastGeneratedContentMode = null;
+    let standardContent = "";
+    let crossContent = "";
 
     function redirectToLogin() {
       if (isRedirectingToLogin) return;
@@ -791,6 +793,8 @@
       contentMode = "standard";
       isGenerating = false;
       lastGeneratedContentMode = null;
+      standardContent = "";
+      crossContent = "";
       usageStatus.textContent = "";
       emailLabel.textContent = "Logged in as: —";
       profilePlan.textContent = "Plan: Free";
@@ -987,6 +991,53 @@
 
       if (!practiceSection || !crossSection || !tutorSection || !answerSection || !practiceTab || !crossTab || !tutorTab || !answerTab || !modeStatus) return;
 
+      const content =
+        activeTab === "cross"
+          ? crossContent
+          : standardContent;
+
+      const passage = extractSection(content, [
+        "### PASSAGE OR CONTEXT:",
+        "### PASSAGE:"
+      ], ["### QUESTIONS:", "### QUESTION SET:"]);
+
+      const questions = extractSection(content, ["### QUESTIONS:", "### QUESTION SET:"], ["### ANSWER KEY:", "### ANSWER KEY", "### ANSWERS:", "### ANSWERS"]);
+      const answerKey = extractSection(content, ["### ANSWER KEY:", "### ANSWER KEY", "### ANSWERS:", "### ANSWERS"], ["### PARENT HELP:", "### PARENT SUPPORT:", "### FAMILY HELP:"]);
+      const parentHelp = extractSection(content, ["### PARENT HELP:", "### PARENT SUPPORT:", "### FAMILY HELP:"]);
+      const tutorGuidance = buildTutorGuidance(questions, answerKey);
+
+      practiceSection.innerHTML = `
+        <h4 class="view-section-label">👨‍🎓 Practice Mode</h4>
+        <h3>❓ Questions</h3>
+        ${formatSectionContent(questions)}
+      `;
+
+      crossSection.innerHTML = `
+        <h4 class="view-section-label">🌎 Cross-Curricular</h4>
+        <p style="font-style: italic; color: #555;">Passage-based STAAR practice using the selected subject lens.</p>
+        ${activeTab === "cross" && passage
+          ? `<h3>📖 Passage</h3>${formatSectionContent(passage)}`
+          : ""}
+        <h3>❓ Questions</h3>
+        ${formatSectionContent(questions)}
+      `;
+
+      tutorSection.innerHTML = `
+        <h4 class="view-section-label">👨‍🏫 Tutor Mode</h4>
+        <p style="font-style: italic; color: #555;">Same content, plus hints and guided reasoning.</p>
+        <h3>🧠 Think Like This</h3>
+        ${tutorGuidance}
+      `;
+
+      answerSection.innerHTML = `
+        <h4 class="view-section-label">🧠 Teacher / Parent Answer Key</h4>
+        <p style="font-style: italic; color: #555;">Review answers after your child completes the practice.</p>
+        <h3>✅ Answer Key</h3>
+        ${formatSectionContent(answerKey)}
+        <h3>👨‍👩‍👧 Parent Help</h3>
+        ${formatSectionContent(parentHelp)}
+      `;
+
       const showingPractice = activeTab === "practice";
       const showingCross = activeTab === "cross";
       const showingTutor = activeTab === "tutor";
@@ -1002,8 +1053,7 @@
       modeStatus.textContent = `Mode: ${contentMode === "cross_curricular" ? "Cross-Curricular ON" : "Practice Mode ON"}`;
     }
 
-    async function setMode(mode) {
-      const previousContentMode = contentMode;
+    function setMode(mode) {
       activeTab = ["practice", "cross", "tutor", "answer"].includes(mode) ? mode : "practice";
 
       if (mode === "cross") {
@@ -1013,15 +1063,6 @@
       }
 
       renderCurrentView();
-
-      const switchedBetweenPracticeModes =
-        (previousContentMode === "standard" && contentMode === "cross_curricular") ||
-        (previousContentMode === "cross_curricular" && contentMode === "standard");
-      const hasRenderedWorksheet = Boolean(document.querySelector("#output .worksheet"));
-
-      if (switchedBetweenPracticeModes && hasRenderedWorksheet && !isGenerating && lastGeneratedContentMode !== contentMode) {
-        await generate();
-      }
     }
 
     function toggleView(view) {
@@ -1194,7 +1235,6 @@
       const outputDiv = document.getElementById("output");
       const generateBtn = document.getElementById("generate-btn");
       const viewToggle = document.getElementById("view-toggle");
-      const requestedContentMode = contentMode;
 
       try {
         viewToggle.style.display = "none";
@@ -1271,8 +1311,7 @@
               grade,
               subject,
               skill,
-              level,
-              contentMode: requestedContentMode
+              level
             })
           }
         );
@@ -1289,22 +1328,9 @@
           return;
         }
 
-        const text = await res.text();
+        const data = await res.json();
 
-        console.log("RAW RESPONSE:", text);
-
-        let data;
-
-        try {
-          data = JSON.parse(text);
-          console.log("✅ PARSED DATA:", data);
-        } catch (err) {
-          console.error("❌ JSON PARSE FAILED:", err);
-          alert("Error processing response from server.");
-          return;
-        }
-
-        if (!data || !data.text) {
+        if (!data || !data.standard || !data.cross) {
           console.error("❌ INVALID RESPONSE FORMAT:", data);
           alert("No content returned from server.");
           return;
@@ -1328,25 +1354,9 @@
           }
         }
 
-        const rawText = data.text || "";
-        lastGeneratedContentMode = requestedContentMode;
-        const passage = extractSection(
-          rawText,
-          ["### PASSAGE OR CONTEXT:", "### PASSAGE:", "### CONTEXT:"],
-          ["### QUESTIONS:", "### QUESTION SET:"]
-        );
-        const questions = extractSection(
-          rawText,
-          ["### QUESTIONS:", "### QUESTION SET:"],
-          ["### ANSWER KEY:", "### ANSWER KEY", "### ANSWERS:", "### ANSWERS"]
-        );
-        const answerKey = extractSection(
-          rawText,
-          ["### ANSWER KEY:", "### ANSWER KEY", "### ANSWERS:", "### ANSWERS"],
-          ["### PARENT HELP:", "### PARENT SUPPORT:", "### FAMILY HELP:"]
-        );
-        const parentHelp = extractSection(rawText, ["### PARENT HELP:", "### PARENT SUPPORT:", "### FAMILY HELP:"]);
-        const tutorGuidance = buildTutorGuidance(questions, answerKey);
+        standardContent = data.standard || "";
+        crossContent = data.cross || "";
+        lastGeneratedContentMode = "both";
         const progressCount = incrementDailyProgress();
 
         outputDiv.innerHTML = `
@@ -1359,40 +1369,10 @@
               <strong>Progress:</strong> ${progressCount} Skill${progressCount === 1 ? "" : "s"} Completed Today ✔
             </div>
 
-            <div id="practice-section">
-              <h4 class="view-section-label">👨‍🎓 Practice Mode</h4>
-              <h3>📖 Passage</h3>
-              ${formatSectionContent(passage)}
-              <h3>❓ Questions</h3>
-              ${formatSectionContent(questions)}
-            </div>
-
-            <div id="cross-section" style="display: none;">
-              <h4 class="view-section-label">🌎 Cross-Curricular</h4>
-              <p style="font-style: italic; color: #555;">Passage-based STAAR practice using the selected subject lens.</p>
-              <h3>📖 Passage / Context</h3>
-              ${formatSectionContent(passage)}
-              <h3>❓ Questions</h3>
-              ${formatSectionContent(questions)}
-            </div>
-
-            <div id="tutor-section" style="display: none;">
-              <h4 class="view-section-label">👨‍🏫 Tutor Mode</h4>
-              <p style="font-style: italic; color: #555;">Same content, plus hints and guided reasoning.</p>
-              <h3>📖 Passage</h3>
-              ${formatSectionContent(passage)}
-              <h3>🧠 Think Like This</h3>
-              ${tutorGuidance}
-            </div>
-
-            <div id="answer-section" style="display: none;">
-              <h4 class="view-section-label">🧠 Teacher / Parent Answer Key</h4>
-              <p style="font-style: italic; color: #555;">Review answers after your child completes the practice.</p>
-              <h3>✅ Answer Key</h3>
-              ${formatSectionContent(answerKey)}
-              <h3>👨‍👩‍👧 Parent Help</h3>
-              ${formatSectionContent(parentHelp)}
-            </div>
+            <div id="practice-section"></div>
+            <div id="cross-section" style="display: none;"></div>
+            <div id="tutor-section" style="display: none;"></div>
+            <div id="answer-section" style="display: none;"></div>
           </div>
         `;
 

@@ -102,9 +102,9 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-    const { grade, subject, skill, level, tutorMode = false, contentMode = "standard" } = requestBody;
+    const { grade, subject, skill, level, tutorMode = false } = requestBody;
 
-    const prompt = `
+    const buildPrompt = (contentMode: "standard" | "cross_curricular") => `
 You are generating a teacher-ready STAAR practice assignment for Texas students.
 
 INPUTS:
@@ -130,18 +130,21 @@ GLOBAL RULES (MANDATORY):
 - NEVER force every subject into long-passage format.
 - Use correct markdown headers exactly as specified below.
 
-CONTENT MODE RULES (MANDATORY):
+CONTENT MODE RULES (STRICT):
 - If contentMode = "standard":
-  - Reading/ELAR stays passage-based.
-  - Math stays direct-problem first (no long passage).
-  - Science stays direct-concept first + short scenario.
-  - Social Studies stays short stimulus based.
+  - DO NOT include a long passage for Math or Science.
+  - Start directly with questions.
+  - You may include a short scenario (1-2 sentences max).
+  - Focus on direct STAAR-style questions.
 - If contentMode = "cross_curricular":
-  - CROSS-CURRICULAR MODE:
-  - Include ONE passage (250-350 words) related to the selected subject.
-  - Most questions should reference the passage.
-  - Maintain subject rigor (math = calculations, science = reasoning, etc.).
-  - Keep instructions simple and clear.
+  - Include ONE passage (250-350 words).
+  - Write the full passage immediately under:
+    ### PASSAGE OR CONTEXT:
+  - ALL questions should reference the passage.
+  - Use stems like:
+    - "Based on the passage..."
+    - "According to the passage..."
+    - "What can be concluded..."
 
 SUBJECT FORMAT RULES (STRICT):
 1) READING / ELAR
@@ -216,39 +219,32 @@ For EACH question include:
       });
     }
 
-    const aiRes = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        input: prompt,
-      }),
-    });
-
-    const data = await aiRes.json();
-
-    if (!aiRes.ok) {
-      return new Response(JSON.stringify(data), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const generateContent = async (contentMode: "standard" | "cross_curricular") => {
+      const aiRes = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${OPENAI_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          input: buildPrompt(contentMode),
+        }),
       });
-    }
 
-    data.output_text = data.output_text || data.output?.[0]?.content?.[0]?.text || "No response generated";
+      const data = await aiRes.json();
 
-    console.log("CONTENT MODE:", contentMode);
-    console.log("OUTPUT LENGTH:", data.output_text?.length);
+      if (!aiRes.ok) {
+        throw new Error(data?.error?.message || "Generation failed");
+      }
 
-    if (
-      contentMode === "cross_curricular" &&
-      !/###\s*PASSAGE/i.test(data.output_text)
-    ) {
-      console.error("❌ Missing passage — injecting fallback");
+      data.output_text = data.output_text || data.output?.[0]?.content?.[0]?.text || "No response generated";
+      console.log("CONTENT MODE:", contentMode);
+      console.log("OUTPUT LENGTH:", data.output_text?.length);
 
-      data.output_text = `
+      if (contentMode === "cross_curricular" && !/###\s*PASSAGE/i.test(data.output_text)) {
+        console.error("❌ Missing passage — injecting fallback");
+        return `
 ### PASSAGE OR CONTEXT:
 A short informational passage about ${subject} and ${skill}.
 
@@ -268,9 +264,15 @@ Parent Tip: Encourage careful reading
 ### PARENT HELP:
 - Review key ideas from the passage
 `;
-    }
+      }
 
-    const text = data.output_text;
+      return data.output_text;
+    };
+
+    const [standardOutput, crossOutput] = await Promise.all([
+      generateContent("standard"),
+      generateContent("cross_curricular"),
+    ]);
 
     await supabase
       .from("profiles")
@@ -279,7 +281,10 @@ Parent Tip: Encourage careful reading
       })
       .eq("id", user.id);
 
-    return new Response(JSON.stringify({ text }), {
+    return new Response(JSON.stringify({
+      standard: standardOutput,
+      cross: crossOutput
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
