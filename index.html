@@ -1149,7 +1149,7 @@
             <div class="choices">
               ${(q.choices || []).map((c, idx) => `
                 <div class="choice choice-card" data-q="${i}" data-choice="${idx}" data-letter="${String.fromCharCode(65 + idx)}">
-                  ${c}
+                  ${String(c).replace(/^[A-D]\.\s*/, '').trim()}
                 </div>
               `).join("")}
             </div>
