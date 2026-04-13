@@ -672,6 +672,8 @@
     let bannerTimeoutId = null;
     let isRedirectingToLogin = false;
     let upgradeChecked = false;
+    let isGenerating = false;
+    let lastGeneratedContentMode = null;
 
     function redirectToLogin() {
       if (isRedirectingToLogin) return;
@@ -787,6 +789,8 @@
       viewToggle.style.display = "none";
       activeTab = "practice";
       contentMode = "standard";
+      isGenerating = false;
+      lastGeneratedContentMode = null;
       usageStatus.textContent = "";
       emailLabel.textContent = "Logged in as: —";
       profilePlan.textContent = "Plan: Free";
@@ -998,7 +1002,8 @@
       modeStatus.textContent = `Mode: ${contentMode === "cross_curricular" ? "Cross-Curricular ON" : "Practice Mode ON"}`;
     }
 
-    function setMode(mode) {
+    async function setMode(mode) {
+      const previousContentMode = contentMode;
       activeTab = ["practice", "cross", "tutor", "answer"].includes(mode) ? mode : "practice";
 
       if (mode === "cross") {
@@ -1008,6 +1013,15 @@
       }
 
       renderCurrentView();
+
+      const switchedBetweenPracticeModes =
+        (previousContentMode === "standard" && contentMode === "cross_curricular") ||
+        (previousContentMode === "cross_curricular" && contentMode === "standard");
+      const hasRenderedWorksheet = Boolean(document.querySelector("#output .worksheet"));
+
+      if (switchedBetweenPracticeModes && hasRenderedWorksheet && !isGenerating && lastGeneratedContentMode !== contentMode) {
+        await generate();
+      }
     }
 
     function toggleView(view) {
@@ -1174,10 +1188,13 @@
     }
 
     async function generate() {
+      if (isGenerating) return;
+      isGenerating = true;
       console.log("🚀 GENERATE CLICKED");
       const outputDiv = document.getElementById("output");
       const generateBtn = document.getElementById("generate-btn");
       const viewToggle = document.getElementById("view-toggle");
+      const requestedContentMode = contentMode;
 
       try {
         viewToggle.style.display = "none";
@@ -1255,7 +1272,7 @@
               subject,
               skill,
               level,
-              contentMode
+              contentMode: requestedContentMode
             })
           }
         );
@@ -1312,6 +1329,7 @@
         }
 
         const rawText = data.text || "";
+        lastGeneratedContentMode = requestedContentMode;
         const passage = extractSection(
           rawText,
           ["### PASSAGE OR CONTEXT:", "### PASSAGE:", "### CONTEXT:"],
@@ -1384,6 +1402,7 @@
         console.error("❌ GENERATE FAILED:", err);
         alert("Something went wrong. Please try again.");
       } finally {
+        isGenerating = false;
         generateBtn.disabled = false;
         generateBtn.textContent = "Generate STAAR Pack";
       }
