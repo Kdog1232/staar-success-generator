@@ -474,6 +474,30 @@
       color: #142033;
     }
 
+    .passage-text {
+      margin: 0 0 16px;
+      padding: 14px;
+      border: 1px solid #e7dcc7;
+      background: #fffefb;
+      border-radius: 10px;
+      line-height: 1.85;
+      white-space: pre-line;
+    }
+
+    .question-block {
+      margin: 0 0 14px;
+      padding: 12px 14px;
+      border: 1px solid #e5ebf2;
+      border-radius: 10px;
+      background: #fff;
+      line-height: 1.7;
+      white-space: pre-line;
+    }
+
+    .question-block:last-child {
+      margin-bottom: 0;
+    }
+
     @media (max-width: 760px) {
       body {
         padding: 20px 12px 40px;
@@ -934,6 +958,38 @@
         .replaceAll(/\n/g, "<br>");
     }
 
+    function cleanText(text = "") {
+      return text
+        .replace(/\*\*/g, "")
+        .replace(/\*/g, "")
+        .replace(/__/g, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+    }
+
+    function formatPassageBlock(passage) {
+      const cleanedPassage = cleanText(passage);
+      if (!cleanedPassage) return "";
+      return `<p class="passage-text">${formatSectionContent(cleanedPassage)}</p>`;
+    }
+
+    function formatQuestionBlocks(questions) {
+      const cleanedQuestions = cleanText(questions);
+      if (!cleanedQuestions) return "";
+      const blocks = cleanedQuestions
+        .split(/\n\s*\n/)
+        .map((block) => block.trim())
+        .filter(Boolean);
+
+      if (!blocks.length) {
+        return `<div class="question-block">${formatSectionContent(cleanedQuestions)}</div>`;
+      }
+
+      return blocks
+        .map((block) => `<div class="question-block">${formatSectionContent(block)}</div>`)
+        .join("");
+    }
+
     function getTodayKey() {
       const now = new Date();
       return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
@@ -949,11 +1005,13 @@
     }
 
     function buildTutorGuidance(questions, answerKey) {
-      const questionBlocks = questions
+      const cleanedQuestions = cleanText(questions);
+      const cleanedAnswerKey = cleanText(answerKey);
+      const questionBlocks = cleanedQuestions
         .split(/\n\s*\n/)
         .map((block) => block.trim())
         .filter((block) => /^\d+[\.\)]/.test(block));
-      const answerBlocks = answerKey
+      const answerBlocks = cleanedAnswerKey
         .split(/\n\s*\n/)
         .map((block) => block.trim())
         .filter((block) => /Correct Answer:/i.test(block));
@@ -969,10 +1027,10 @@
         return `
           <div class="tutor-card">
             <strong>Question ${index + 1}</strong><br>
-            ${formatSectionContent(question)}
+            ${formatSectionContent(cleanText(question))}
             <p><strong>Hint:</strong> Focus on what the question is asking most directly before checking choices.</p>
             <p><strong>Think like this:</strong> Which part of the passage best proves my answer?</p>
-            <p><strong>Step-by-step:</strong> ${formatSectionContent(explanation)}</p>
+            <p><strong>Step-by-step:</strong> ${formatSectionContent(cleanText(explanation))}</p>
           </div>
         `;
       }).join("");
@@ -992,7 +1050,7 @@
       if (!practiceSection || !crossSection || !tutorSection || !answerSection || !practiceTab || !crossTab || !tutorTab || !answerTab || !modeStatus) return;
 
       const content =
-        activeTab === "cross"
+        contentMode === "cross_curricular"
           ? crossContent
           : standardContent;
 
@@ -1005,21 +1063,29 @@
       const answerKey = extractSection(content, ["### ANSWER KEY:", "### ANSWER KEY", "### ANSWERS:", "### ANSWERS"], ["### PARENT HELP:", "### PARENT SUPPORT:", "### FAMILY HELP:"]);
       const parentHelp = extractSection(content, ["### PARENT HELP:", "### PARENT SUPPORT:", "### FAMILY HELP:"]);
       const tutorGuidance = buildTutorGuidance(questions, answerKey);
+      const selectedSubject = (document.getElementById("subject").value || "").toLowerCase();
+      const isReadingSubject = selectedSubject === "reading" || selectedSubject === "elar";
+      const crossTabVisible = !isReadingSubject;
+
+      if (!crossTabVisible && activeTab === "cross") {
+        activeTab = "practice";
+      }
 
       practiceSection.innerHTML = `
         <h4 class="view-section-label">👨‍🎓 Practice Mode</h4>
+        ${contentMode === "cross_curricular" && passage ? `<h3>📖 Passage</h3>${formatPassageBlock(passage)}` : ""}
         <h3>❓ Questions</h3>
-        ${formatSectionContent(questions)}
+        ${formatQuestionBlocks(questions)}
       `;
 
       crossSection.innerHTML = `
         <h4 class="view-section-label">🌎 Cross-Curricular</h4>
         <p style="font-style: italic; color: #555;">Passage-based STAAR practice using the selected subject lens.</p>
-        ${activeTab === "cross" && passage
-          ? `<h3>📖 Passage</h3>${formatSectionContent(passage)}`
+        ${passage
+          ? `<h3>📖 Passage</h3>${formatPassageBlock(passage)}`
           : ""}
         <h3>❓ Questions</h3>
-        ${formatSectionContent(questions)}
+        ${formatQuestionBlocks(questions)}
       `;
 
       tutorSection.innerHTML = `
@@ -1033,9 +1099,9 @@
         <h4 class="view-section-label">🧠 Teacher / Parent Answer Key</h4>
         <p style="font-style: italic; color: #555;">Review answers after your child completes the practice.</p>
         <h3>✅ Answer Key</h3>
-        ${formatSectionContent(answerKey)}
+        ${formatSectionContent(cleanText(answerKey))}
         <h3>👨‍👩‍👧 Parent Help</h3>
-        ${formatSectionContent(parentHelp)}
+        ${formatSectionContent(cleanText(parentHelp))}
       `;
 
       const showingPractice = activeTab === "practice";
@@ -1050,15 +1116,22 @@
       crossTab.classList.toggle("active", showingCross);
       tutorTab.classList.toggle("active", showingTutor);
       answerTab.classList.toggle("active", showingAnswer);
+      crossTab.style.display = crossTabVisible ? "block" : "none";
       modeStatus.textContent = `Mode: ${contentMode === "cross_curricular" ? "Cross-Curricular ON" : "Practice Mode ON"}`;
     }
 
     function setMode(mode) {
       activeTab = ["practice", "cross", "tutor", "answer"].includes(mode) ? mode : "practice";
+      const selectedSubject = (document.getElementById("subject").value || "").toLowerCase();
+      const isReadingSubject = selectedSubject === "reading" || selectedSubject === "elar";
 
-      if (mode === "cross") {
+      if (isReadingSubject && activeTab === "cross") {
+        activeTab = "practice";
+      }
+
+      if (activeTab === "cross") {
         contentMode = "cross_curricular";
-      } else if (mode === "practice") {
+      } else if (activeTab === "practice") {
         contentMode = "standard";
       }
 
@@ -1077,6 +1150,13 @@
         button.setAttribute("aria-checked", isActive ? "true" : "false");
       });
       populateSkills(subject);
+      if ((subject || "").toLowerCase() === "reading" || (subject || "").toLowerCase() === "elar") {
+        if (activeTab === "cross" || contentMode === "cross_curricular") {
+          activeTab = "practice";
+          contentMode = "standard";
+        }
+      }
+      renderCurrentView();
     }
 
     function populateSubjectButtons() {
