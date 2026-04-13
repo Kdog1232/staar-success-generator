@@ -474,24 +474,30 @@
       color: #142033;
     }
 
-    .passage-text {
+    .passage-container,
+    .passage-text,
+    .passage-box {
       margin: 0 0 16px;
-      padding: 14px;
-      border: 1px solid #e7dcc7;
-      background: #fffefb;
-      border-radius: 10px;
+      background: white;
+      border: none;
+      padding: 0;
+      font-size: 18px;
       line-height: 1.6;
+      color: #222;
+      font-family: Georgia, "Times New Roman", serif;
       white-space: pre-line;
     }
 
     .passage-box {
-      margin: 0 0 16px;
-      padding: 14px;
-      border: 1px solid #e7dcc7;
-      background: #fffefb;
-      border-radius: 10px;
+      margin-bottom: 18px;
+    }
+
+    .passage-text {
+      margin-bottom: 18px;
+    }
+
+    .passage-container {
       line-height: 1.6;
-      white-space: pre-line;
     }
 
     .answer-block {
@@ -534,12 +540,10 @@
     }
 
     .question-card {
-      background: white;
-      border-radius: 14px;
-      padding: 16px;
+      background: transparent;
+      border: none;
+      padding: 10px 0;
       margin-bottom: 16px;
-      border: 1px solid #e5e7eb;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
     }
 
     .question-title {
@@ -555,26 +559,34 @@
       margin-bottom: 15px;
     }
 
-    .choice {
+    .choice,
+    .choice-card {
       display: flex;
       align-items: flex-start;
       gap: 8px;
-      padding: 10px 12px;
-      margin-bottom: 8px;
-      font-size: 0.95rem;
-      border-radius: 8px;
-      border: 1px solid #d1d5db;
+      background: transparent;
+      border: none;
+      padding: 6px 0;
+      margin-bottom: 2px;
+      font-size: 17px;
       cursor: pointer;
       transition: all 0.2s ease;
     }
 
-    .choice:hover {
-      background: #f5f7fa;
+    .choice:hover,
+    .choice-card:hover {
+      background: #f0f4ff;
     }
 
     .choice.selected {
-      background: #dbeafe;
-      border-color: #2563eb;
+      background: #e9f1ff;
+    }
+
+    .choice-card::before {
+      content: attr(data-letter) ".";
+      font-weight: bold;
+      margin-right: 6px;
+      min-width: 1.3em;
     }
 
     .answer-box {
@@ -1136,7 +1148,7 @@
 
             <div class="choices">
               ${(q.choices || []).map((c, idx) => `
-                <div class="choice" data-q="${i}" data-choice="${idx}">
+                <div class="choice choice-card" data-q="${i}" data-choice="${idx}" data-letter="${String.fromCharCode(65 + idx)}">
                   ${c}
                 </div>
               `).join("")}
