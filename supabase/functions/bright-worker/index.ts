@@ -39,6 +39,9 @@ serve(async (req) => {
     });
   }
 
+  const requestBody = await req.json().catch(() => ({}));
+  const loginCheckOnly = requestBody?.trigger === "login_check";
+
   const email = user.email?.toLowerCase().trim();
   const paidEmails = [
     "garyadams892@gmail.com",
@@ -79,13 +82,27 @@ serve(async (req) => {
     });
   }
 
+  if (loginCheckOnly) {
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        plan: profile.plan,
+        generations_used: profile.generations_used,
+      }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
+  }
+
   if (profile.plan !== "paid" && profile.generations_used >= 5) {
     return new Response(JSON.stringify({ error: "Free limit reached" }), {
       status: 403,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-    const { grade, subject, skill, level, tutorMode = false } = await req.json();
+    const { grade, subject, skill, level, tutorMode = false } = requestBody;
 
     const prompt = `
 You are a Texas STAAR assessment expert.

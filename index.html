@@ -1042,7 +1042,13 @@
 
         if (data.session) {
           showAuthFeedback("Account created! You are now logged in.", "success");
-          await requireAuth({ showPrompt: false });
+          const user = await requireAuth({ showPrompt: false });
+          if (user) {
+            await supabase.functions.invoke("bright-worker", {
+              body: { trigger: "login_check" }
+            });
+            await refreshUsageStatus(user.id);
+          }
           return;
         }
 
@@ -1066,7 +1072,13 @@
           showAuthFeedback("Login failed. Check your email/password and try again.", "error");
         } else {
           showAuthFeedback("Logged in successfully!", "success");
-          await requireAuth({ showPrompt: false });
+          const user = await requireAuth({ showPrompt: false });
+          if (user) {
+            await supabase.functions.invoke("bright-worker", {
+              body: { trigger: "login_check" }
+            });
+            await refreshUsageStatus(user.id);
+          }
         }
       } catch {
         showAuthFeedback("Login failed. Please try again in a moment.", "error");
