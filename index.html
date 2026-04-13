@@ -1549,6 +1549,12 @@ const user = await requireAuth();
 
 if (!user) {
   outputDiv.innerHTML = "Please log in to continue.";
+
+  // 🔥 FORCE RESET STATE
+  isGenerating = false;
+  generateBtn.disabled = false;
+  generateBtn.textContent = "Generate STAAR Pack";
+
   return;
 }
 
