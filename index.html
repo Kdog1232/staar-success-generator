@@ -669,6 +669,7 @@
     let profileUpdatesUserId = null;
     let bannerTimeoutId = null;
     let isRedirectingToLogin = false;
+    let upgradeChecked = false;
 
     function redirectToLogin() {
       if (isRedirectingToLogin) return;
@@ -680,13 +681,14 @@
 
     function showUpgradeBanner() {
       const banner = document.getElementById("upgrade-banner");
+      if (!banner) return;
       banner.style.display = "block";
       if (bannerTimeoutId) {
         clearTimeout(bannerTimeoutId);
       }
       bannerTimeoutId = setTimeout(() => {
         banner.style.display = "none";
-      }, 5000);
+      }, 4000);
     }
 
     function handleProfileUpdate(profile, previousProfile = null) {
@@ -812,6 +814,45 @@
         updateProfileSection({ email: profile.email }, profile);
         renderUsageStatus(profile);
       }
+    }
+
+    async function checkAndUpgradeUser(user) {
+      if (upgradeChecked) return;
+      upgradeChecked = true;
+
+      if (!user?.email) return;
+
+      const email = user.email.toLowerCase().trim();
+
+      // 👇 TEMP: add ANY buyers here
+      const paidEmails = [
+        "mdhowell64@gmail.com"
+      ];
+
+      if (!paidEmails.includes(email)) return;
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id, plan")
+        .ilike("email", email)
+        .maybeSingle();
+
+      if (!profile?.id || profile.plan === "paid") return;
+
+      console.log("Upgrading user to paid:", email);
+
+      await supabase
+        .from("profiles")
+        .update({
+          plan: "paid",
+          generations_used: 0,
+          upgraded_via: "gumroad_manual",
+          upgraded_at: new Date().toISOString()
+        })
+        .eq("id", profile.id);
+
+      await refreshUsageStatus(user.id);
+      showUpgradeBanner?.();
     }
 
     async function requireAuth({ showPrompt = true } = {}) {
@@ -1095,6 +1136,7 @@
         `;
         return;
       }
+      await checkAndUpgradeUser(user);
 
       const { data: profile } = await supabase
         .from("profiles")
@@ -1265,11 +1307,13 @@
     setAppAuthenticatedState(false);
     const initialUser = await requireAuth({ showPrompt: false });
     if (initialUser) {
+      await checkAndUpgradeUser(initialUser);
       refreshUsageStatus(initialUser.id);
     }
 
     supabase.auth.onAuthStateChange(async (event) => {
       if (event === "SIGNED_OUT") {
+        upgradeChecked = false;
         stopProfileUpdatesSubscription();
         setAppAuthenticatedState(false);
         resetProtectedUI();
@@ -1278,6 +1322,12 @@
       }
       const currentUser = await requireAuth({ showPrompt: false });
       if (currentUser) {
+        const {
+          data: { user }
+        } = await supabase.auth.getUser();
+        if (user) {
+          await checkAndUpgradeUser(user);
+        }
         refreshUsageStatus(currentUser.id);
       }
     });
