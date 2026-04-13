@@ -484,6 +484,16 @@
       white-space: pre-line;
     }
 
+    .passage-box {
+      margin: 0 0 16px;
+      padding: 14px;
+      border: 1px solid #e7dcc7;
+      background: #fffefb;
+      border-radius: 10px;
+      line-height: 1.6;
+      white-space: pre-line;
+    }
+
     .answer-block {
       background: #f9fafb;
       border-radius: 12px;
@@ -777,6 +787,7 @@
     let standardContent = "";
     let crossContent = "";
     let structuredQuestions = [];
+    let generatedPassage = "";
 
     function redirectToLogin() {
       if (isRedirectingToLogin) return;
@@ -1097,7 +1108,8 @@
         .join("");
     }
 
-    function renderStructuredQuestions(questions) {
+    function renderStructuredQuestions(questions, options = {}) {
+      const { showAnswers = true } = options;
       if (questions && questions.length > 0) {
         return questions.map((q, i) => `
           <div class="question-card">
@@ -1113,13 +1125,15 @@
               `).join("")}
             </div>
 
-            <div class="answer-box">
-              <strong>Answer:</strong> ${q.correct_answer || ""}
-            </div>
+            ${showAnswers ? `
+              <div class="answer-box">
+                <strong>Answer:</strong> ${q.correct_answer || ""}
+              </div>
 
-            <div class="explanation-box">
-              ${q.explanation || ""}
-            </div>
+              <div class="explanation-box">
+                ${q.explanation || ""}
+              </div>
+            ` : ""}
           </div>
         `).join("");
       }
@@ -1218,29 +1232,31 @@
         selectedSubject === "reading" ||
         selectedSubject === "elar" ||
         activeTab === "cross";
+      const displayPassage = cleanText(generatedPassage || passage);
       const crossTabVisible = !isReadingSubject;
 
       if (!crossTabVisible && activeTab === "cross") {
         activeTab = "practice";
       }
 
-      const structuredHTML = renderStructuredQuestions(structuredQuestions);
+      const practiceStructuredHTML = renderStructuredQuestions(structuredQuestions, { showAnswers: false });
+      const structuredHTML = renderStructuredQuestions(structuredQuestions, { showAnswers: true });
       const hasStructured = structuredQuestions && structuredQuestions.length > 0;
 
       practiceSection.innerHTML = `
         <h4 class="view-section-label">👨‍🎓 Practice Mode</h4>
-        ${shouldShowPassage && passage
-          ? `<h3>📖 Passage</h3><p class="passage-text">${cleanText(passage)}</p>`
+        ${displayPassage
+          ? `<h3>📖 Passage</h3><div class="passage-box">${displayPassage}</div>`
           : ""}
         <h3>❓ Questions</h3>
-        ${hasStructured ? structuredHTML : formatQuestionBlocks(questions)}
+        ${hasStructured ? practiceStructuredHTML : formatQuestionBlocks(questions)}
       `;
 
       crossSection.innerHTML = `
         <h4 class="view-section-label">🌎 Cross-Curricular</h4>
         <p style="font-style: italic; color: #555;">Passage-based STAAR practice using the selected subject lens.</p>
-        ${shouldShowPassage && passage
-          ? `<h3>📖 Passage</h3><p class="passage-text">${cleanText(passage)}</p>`
+        ${shouldShowPassage && displayPassage
+          ? `<h3>📖 Passage</h3><p class="passage-text">${displayPassage}</p>`
           : ""}
         <h3>❓ Questions</h3>
         ${hasStructured ? structuredHTML : formatQuestionBlocks(questions)}
@@ -1568,6 +1584,7 @@
 
         standardContent = "";
         crossContent = "";
+        generatedPassage = "";
 
         const {
           data: { session }
@@ -1636,6 +1653,7 @@
 
         if (data.questions && data.questions.length > 0) {
           renderQuestions(data.questions);
+          generatedPassage = cleanText(data.passage || "");
         } else {
           showFallback(fallback);
         }
