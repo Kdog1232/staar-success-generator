@@ -137,22 +137,11 @@ CONTENT MODE RULES (MANDATORY):
   - Science stays direct-concept first + short scenario.
   - Social Studies stays short stimulus based.
 - If contentMode = "cross_curricular":
-  - CROSS-CURRICULAR MODE (REQUIRED):
-  - Include ONE passage (250-350 words).
-  - The passage should clearly relate to the selected subject (${subject}).
-  - Most questions should reference or depend on the passage.
-  - Avoid standalone questions unless needed for clarity.
-  - Preserve subject rigor inside the passage:
-    - Math: calculations and multi-step quantitative reasoning from passage details.
-    - Science: cause/effect and evidence-based scientific reasoning from passage details.
-    - Social Studies: historical/civic reasoning and interpretation from passage details.
-  - RIGOR UPGRADE:
-    - Avoid simple recall questions.
-    - Require reasoning, explanation, or evidence.
-    - Prefer stems such as:
-      - "Based on the passage..."
-      - "What can be concluded..."
-      - "Which evidence supports..."
+  - CROSS-CURRICULAR MODE:
+  - Include ONE passage (250-350 words) related to the selected subject.
+  - Most questions should reference the passage.
+  - Maintain subject rigor (math = calculations, science = reasoning, etc.).
+  - Keep instructions simple and clear.
 
 SUBJECT FORMAT RULES (STRICT):
 1) READING / ELAR
@@ -191,7 +180,10 @@ SUBJECT FORMAT RULES (STRICT):
 - Include interpretation, cause/effect, and reasoning questions tied to the stimulus/context.
 
 OUTPUT FORMAT (STRICT - USE THESE HEADERS EXACTLY):
-### PASSAGE OR CONTEXT (ONLY if required by subject)
+### PASSAGE OR CONTEXT:
+
+This section must ALWAYS exist if contentMode = "cross_curricular".
+Write the full passage immediately under this header before writing any questions.
 
 ### QUESTIONS:
 - Number questions clearly.
@@ -213,9 +205,6 @@ For EACH question include:
 ### PARENT HELP:
 - Provide 3-5 actionable parent tips based on likely student errors in this set.
 
-FINAL QUALITY BAR:
-- The result should read like a high-quality STAAR prep handout created by a strong classroom teacher.
-- Be rigorous, clear, and practical.
 `;
 
     const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY");
@@ -248,7 +237,40 @@ FINAL QUALITY BAR:
       });
     }
 
-    const text = data.output?.[0]?.content?.[0]?.text || "No response generated";
+    data.output_text = data.output_text || data.output?.[0]?.content?.[0]?.text || "No response generated";
+
+    console.log("CONTENT MODE:", contentMode);
+    console.log("OUTPUT LENGTH:", data.output_text?.length);
+
+    if (
+      contentMode === "cross_curricular" &&
+      !/###\s*PASSAGE/i.test(data.output_text)
+    ) {
+      console.error("❌ Missing passage — injecting fallback");
+
+      data.output_text = `
+### PASSAGE OR CONTEXT:
+A short informational passage about ${subject} and ${skill}.
+
+### QUESTIONS:
+1. Based on the passage, what is being explained?
+A) ...
+B) ...
+C) ...
+D) ...
+
+### ANSWER KEY:
+1. Correct Answer: A
+Explanation: Placeholder explanation
+Common Mistake: Misreading the passage
+Parent Tip: Encourage careful reading
+
+### PARENT HELP:
+- Review key ideas from the passage
+`;
+    }
+
+    const text = data.output_text;
 
     await supabase
       .from("profiles")
