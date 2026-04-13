@@ -1134,58 +1134,60 @@
     }
 
     async function generate() {
+      console.log("🚀 GENERATE CLICKED");
       const outputDiv = document.getElementById("output");
       const generateBtn = document.getElementById("generate-btn");
       const viewToggle = document.getElementById("view-toggle");
-      viewToggle.style.display = "none";
-
-      const user = await requireAuth();
-      if (!user) {
-        outputDiv.innerHTML = `
-          <div class="locked">
-            <strong>Please log in to generate a STAAR pack</strong>
-          </div>
-        `;
-        return;
-      }
-      await checkAndUpgradeUser(user);
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("plan, generations_used")
-        .eq("id", user.id)
-        .single();
-
-      if (!profile) {
-        outputDiv.innerText = "Could not load your profile. Please try again.";
-        return;
-      }
-
-      renderUsageStatus(profile);
-
-      const currentGenerations = Number(profile.generations_used || 0);
-      if (profile.plan !== "paid" && currentGenerations >= FREE_PLAN_LIMIT) {
-        outputDiv.innerHTML = `
-          <div class="locked">
-            <strong>You've reached your free limit. Upgrade to continue.</strong>
-            <a href="${GUMROAD_URL}" class="unlock-btn" target="_blank" rel="noopener noreferrer">
-              Unlock Full Access for $12
-            </a>
-          </div>
-        `;
-        return;
-      }
-
-      const grade = document.getElementById("grade").value;
-      const subject = document.getElementById("subject").value;
-      const skill = document.getElementById("skill").value;
-      const level = document.getElementById("level").value;
-
-      generateBtn.disabled = true;
-      generateBtn.textContent = "Generating...";
-      outputDiv.innerHTML = "Generating your STAAR pack... ⏳";
 
       try {
+        viewToggle.style.display = "none";
+
+        const user = await requireAuth();
+        if (!user) {
+          outputDiv.innerHTML = `
+            <div class="locked">
+              <strong>Please log in to generate a STAAR pack</strong>
+            </div>
+          `;
+          return;
+        }
+        await checkAndUpgradeUser(user);
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("plan, generations_used")
+          .eq("id", user.id)
+          .single();
+
+        if (!profile) {
+          outputDiv.innerText = "Could not load your profile. Please try again.";
+          return;
+        }
+
+        renderUsageStatus(profile);
+
+        const currentGenerations = Number(profile.generations_used || 0);
+        if (profile.plan !== "paid" && currentGenerations >= FREE_PLAN_LIMIT) {
+          outputDiv.innerHTML = `
+            <div class="locked">
+              <strong>You've reached your free limit. Upgrade to continue.</strong>
+              <a href="${GUMROAD_URL}" class="unlock-btn" target="_blank" rel="noopener noreferrer">
+                Unlock Full Access for $12
+              </a>
+            </div>
+          `;
+          return;
+        }
+
+        const grade = document.getElementById("grade").value;
+        const subject = document.getElementById("subject").value;
+        const skill = document.getElementById("skill").value;
+        const level = document.getElementById("level").value;
+
+        generateBtn.disabled = true;
+        generateBtn.textContent = "Generating...";
+        outputDiv.innerHTML = "Generating your STAAR pack... ⏳";
+
         const {
           data: { session }
         } = await supabase.auth.getSession();
@@ -1230,13 +1232,24 @@
         }
 
         const text = await res.text();
+
         console.log("RAW RESPONSE:", text);
 
         let data;
+
         try {
           data = JSON.parse(text);
-        } catch {
-          data = { error: text };
+          console.log("✅ PARSED DATA:", data);
+        } catch (err) {
+          console.error("❌ JSON PARSE FAILED:", err);
+          alert("Error processing response from server.");
+          return;
+        }
+
+        if (!data || !data.text) {
+          console.error("❌ INVALID RESPONSE FORMAT:", data);
+          alert("No content returned from server.");
+          return;
         }
 
         if (!res.ok) {
@@ -1244,7 +1257,6 @@
           return;
         }
 
-        const rawText = data.text || "";
         if (profile.plan !== "paid") {
           const nextGenerationsUsed = currentGenerations + 1;
           const { error: usageUpdateError } = await supabase
@@ -1258,51 +1270,32 @@
           }
         }
 
-        const passage = extractSection(rawText, "### PASSAGE OR CONTEXT:", "### QUESTIONS:");
-        const questions = extractSection(rawText, "### QUESTIONS:", "### ANSWER KEY:");
-        const answerKey = extractSection(rawText, "### ANSWER KEY:", "### PARENT HELP:");
-        const parentHelp = extractSection(rawText, "### PARENT HELP:");
-        const tutorGuidance = buildTutorGuidance(questions, answerKey);
-        const progressCount = incrementDailyProgress();
+        const outputEl = document.getElementById("output");
 
-        outputDiv.innerHTML = `
-          <div class="worksheet">
-            <p class="mode-status" id="mode-status">Mode: Practice Mode ON</p>
-            <div class="progress-feel">
-              <strong>Skill:</strong> ${skill}<br>
-              <strong>Level:</strong> ${level}<br>
-              <strong>Progress:</strong> ${progressCount} Skill${progressCount === 1 ? "" : "s"} Completed Today ✔
-            </div>
-            <div id="practice-section">
-              <h4 class="view-section-label">👨‍🎓 Practice Mode</h4>
-              <h3>📖 Passage</h3>
-              ${formatSectionContent(passage)}
-              <h3>❓ Questions</h3>
-              ${formatSectionContent(questions)}
-            </div>
-            <div id="tutor-section" style="display: none;">
-              <h4 class="view-section-label">👨‍🏫 Tutor Mode</h4>
-              <p style="font-style: italic; color: #555;">Same content, plus hints and guided reasoning.</p>
-              <h3>📖 Passage</h3>
-              ${formatSectionContent(passage)}
-              <h3>🧠 Think Like This</h3>
-              ${tutorGuidance}
-            </div>
-            <div id="answer-section" style="display: none;">
-              <h4 class="view-section-label">🧠 Teacher / Parent Answer Key</h4>
-              <p style="font-style: italic; color: #555;">Review answers after your child completes the practice.</p>
-              <h3>✅ Answer Key</h3>
-              ${formatSectionContent(answerKey)}
-              <h3>👨‍👩‍👧 Parent Help</h3>
-              ${formatSectionContent(parentHelp)}
-            </div>
-          </div>
-        `;
+        if (!outputEl) {
+          console.error("❌ OUTPUT ELEMENT NOT FOUND");
+          alert("UI error: output container missing.");
+          return;
+        }
+
+        // Force UI update
+        outputEl.innerHTML = "";
+
+        const contentWrapper = document.createElement("div");
+        contentWrapper.className = "generated-content";
+
+        const pre = document.createElement("pre");
+        pre.textContent = data.text;
+
+        contentWrapper.appendChild(pre);
+        outputEl.appendChild(contentWrapper);
+
+        console.log("✅ UI SUCCESSFULLY UPDATED");
 
         viewToggle.style.display = "flex";
-        toggleView(currentView);
       } catch (err) {
-        outputDiv.innerText = "Something went wrong while generating your pack. Please try again.";
+        console.error("❌ GENERATE FAILED:", err);
+        alert("Something went wrong. Please try again.");
       } finally {
         generateBtn.disabled = false;
         generateBtn.textContent = "Generate STAAR Pack";
