@@ -1602,10 +1602,14 @@
     async function generate() {
       const runId = ++generateRunId;
       console.log("🚀 GENERATE TRIGGERED");
-      // 🔥 FORCE RESET STUCK STATE
-      if (isGenerating) {
-        console.log("⚠️ Resetting stuck generate state");
-        isGenerating = false;
+      console.log("STATE:", {
+        isGenerating,
+        authReady,
+        hasSession: !!cachedSession
+      });
+      if (currentController) {
+        currentController.abort();
+        console.log("🛑 Previous request aborted");
       }
       isGenerating = true;
       const outputDiv = document.getElementById("output");
@@ -1689,10 +1693,6 @@
         console.log("✅ USING CACHED TOKEN");
 
         const startTime = Date.now();
-        // 🔥 cancel previous request
-        if (currentController) {
-          currentController.abort();
-        }
         currentController = new AbortController();
         console.log("📡 SENDING REQUEST", generateRunId);
         const res = await fetch(
