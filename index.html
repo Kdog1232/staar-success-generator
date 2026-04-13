@@ -1311,6 +1311,11 @@
       refreshUsageStatus(initialUser.id);
     }
 
+
+    window.addEventListener("beforeunload", async () => {
+      await supabase.auth.signOut();
+    });
+
     supabase.auth.onAuthStateChange(async (event) => {
       if (event === "SIGNED_OUT") {
         upgradeChecked = false;
@@ -1321,15 +1326,18 @@
         return;
       }
       const currentUser = await requireAuth({ showPrompt: false });
-      if (currentUser) {
-        const {
-          data: { user }
-        } = await supabase.auth.getUser();
-        if (user) {
-          await checkAndUpgradeUser(user);
-        }
-        refreshUsageStatus(currentUser.id);
+      if (!currentUser) {
+        setAppAuthenticatedState(false);
+        return;
       }
+
+      const {
+        data: { user }
+      } = await supabase.auth.getUser();
+      if (user) {
+        await checkAndUpgradeUser(user);
+      }
+      refreshUsageStatus(currentUser.id);
     });
   </script>
 </body>
