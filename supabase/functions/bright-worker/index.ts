@@ -39,6 +39,33 @@ serve(async (req) => {
     });
   }
 
+  const email = user.email?.toLowerCase().trim();
+  const paidEmails = [
+    "garyadams892@gmail.com",
+    "mdhowell64@gmail.com",
+  ];
+
+  if (email && paidEmails.includes(email)) {
+    const { data: existingProfile } = await supabase
+      .from("profiles")
+      .select("id, plan")
+      .eq("id", user.id)
+      .single();
+
+    if (existingProfile && existingProfile.plan !== "paid") {
+      console.log("🔥 Upgrading user in backend:", email);
+
+      await supabase
+        .from("profiles")
+        .update({
+          plan: "paid",
+          generations_used: 0,
+          upgraded_via: "gumroad_manual",
+        })
+        .eq("id", user.id);
+    }
+  }
+
   const { data: profile } = await supabase
     .from("profiles")
     .select("plan, generations_used")
