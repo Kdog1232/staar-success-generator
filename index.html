@@ -807,6 +807,9 @@
     let crossContent = "";
     let structuredQuestions = [];
     let generatedPassage = "";
+    let cachedSession = null;
+    let cachedUser = null;
+    let authReady = false;
 
     function resetGenerateState() {
       const generateBtn = document.getElementById("generate-btn");
@@ -1009,33 +1012,76 @@
     }
 
     async function requireAuth({ showPrompt = true } = {}) {
-      try {
-        const {
-          data: { user },
-          error
-        } = await supabase.auth.getUser();
+      if (!authReady) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
 
-        if (error || !user) {
-          setAppAuthenticatedState(false);
-          stopProfileUpdatesSubscription();
-          if (showPrompt) {
-            showAuthFeedback("Please log in to continue.", "info");
-          }
-          return null;
-        }
-
-        setAppAuthenticatedState(true);
-        updateProfileSection(user);
-        startProfileUpdatesSubscription(user.id);
-        return user;
-      } catch {
+      const user = cachedUser;
+      if (!user) {
         setAppAuthenticatedState(false);
         stopProfileUpdatesSubscription();
         if (showPrompt) {
-          showAuthFeedback("Could not verify your login. Please sign in again.", "error");
+          showAuthFeedback("Please log in to continue.", "info");
         }
         return null;
       }
+
+      setAppAuthenticatedState(true);
+      updateProfileSection(user);
+      startProfileUpdatesSubscription(user.id);
+      return user;
+    }
+
+    async function initAuth() {
+      console.log("🔐 Initializing auth...");
+
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) {
+          console.error("❌ Initial auth session load failed:", error);
+        }
+        cachedSession = data?.session ?? null;
+        cachedUser = cachedSession?.user ?? null;
+        console.log("✅ Initial session:", cachedSession);
+      } catch (error) {
+        console.error("❌ Auth initialization failed:", error);
+      }
+
+      authReady = true;
+
+      if (cachedUser) {
+        setAppAuthenticatedState(true);
+        updateProfileSection(cachedUser);
+        startProfileUpdatesSubscription(cachedUser.id);
+        await checkAndUpgradeUser(cachedUser);
+        await refreshUsageStatus(cachedUser.id);
+      } else {
+        setAppAuthenticatedState(false);
+      }
+
+      supabase.auth.onAuthStateChange(async (event, session) => {
+        console.log("🔄 Auth state changed");
+        cachedSession = session ?? null;
+        cachedUser = cachedSession?.user ?? null;
+
+        if (event === "SIGNED_OUT") {
+          upgradeChecked = false;
+          stopProfileUpdatesSubscription();
+          setAppAuthenticatedState(false);
+          resetProtectedUI();
+          redirectToLogin();
+          return;
+        }
+
+        const currentUser = await requireAuth({ showPrompt: false });
+        if (!currentUser) {
+          setAppAuthenticatedState(false);
+          return;
+        }
+
+        await checkAndUpgradeUser(currentUser);
+        await refreshUsageStatus(currentUser.id);
+      });
     }
 
     function findFirstMarkerIndex(text, markers, fromIndex = 0) {
@@ -1457,6 +1503,8 @@
         }
 
         if (data.session) {
+          cachedSession = data.session;
+          cachedUser = data.session.user ?? null;
           showAuthFeedback("Account created! You are now logged in.", "success");
           const user = await requireAuth({ showPrompt: false });
           if (user) {
@@ -1479,7 +1527,7 @@
         const email = document.getElementById("email").value.trim().toLowerCase();
         const password = document.getElementById("password").value;
 
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password
         });
@@ -1487,6 +1535,8 @@
         if (error) {
           showAuthFeedback("Login failed. Check your email/password and try again.", "error");
         } else {
+          cachedSession = data?.session ?? null;
+          cachedUser = cachedSession?.user ?? null;
           showAuthFeedback("Logged in successfully!", "success");
           const user = await requireAuth({ showPrompt: false });
           if (user) {
@@ -1625,22 +1675,18 @@
         crossContent = "";
         generatedPassage = "";
 
-        console.log("🔐 Checking session...");
-        let session = null;
-        for (let i = 0; i < 3; i++) {
-          const sessionRes = await supabase.auth.getSession();
-          session = sessionRes?.data?.session || null;
-          if (session?.access_token) break;
-          console.log("⏳ Waiting for session...");
-          await new Promise((r) => setTimeout(r, 150));
+        if (!authReady) {
+          console.log("⏳ Waiting for auth...");
+          await new Promise((r) => setTimeout(r, 100));
         }
-        console.log("SESSION:", session);
-        if (!session?.access_token) {
-          console.log("❌ SESSION FAILED");
-          outputDiv.innerHTML = "Session expired. Refresh and log in again.";
+
+        if (!cachedSession?.access_token) {
+          console.log("❌ No session available");
+          outputDiv.innerHTML = "Please log in.";
           return;
         }
-        console.log("✅ SESSION OK");
+        const token = cachedSession.access_token;
+        console.log("✅ USING CACHED TOKEN");
 
         const startTime = Date.now();
         // 🔥 cancel previous request
@@ -1655,7 +1701,7 @@
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${session.access_token}`,
+              Authorization: `Bearer ${token}`,
               apikey: SUPABASE_ANON_KEY
             },
             body: JSON.stringify({
@@ -1788,36 +1834,7 @@
     });
     populateSubjectButtons();
     setAppAuthenticatedState(false);
-    const initialUser = await requireAuth({ showPrompt: false });
-    if (initialUser) {
-      await checkAndUpgradeUser(initialUser);
-      refreshUsageStatus(initialUser.id);
-    }
-
-
-    supabase.auth.onAuthStateChange(async (event) => {
-      if (event === "SIGNED_OUT") {
-        upgradeChecked = false;
-        stopProfileUpdatesSubscription();
-        setAppAuthenticatedState(false);
-        resetProtectedUI();
-        redirectToLogin();
-        return;
-      }
-      const currentUser = await requireAuth({ showPrompt: false });
-      if (!currentUser) {
-        setAppAuthenticatedState(false);
-        return;
-      }
-
-      const {
-        data: { user }
-      } = await supabase.auth.getUser();
-      if (user) {
-        await checkAndUpgradeUser(user);
-      }
-      refreshUsageStatus(currentUser.id);
-    });
+    await initAuth();
   </script>
 </body>
 </html>
