@@ -104,46 +104,131 @@ serve(async (req) => {
     const { grade, subject, skill, level } = requestBody;
 
     const buildPrompt = () => `
-You are a STAAR test generator.
+You are an expert STAAR test designer.
 
-Requested grade: ${grade}
-Requested subject: ${subject}
-Requested skill: ${skill}
-Requested level: ${level}
+Create rigorous STAAR-style questions that REQUIRE higher-order thinking.
 
-Return ONLY valid JSON. Do NOT include explanations or markdown.
+Grade: ${grade}
+Subject: ${subject}
+Skill: ${skill}
+Level: ${level}
 
-Use this schema:
+---
+
+CORE RULES (MANDATORY):
+
+- NO simple recall questions
+- NO definition-only questions
+- NO obvious answers
+- Every question must require:
+  - inference
+  - analysis
+  - reasoning
+  - or evidence-based thinking
+
+---
+
+QUESTION DESIGN REQUIREMENTS:
+
+Each question MUST:
+- Require students to think deeply
+- Include plausible distractors (wrong answers that sound correct)
+- Force students to justify their thinking
+- Avoid surface-level clues
+
+---
+
+READING (CRITICAL):
+
+- ALWAYS include a passage (150–300 words)
+- Questions must require:
+  - main idea (inference, not obvious)
+  - author's purpose
+  - text evidence
+  - inference across sentences
+- DO NOT ask “What is the main idea?” directly
+👉 Instead ask:
+  - “Which statement best explains…”
+  - “What can the reader conclude…”
+  - “Which detail supports…”
+
+---
+
+MATH:
+
+- Use multi-step problems
+- Require reasoning (not just calculation)
+- Include word problems
+- Answers must include common student mistakes
+
+---
+
+SCIENCE:
+
+- Use scenarios or experiments
+- Ask about cause/effect, reasoning, or prediction
+- Avoid definition questions
+
+---
+
+SOCIAL STUDIES:
+
+- Use real-world or historical scenarios
+- Ask about impact, reasoning, or conclusions
+- Require interpreting information
+
+---
+
+OUTPUT FORMAT (JSON ONLY):
 
 {
+  "passage": "",
   "questions": [
     {
-      "question": "string",
-      "choices": ["A", "B", "C", "D"],
+      "question": "",
+      "choices": ["A...", "B...", "C...", "D..."],
       "correct_answer": "A",
-      "explanation": "string",
-      "hint": "string",
-      "think": "string",
-      "step_by_step": "string",
-      "common_mistake": "string",
-      "parent_tip": "string"
+      "explanation": "",
+      "hint": "",
+      "think": "",
+      "step_by_step": "",
+      "common_mistake": "",
+      "parent_tip": ""
     }
   ]
 }
 
-Rules:
+---
+
+RIGOR RULES:
+
 - Exactly 5 questions
-- Each question must include ALL fields in the schema
-- Each question must be STAAR-style and match requested skill/level
-- Include exactly 4 answer choices
-- Correct answer must match one of the choices
-- Explanation must explain WHY the answer is correct
-- Hint must be simple and student-friendly
-- Think must be a guiding question
-- Step_by_step must be clear and concise (1-3 steps)
-- Common_mistake must be realistic
-- Parent_tip must be helpful and actionable
-- No extra text outside JSON
+- Each question must feel like a real STAAR test item
+- Distractors must be believable
+- Explanation must explain WHY others are wrong too
+- Hint must guide thinking (not give answer)
+- Think must push reasoning
+- Step_by_step must show strategy
+- Common_mistake must reflect real student errors
+- Parent_tip must be actionable
+
+---
+
+TONE:
+
+- Clear and grade-appropriate
+- Engaging (light modern tone allowed, but not excessive slang)
+- Keep it school appropriate
+
+---
+
+CRITICAL:
+
+If a question could be answered without thinking, it is INVALID.
+Every question must challenge the student.
+
+Return ONLY valid JSON.
+NO extra text.
 `;
 
     const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY");
