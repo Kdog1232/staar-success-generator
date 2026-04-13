@@ -1755,21 +1755,45 @@
 
         const fallback = data.fallback || data.standard || data.text || "";
 
-        if (data.questions && data.questions.length >= 3) {
+        // 🔥 ALWAYS ATTEMPT TO USE DATA FIRST
+        if (data.questions && data.questions.length > 0) {
+          console.log("✅ USING STRUCTURED QUESTIONS:", data.questions.length);
+
+          // If less than 5, pad it (prevents UI break)
+          if (data.questions.length < 5) {
+            const needed = 5 - data.questions.length;
+
+            for (let i = 0; i < needed; i++) {
+              data.questions.push({
+                question: "Which detail best supports the idea in the passage?",
+                choices: [
+                  "A. A detail from the text",
+                  "B. An unrelated idea",
+                  "C. A random guess",
+                  "D. Something not mentioned"
+                ],
+                correct_answer: "A",
+                explanation: "The correct answer is supported by the passage."
+              });
+            }
+
+            console.log("⚠️ Padded questions to 5");
+          }
+
           renderQuestions(data.questions);
           generatedPassage = cleanText(data.passage || "");
-        } else {
+        } else if (fallback) {
+          console.log("⚠️ FALLBACK USED");
           showFallback(fallback);
-        }
-        if (!structuredQuestions.length && data.cross) {
-          crossContent = data.cross;
-        }
-
-        if (!structuredQuestions.length && !fallback) {
-          console.error("❌ INVALID RESPONSE FORMAT:", data);
-          outputDiv.innerText = "No questions generated. Try again.";
+        } else {
+          console.log("❌ NO VALID DATA");
+          outputDiv.innerText = "Something went wrong. Try again.";
           resetGenerateState();
           return;
+        }
+
+        if (!structuredQuestions.length && data.cross) {
+          crossContent = data.cross;
         }
         lastGeneratedContentMode = "both";
         const progressCount = incrementDailyProgress();
