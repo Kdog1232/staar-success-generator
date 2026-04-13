@@ -523,6 +523,14 @@
       margin-bottom: 0;
     }
 
+    .question-card {
+      margin: 0 0 14px;
+      padding: 12px 14px;
+      border: 1px solid #e5ebf2;
+      border-radius: 10px;
+      background: #fff;
+    }
+
     @media (max-width: 760px) {
       body {
         padding: 20px 12px 40px;
@@ -725,6 +733,7 @@
     let lastGeneratedContentMode = null;
     let standardContent = "";
     let crossContent = "";
+    let structuredQuestions = [];
 
     function redirectToLogin() {
       if (isRedirectingToLogin) return;
@@ -844,6 +853,7 @@
       lastGeneratedContentMode = null;
       standardContent = "";
       crossContent = "";
+      structuredQuestions = [];
       usageStatus.textContent = "";
       emailLabel.textContent = "Logged in as: —";
       profilePlan.textContent = "Plan: Free";
@@ -1044,6 +1054,33 @@
         .join("");
     }
 
+    function renderStructuredQuestions(questions) {
+      if (questions && questions.length > 0) {
+        return questions.map((q, i) => `
+          <div class="question-card">
+            <h3>Q${i + 1}. ${q.question}</h3>
+            <ul>
+              ${(q.choices || []).map((c) => `<li>${c}</li>`).join("")}
+            </ul>
+            <p><strong>Answer:</strong> ${q.correct_answer || ""}</p>
+            <p><strong>Explanation:</strong> ${q.explanation || ""}</p>
+          </div>
+        `).join("");
+      }
+      return "No questions generated. Try again.";
+    }
+
+    function renderQuestions(questions) {
+      structuredQuestions = Array.isArray(questions) ? questions : [];
+    }
+
+    function showFallback(fallbackText) {
+      const fallback = fallbackText || "";
+      standardContent = fallback;
+      crossContent = "";
+      structuredQuestions = [];
+    }
+
     function getTodayKey() {
       const now = new Date();
       return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
@@ -1130,13 +1167,16 @@
         activeTab = "practice";
       }
 
+      const structuredHTML = renderStructuredQuestions(structuredQuestions);
+      const hasStructured = structuredQuestions && structuredQuestions.length > 0;
+
       practiceSection.innerHTML = `
         <h4 class="view-section-label">👨‍🎓 Practice Mode</h4>
         ${shouldShowPassage && passage
           ? `<h3>📖 Passage</h3><p class="passage-text">${cleanText(passage)}</p>`
           : ""}
         <h3>❓ Questions</h3>
-        ${formatQuestionBlocks(questions)}
+        ${hasStructured ? structuredHTML : formatQuestionBlocks(questions)}
       `;
 
       crossSection.innerHTML = `
@@ -1146,7 +1186,7 @@
           ? `<h3>📖 Passage</h3><p class="passage-text">${cleanText(passage)}</p>`
           : ""}
         <h3>❓ Questions</h3>
-        ${formatQuestionBlocks(questions)}
+        ${hasStructured ? structuredHTML : formatQuestionBlocks(questions)}
       `;
 
       tutorSection.innerHTML = `
@@ -1497,10 +1537,18 @@
           }
         }
 
-        standardContent = data.standard || data.text || "";
-        crossContent = data.cross || "";
+        const fallback = data.fallback || data.standard || data.text || "";
 
-        if (!standardContent && !crossContent) {
+        if (data.questions && data.questions.length > 0) {
+          renderQuestions(data.questions);
+        } else {
+          showFallback(fallback);
+        }
+        if (!structuredQuestions.length && data.cross) {
+          crossContent = data.cross;
+        }
+
+        if (!structuredQuestions.length && !fallback) {
           console.error("❌ INVALID RESPONSE FORMAT:", data);
           outputDiv.innerText = "No questions generated. Try again.";
           return;
