@@ -102,74 +102,111 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-    const { grade, subject, skill, level, tutorMode = false } = requestBody;
+    const { grade, subject, skill, level, tutorMode = false, contentMode = "standard" } = requestBody;
 
     const prompt = `
-You are a Texas STAAR assessment expert.
-
-Generate HIGH-RIGOR STAAR-style practice.
+You are generating a teacher-ready STAAR practice assignment for Texas students.
 
 INPUTS:
 - Grade: ${grade}
 - Subject: ${subject}
 - Skill Focus: ${skill}
 - Level: ${level}
+- Tutor Mode Enabled: ${tutorMode}
+- Content Mode: ${contentMode}
 
-GOAL:
-Create realistic STAAR practice that matches test difficulty and question style while remaining clear for students.
+PRIMARY GOAL:
+Produce HIGH-RIGOR, SUBJECT-ACCURATE STAAR-aligned practice that is better than typical worksheet generators.
 
-RIGOR RULES (ALWAYS):
-- Match STAAR rigor and wording.
-- Write plausible, high-quality distractors.
-- Include reasoning-based items, not only recall.
-- Include a mix of easy, medium, and challenging questions
-- Do NOT label questions with DOK levels
-- Keep each question aligned to the selected skill focus.
+GLOBAL RULES (MANDATORY):
+- Keep output polished, classroom-ready, and instructionally useful.
+- Match authentic STAAR tone and structure by subject.
+- Include 5-8 total questions with difficulty progression (easy -> medium -> hard).
+- Include at least 1 reasoning question and at least 1 application question.
+- Use realistic distractors (no obvious throwaway choices).
+- Avoid repetitive stems and avoid generic recall-only questions.
+- Align questions to TEKS-level rigor and the selected skill focus (${skill}).
+- Do NOT label DOK levels.
+- NEVER force every subject into long-passage format.
+- Use correct markdown headers exactly as specified below.
 
-SUBJECT-SPECIFIC REQUIREMENTS:
-- Reading: Include one engaging passage (250-400 words) and build questions from it.
-- Math: Include multi-step real-world problems and show authentic STAAR-style structure.
-- Science: Include scenario-based reasoning questions with evidence-focused thinking.
-- Social Studies: Include historical or civic context that requires analysis, interpretation, and cause/effect reasoning.
+CONTENT MODE RULES (MANDATORY):
+- If contentMode = "standard":
+  - Reading/ELAR stays passage-based.
+  - Math stays direct-problem first (no long passage).
+  - Science stays direct-concept first + short scenario.
+  - Social Studies stays short stimulus based.
+- If contentMode = "cross_curricular":
+  - ALWAYS include one 250-400 word passage/context for ALL subjects.
+  - Passage must be based on the selected subject (${subject}), not generic reading.
+  - ALL questions must depend on that passage/context.
+  - Preserve subject rigor inside the passage:
+    - Math: calculations and multi-step quantitative reasoning from passage details.
+    - Science: cause/effect and evidence-based scientific reasoning from passage details.
+    - Social Studies: historical/civic reasoning and interpretation from passage details.
 
-SKILL MAPPING:
-Use the selected skill focus (${skill}) as the primary target for most questions.
+SUBJECT FORMAT RULES (STRICT):
+1) READING / ELAR
+- Must include one passage of 250-400 words.
+- Every question must depend on that passage.
+- Ensure question mix includes:
+  - inference
+  - vocabulary in context
+  - theme/central idea
+  - evidence-based analysis
 
-OUTPUT FORMAT (USE THESE HEADERS EXACTLY):
-### PASSAGE OR CONTEXT:
-...
+2) MATH
+- If contentMode = "standard":
+  - Do NOT include a long passage.
+  - Begin with 4-6 direct problems (equations, multi-step, and real-world math).
+  - Then include 1-2 applied problems using one short scenario (2-3 sentences max).
+- If contentMode = "cross_curricular":
+  - Use a 250-400 word subject-based passage/context and derive all math items from it.
+- Include STAAR-style word problems, multi-step reasoning, and numerical response when appropriate.
+
+3) SCIENCE
+- If contentMode = "standard":
+  - Do NOT include a long passage.
+  - Begin with 3-4 direct concept questions.
+  - Then include one short scenario (experiment, observation, or real-world situation).
+  - Add 1-2 questions tied to that scenario.
+- If contentMode = "cross_curricular":
+  - Use a 250-400 word subject-based passage/context and derive all science items from it.
+- Emphasize cause/effect, scientific reasoning, and evidence use.
+
+4) SOCIAL STUDIES
+- If contentMode = "standard":
+  - Use a short historical/civic stimulus (not a full passage).
+- If contentMode = "cross_curricular":
+  - Use a 250-400 word historical/civic passage/context and derive all items from it.
+- Include interpretation, cause/effect, and reasoning questions tied to the stimulus/context.
+
+OUTPUT FORMAT (STRICT - USE THESE HEADERS EXACTLY):
+### PASSAGE OR CONTEXT (ONLY if required by subject)
 
 ### QUESTIONS:
-...
+- Number questions clearly.
+- Ensure the full set follows the subject format rules above.
 
 ### ANSWER KEY:
-- For EACH question, use this exact structure:
-  1. Correct Answer: <letter or short answer>
-     Explanation:
-     <clear why, with evidence from passage/problem>
-     Common Mistake:
-     <why a student might pick a wrong answer>
-     Parent Tip:
-     <simple practical coaching step for a parent>
+For EACH question include:
+- Correct Answer:
+- Explanation: (must reference the actual question/scenario and model reasoning)
+- Common Mistake: (why a student might miss it)
+- Parent Tip: (simple actionable coaching step)
 
-- Keep language parent-friendly:
-  - short, clear sentences
-  - no educational jargon
-  - specific help, not generic advice
-  - concise but still rigorous in reasoning
-
+${tutorMode ? `### TUTOR MODE:
+For EACH question include:
+- Hint: reference an exact part of the question/scenario.
+- Think Like This: model student thinking in 1-2 steps.
+- Why: short evidence-based reasoning.
+` : ``}
 ### PARENT HELP:
-- Give 3-5 short coaching tips parents can use right away based on common errors in this set.
+- Provide 3-5 actionable parent tips based on likely student errors in this set.
 
-TUTOR MODE UPGRADE (APPLY ONLY IF tutorMode = true):
-${tutorMode ? `- Add a section titled "### TUTOR MODE:"
-- For EACH question include:
-  - Hint: Reference exact words/phrases from the passage or context. Avoid generic hints.
-  - Think like this: 1-2 short coaching lines that model real student thinking using evidence from THIS passage/context.
-  - Correct Answer: Include answer choice and short label when possible (example: C) Excited).
-  - Why: 1-2 concise sentences that quote or paraphrase the strongest textual/math/science evidence.
-- Keep tone like a live tutor guiding one child through one exact question.` : `- tutorMode is false. Do not include a TUTOR MODE section.`}
-
+FINAL QUALITY BAR:
+- The result should read like a high-quality STAAR prep handout created by a strong classroom teacher.
+- Be rigorous, clear, and practical.
 `;
 
     const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY");
