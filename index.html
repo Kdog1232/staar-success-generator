@@ -524,11 +524,54 @@
     }
 
     .question-card {
-      margin: 0 0 14px;
-      padding: 12px 14px;
-      border: 1px solid #e5ebf2;
-      border-radius: 10px;
-      background: #fff;
+      background: white;
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 20px;
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+    }
+
+    .question-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .choices {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+
+    .choice {
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .choice:hover {
+      background: #f3f4f6;
+    }
+
+    .choice.selected {
+      background: #dbeafe;
+      border-color: #2563eb;
+    }
+
+    .answer-box {
+      margin-top: 10px;
+      color: #16a34a;
+      font-weight: 600;
+    }
+
+    .explanation-box {
+      margin-top: 8px;
+      font-size: 14px;
+      color: #555;
     }
 
     @media (max-width: 760px) {
@@ -1058,12 +1101,25 @@
       if (questions && questions.length > 0) {
         return questions.map((q, i) => `
           <div class="question-card">
-            <h3>Q${i + 1}. ${q.question}</h3>
-            <ul>
-              ${(q.choices || []).map((c) => `<li>${c}</li>`).join("")}
-            </ul>
-            <p><strong>Answer:</strong> ${q.correct_answer || ""}</p>
-            <p><strong>Explanation:</strong> ${q.explanation || ""}</p>
+            <div class="question-title">
+              Q${i + 1}. ${q.question || ""}
+            </div>
+
+            <div class="choices">
+              ${(q.choices || []).map((c, idx) => `
+                <div class="choice" data-q="${i}" data-choice="${idx}">
+                  ${c}
+                </div>
+              `).join("")}
+            </div>
+
+            <div class="answer-box">
+              <strong>Answer:</strong> ${q.correct_answer || ""}
+            </div>
+
+            <div class="explanation-box">
+              ${q.explanation || ""}
+            </div>
           </div>
         `).join("");
       }
@@ -1200,9 +1256,9 @@
           structuredQuestions.map((q, i) => `
             <div class="question-card">
               <strong>Q${i + 1}:</strong> ${q.question}<br><br>
-              <em>Hint:</em> Look for evidence in the passage.<br>
-              <em>Think:</em> Why is "${q.correct_answer}" correct?<br>
-              <em>Explanation:</em> ${q.explanation}
+              <div><strong>Hint:</strong> ${q.hint || "Look for evidence in the passage."}</div>
+              <div><strong>Think like this:</strong> ${q.think || `Why is "${q.correct_answer || "this answer"}" correct?`}</div>
+              <div><strong>Step-by-step:</strong> ${q.step_by_step || q.explanation || "1) Read the question. 2) Eliminate wrong choices. 3) Prove your answer."}</div>
             </div>
           `).join("")
         }
@@ -1217,16 +1273,31 @@
         ${
           structuredQuestions.map((q, i) => `
             <div class="question-card">
-              <strong>Q${i + 1}:</strong> ${q.correct_answer}<br>
-              <strong>Explanation:</strong> ${q.explanation}
+              <strong>Q${i + 1} Correct Answer:</strong> ${q.correct_answer}<br><br>
+              <div><strong>Explanation:</strong> ${q.explanation || "Use text evidence to justify the best answer."}</div>
+              <div><strong>Common Mistake:</strong> ${q.common_mistake || "Choosing an answer that sounds familiar but is not supported by the text."}</div>
+              <div><strong>Parent Tip:</strong> ${q.parent_tip || "Ask your child to point to the exact evidence that proves the answer."}</div>
             </div>
           `).join("")
         }
       `;
 
       if (!structuredQuestions.length) {
-        tutorSection.innerHTML = showFallbackUI();
-        answerSection.innerHTML = showFallbackUI();
+        const fallback = standardContent || "Try generating again.";
+
+        tutorSection.innerHTML = `
+          <div class="question-card">
+            <strong>Fallback Content:</strong><br><br>
+            ${fallback}
+          </div>
+        `;
+
+        answerSection.innerHTML = `
+          <div class="question-card">
+            No structured answers available yet.<br><br>
+            ${fallback}
+          </div>
+        `;
       }
 
       const showingPractice = activeTab === "practice";
@@ -1622,6 +1693,14 @@
     window.signIn = signIn;
     window.logout = logout;
     window.forgotPassword = forgotPassword;
+    document.addEventListener("click", (e) => {
+      if (e.target.classList.contains("choice")) {
+        const parent = e.target.closest(".choices");
+        if (!parent) return;
+        parent.querySelectorAll(".choice").forEach((choice) => choice.classList.remove("selected"));
+        e.target.classList.add("selected");
+      }
+    });
     populateSubjectButtons();
     setAppAuthenticatedState(false);
     const initialUser = await requireAuth({ showPrompt: false });
