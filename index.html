@@ -1755,7 +1755,7 @@
 
         const fallback = data.fallback || data.standard || data.text || "";
 
-        if (data.questions && data.questions.length > 0) {
+        if (data.questions && data.questions.length >= 3) {
           renderQuestions(data.questions);
           generatedPassage = cleanText(data.passage || "");
         } else {
