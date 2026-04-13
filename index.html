@@ -604,9 +604,10 @@
 
     <section class="worksheet-card section">
       <div class="view-toggle" id="view-toggle" style="display: none;">
-        <button id="practice-tab" class="view-toggle-btn active" type="button" onclick="toggleView('practice')">👨‍🎓 Practice Mode</button>
-        <button id="tutor-tab" class="view-toggle-btn" type="button" onclick="toggleView('tutor')">👨‍🏫 Tutor Mode</button>
-        <button id="answer-tab" class="view-toggle-btn" type="button" onclick="toggleView('answer')">🧠 Answer Key</button>
+        <button id="practice-tab" class="view-toggle-btn active" type="button" onclick="setMode('practice')">👨‍🎓 Practice Mode</button>
+        <button id="cross-tab" class="view-toggle-btn" type="button" onclick="setMode('cross')">🌎 Cross-Curricular</button>
+        <button id="tutor-tab" class="view-toggle-btn" type="button" onclick="setMode('tutor')">👨‍🏫 Tutor Mode</button>
+        <button id="answer-tab" class="view-toggle-btn" type="button" onclick="setMode('answer')">🧠 Answer Key</button>
       </div>
       <div id="output">Your STAAR practice will appear here...</div>
     </section>
@@ -664,7 +665,8 @@
       Science: "🔬 Science",
       "Social Studies": "🌎 Social Studies"
     };
-    let currentView = "practice";
+    let activeTab = "practice"; // practice | cross | tutor | answer
+    let contentMode = "standard"; // standard | cross_curricular
     let profileUpdatesChannel = null;
     let profileUpdatesUserId = null;
     let bannerTimeoutId = null;
@@ -783,6 +785,8 @@
       const banner = document.getElementById("upgrade-banner");
       outputDiv.innerText = "Your STAAR practice will appear here...";
       viewToggle.style.display = "none";
+      activeTab = "practice";
+      contentMode = "standard";
       usageStatus.textContent = "";
       emailLabel.textContent = "Logged in as: —";
       profilePlan.textContent = "Plan: Free";
@@ -966,29 +970,48 @@
       }).join("");
     }
 
-    function toggleView(view) {
+    function renderCurrentView() {
       const practiceSection = document.getElementById("practice-section");
+      const crossSection = document.getElementById("cross-section");
       const tutorSection = document.getElementById("tutor-section");
       const answerSection = document.getElementById("answer-section");
       const practiceTab = document.getElementById("practice-tab");
+      const crossTab = document.getElementById("cross-tab");
       const tutorTab = document.getElementById("tutor-tab");
       const answerTab = document.getElementById("answer-tab");
       const modeStatus = document.getElementById("mode-status");
 
-      currentView = ["practice", "tutor", "answer"].includes(view) ? view : "practice";
+      if (!practiceSection || !crossSection || !tutorSection || !answerSection || !practiceTab || !crossTab || !tutorTab || !answerTab || !modeStatus) return;
 
-      if (!practiceSection || !tutorSection || !answerSection || !practiceTab || !tutorTab || !answerTab || !modeStatus) return;
-
-      const showingPractice = currentView === "practice";
-      const showingTutor = currentView === "tutor";
-      const showingAnswer = currentView === "answer";
+      const showingPractice = activeTab === "practice";
+      const showingCross = activeTab === "cross";
+      const showingTutor = activeTab === "tutor";
+      const showingAnswer = activeTab === "answer";
       practiceSection.style.display = showingPractice ? "block" : "none";
+      crossSection.style.display = showingCross ? "block" : "none";
       tutorSection.style.display = showingTutor ? "block" : "none";
       answerSection.style.display = showingAnswer ? "block" : "none";
       practiceTab.classList.toggle("active", showingPractice);
+      crossTab.classList.toggle("active", showingCross);
       tutorTab.classList.toggle("active", showingTutor);
       answerTab.classList.toggle("active", showingAnswer);
-      modeStatus.textContent = `Mode: ${showingTutor ? "Tutor Mode ON" : showingPractice ? "Practice Mode ON" : "Answer Key ON"}`;
+      modeStatus.textContent = `Mode: ${contentMode === "cross_curricular" ? "Cross-Curricular ON" : "Practice Mode ON"}`;
+    }
+
+    function setMode(mode) {
+      activeTab = ["practice", "cross", "tutor", "answer"].includes(mode) ? mode : "practice";
+
+      if (mode === "cross") {
+        contentMode = "cross_curricular";
+      } else if (mode === "practice") {
+        contentMode = "standard";
+      }
+
+      renderCurrentView();
+    }
+
+    function toggleView(view) {
+      setMode(view);
     }
 
     function setActiveSubject(subject) {
@@ -1231,7 +1254,8 @@
               grade,
               subject,
               skill,
-              level
+              level,
+              contentMode
             })
           }
         );
@@ -1325,6 +1349,15 @@
               ${formatSectionContent(questions)}
             </div>
 
+            <div id="cross-section" style="display: none;">
+              <h4 class="view-section-label">🌎 Cross-Curricular</h4>
+              <p style="font-style: italic; color: #555;">Passage-based STAAR practice using the selected subject lens.</p>
+              <h3>📖 Passage / Context</h3>
+              ${formatSectionContent(passage)}
+              <h3>❓ Questions</h3>
+              ${formatSectionContent(questions)}
+            </div>
+
             <div id="tutor-section" style="display: none;">
               <h4 class="view-section-label">👨‍🏫 Tutor Mode</h4>
               <p style="font-style: italic; color: #555;">Same content, plus hints and guided reasoning.</p>
@@ -1346,6 +1379,7 @@
         `;
 
         viewToggle.style.display = "flex";
+        renderCurrentView();
       } catch (err) {
         console.error("❌ GENERATE FAILED:", err);
         alert("Something went wrong. Please try again.");
@@ -1355,6 +1389,7 @@
       }
     }
 
+    window.setMode = setMode;
     window.toggleView = toggleView;
     window.generate = generate;
     window.signUp = signUp;
