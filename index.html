@@ -480,8 +480,33 @@
       border: 1px solid #e7dcc7;
       background: #fffefb;
       border-radius: 10px;
-      line-height: 1.85;
+      line-height: 1.6;
       white-space: pre-line;
+    }
+
+    .answer-block {
+      background: #f9fafb;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    }
+
+    .answer-title {
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .answer-row {
+      margin-bottom: 6px;
+    }
+
+    .answer-row.subtle {
+      color: #6b7280;
+    }
+
+    .answer-row.tip {
+      color: #2563eb;
     }
 
     .question-block {
@@ -967,10 +992,40 @@
         .trim();
     }
 
-    function formatPassageBlock(passage) {
-      const cleanedPassage = cleanText(passage);
-      if (!cleanedPassage) return "";
-      return `<p class="passage-text">${formatSectionContent(cleanedPassage)}</p>`;
+    function extractField(text, label) {
+      const regex = new RegExp(label + ":(.*)", "i");
+      const match = text.match(regex);
+      return match ? cleanText(match[1]) : "";
+    }
+
+    function formatAnswerKey(text) {
+      const cleanedText = cleanText(text);
+      const items = cleanedText.split(/\n\s*\d+[\.\)\-]/).filter(Boolean);
+      if (!items.length) {
+        return `<div class="question-block">${formatSectionContent(cleanedText)}</div>`;
+      }
+
+      return items.map((item, i) => `
+        <div class="answer-block">
+          <div class="answer-title">Question ${i + 1}</div>
+
+          <div class="answer-row">
+            <strong>Answer:</strong> ${extractField(item, "Correct Answer")}
+          </div>
+
+          <div class="answer-row">
+            <strong>Why:</strong> ${extractField(item, "Explanation")}
+          </div>
+
+          <div class="answer-row subtle">
+            <strong>Common Mistake:</strong> ${extractField(item, "Common Mistake")}
+          </div>
+
+          <div class="answer-row tip">
+            <strong>Parent Tip:</strong> ${extractField(item, "Parent Tip")}
+          </div>
+        </div>
+      `).join("");
     }
 
     function formatQuestionBlocks(questions) {
@@ -1063,8 +1118,13 @@
       const answerKey = extractSection(content, ["### ANSWER KEY:", "### ANSWER KEY", "### ANSWERS:", "### ANSWERS"], ["### PARENT HELP:", "### PARENT SUPPORT:", "### FAMILY HELP:"]);
       const parentHelp = extractSection(content, ["### PARENT HELP:", "### PARENT SUPPORT:", "### FAMILY HELP:"]);
       const tutorGuidance = buildTutorGuidance(questions, answerKey);
-      const selectedSubject = (document.getElementById("subject").value || "").toLowerCase();
+      const subject = document.getElementById("subject").value || "";
+      const selectedSubject = subject.toLowerCase();
       const isReadingSubject = selectedSubject === "reading" || selectedSubject === "elar";
+      const shouldShowPassage =
+        selectedSubject === "reading" ||
+        selectedSubject === "elar" ||
+        activeTab === "cross";
       const crossTabVisible = !isReadingSubject;
 
       if (!crossTabVisible && activeTab === "cross") {
@@ -1073,7 +1133,9 @@
 
       practiceSection.innerHTML = `
         <h4 class="view-section-label">👨‍🎓 Practice Mode</h4>
-        ${contentMode === "cross_curricular" && passage ? `<h3>📖 Passage</h3>${formatPassageBlock(passage)}` : ""}
+        ${shouldShowPassage && passage
+          ? `<h3>📖 Passage</h3><p class="passage-text">${cleanText(passage)}</p>`
+          : ""}
         <h3>❓ Questions</h3>
         ${formatQuestionBlocks(questions)}
       `;
@@ -1081,8 +1143,8 @@
       crossSection.innerHTML = `
         <h4 class="view-section-label">🌎 Cross-Curricular</h4>
         <p style="font-style: italic; color: #555;">Passage-based STAAR practice using the selected subject lens.</p>
-        ${passage
-          ? `<h3>📖 Passage</h3>${formatPassageBlock(passage)}`
+        ${shouldShowPassage && passage
+          ? `<h3>📖 Passage</h3><p class="passage-text">${cleanText(passage)}</p>`
           : ""}
         <h3>❓ Questions</h3>
         ${formatQuestionBlocks(questions)}
@@ -1099,9 +1161,9 @@
         <h4 class="view-section-label">🧠 Teacher / Parent Answer Key</h4>
         <p style="font-style: italic; color: #555;">Review answers after your child completes the practice.</p>
         <h3>✅ Answer Key</h3>
-        ${formatSectionContent(cleanText(answerKey))}
+        ${formatAnswerKey(cleanText(answerKey))}
         <h3>👨‍👩‍👧 Parent Help</h3>
-        ${formatSectionContent(cleanText(parentHelp))}
+        <div class="question-block">${formatSectionContent(cleanText(parentHelp))}</div>
       `;
 
       const showingPractice = activeTab === "practice";
