@@ -528,6 +528,41 @@
       white-space: pre-line;
     }
 
+    .passage p {
+      margin: 0;
+      white-space: normal;
+    }
+
+    .question-block {
+      margin-bottom: 24px;
+      white-space: normal;
+    }
+
+    .question-text {
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .choices {
+      margin: 0;
+      padding: 0;
+    }
+
+    .choice {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .choice-label {
+      font-weight: 600;
+    }
+
+    .instruction {
+      margin: 0 0 8px;
+      font-weight: 600;
+    }
+
     .question-item,
     .answer-item,
     .tutor-item,
@@ -1092,12 +1127,15 @@
     function cleanText(text) {
       if (text === null || text === undefined) return "";
 
-      // Convert EVERYTHING to string safely
       const safe = typeof text === "string"
         ? text
         : JSON.stringify(text);
 
-      return safe.replace(/\s+/g, " ").trim();
+      return safe
+        .replace(/\n{2,}/g, " ")
+        .replace(/\s+/g, " ")
+        .replace(/\n+/g, " ")
+        .trim();
     }
 
     function extractField(text, label) {
@@ -1156,12 +1194,11 @@
     function renderAnswers(question) {
       if (!question) return "";
 
-      // SCR (short response)
       if (question.type === "scr") {
         return `
-      <div class="scr-container">
-        <p>${cleanText(question.question)}</p>
-        <textarea placeholder="Write your response..."></textarea>
+      <div class="scr-block">
+        <p class="question-text">${cleanText(question.question)}</p>
+        <textarea class="scr-input" placeholder="Write your response..."></textarea>
       </div>
     `;
       }
@@ -1169,21 +1206,29 @@
       const choices = Array.isArray(question.choices)
         ? question.choices
         : [];
+      const labels = ["A", "B", "C", "D"];
 
-      return choices.map((choice, index) => {
-        const label = ["A", "B", "C", "D"][index] || String.fromCharCode(65 + index);
+      const instruction = question.type === "multi_select"
+        ? `<p class="instruction">Select TWO answers.</p>`
+        : "";
 
+      const options = choices.map((choice, index) => {
+        const label = labels[index] || String.fromCharCode(65 + index);
         const safeChoice =
           typeof choice === "string"
             ? choice
             : choice?.text || "";
+        const clean = cleanText(safeChoice).replace(/^[A-D]\.\s*/i, "");
 
         return `
       <div class="choice">
-        <strong>${label}.</strong> ${cleanText(safeChoice)}
+        <span class="choice-label">${label}.</span>
+        <span class="choice-text">${clean}</span>
       </div>
     `;
       }).join("");
+
+      return `${instruction}<div class="choices">${options}</div>`;
     }
 
     function renderQuestions(questions) {
@@ -1193,12 +1238,15 @@
 
       return (Array.isArray(questions) ? questions : []).map((q, i) => {
         console.log("🧠 RENDERING QUESTION:", q);
+
+        if (q?.type === "scr") {
+          return `<div class="question-block">${renderAnswers(q)}</div>`;
+        }
+
         return `
-          <div class="question-item">
-            <div class="question-stem">${i + 1}. ${cleanText(q?.question || "")}</div>
-            <ul class="question-choices">
-              ${renderAnswers(q)}
-            </ul>
+          <div class="question-block">
+            <p class="question-text">${i + 1}. ${cleanText(q?.question || "")}</p>
+            ${renderAnswers(q)}
           </div>
         `;
       }).join("");
@@ -1343,6 +1391,11 @@
       if (!practiceSection || !crossSection || !tutorSection || !answerSection || !practiceTab || !crossTab || !tutorTab || !answerTab || !modeStatus) return;
 
       const displayPassage = cleanText(generatedPassage || "A passage was not returned. Please generate again.");
+      const passageHTML = `
+        <div class="passage">
+          <p>${cleanText(displayPassage)}</p>
+        </div>
+      `;
       const questionMarkup = renderQuestions(structuredQuestions);
       const tutorMarkup = renderTutor(structuredQuestions);
       const answerMarkup = renderAnswerKey(structuredQuestions);
@@ -1352,7 +1405,7 @@
         <div class="worksheet-header">STAAR Practice Worksheet</div>
         <section class="worksheet-section">
           <h3>📖 Passage</h3>
-          <p class="passage-text">${displayPassage}</p>
+          ${passageHTML}
         </section>
         <section class="worksheet-section">
           <h3>❓ Questions</h3>
@@ -1580,6 +1633,7 @@
 
     async function generate() {
       const runId = ++generateRunId;
+      console.log("🚀 GENERATE START");
       console.log("GENERATE TRIGGERED");
       console.log("STATE:", {
         isGenerating,
@@ -1588,18 +1642,21 @@
       });
       if (isGenerating) {
         console.log("🚫 Blocked duplicate generate");
-        return;
+        halt("Generation already in progress. Please wait.");
       }
-      isGenerating = true;
       const outputDiv = document.getElementById("output");
       const generateBtn = document.getElementById("generate-btn");
       const viewToggle = document.getElementById("view-toggle");
       const progressTimers = [];
-      const halt = (message) => {
+
+      function halt(message) {
         console.log("⛔ HALT:", message);
-        if (message) outputDiv.innerHTML = message;
+        if (message) {
+          outputDiv.innerHTML = message;
+        }
         throw new Error("HALT");
-      };
+      }
+      isGenerating = true;
 
       try {
         generateBtn.disabled = true;
@@ -1747,10 +1804,10 @@
             structuredQuestions.push({
               question: "Which detail best supports the main idea of the passage?",
               choices: [
-                "A. A text detail that directly supports the idea",
-                "B. A statement not found in the passage",
-                "C. A detail that contradicts the passage",
-                "D. A random opinion"
+                "A text detail that directly supports the central idea in the passage",
+                "A statement that sounds related but is not stated in the passage",
+                "A detail that conflicts with key evidence from the passage",
+                "An opinion that is not supported by passage evidence"
               ],
               correct_answer: "A",
               explanation: "The best answer is the detail that is directly supported by the passage."
@@ -1800,12 +1857,18 @@
           outputDiv.innerHTML = "Something went wrong. Try again.";
         }
       } finally {
+        console.log("🧹 FINAL CLEANUP");
         progressTimers.forEach((timer) => clearTimeout(timer));
+
+        isGenerating = false;
+        currentController = null;
+
         if (runId === generateRunId) {
           resetGenerateState();
         } else {
-          console.log("⚠️ Skipping reset — stale run");
+          console.log("⚠️ Skipping UI reset — stale run");
         }
+        console.log("✅ GENERATE UNLOCKED");
       }
     }
 

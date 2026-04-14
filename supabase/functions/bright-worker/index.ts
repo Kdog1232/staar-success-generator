@@ -229,6 +229,10 @@ DISTRACTOR RULES
 - Wrong answers must be plausible, text-based, and reflect student mistakes
 - Use partial truth, misinterpretation, and overgeneralization
 - Keep answer choices similar in tone and length
+- All answer choices must be fully written, content-based, and tied to the passage.
+- Never use placeholders like "Option 1", "Option 2", or "Choice A".
+- Do not include backend labels in choice text (no "A. ", "B. ", etc.). Choices must be plain text.
+- Inference distractors must be plausible misinterpretations, partial truths, or incorrect conclusions.
 
 PASSAGE RULES
 - Passage must support all five questions with enough textual evidence
@@ -248,7 +252,7 @@ Return ONLY valid JSON:
     {
       "type": "mc|part_a|part_b|multi_select|scr",
       "question": "...",
-      "choices": ["A...", "B...", "C...", "D..."],
+      "choices": ["...", "...", "...", "..."],
       "correct_answer": "A OR [A,C]",
       "explanation": "...",
       "paired_with": 3,
@@ -260,18 +264,37 @@ Return ONLY valid JSON:
   ]
 }
 - EXACTLY 5 questions
+- For "multi_select": include the sentence "Select TWO answers." in the question text and set exactly 2 correct answers.
+- SCR item should appear once as a single question object (no duplicate question text blocks).
+- FINAL SELF-CHECK before returning JSON:
+  1) No duplicate choice labels (for example "A. A.")
+  2) No placeholders
+  3) Multi-select has exactly 2 correct answers
+  4) SCR appears once
+  5) Every question aligns to the requested skill
 - NO markdown
 - NO extra text`;
 }
 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
+  const fallbackChoices = [
+    "A claim that is directly supported by multiple details in the passage",
+    "A partial truth that omits a key condition from the passage",
+    "A likely-sounding conclusion that extends beyond the passage evidence",
+    "An interpretation that misreads the author’s main point",
+  ];
   const raw = Array.isArray(choices) ? choices.slice(0, 4) : [];
-  while (raw.length < 4) raw.push(`${LETTERS[raw.length]}. Option ${raw.length + 1}`);
+  while (raw.length < 4) raw.push(fallbackChoices[raw.length]);
 
   return raw.map((entry, index) => {
-    const text = String(entry ?? "").trim() || `Option ${index + 1}`;
-    if (/^[A-D]\.\s*/.test(text)) return text;
-    return `${LETTERS[index]}. ${text}`;
+    const stripped = String(entry ?? "").trim().replace(/^[A-D]\.\s*/i, "");
+    const normalized = stripped.toLowerCase();
+    const isPlaceholder = !stripped ||
+      normalized === "option" ||
+      /^option\s*\d+$/i.test(stripped) ||
+      /^choice\s*[a-d]$/i.test(stripped) ||
+      /^choice\s*\d+$/i.test(stripped);
+    return isPlaceholder ? fallbackChoices[index] : stripped;
   }) as [string, string, string, string];
 }
 
@@ -425,10 +448,10 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
       type,
       question: stem,
       choices: [
-        "A. The plants closest to the lamp grew taller due to increased light exposure",
-        "B. All plants grew equally regardless of light conditions",
-        "C. Plants farther from the lamp grew faster due to less heat",
-        "D. Plant growth was not affected by light at all",
+        "The plants closest to the lamp grew taller because they received more direct light.",
+        "All plants grew at the same rate, so light intensity did not matter in this setup.",
+        "Plants farther from the lamp appeared to grow faster because lower heat outweighed reduced light.",
+        "Plant height changed randomly and was not related to the light conditions in the investigation.",
       ],
       correct_answer: type === "multi_select" ? ["A", "C"] : "A",
       explanation: "The correct choice is best supported by the passage details, context, and required reasoning steps.",
@@ -436,10 +459,10 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
       part_b_question: type === "part_a" ? "Which sentence from the passage best supports the answer to Part A?" : undefined,
       part_b_choices: type === "part_a"
         ? [
-          "A. A sentence that directly supports the Part A inference",
-          "B. A sentence that is related but does not prove the inference",
-          "C. A sentence that describes a different idea in the passage",
-          "D. A sentence that does not connect to the inference",
+          "A sentence that directly proves the inference selected in Part A.",
+          "A sentence that mentions a related topic but does not prove the Part A claim.",
+          "A sentence that provides a true detail about a different point in the passage.",
+          "A sentence that sounds important but is not tied to the inference in Part A.",
         ]
         : undefined,
       part_b_correct_answer: type === "part_a" ? "A" : undefined,
@@ -523,14 +546,16 @@ function sanitizeQuestions(
   const fallback = fallbackQuestionSet(subject, mode, skill);
   const sanitized: Question[] = incoming.map((item, i) => {
     const q = item && typeof item === "object" ? item as Record<string, unknown> : {};
-    const typeValue = String(q.type || fallback[i].type || "mc").trim();
-    const type: QuestionType = typeValue === "part_a" || typeValue === "part_b" || typeValue === "multi_select" || typeValue === "scr"
-      ? typeValue
-      : "mc";
+    const expectedType = fallback[i].type || "mc";
+    const type: QuestionType = expectedType;
+    const rawQuestion = String(q.question || fallback[i].question).trim() || fallback[i].question;
+    const questionText = type === "multi_select" && !/select\s+two\s+answers\./i.test(rawQuestion)
+      ? `${rawQuestion.replace(/\s+$/g, "")} Select TWO answers.`
+      : rawQuestion;
 
     const base: Question = {
       type,
-      question: String(q.question || fallback[i].question).trim() || fallback[i].question,
+      question: questionText,
       choices: normalizeChoices(q.choices),
       correct_answer: type === "multi_select" ? normalizeMultiSelectAnswer(q.correct_answer) : normalizeAnswer(q.correct_answer),
       explanation: String(q.explanation || fallback[i].explanation).trim() || fallback[i].explanation,
@@ -735,10 +760,10 @@ serve(async (req) => {
               type: "mc",
               question: "Which detail best supports the main idea?",
               choices: [
-                "A. A detail directly supported by the passage",
-                "B. A partially correct but incomplete idea",
-                "C. A misinterpretation of the passage",
-                "D. An unrelated idea",
+                "A detail that is directly supported by the passage evidence",
+                "A partially correct idea that leaves out an important condition",
+                "A plausible misinterpretation of what the passage says",
+                "An idea that is not connected to the passage details",
               ],
               correct_answer: "A",
               explanation: "The correct answer is directly supported by the text.",
