@@ -2180,6 +2180,12 @@
           renderTab(activeTab);
           await new Promise((resolve) => requestAnimationFrame(() => resolve()));
         }
+        async function renderEnrichmentOnly() {
+          if (activeTab === "practice") return;
+          window.hasRenderedThisRun = false;
+          renderTab(activeTab);
+          await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+        }
         await withTimeout(renderAll(data), RENDER_TIMEOUT_MS);
         console.log("STEP 6: render complete");
 
@@ -2197,7 +2203,7 @@
         enrichController = new AbortController();
         const thisEnrichController = enrichController;
         try {
-          const enrichRes = await withTimeout(fetch("https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker", {
+          const enrichRes = await fetch("https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -2206,7 +2212,7 @@
             },
             body: JSON.stringify(enrichPayload),
             signal: enrichController.signal
-          }), 45000);
+          });
           if (!enrichRes.ok) {
             throw new Error(`enrichment_status_${enrichRes.status}`);
           }
@@ -2233,10 +2239,7 @@
               answers: Array.isArray(enrichData?.answerKey?.answers) ? enrichData.answerKey.answers.slice(0, 5) : []
             }
           };
-          if (activeTab !== "practice") {
-            window.hasRenderedThisRun = false;
-            await withTimeout(renderAll(), RENDER_TIMEOUT_MS);
-          }
+          await withTimeout(renderEnrichmentOnly(), RENDER_TIMEOUT_MS);
           const modeStatus = document.getElementById("mode-status");
           if (modeStatus) {
             modeStatus.textContent += " • Cross/Tutor ready";

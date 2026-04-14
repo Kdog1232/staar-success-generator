@@ -410,7 +410,8 @@ function buildSubjectPassage(subject: CanonicalSubject): string {
     return "The student council planned a field-day snack sale with two pricing options for families. A combo pack cost $6 and included one drink and two snacks, while single items cost $2 each. In the first hour, volunteers sold 38 combo packs and 24 single items. In the second hour, combo sales dropped by 8, but single-item sales increased by 15 after an announcement. Organizers used these numbers to compare revenue patterns and decide whether to restock combo materials or individual items. Their final decision depended on how the quantities in both hours related to total earnings.";
   }
 
-  return "Students read an informational text and answered reading-comprehension questions using evidence from the passage.";
+  const subjects: CanonicalSubject[] = ["Science", "Social Studies", "Math"];
+  return buildSubjectPassage(subjects[Math.floor(Math.random() * subjects.length)]);
 }
 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
@@ -1272,6 +1273,13 @@ serve(async (req) => {
     skill = String(incomingSkill || READING_SKILL_DEFAULT).trim() || READING_SKILL_DEFAULT;
     level = normalizeLevel(incomingLevel);
     mode = canonicalizeMode(incomingMode);
+    if (mode === "Cross-Curricular") {
+      if (subject === "Reading") {
+        const subjects: CanonicalSubject[] = ["Science", "Social Studies", "Math"];
+        subject = subjects[Math.floor(Math.random() * subjects.length)];
+        console.log("🔥 Forced Cross subject:", subject);
+      }
+    }
     effectiveSubject = subject;
     effectiveSkill = skill ?? "Main Idea";
     const range = gradeWordRange(grade, effectiveSubject, mode);
@@ -1445,7 +1453,8 @@ serve(async (req) => {
         const parsed = tryParseJsonPayload(enrichText) || {};
         const candidateCrossPassage = String((parsed as Record<string, unknown>).crossPassage || "").trim();
         if (candidateCrossPassage) subjectCrossPassage = candidateCrossPassage;
-        if (!validateCrossPassage(subjectCrossPassage)) {
+        if (!validateCrossPassage(subjectCrossPassage) || effectiveSubject === "Reading") {
+          console.warn("⚠️ Invalid cross passage, forcing subject passage");
           subjectCrossPassage = buildSubjectPassage(effectiveSubject);
         }
 
@@ -1490,6 +1499,9 @@ serve(async (req) => {
             : [],
           normalizedPractice,
         );
+
+        console.log("🔥 FINAL CROSS SUBJECT:", effectiveSubject);
+        console.log("🔥 FINAL CROSS PASSAGE:", subjectCrossPassage);
 
         return jsonResponse(
           {
