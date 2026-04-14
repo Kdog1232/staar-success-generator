@@ -500,105 +500,67 @@
       line-height: 1.6;
     }
 
-    .answer-block {
-      background: #f9fafb;
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 12px;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    .worksheet-header {
+      margin: 0 0 18px;
+      font-family: "Inter", "Segoe UI", Arial, sans-serif;
+      font-size: 1.02rem;
+      color: #1e3554;
+      font-weight: 700;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 10px;
     }
 
-    .answer-title {
-      font-weight: 600;
-      margin-bottom: 8px;
+    .worksheet-section {
+      margin-bottom: 18px;
     }
 
-    .answer-row {
-      margin-bottom: 6px;
+    .worksheet-section h3 {
+      margin: 0 0 10px;
+      font-size: 1.08rem;
+      font-family: "Inter", "Segoe UI", Arial, sans-serif;
+      color: #142033;
+      border-bottom: 1px solid #e5ebf2;
+      padding-bottom: 6px;
     }
 
-    .answer-row.subtle {
-      color: #6b7280;
-    }
-
-    .answer-row.tip {
-      color: #2563eb;
-    }
-
-    .question-block {
-      margin: 0 0 14px;
-      padding: 12px 14px;
-      border: 1px solid #e5ebf2;
-      border-radius: 10px;
-      background: #fff;
-      line-height: 1.7;
+    .passage-text {
+      margin: 0;
       white-space: pre-line;
     }
 
-    .question-block:last-child {
+    .question-item,
+    .answer-item,
+    .tutor-item,
+    .cross-item {
+      margin: 0 0 14px;
+      white-space: pre-line;
+    }
+
+    .question-item:last-child,
+    .answer-item:last-child,
+    .tutor-item:last-child,
+    .cross-item:last-child {
       margin-bottom: 0;
     }
 
-    .question-card {
-      background: transparent;
-      border: none;
-      padding: 10px 0;
-      margin-bottom: 16px;
+    .question-stem {
+      font-weight: 700;
     }
 
-    .question-title {
-      font-size: 1.2rem;
-      font-weight: 600;
-      margin-bottom: 10px;
+    .question-choices {
+      margin-top: 6px;
+      padding-left: 0;
+      list-style: none;
     }
 
-    .choices {
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-      margin-bottom: 15px;
+    .question-choices li {
+      margin: 2px 0;
     }
 
-    .choice,
-    .choice-card {
-      display: flex;
-      align-items: flex-start;
-      gap: 8px;
-      background: transparent;
-      border: none;
-      padding: 6px 0;
-      margin-bottom: 2px;
-      font-size: 17px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    .choice:hover,
-    .choice-card:hover {
-      background: #f0f4ff;
-    }
-
-    .choice.selected {
-      background: #e9f1ff;
-    }
-
-    .choice-card::before {
-      content: attr(data-letter) ".";
-      font-weight: bold;
-      margin-right: 6px;
-      min-width: 1.3em;
-    }
-
-    .answer-box {
-      margin-top: 10px;
-      color: #16a34a;
-      font-weight: 600;
-    }
-
-    .explanation-box {
-      margin-top: 8px;
-      font-size: 14px;
-      color: #555;
+    .muted-note {
+      color: #4b5f7a;
+      font-family: "Inter", "Segoe UI", Arial, sans-serif;
+      font-size: 0.92rem;
     }
 
     @media (max-width: 760px) {
@@ -1183,40 +1145,86 @@
         .join("");
     }
 
-    function renderStructuredQuestions(questions, options = {}) {
-      const { showAnswers = true } = options;
-      if (questions && questions.length > 0) {
-        return questions.map((q, i) => `
-          <div class="question-card">
-            <div class="question-title">
-              Q${i + 1}. ${q.question || ""}
-            </div>
-
-            <div class="choices">
-              ${(q.choices || []).map((c, idx) => `
-                <div class="choice choice-card" data-q="${i}" data-choice="${idx}" data-letter="${String.fromCharCode(65 + idx)}">
-                  ${String(c).replace(/^[A-D]\.\s*/, '').trim()}
-                </div>
-              `).join("")}
-            </div>
-
-            ${showAnswers ? `
-              <div class="answer-box">
-                <strong>Answer:</strong> ${q.correct_answer || ""}
-              </div>
-
-              <div class="explanation-box">
-                ${q.explanation || ""}
-              </div>
-            ` : ""}
-          </div>
-        `).join("");
+    function renderQuestions(questions) {
+      if (!Array.isArray(questions) || questions.length === 0) {
+        return `<p class="muted-note">No questions generated yet. Try again.</p>`;
       }
-      return "No questions generated. Try again.";
+
+      return questions.map((q, i) => {
+        const choices = Array.isArray(q.choices) ? q.choices : [];
+        return `
+          <div class="question-item">
+            <div class="question-stem">${i + 1}. ${cleanText(q.question || "")}</div>
+            <ul class="question-choices">
+              ${choices.map((choice, idx) => {
+                const letter = String.fromCharCode(65 + idx);
+                const formatted = String(choice || "").trim();
+                const text = /^[A-D]\.\s*/.test(formatted) ? formatted : `${letter}. ${formatted}`;
+                return `<li>${cleanText(text)}</li>`;
+              }).join("")}
+            </ul>
+          </div>
+        `;
+      }).join("");
     }
 
-    function renderQuestions(questions) {
-      structuredQuestions = Array.isArray(questions) ? questions : [];
+    function renderCrossCurricular(questions, mode) {
+      if (mode !== "cross") return "";
+      if (!Array.isArray(questions) || questions.length === 0) {
+        return `<p class="muted-note">Cross-curricular connections are not available yet.</p>`;
+      }
+
+      return questions.map((q, i) => {
+        const subject = cleanText(q?.cross?.subject || "Interdisciplinary");
+        const connection = cleanText(q?.cross?.connection || "This question links ideas across subjects in a real-world context.");
+        return `
+          <div class="cross-item">
+            <strong>${i + 1}. 🌎 Cross-Connection (${subject}):</strong><br>
+            ${connection}
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderTutor(questions) {
+      if (!Array.isArray(questions) || questions.length === 0) {
+        return `<p class="muted-note">Tutor guidance is not available yet.</p>`;
+      }
+
+      return questions.map((q, i) => {
+        const hint = cleanText(q.hint || "Find the part of the passage that directly answers the question.");
+        const think = cleanText(q.think || "Eliminate answers that are not supported by evidence.");
+        const steps = cleanText(q.step_by_step || q.explanation || "1) Read carefully. 2) Remove wrong choices. 3) Prove your answer with text evidence.");
+        return `
+          <div class="tutor-item">
+            <strong>${i + 1}. ${cleanText(q.question || "")}</strong><br>
+            <strong>Hint:</strong> ${hint}<br>
+            <strong>Think like this:</strong> ${think}<br>
+            <strong>Step-by-step explanation:</strong> ${steps}
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderAnswers(questions) {
+      if (!Array.isArray(questions) || questions.length === 0) {
+        return `<p class="muted-note">Answer key is not available yet.</p>`;
+      }
+
+      return questions.map((q, i) => {
+        const correct = cleanText(q.correct_answer || "A");
+        const explanation = cleanText(q.explanation || "Use textual evidence to support the best answer.");
+        const commonMistake = cleanText(q.common_mistake || "Choosing an answer that sounds right but is not proven by the passage.");
+        const parentTip = cleanText(q.parent_tip || "Ask your child to cite one sentence from the passage that proves the answer.");
+        return `
+          <div class="answer-item">
+            <strong>${i + 1}. Correct Answer:</strong> ${correct}<br>
+            <strong>Explanation:</strong> ${explanation}<br>
+            <strong>Common Mistake:</strong> ${commonMistake}<br>
+            <strong>Parent Tip:</strong> ${parentTip}
+          </div>
+        `;
+      }).join("");
     }
 
     function showFallback(fallbackText) {
@@ -1227,7 +1235,7 @@
     }
 
     function showFallbackUI() {
-      return `<div class="question-block">No structured questions available yet. Try generating again.</div>`;
+      return `<p class="muted-note">No structured questions available yet. Try generating again.</p>`;
     }
 
     function getTodayKey() {
@@ -1286,110 +1294,46 @@
       const tutorTab = document.getElementById("tutor-tab");
       const answerTab = document.getElementById("answer-tab");
       const modeStatus = document.getElementById("mode-status");
-
       if (!practiceSection || !crossSection || !tutorSection || !answerSection || !practiceTab || !crossTab || !tutorTab || !answerTab || !modeStatus) return;
 
-      const content =
-        contentMode === "cross_curricular"
-          ? crossContent
-          : standardContent;
-
-      const passage = extractSection(content, [
-        "### PASSAGE OR CONTEXT:",
-        "### PASSAGE:"
-      ], ["### QUESTIONS:", "### QUESTION SET:"]);
-
-      const questions = extractSection(content, ["### QUESTIONS:", "### QUESTION SET:"], ["### ANSWER KEY:", "### ANSWER KEY", "### ANSWERS:", "### ANSWERS"]);
-      const subject = document.getElementById("subject").value || "";
-      const selectedSubject = subject.toLowerCase();
-      const isReadingSubject = selectedSubject === "reading" || selectedSubject === "elar";
-      const shouldShowPassage =
-        selectedSubject === "reading" ||
-        selectedSubject === "elar" ||
-        activeTab === "cross";
-      const displayPassage = cleanText(generatedPassage || passage);
-      const crossTabVisible = !isReadingSubject;
-
-      if (!crossTabVisible && activeTab === "cross") {
-        activeTab = "practice";
-      }
-
-      const practiceStructuredHTML = renderStructuredQuestions(structuredQuestions, { showAnswers: false });
-      const structuredHTML = renderStructuredQuestions(structuredQuestions, { showAnswers: true });
-      const hasStructured = structuredQuestions && structuredQuestions.length > 0;
+      const displayPassage = cleanText(generatedPassage || "A passage was not returned. Please generate again.");
+      const questionMarkup = renderQuestions(structuredQuestions);
+      const tutorMarkup = renderTutor(structuredQuestions);
+      const answerMarkup = renderAnswers(structuredQuestions);
+      const crossMarkup = renderCrossCurricular(structuredQuestions, activeTab);
 
       practiceSection.innerHTML = `
-        <h4 class="view-section-label">👨‍🎓 Practice Mode</h4>
-        ${displayPassage
-          ? `<h3>📖 Passage</h3><div class="passage-box">${displayPassage}</div>`
-          : ""}
-        <h3>❓ Questions</h3>
-        ${hasStructured ? practiceStructuredHTML : formatQuestionBlocks(questions)}
+        <div class="worksheet-header">STAAR Practice Worksheet</div>
+        <section class="worksheet-section">
+          <h3>📖 Passage</h3>
+          <p class="passage-text">${displayPassage}</p>
+        </section>
+        <section class="worksheet-section">
+          <h3>❓ Questions</h3>
+          ${questionMarkup}
+        </section>
       `;
 
       crossSection.innerHTML = `
-        <h4 class="view-section-label">🌎 Cross-Curricular</h4>
-        <p style="font-style: italic; color: #555;">Passage-based STAAR practice using the selected subject lens.</p>
-        ${shouldShowPassage && displayPassage
-          ? `<h3>📖 Passage</h3><p class="passage-text">${displayPassage}</p>`
-          : ""}
-        <h3>❓ Questions</h3>
-        ${hasStructured ? structuredHTML : formatQuestionBlocks(questions)}
+        <section class="worksheet-section">
+          <h3>🌎 Cross-Curricular Connections</h3>
+          ${crossMarkup || `<p class="muted-note">Switch to Cross-Curricular mode to view interdisciplinary links.</p>`}
+        </section>
       `;
 
       tutorSection.innerHTML = `
-        <h4 class="view-section-label">👨‍🏫 Tutor Mode</h4>
-        <p style="font-style: italic; color: #555;">
-          Same content, plus hints and guided reasoning.
-        </p>
-        <h3>🧠 Think Like This</h3>
-        ${
-          structuredQuestions.map((q, i) => `
-            <div class="question-card">
-              <strong>Q${i + 1}:</strong> ${q.question}<br><br>
-              <div><strong>Hint:</strong> ${q.hint || "Look for evidence in the passage."}</div>
-              <div><strong>Think like this:</strong> ${q.think || `Why is "${q.correct_answer || "this answer"}" correct?`}</div>
-              <div><strong>Step-by-step:</strong> ${q.step_by_step || q.explanation || "1) Read the question. 2) Eliminate wrong choices. 3) Prove your answer."}</div>
-            </div>
-          `).join("")
-        }
+        <section class="worksheet-section">
+          <h3>🧠 Think Like This</h3>
+          ${tutorMarkup}
+        </section>
       `;
 
       answerSection.innerHTML = `
-        <h4 class="view-section-label">🧠 Teacher / Parent Answer Key</h4>
-        <p style="font-style: italic; color: #555;">
-          Review answers after your child completes the practice.
-        </p>
-        <h3>✅ Answer Key</h3>
-        ${
-          structuredQuestions.map((q, i) => `
-            <div class="question-card">
-              <strong>Q${i + 1} Correct Answer:</strong> ${q.correct_answer}<br><br>
-              <div><strong>Explanation:</strong> ${q.explanation || "Use text evidence to justify the best answer."}</div>
-              <div><strong>Common Mistake:</strong> ${q.common_mistake || "Choosing an answer that sounds familiar but is not supported by the text."}</div>
-              <div><strong>Parent Tip:</strong> ${q.parent_tip || "Ask your child to point to the exact evidence that proves the answer."}</div>
-            </div>
-          `).join("")
-        }
+        <section class="worksheet-section">
+          <h3>✅ Answer Key</h3>
+          ${answerMarkup}
+        </section>
       `;
-
-      if (!structuredQuestions.length) {
-        const fallback = standardContent || "Try generating again.";
-
-        tutorSection.innerHTML = `
-          <div class="question-card">
-            <strong>Fallback Content:</strong><br><br>
-            ${fallback}
-          </div>
-        `;
-
-        answerSection.innerHTML = `
-          <div class="question-card">
-            No structured answers available yet.<br><br>
-            ${fallback}
-          </div>
-        `;
-      }
 
       const showingPractice = activeTab === "practice";
       const showingCross = activeTab === "cross";
@@ -1399,22 +1343,17 @@
       crossSection.style.display = showingCross ? "block" : "none";
       tutorSection.style.display = showingTutor ? "block" : "none";
       answerSection.style.display = showingAnswer ? "block" : "none";
+
       practiceTab.classList.toggle("active", showingPractice);
       crossTab.classList.toggle("active", showingCross);
       tutorTab.classList.toggle("active", showingTutor);
       answerTab.classList.toggle("active", showingAnswer);
-      crossTab.style.display = crossTabVisible ? "block" : "none";
-      modeStatus.textContent = `Mode: ${contentMode === "cross_curricular" ? "Cross-Curricular ON" : "Practice Mode ON"}`;
+      crossTab.style.display = "block";
+      modeStatus.textContent = `Mode: ${activeTab === "cross" ? "Cross-Curricular ON" : activeTab === "tutor" ? "Tutor Mode ON" : activeTab === "answer" ? "Answer Key ON" : "Practice Mode ON"}`;
     }
 
     function setMode(mode) {
       activeTab = ["practice", "cross", "tutor", "answer"].includes(mode) ? mode : "practice";
-      const selectedSubject = (document.getElementById("subject").value || "").toLowerCase();
-      const isReadingSubject = selectedSubject === "reading" || selectedSubject === "elar";
-
-      if (isReadingSubject && activeTab === "cross") {
-        activeTab = "practice";
-      }
 
       if (activeTab === "cross") {
         contentMode = "cross_curricular";
@@ -1437,12 +1376,6 @@
         button.setAttribute("aria-checked", isActive ? "true" : "false");
       });
       populateSkills(subject);
-      if ((subject || "").toLowerCase() === "reading" || (subject || "").toLowerCase() === "elar") {
-        if (activeTab === "cross" || contentMode === "cross_curricular") {
-          activeTab = "practice";
-          contentMode = "standard";
-        }
-      }
       renderCurrentView();
     }
 
@@ -1601,7 +1534,7 @@
 
     async function generate() {
       const runId = ++generateRunId;
-      console.log("🚀 GENERATE TRIGGERED");
+      console.log("GENERATE TRIGGERED");
       console.log("STATE:", {
         isGenerating,
         authReady,
@@ -1620,22 +1553,22 @@
       try {
         generateBtn.disabled = true;
         generateBtn.textContent = "Generating...";
-        outputDiv.innerHTML = "Analyzing skill...";
+        outputDiv.innerHTML = "🧠 Analyzing skill...";
 
         progressTimers.push(setTimeout(() => {
-          outputDiv.innerHTML = "Generating passage...";
+          outputDiv.innerHTML = "📖 Generating passage...";
         }, 900));
 
         progressTimers.push(setTimeout(() => {
-          outputDiv.innerHTML = "Creating STAAR questions...";
+          outputDiv.innerHTML = "❓ Creating STAAR questions...";
         }, 1800));
 
         progressTimers.push(setTimeout(() => {
-          outputDiv.innerHTML = "Adding explanations...";
+          outputDiv.innerHTML = "🧠 Adding explanations...";
         }, 2700));
 
         progressTimers.push(setTimeout(() => {
-          outputDiv.innerHTML = "Finalizing...";
+          outputDiv.innerHTML = "✅ Finalizing your STAAR set...";
         }, 3200));
         viewToggle.style.display = "none";
         const user = await requireAuth();
@@ -1682,30 +1615,31 @@
         standardContent = "";
         crossContent = "";
         generatedPassage = "";
+        structuredQuestions = [];
 
-        if (!authReady) {
-          console.log("⏳ Waiting for auth...");
-          await new Promise((r) => setTimeout(r, 100));
+        const { data: freshSessionData, error: freshSessionError } = await supabase.auth.getSession();
+        if (freshSessionError) {
+          throw new Error("Session refresh failed");
         }
-
-        const {
-          data: { session }
-        } = await supabase.auth.getSession();
+        const session = freshSessionData?.session ?? null;
 
         const token = session?.access_token;
 
         if (!token) {
-          console.log("❌ NO TOKEN — aborting cleanly");
-
-          outputDiv.innerHTML = "Session issue. Please refresh and try again.";
-
-          isGenerating = false;
+          outputDiv.innerHTML = `<div class="locked"><strong>Session expired. Please log in again.</strong></div>`;
           return;
         }
 
         const startTime = Date.now();
         currentController = new AbortController();
-        console.log("📡 SENDING REQUEST", generateRunId);
+        console.log("SENDING REQUEST");
+        const apiMode = activeTab === "cross"
+          ? "Cross-Curricular"
+          : activeTab === "tutor"
+            ? "Tutor"
+            : activeTab === "answer"
+              ? "Answer Key"
+              : "Practice";
         const res = await fetch(
           "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
           {
@@ -1720,12 +1654,12 @@
               subject,
               skill,
               level,
-              mode: activeTab
+              mode: apiMode
             }),
             signal: currentController.signal
           }
         );
-        console.log("📥 RESPONSE RECEIVED", generateRunId);
+        console.log("RESPONSE RECEIVED");
         const elapsed = Date.now() - startTime;
         const minDelay = 2800;
         const maxDelay = 4200;
@@ -1758,7 +1692,7 @@
           throw new Error("Generation request failed");
         }
 
-        if (!data.passage || !data.questions) {
+        if (!data.passage) {
           console.log("❌ INVALID RESPONSE SHAPE", data);
           showFallback("Something went wrong. Try again.");
           return;
@@ -1780,45 +1714,30 @@
         const fallback = data.fallback || data.standard || data.text || "";
 
         // 🔥 ALWAYS ATTEMPT TO USE DATA FIRST
-        if (data.questions && data.questions.length > 0) {
-          console.log("✅ USING STRUCTURED QUESTIONS:", data.questions.length);
-
-          // If less than 5, pad it (prevents UI break)
-          if (data.questions.length < 5) {
-            const needed = 5 - data.questions.length;
-
-            for (let i = 0; i < needed; i++) {
-              data.questions.push({
-                question: "Which detail best supports the idea in the passage?",
-                choices: [
-                  "A. A detail from the text",
-                  "B. An unrelated idea",
-                  "C. A random guess",
-                  "D. Something not mentioned"
-                ],
-                correct_answer: "A",
-                explanation: "The correct answer is supported by the passage."
-              });
-            }
-
-            console.log("⚠️ Padded questions to 5");
+        generatedPassage = cleanText(data.passage || "");
+        if (Array.isArray(data.questions) && data.questions.length > 0) {
+          structuredQuestions = data.questions.slice(0, 5);
+          while (structuredQuestions.length < 5) {
+            structuredQuestions.push({
+              question: "Which detail best supports the main idea of the passage?",
+              choices: [
+                "A. A text detail that directly supports the idea",
+                "B. A statement not found in the passage",
+                "C. A detail that contradicts the passage",
+                "D. A random opinion"
+              ],
+              correct_answer: "A",
+              explanation: "The best answer is the detail that is directly supported by the passage."
+            });
           }
-
-          renderQuestions(data.questions);
-          generatedPassage = cleanText(data.passage || "");
         } else if (fallback) {
           console.log("⚠️ FALLBACK USED");
           showFallback(fallback);
         } else {
           console.log("❌ NO VALID DATA");
-          outputDiv.innerText = "Something went wrong. Try again.";
-          resetGenerateState();
-          return;
+          structuredQuestions = [];
         }
 
-        if (!structuredQuestions.length && data.cross) {
-          crossContent = data.cross;
-        }
         lastGeneratedContentMode = "both";
         const progressCount = incrementDailyProgress();
 
@@ -1840,6 +1759,9 @@
         `;
 
         viewToggle.style.display = "flex";
+        if (!Array.isArray(data.questions) || data.questions.length === 0) {
+          outputDiv.innerHTML += `<div class="muted-note" style="margin-top:10px;">No questions were returned, so fallback guidance is shown.</div>`;
+        }
         renderCurrentView();
       } catch (err) {
         if (err.name === "AbortError") {
