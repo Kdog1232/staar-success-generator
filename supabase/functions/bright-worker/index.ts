@@ -101,6 +101,37 @@ function rigorInstruction(level: Level): string {
   return "Use grade-level language and reasoning rigor.";
 }
 
+function routeBySkill(skill: string): "vocab" | "main_idea" | "inference" | "theme" | "generic" {
+  const normalized = String(skill || "").toLowerCase();
+  if (!normalized) throw new Error("Missing skill");
+  if (normalized.includes("vocabulary")) return "vocab";
+  if (normalized.includes("main idea")) return "main_idea";
+  if (normalized.includes("infer")) return "inference";
+  if (normalized.includes("theme")) return "theme";
+  return "generic";
+}
+
+function getDifficultyInstructions(level: Level): string {
+  if (level === "Below") {
+    return "Use simpler vocabulary, shorter passages, and direct questions.";
+  }
+  if (level === "On Level") {
+    return "Use grade-appropriate vocabulary and standard STAAR rigor.";
+  }
+  if (level === "Advanced") {
+    return "Use complex vocabulary, layered inference, and higher DOK questions.";
+  }
+  return "";
+}
+
+function getSubjectInstructions(subject: CanonicalSubject): string {
+  if (subject === "Math") return "Generate math-based problems with clear computations.";
+  if (subject === "Science") return "Generate science questions with real-world concepts.";
+  if (subject === "Reading") return "Generate passage-based reading questions.";
+  if (subject === "Social Studies") return "Generate historical or civic-based questions.";
+  return "";
+}
+
 function readingStructure(skill: string): string {
   const normalized = skill.toLowerCase();
   if (normalized.includes("main idea")) {
@@ -182,11 +213,6 @@ function subjectStructure(subject: CanonicalSubject): string {
   ].join("\n");
 }
 
-function pickCrossSubject(index: number): CrossConnection["subject"] {
-  const cycle: CrossConnection["subject"][] = ["Science", "Math", "Social Studies"];
-  return cycle[index % cycle.length];
-}
-
 function buildPrompt(params: {
   grade: number;
   subject: CanonicalSubject;
@@ -197,320 +223,79 @@ function buildPrompt(params: {
   const { grade, subject, skill, level, mode } = params;
   const effectiveSubject: CanonicalSubject = subject;
   const effectiveSkill = skill || READING_SKILL_DEFAULT;
-  if (mode === "Practice" && subject !== "Reading") {
-    return `You are a Texas STAAR 2.0 assessment expert.
-
-Your task is to generate PRACTICE MODE questions that match real STAAR item behavior.
-
-========================
-MODE: PRACTICE
-========================
-
-INPUTS:
-- Grade: ${grade}
-- Subject: ${subject}
-- Skill: ${effectiveSkill}
-- Level: ${level}
-
-========================
-GLOBAL RULES (ALL SUBJECTS)
-========================
-
-- Generate EXACTLY 5 questions:
-  1) Multiple Choice
-  2) Multiple Choice
-  3) Multiple Choice
-  4) Multi-select (MUST say "Select TWO answers.")
-  5) Short Constructed Response (SCR)
-- NO reading passage unless subject is Reading.
-- Each question must feel like a standalone STAAR item.
-- At least TWO questions MUST include a visual scenario:
-  diagram, table, chart, model, or map.
-- Visuals must be REQUIRED to answer the question.
-- Distractors MUST be plausible, reflect common student mistakes, and include partial truths.
-- All answer choices must be similar in length, structure, and tone.
-- Avoid one obviously longer correct answer or one obviously short incorrect answer.
-- Correct answers must not follow a predictable pattern; distribute across A-D.
-
-========================
-SUBJECT-SPECIFIC BEHAVIOR
-========================
-
-MATH (CRITICAL):
-- Require numerical reasoning, multi-step problem solving, and data interpretation.
-- At least ONE question must involve a table, graph, or number-based model.
-- Students MUST perform math to get the answer.
-- FORBIDDEN: purely descriptive questions or items answerable without calculation/reasoning.
-
-SCIENCE (CRITICAL):
-- Require scientific concepts, experiment/system analysis, and cause-and-effect reasoning.
-- At least ONE question must involve an experiment setup or diagram/model.
-- Students must interpret scientific relationships.
-- FORBIDDEN: definition-only or recall-only questions.
-
-SOCIAL STUDIES (CRITICAL):
-- Require historical/civic reasoning, cause-and-effect analysis, and source interpretation.
-- At least ONE question must include a map, chart, or historical scenario.
-- Questions must involve decisions, events, or impact.
-- FORBIDDEN: simple fact recall or isolated trivia.
-
-========================
-MULTI-SELECT RULE (VERY IMPORTANT)
-========================
-
-- The TWO correct answers must represent DIFFERENT valid ideas.
-- At least one wrong answer must be a strong partial truth.
-- Students must evaluate ALL options carefully.
-
-========================
-SHORT RESPONSE RULE (VERY IMPORTANT)
-========================
-
-- Q5 must begin with "Explain..."
-- Q5 must require:
-  1) correct subject reasoning
-  2) justification using the scenario, diagram, or data
-- Q5 must end with: "Write your response..."
-
-========================
-EXPLANATION / MISCONCEPTION / PARENT SUPPORT (CRITICAL)
-========================
-
-For EVERY question, provide:
-- "explanation" (specific)
-- "common_mistake" (specific)
-- "parent_tip" (specific and actionable)
-
-Rules:
-- explanation must clearly state WHY the correct answer is correct and reference the scenario/visual + concept.
-- common_mistake must name a specific wrong-reasoning pattern or wrong choice type and explain why students pick it.
-- parent_tip must include a direct question a parent can ask the student and what evidence/concept to focus on.
-
-OUTPUT FORMAT (STRICT)
-Return ONLY valid JSON (for app parsing). In each question text and choice text, use only student-facing wording:
-{
-  "passage": "NO_PASSAGE_FOR_${subject.toUpperCase()}",
-  "questions": [
-    {
-      "type": "mc|multi_select|scr",
-      "question": "...",
-      "choices": ["...", "...", "...", "..."],
-      "correct_answer": "A OR [A,C]",
-      "explanation": "...",
-      "common_mistake": "...",
-      "parent_tip": "...",
-      "sample_answer": "...",
-      "visual": {
-        "type": "table|diagram|chart|model|map",
-        "title": "...",
-        "description": "...",
-        "headers": ["...", "..."],
-        "rows": [["...", "..."]],
-        "diagram_type": "...",
-        "components": [{ "type": "...", "x": 0, "y": 0 }]
-      }
-    }
-  ]
-}
-- EXACTLY 5 questions in this order: mc, mc, mc, multi_select, scr.
-- Q4 question MUST include "Select TWO answers."
-- Include structured "visual" objects in at least two questions and make visuals necessary to answer.
-- Q5 must begin with "Explain..." and end with "Write your response..."
-- No teacher language, no extra sections, and no markdown.`;
-  }
+  const skillType = routeBySkill(effectiveSkill);
+  const difficulty = getDifficultyInstructions(level);
+  const subjectRules = getSubjectInstructions(effectiveSubject);
 
   if (mode === "Cross-Curricular") {
-    return `You are a Texas STAAR 2.0 assessment expert.
+    return `You are generating CROSS-CURRICULAR ELAR practice.
 
-Your task is to generate CROSS-CURRICULAR practice that integrates reading comprehension skills with SUBJECT content.
-
-========================
-MODE: CROSS-CURRICULAR
-========================
-
-INPUTS:
+REQUIREMENTS:
+- Subject context for the passage: ${effectiveSubject} (non-ELAR content area).
 - Grade: ${grade}
-- Subject: ${subject}
-- Skill: ${effectiveSkill}
 - Level: ${level}
+- Skill requested: ${effectiveSkill}
+- Skill type: ${skillType}
 
-========================
-CORE REQUIREMENTS
-========================
+- The passage must be content-rich nonfiction about ${effectiveSubject}.
+- Questions must be ELAR-based and passage-driven:
+  1) main idea
+  2) inference
+  3) vocabulary in context
+  4) multi-select with exactly two correct answers
+  5) author's purpose / evidence-based explanation (SCR)
 
-Generate a STAAR-style worksheet that follows this structure:
-1) HEADER with Skill, Level, and Progress line
-2) TITLE: "STAAR Practice Worksheet"
-3) PASSAGE: content-based informational text tied to subject + skill, 150-250 words, with a real-world scenario OR classroom experiment, clear cause/effect relationships, and concept vocabulary
-4) QUESTIONS: EXACTLY 5 in this order:
-   - Q1 Main Idea (mc)
-   - Q2 Supporting Detail (mc)
-   - Q3 Inference (mc, deeper thinking)
-   - Q4 Multi-select with exactly 2 correct answers
-   - Q5 SCR that begins with "Explain..." and requires passage evidence
+- Do NOT output placeholder phrases like:
+  "this question links ideas", "cross-connection", "interdisciplinary explanation".
+- Keep the content area accurate for ${effectiveSubject}; do not mix unrelated subject mechanics.
 
-========================
-RIGOR
-========================
+${difficulty}
+${subjectRules}
 
-- Questions must require close reading, evidence analysis, and idea connection.
-- Questions must require both reading comprehension and understanding of the ${subject} concept.
-- Distractors must be plausible and reflect common student mistakes.
-- At least one incorrect answer must reflect a common misunderstanding of the ${subject} concept.
-- All answer choices must be similar in length, structure, and tone.
-- Avoid one obviously longer correct answer or one obviously short incorrect answer.
-- Correct answers must not follow a predictable pattern; distribute across A-D.
-- No simple recall questions.
-
-========================
-EXPLANATION / MISCONCEPTION / PARENT SUPPORT (CRITICAL)
-========================
-
-For EVERY question, provide:
-- "explanation" (specific)
-- "common_mistake" (specific)
-- "parent_tip" (specific and actionable)
-
-Rules:
-- explanation must clearly state WHY the correct answer is correct and reference the scenario/visual + concept.
-- common_mistake must name a specific wrong-reasoning pattern or wrong choice type and explain why students pick it.
-- parent_tip must include a direct question a parent can ask the student and what evidence/concept to focus on.
-
-========================
-CROSS-CURRICULAR RULE
-========================
-
-This is reading applied to ${subject} content.
-- Every question must depend on the passage.
-- Content knowledge supports thinking but does not replace reading analysis.
-- Each question must explicitly reference:
-  - the scenario, experiment, or situation described in the passage
-  - the subject concept being tested
-- Avoid generic phrasing such as "According to the passage..."
-
-OUTPUT FORMAT (STRICT)
-Return ONLY valid JSON:
+Return strict JSON only:
 {
-  "passage": "...",
+  "passage": "string",
   "questions": [
     {
       "type": "mc|multi_select|scr",
-      "question": "...",
-      "choices": ["...", "...", "...", "..."],
+      "question": "string",
+      "choices": ["string", "string", "string", "string"],
       "correct_answer": "A OR [A,C]",
-      "explanation": "...",
-      "common_mistake": "...",
-      "parent_tip": "...",
-      "sample_answer": "..."
+      "explanation": "string",
+      "common_mistake": "string",
+      "parent_tip": "string",
+      "sample_answer": "string"
     }
   ]
 }
-- EXACTLY 5 questions.
-- Q4 MUST include the sentence "Select TWO answers." in the question text and must have exactly 2 correct answers.
-- For Q4 multi-select:
-  - The two correct answers must represent DIFFERENT valid ideas or factors.
-  - At least one incorrect answer must be a strong partial truth.
-  - Students should need to evaluate ALL options carefully.
-- Q5 MUST begin with "Explain..." and require evidence from the passage.
-- NO markdown.
-- NO teacher notes, no extra sections, and no additional prose outside JSON.`;
+- Exactly 5 questions.
+- Q4 must include "Select TWO answers.".
+- Q5 must begin with "Explain..." and end with "Write your response...".`;
   }
 
-  return `You are a Texas STAAR assessment expert.
-
-All questions MUST align to TEKS-based reading comprehension skills.
-
-Generate STAAR 2.0-style reading content with EXACTLY 5 questions.
+  return `Generate STAAR-style ${effectiveSubject} questions.
 
 INPUTS:
 - Grade: ${grade}
 - Subject: ${effectiveSubject}
 - Skill: ${effectiveSkill}
+- Skill Type: ${skillType}
 - Level: ${level}
+- Mode: ${mode}
 
-QUESTION TYPES (REQUIRED)
-- "mc"
-- "part_a"
-- "part_b"
-- "multi_select"
-- "scr"
+REQUIREMENTS:
+- Align all questions to the requested skill: ${effectiveSkill}
+- Match level rigor: ${level}
+- Include strong distractors and STAAR format (MC, multi-select, SCR)
+- Avoid placeholder/filler language
 
-MANDATORY QUESTION ORDER (EXACTLY 5)
-1) Main Idea (type "mc")
-2) Supporting Detail (type "mc")
-3) Part A inference item (type "part_a") with paired Part B evidence data fields:
-   - "part_b_question"
-   - "part_b_choices" (4 options)
-   - "part_b_correct_answer" (A-D)
-   - "paired_with": 3
-4) Multi-select (type "multi_select") with exactly 2 correct answers in array format
-5) Short Constructed Response (type "scr") with "sample_answer" (2-4 sentences)
+${difficulty}
+${subjectRules}
 
-DOK PROGRESSION (REQUIRED)
-1. DOK 1–2 main idea comprehension
-2. DOK 2 supporting detail
-3. DOK 2–3 inference + evidence pairing
-4. DOK 3 multi-select reasoning
-5. DOK 3 evidence-based SCR
-
-LEVEL DIFFERENTIATION
-- Below: mostly DOK 1-2, simpler vocabulary, more obvious evidence
-- On Level: balanced DOK 2-3, standard STAAR rigor
-- Advanced: heavy DOK 3, subtle distractors, inference-heavy reasoning
-
-SKILL ALIGNMENT (STRICT)
-All 5 questions must align to this skill only:
-"${effectiveSkill}"
-
-DISTRACTOR RULES
-- Wrong answers must be plausible, text-based, and reflect student mistakes
-- Use partial truth, misinterpretation, and overgeneralization
-- Keep answer choices similar in tone and length
-- All answer choices must be fully written, content-based, and tied to the passage.
-- Never use placeholders like "Option 1", "Option 2", or "Choice A".
-- Do not include backend labels in choice text (no "A. ", "B. ", etc.). Choices must be plain text.
-- Inference distractors must be plausible misinterpretations, partial truths, or incorrect conclusions.
-
-PASSAGE RULES
-- Passage must support all five questions with enough textual evidence
-- Include details enabling inference and justification
-- If skill includes "compare", "contrast", or "two texts", return:
-  {
-    "text_1": "...",
-    "text_2": "..."
-  }
-  and require cross-text reasoning in Part A/Part B, multi-select, and SCR.
-
-OUTPUT FORMAT (STRICT)
-Return ONLY valid JSON:
-{
-  "passage": "... OR { text_1, text_2 }",
-  "questions": [
-    {
-      "type": "mc|part_a|part_b|multi_select|scr",
-      "question": "...",
-      "choices": ["...", "...", "...", "..."],
-      "correct_answer": "A OR [A,C]",
-      "explanation": "...",
-      "paired_with": 3,
-      "sample_answer": "...",
-      "part_b_question": "...",
-      "part_b_choices": ["A...", "B...", "C...", "D..."],
-      "part_b_correct_answer": "C"
-    }
-  ]
-}
-- EXACTLY 5 questions
-- For "multi_select": include the sentence "Select TWO answers." in the question text and set exactly 2 correct answers.
-- SCR item should appear once as a single question object (no duplicate question text blocks).
-- FINAL SELF-CHECK before returning JSON:
-  1) No duplicate choice labels (for example "A. A.")
-  2) No placeholders
-  3) Multi-select has exactly 2 correct answers
-  4) SCR appears once
-  5) Every question aligns to the requested skill
-- NO markdown
-- NO extra text`;
+Return strict JSON only with:
+- passage
+- 5 questions
+- explanation, common_mistake, and parent_tip fields per question.`;
 }
 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
@@ -795,7 +580,6 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
         : baseReading;
 
   return stems.map((stem, i) => {
-    const crossSubject = pickCrossSubject(i);
     const type: QuestionType = i === 3 ? "multi_select" : i === 4 ? "scr" : "mc";
     const support = buildSupportContent(effectiveSubject, stem, type, i);
     const question: Question = {
@@ -817,37 +601,7 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
       step_by_step: support.step_by_step,
       common_mistake: support.common_mistake,
       parent_tip: support.parent_tip,
-      visual: i === 1
-        ? {
-          type: effectiveSubject === "Science" ? "diagram" : effectiveSubject === "Social Studies" ? "map" : "table",
-          title: effectiveSubject === "Science" ? "System Diagram" : effectiveSubject === "Social Studies" ? "Regional Map" : "Sales Table",
-          description: effectiveSubject === "Science"
-            ? "A diagram shows components in a closed system and how energy moves between them."
-            : effectiveSubject === "Social Studies"
-            ? "A map shows movement of goods between regions along labeled routes."
-            : "A table shows quantities and unit values used to calculate totals.",
-          headers: effectiveSubject === "Math" ? ["Day", "Kits Sold", "Cost per Kit"] : undefined,
-          rows: effectiveSubject === "Math" ? [["Mon", "18", "$7"], ["Tue", "21", "$7"], ["Thu", "24", "$7"]] : undefined,
-          diagram_type: effectiveSubject === "Science" ? "circuit" : undefined,
-          components: effectiveSubject === "Science"
-            ? [{ type: "battery", x: 10, y: 50 }, { type: "wire", path: [[10, 50], [80, 50]] }, { type: "bulb", x: 80, y: 50 }]
-            : undefined,
-        }
-        : i === 3
-        ? {
-          type: "model",
-          title: "Comparison Model",
-          description: "A model compares two conditions and their outcomes for decision making.",
-        }
-        : undefined,
     };
-
-    if (mode === "Cross-Curricular") {
-      question.cross = {
-        subject: crossSubject,
-        connection: `This reading question connects to ${crossSubject} because students must apply text evidence to a real-world interdisciplinary situation.`,
-      };
-    }
 
     return question;
   });
@@ -891,39 +645,11 @@ function isBadOutput(text: string): boolean {
   );
 }
 
-function sanitizeCross(value: unknown, index: number): CrossConnection {
-  const obj = value && typeof value === "object" ? value as Record<string, unknown> : {};
-  const preferred = String(obj.subject || "").trim();
-  const subject = preferred === "Science" || preferred === "Math" || preferred === "Social Studies"
-    ? preferred
-    : pickCrossSubject(index);
-
-  const connection = String(obj.connection || "").trim() || `This question connects reading to ${subject} through real-world interdisciplinary reasoning.`;
-  return { subject, connection };
-}
-
 function sanitizeVisual(value: unknown): Question["visual"] | undefined {
-  const obj = value && typeof value === "object" ? value as Record<string, unknown> : null;
-  if (!obj) return undefined;
-  const type = String(obj.type || "").trim().toLowerCase();
-  if (!["diagram", "table", "chart", "model", "map"].includes(type)) return undefined;
-  const headers = Array.isArray(obj.headers) ? obj.headers.map((h) => String(h)).slice(0, 6) : undefined;
-  const rows = Array.isArray(obj.rows)
-    ? obj.rows.filter((row) => Array.isArray(row)).slice(0, 8).map((row) => (row as unknown[]).map((cell) => String(cell)).slice(0, 6))
-    : undefined;
-  const components = Array.isArray(obj.components)
-    ? obj.components.filter((c) => c && typeof c === "object").slice(0, 30).map((c) => c as Record<string, unknown>)
-    : undefined;
-
-  return {
-    type: type as "diagram" | "table" | "chart" | "model" | "map",
-    title: String(obj.title || "").trim() || undefined,
-    description: String(obj.description || "").trim() || undefined,
-    headers,
-    rows,
-    diagram_type: String(obj.diagram_type || "").trim() || undefined,
-    components,
-  };
+  void value;
+  // Temporarily disable visual payloads until the frontend can render
+  // real map/chart/diagram artifacts instead of text-only placeholders.
+  return undefined;
 }
 
 function sanitizeQuestions(
@@ -968,23 +694,39 @@ function sanitizeQuestions(
       visual: sanitizeVisual(q.visual) || fallback[i].visual,
     };
 
-    if (mode === "Cross-Curricular") {
-      base.cross = sanitizeCross(q.cross, i);
-    }
-
     return base;
   });
 
   while (sanitized.length < 5) sanitized.push(fallback[sanitized.length]);
 
-  return sanitized.slice(0, 5).map((q, i) => {
-    if (mode === "Cross-Curricular") {
-      return { ...q, cross: sanitizeCross(q.cross, i) };
-    }
-    const { cross, ...rest } = q;
-    void cross;
-    return rest;
-  });
+  return sanitized.slice(0, 5).map((q) => q);
+}
+
+function validateSkillAlignment(skill: string, questions: Question[]): boolean {
+  if (!skill || !Array.isArray(questions) || questions.length === 0) return false;
+  const skillLower = String(skill).toLowerCase();
+  if (skillLower.includes("vocabulary")) {
+    return questions.some((q) => {
+      const prompt = String(q?.question || "").toLowerCase();
+      return prompt.includes("meaning") || prompt.includes("word");
+    });
+  }
+  return true;
+}
+
+function validateCrossCurricular(data: { passage?: unknown; questions?: unknown[] }): boolean {
+  const passage = String(data?.passage || "").toLowerCase();
+  const questions = Array.isArray(data?.questions) ? data.questions : [];
+  if (!passage.trim()) return false;
+  if (questions.length === 0) return false;
+
+  const badPhrases = [
+    "this question links ideas",
+    "cross-connection",
+    "interdisciplinary explanation",
+  ];
+
+  return !badPhrases.some((phrase) => passage.includes(phrase));
 }
 
 function buildFallbackResponse(
@@ -1054,11 +796,27 @@ serve(async (req) => {
       return safeFallback("invalid_request_json", err instanceof Error ? err.message : String(err));
     }
 
-    grade = Number(body?.grade || 5);
-    subject = canonicalizeSubject(body?.subject);
-    skill = String(body?.skill || READING_SKILL_DEFAULT).trim() || READING_SKILL_DEFAULT;
-    level = normalizeLevel(body?.level);
-    mode = canonicalizeMode(body?.mode);
+    const {
+      grade: incomingGrade,
+      subject: incomingSubject,
+      skill: incomingSkill,
+      level: incomingLevel,
+      mode: incomingMode,
+    } = body;
+
+    console.log("🔥 BACKEND RECEIVED:", {
+      subject: incomingSubject,
+      grade: incomingGrade,
+      skill: incomingSkill,
+      level: incomingLevel,
+      mode: incomingMode,
+    });
+
+    grade = Number(incomingGrade || 5);
+    subject = canonicalizeSubject(incomingSubject);
+    skill = String(incomingSkill || READING_SKILL_DEFAULT).trim() || READING_SKILL_DEFAULT;
+    level = normalizeLevel(incomingLevel);
+    mode = canonicalizeMode(incomingMode);
     effectiveSubject = subject;
     effectiveSkill = skill || READING_SKILL_DEFAULT;
     const range = gradeWordRange(grade, effectiveSubject, mode);
@@ -1142,6 +900,21 @@ serve(async (req) => {
               : (passage.text_1 && passage.text_2 ? passage : null)
           ) || fallbackPassageContent(effectiveSubject, mode, grade, effectiveSkill);
           const questions = sanitizeQuestions(parsed.questions, effectiveSubject, mode, effectiveSkill);
+          if (mode === "Cross-Curricular" && !validateCrossCurricular({
+            passage: typeof safePassage === "string" ? safePassage : "",
+            questions,
+          })) {
+            console.warn("🚨 Invalid cross-curricular output — regenerating once");
+            retryFailureReason = "invalid_cross_curricular_output";
+            attempts++;
+            continue;
+          }
+          if (!validateSkillAlignment(effectiveSkill, questions)) {
+            console.warn("⚠️ Skill mismatch detected, regenerating...");
+            retryFailureReason = "skill_mismatch_after_retry";
+            attempts++;
+            continue;
+          }
           if (questions.length < 5) {
             console.log("⚠️ Padding questions");
           }
