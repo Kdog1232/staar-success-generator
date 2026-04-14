@@ -1620,19 +1620,23 @@
       try {
         generateBtn.disabled = true;
         generateBtn.textContent = "Generating...";
-        outputDiv.innerHTML = "Generating fresh set... ⏳";
-        outputDiv.innerHTML = `
-          Generating your STAAR pack... ⏳<br>
-          <small>This usually takes 10–15 seconds to build a high-quality set.</small>
-          <br>
-          <small>Used by teachers for Do Now, MTSS, and STAAR prep.</small>
-        `;
+        outputDiv.innerHTML = "Analyzing skill...";
+
         progressTimers.push(setTimeout(() => {
-          outputDiv.innerHTML = "Building questions... 📚";
-        }, 1200));
+          outputDiv.innerHTML = "Generating passage...";
+        }, 900));
+
         progressTimers.push(setTimeout(() => {
-          outputDiv.innerHTML = "Adding explanations... 🧠";
-        }, 2400));
+          outputDiv.innerHTML = "Creating STAAR questions...";
+        }, 1800));
+
+        progressTimers.push(setTimeout(() => {
+          outputDiv.innerHTML = "Adding explanations...";
+        }, 2700));
+
+        progressTimers.push(setTimeout(() => {
+          outputDiv.innerHTML = "Finalizing...";
+        }, 3200));
         viewToggle.style.display = "none";
         const user = await requireAuth();
 
@@ -1684,13 +1688,20 @@
           await new Promise((r) => setTimeout(r, 100));
         }
 
-        if (!cachedSession?.access_token) {
-          console.log("❌ No session available");
-          outputDiv.innerHTML = "Please log in.";
+        const {
+          data: { session }
+        } = await supabase.auth.getSession();
+
+        const token = session?.access_token;
+
+        if (!token) {
+          console.log("❌ NO TOKEN — aborting cleanly");
+
+          outputDiv.innerHTML = "Session issue. Please refresh and try again.";
+
+          isGenerating = false;
           return;
         }
-        const token = cachedSession.access_token;
-        console.log("✅ USING CACHED TOKEN");
 
         const startTime = Date.now();
         currentController = new AbortController();
@@ -1708,16 +1719,23 @@
               grade,
               subject,
               skill,
-              level
+              level,
+              mode: activeTab
             }),
             signal: currentController.signal
           }
         );
         console.log("📥 RESPONSE RECEIVED", generateRunId);
         const elapsed = Date.now() - startTime;
-        const minDelay = 1500;
-        if (elapsed < minDelay) {
-          await new Promise((r) => setTimeout(r, minDelay - elapsed));
+        const minDelay = 2800;
+        const maxDelay = 4200;
+        const targetDelay = Math.min(
+          Math.max(minDelay, elapsed),
+          maxDelay
+        );
+
+        if (elapsed < targetDelay) {
+          await new Promise((r) => setTimeout(r, targetDelay - elapsed));
         }
         progressTimers.forEach((timer) => clearTimeout(timer));
 
@@ -1738,6 +1756,12 @@
 
         if (!res.ok) {
           throw new Error("Generation request failed");
+        }
+
+        if (!data.passage || !data.questions) {
+          console.log("❌ INVALID RESPONSE SHAPE", data);
+          showFallback("Something went wrong. Try again.");
+          return;
         }
 
         if (profile.plan !== "paid") {
