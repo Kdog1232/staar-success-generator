@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// Environment variables must be set in Supabase Dashboard → Edge Functions → Settings.
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "content-type",
@@ -15,6 +16,40 @@ serve(async (req) => {
     console.log("[gumroad-webhook] Incoming webhook event");
     const body = await req.json();
     console.log("[gumroad-webhook] Payload received");
+
+    const expectedSellerId = Deno.env.get("GUMROAD_SELLER_ID")?.trim() || "";
+    const expectedProductId = Deno.env.get("GUMROAD_PRODUCT_ID")?.trim() || "";
+    const sellerId = String(body?.seller_id || body?.purchase?.seller_id || "").trim();
+    const productId = String(body?.product_id || body?.purchase?.product_id || "").trim();
+
+    console.log("[gumroad-webhook] seller_id:", sellerId || "(missing)");
+    console.log("[gumroad-webhook] product_id:", productId || "(missing)");
+
+    if (!expectedSellerId) {
+      console.log("[gumroad-webhook] Validation result: missing GUMROAD_SELLER_ID environment variable");
+      return new Response(JSON.stringify({ error: "Server misconfigured" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (sellerId !== expectedSellerId) {
+      console.log("[gumroad-webhook] Validation result: seller mismatch (unauthorized)");
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (expectedProductId && productId !== expectedProductId) {
+      console.log("[gumroad-webhook] Validation result: product mismatch (ignored safely)");
+      return new Response(JSON.stringify({ success: true, message: "Ignored: product mismatch" }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    console.log("[gumroad-webhook] Validation result: accepted");
 
     // Normalize email to prevent casing/format matching issues.
     const email = (body?.email || body?.purchase?.email || "").toLowerCase().trim();
