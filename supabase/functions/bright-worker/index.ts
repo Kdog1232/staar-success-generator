@@ -717,7 +717,6 @@ function buildCrossFallback(subject: CanonicalSubject): Question[] {
 
 function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, skill: string): Question[] {
   if (mode === "Practice") return buildPracticeFallback(skill);
-  if (mode === "Cross-Curricular") return buildCrossFallback(subject);
 
   const effectiveSubject = subject;
   const effectiveSkill: string = skill ?? "Main Idea";
