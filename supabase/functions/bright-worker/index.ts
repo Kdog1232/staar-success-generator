@@ -228,49 +228,49 @@ function buildPrompt(params: {
   const subjectRules = getSubjectInstructions(effectiveSubject);
 
   if (mode === "Cross-Curricular") {
-    return `You are generating CROSS-CURRICULAR ELAR practice.
+    return `
+  Generate CROSS-CURRICULAR content-area literacy practice.
 
-REQUIREMENTS:
-- Subject context for the passage: ${effectiveSubject} (non-ELAR content area).
-- Grade: ${grade}
-- Level: ${level}
-- Skill requested: ${effectiveSkill}
-- Skill type: ${skillType}
+  REQUIREMENTS:
 
-- The passage must be content-rich nonfiction about ${effectiveSubject}.
-- Questions must be ELAR-based and passage-driven:
-  1) main idea
-  2) inference
-  3) vocabulary in context
-  4) multi-select with exactly two correct answers
-  5) author's purpose / evidence-based explanation (SCR)
+  PASSAGE:
+  - Must be a reading passage (informational text)
+  - Topic must be based on ${effectiveSubject}
+  - Must feel like a textbook or real-world scenario
 
-- Do NOT output placeholder phrases like:
-  "this question links ideas", "cross-connection", "interdisciplinary explanation".
-- Keep the content area accurate for ${effectiveSubject}; do not mix unrelated subject mechanics.
+  QUESTIONS:
+  - Must be based on ${effectiveSubject} thinking
+  - Must REQUIRE reading the passage to answer
+  - Must NOT be generic reading questions only
 
-${difficulty}
-${subjectRules}
+  SUBJECT ALIGNMENT:
 
-Return strict JSON only:
-{
-  "passage": "string",
-  "questions": [
-    {
-      "type": "mc|multi_select|scr",
-      "question": "string",
-      "choices": ["string", "string", "string", "string"],
-      "correct_answer": "A OR [A,C]",
-      "explanation": "string",
-      "common_mistake": "string",
-      "parent_tip": "string",
-      "sample_answer": "string"
-    }
-  ]
-}
-- Exactly 5 questions.
-- Q4 must include "Select TWO answers.".
-- Q5 must begin with "Explain..." and end with "Write your response...".`;
+  If subject is Science:
+  - cause & effect
+  - systems
+  - scientific reasoning
+
+  If subject is Social Studies:
+  - cause & effect
+  - historical decisions
+  - economic/civic reasoning
+
+  If subject is Math:
+  - word problem interpretation
+  - multi-step reasoning
+  - quantitative relationships
+
+  CRITICAL:
+  - Questions MUST depend on the passage
+  - Do NOT generate isolated subject questions
+  - Do NOT generate pure ELAR-only questions
+
+  RETURN:
+  {
+    passage: string,
+    questions: [...]
+  }
+  `;
   }
 
   return `Generate STAAR-style ${effectiveSubject} questions.
@@ -300,10 +300,10 @@ Return strict JSON only with:
 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
   const fallbackChoices = [
-    "A claim that is directly supported by multiple details in the passage",
-    "A partial truth that omits a key condition from the passage",
-    "A likely-sounding conclusion that extends beyond the passage evidence",
-    "An interpretation that misreads the author’s main point",
+    "A correct interpretation based on the passage",
+    "A partially correct idea missing key details",
+    "An incorrect conclusion not supported by the passage",
+    "A misunderstanding of the information provided",
   ];
   const raw = Array.isArray(choices) ? choices.slice(0, 4) : [];
   while (raw.length < 4) raw.push(fallbackChoices[raw.length]);
@@ -489,9 +489,49 @@ function fallbackPassageContent(
   };
 }
 
+function buildSubjectDrivenFallback(subject: CanonicalSubject): string[] {
+  if (subject === "Science") {
+    return [
+      "Which cause-and-effect relationship is best supported by the passage's scientific process?",
+      "Which system interaction in the passage best explains the observed change?",
+      "Which claim is most consistent with the evidence and reasoning in the passage?",
+      "Which two conclusions are best supported by the science details in the passage? Select TWO answers.",
+      "Explain how evidence from the passage supports the strongest scientific explanation. Write your response...",
+    ];
+  }
+
+  if (subject === "Social Studies") {
+    return [
+      "Which cause-and-effect relationship best explains the historical outcome described in the passage?",
+      "Which decision in the passage most influenced civic or economic conditions?",
+      "Which conclusion is best supported by the passage's historical or economic evidence?",
+      "Which two details best support the passage's explanation of government, trade, or economy? Select TWO answers.",
+      "Explain how the passage's evidence supports the strongest historical, civic, or economic conclusion. Write your response...",
+    ];
+  }
+
+  if (subject === "Math") {
+    return [
+      "Which interpretation of the word problem in the passage is most accurate?",
+      "Which quantitative relationship in the passage is needed to solve the situation correctly?",
+      "Which multi-step reasoning path best matches the quantities described in the passage?",
+      "Which two statements correctly represent totals, values, or numbers from the passage? Select TWO answers.",
+      "Explain how the quantities in the passage should be used in a correct multi-step solution. Write your response...",
+    ];
+  }
+
+  return [
+    "Which statement best captures the main idea of the passage?",
+    "Which detail from the passage best supports that main idea?",
+    "Which inference is best supported by details in the passage?",
+    "Which two details are most strongly supported by the passage? Select TWO answers.",
+    "Explain how evidence from the passage supports your best interpretation. Write your response...",
+  ];
+}
+
 function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, skill: string): Question[] {
-  const effectiveSubject = mode === "Cross-Curricular" ? "Reading" : subject;
-  const effectiveSkill = mode === "Cross-Curricular" ? (skill || READING_SKILL_DEFAULT) : skill;
+  const effectiveSubject = subject;
+  const effectiveSkill = skill || READING_SKILL_DEFAULT;
   const singleAnswerSequence = [...shuffledLetters(), ...shuffledLetters()];
   let singleAnswerIndex = 0;
   const nextSingleAnswer = (): ChoiceLetter => {
@@ -505,30 +545,22 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
   };
 
   if (mode === "Cross-Curricular") {
-    const crossStems = [
-      "Which statement best expresses the main idea of the passage?",
-      "Which detail from the passage best supports the main idea?",
-      "Which inference about the scenario is best supported by the passage?",
-      "Which two details best support the author’s explanation of the topic? Select TWO answers.",
-      "Explain how the author uses details to show cause-and-effect relationships. Use evidence from the passage to support your response.",
-    ];
-
-    return crossStems.map((stem, i) => {
+    return buildSubjectDrivenFallback(subject).map((stem, i) => {
       const type: QuestionType = i === 3 ? "multi_select" : i === 4 ? "scr" : "mc";
-      const support = buildSupportContent("Reading", stem, type, i);
+      const support = buildSupportContent(subject, stem, type, i);
       return {
         type,
         question: stem,
         choices: [
-          "A claim that is directly supported by key details in the passage.",
-          "A partially true idea that leaves out an important condition from the text.",
-          "A likely-sounding conclusion that goes beyond the passage evidence.",
-          "An interpretation that confuses related details from the scenario.",
+          "A correct interpretation based on the passage",
+          "A partially correct idea missing key details",
+          "An incorrect conclusion not supported by the passage",
+          "A misunderstanding of the information provided",
         ],
         correct_answer: type === "multi_select" ? nextMultiAnswer() : nextSingleAnswer(),
         explanation: support.explanation,
         sample_answer: type === "scr"
-          ? "The author shows cause and effect by describing an action and then explaining the result. One detail identifies what changed, and another explains why that change happened. Together, these details support the passage’s main point."
+          ? "The response uses specific evidence from the passage to explain the strongest subject-based conclusion and shows how key details support the reasoning."
           : undefined,
         hint: support.hint,
         think: support.think,
@@ -729,6 +761,30 @@ function validateCrossCurricular(data: { passage?: unknown; questions?: unknown[
   return !badPhrases.some((phrase) => passage.includes(phrase));
 }
 
+function validateSubjectAlignment(subject: CanonicalSubject, questions: Question[]): boolean {
+  const text = JSON.stringify(questions || []).toLowerCase();
+
+  if (subject === "Science") {
+    return text.includes("energy") ||
+      text.includes("system") ||
+      text.includes("process");
+  }
+
+  if (subject === "Social Studies") {
+    return text.includes("trade") ||
+      text.includes("government") ||
+      text.includes("economy");
+  }
+
+  if (subject === "Math") {
+    return text.includes("total") ||
+      text.includes("value") ||
+      text.includes("number");
+  }
+
+  return true;
+}
+
 function buildFallbackResponse(
   grade: number,
   subject: CanonicalSubject,
@@ -906,6 +962,12 @@ serve(async (req) => {
           })) {
             console.warn("🚨 Invalid cross-curricular output — regenerating once");
             retryFailureReason = "invalid_cross_curricular_output";
+            attempts++;
+            continue;
+          }
+          if (mode === "Cross-Curricular" && !validateSubjectAlignment(effectiveSubject, questions)) {
+            console.warn("🚨 Subject alignment failed for cross-curricular output — regenerating once");
+            retryFailureReason = "invalid_cross_subject_alignment";
             attempts++;
             continue;
           }
