@@ -367,16 +367,16 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
 
   return stems.map((stem, i) => {
     const crossSubject = pickCrossSubject(i);
-    const question: Question = {
-      question: stem,
-      choices: [
-        "A. A response directly supported by the passage details",
-        "B. A response that partially matches but is incomplete",
-        "C. A response that misinterprets the passage",
-        "D. A response unrelated to the main idea",
-      ],
-      correct_answer: "A",
-      explanation: "The correct choice is best supported by the passage details, context, and required reasoning steps.",
+      const question: Question = {
+        question: stem,
+        choices: [
+          "A. The plants closest to the lamp grew taller due to increased light exposure",
+          "B. All plants grew equally regardless of light conditions",
+          "C. Plants farther from the lamp grew faster due to less heat",
+          "D. Plant growth was not affected by light at all",
+        ],
+        correct_answer: "A",
+        explanation: "The correct choice is best supported by the passage details, context, and required reasoning steps.",
       hint: "Identify what the question asks, then match evidence precisely.",
       think: "Eliminate options that are partly true but not fully supported.",
       step_by_step: "1) Read carefully. 2) Test each option against evidence. 3) Select the strongest supported answer.",
@@ -576,8 +576,20 @@ serve(async (req) => {
       }
 
       if (isBadOutput(text)) {
-        console.log("❌ Final fallback triggered");
-        throw new Error("Bad output after retry");
+        console.log("🚨 FINAL FALLBACK TRIGGERED (SAFE)");
+
+        const safeFallback = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, mode);
+
+        return new Response(JSON.stringify({
+          ...safeFallback,
+          meta: {
+            fallback: true,
+            reason: "bad_output_after_retry",
+          },
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       const parsed = parseJsonPayload(text);
