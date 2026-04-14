@@ -272,17 +272,11 @@ function clampPassageWords(passage: string, min: number, max: number): string {
   const cleaned = String(passage || "").replace(/\s+/g, " ").trim();
   const words = cleaned.split(" ").filter(Boolean);
 
-  if (words.length >= min) return words.slice(0, max).join(" ");
-
-  const seed = cleaned || "Students investigated a real-world situation, used evidence, and explained their reasoning with careful academic language.";
-  const seedWords = seed.split(" ").filter(Boolean);
-  const expanded = [...seedWords];
-
-  while (expanded.length < min) {
-    expanded.push(...seedWords);
+  if (words.length < min) {
+    return cleaned;
   }
 
-  return expanded.slice(0, max).join(" ");
+  return words.slice(0, max).join(" ");
 }
 
 function fallbackPassage(subject: CanonicalSubject, mode: CanonicalMode, grade: number): string {
@@ -376,10 +370,10 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
     const question: Question = {
       question: stem,
       choices: [
-        "A. The option that is fully supported by evidence and reasoning",
-        "B. A partially correct option that misses a key condition",
-        "C. A plausible but unsupported interpretation",
-        "D. A common misconception based on surface details",
+        "A. A response directly supported by the passage details",
+        "B. A response that partially matches but is incomplete",
+        "C. A response that misinterprets the passage",
+        "D. A response unrelated to the main idea",
       ],
       correct_answer: "A",
       explanation: "The correct choice is best supported by the passage details, context, and required reasoning steps.",
@@ -416,6 +410,14 @@ function parseJsonPayload(text: string): Record<string, unknown> {
     }
     throw new Error("Malformed model JSON");
   }
+}
+
+function isBadOutput(text: string): boolean {
+  return (
+    text.includes("fully supported by evidence") ||
+    text.includes("plausible interpretation") ||
+    text.includes("common misconception")
+  );
 }
 
 function sanitizeCross(value: unknown, index: number): CrossConnection {
@@ -532,35 +534,53 @@ serve(async (req) => {
     try {
       console.log("CALLING OPENAI");
 
-      const aiRes = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          input: buildPrompt({
-            grade,
-            subject,
-            skill: effectiveSkill,
-            level,
-            mode,
+      let attempts = 0;
+      let text = "";
+
+      while (attempts < 2) {
+        console.log("🧠 CALLING OPENAI (attempt)", attempts + 1);
+
+        const aiRes = await fetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            input: buildPrompt({
+              grade,
+              subject,
+              skill: effectiveSkill,
+              level,
+              mode,
+            }),
+            max_output_tokens: 2500,
           }),
-          max_output_tokens: 2500,
-        }),
-        signal: controller.signal,
-      });
+          signal: controller.signal,
+        });
 
-      console.log("OPENAI STATUS", aiRes.status);
+        console.log("OPENAI STATUS", aiRes.status);
 
-      if (!aiRes.ok) {
-        throw new Error(`OpenAI request failed with status ${aiRes.status}`);
+        if (!aiRes.ok) {
+          throw new Error(`OpenAI request failed with status ${aiRes.status}`);
+        }
+
+        const aiJson = await aiRes.json();
+        text = String(aiJson.output_text || aiJson.output?.[0]?.content?.[0]?.text || "");
+
+        if (!isBadOutput(text)) break;
+
+        console.log("⚠️ Bad output detected — retrying...");
+        attempts++;
       }
 
-      const aiJson = await aiRes.json();
-      const text = aiJson.output_text || aiJson.output?.[0]?.content?.[0]?.text || "";
-      const parsed = parseJsonPayload(String(text));
+      if (isBadOutput(text)) {
+        console.log("❌ Final fallback triggered");
+        throw new Error("Bad output after retry");
+      }
+
+      const parsed = parseJsonPayload(text);
 
       const passage = clampPassageWords(String(parsed.passage || ""), range.min, range.max);
       const questions = sanitizeQuestions(parsed.questions, effectiveSubject, mode, effectiveSkill);

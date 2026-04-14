@@ -773,12 +773,10 @@
     let cachedUser = null;
     let authReady = false;
 
-    function resetGenerateState(targetRunId = null) {
-      if (typeof targetRunId === "number" && targetRunId !== generateRunId) {
-        return;
-      }
-      const generateBtn = document.getElementById("generate-btn");
+    function resetGenerateState() {
+      const generateBtn = document.getElementById("generateBtn") || document.getElementById("generate-btn");
       isGenerating = false;
+      currentController = null;
       if (generateBtn) {
         generateBtn.disabled = false;
         generateBtn.textContent = "Generate STAAR Pack";
@@ -1028,6 +1026,11 @@
         console.log("🔄 Auth state changed");
         cachedSession = session ?? null;
         cachedUser = cachedSession?.user ?? null;
+
+        if (isGenerating) {
+          console.log("⚠️ Ignoring auth change during generation");
+          return;
+        }
 
         if (event === "SIGNED_OUT") {
           upgradeChecked = false;
@@ -1543,11 +1546,20 @@
         authReady,
         hasSession: !!cachedSession
       });
-      if (currentController) {
-        currentController.abort();
-        console.log("🛑 Previous request aborted");
+      if (isGenerating && !currentController) {
+        console.log("⚠️ Fixing broken state");
+        isGenerating = false;
       }
-      isGenerating = true;
+      if (isGenerating && currentController) {
+        console.log("⚠️ Aborting previous run");
+        try {
+          currentController.abort();
+        } catch (e) {
+          console.log("Abort error (safe to ignore)", e);
+        }
+        isGenerating = false;
+        currentController = null;
+      }
       const outputDiv = document.getElementById("output");
       const generateBtn = document.getElementById("generate-btn");
       const viewToggle = document.getElementById("view-toggle");
@@ -1581,9 +1593,7 @@
         viewToggle.style.display = "none";
         const user = await requireAuth();
 
-        if (!user) {
-          halt("Please log in to continue.");
-        }
+        if (!user) halt("Please log in to continue.");
 
         await checkAndUpgradeUser(user);
 
@@ -1629,13 +1639,10 @@
 
         const token = session?.access_token;
 
-        if (!token) {
-          outputDiv.innerHTML = `<div class="locked"><strong>Session expired. Please log in again.</strong></div>`;
-          return;
-        }
+        if (!token) halt(`<div class="locked"><strong>Session expired. Please log in again.</strong></div>`);
 
-        const startTime = Date.now();
         currentController = new AbortController();
+        isGenerating = true;
         console.log("SENDING REQUEST");
         const apiMode = activeTab === "cross"
           ? "Cross-Curricular"
@@ -1664,17 +1671,6 @@
           }
         );
         console.log("RESPONSE RECEIVED");
-        const elapsed = Date.now() - startTime;
-        const minDelay = 2800;
-        const maxDelay = 4200;
-        const targetDelay = Math.min(
-          Math.max(minDelay, elapsed),
-          maxDelay
-        );
-
-        if (elapsed < targetDelay) {
-          await new Promise((r) => setTimeout(r, targetDelay - elapsed));
-        }
         progressTimers.forEach((timer) => clearTimeout(timer));
 
         if (res.status === 403) {
@@ -1689,6 +1685,7 @@
         }
 
         const data = await res.json();
+        console.log("📥 RESPONSE:", data);
 
         if (!res.ok) {
           throw new Error("Generation request failed");
@@ -1763,21 +1760,24 @@
         if (!Array.isArray(data.questions) || data.questions.length === 0) {
           outputDiv.innerHTML += `<div class="muted-note" style="margin-top:10px;">No questions were returned, so fallback guidance is shown.</div>`;
         }
+        console.log("🔥 ABOUT TO RENDER");
         renderCurrentView();
+        setTimeout(() => {
+          console.log("✅ UX delay finished");
+        }, 1000);
       } catch (err) {
         if (err?.name === "AbortError") {
           console.log("⚠️ Request aborted");
         } else if (err?.message === "HALT") {
           console.log("⛔ Halt handled");
-        } else if (runId === generateRunId) {
+        } else {
           console.error("❌ Generate error:", err);
           outputDiv.innerHTML = "Something went wrong. Try again.";
         }
       } finally {
         progressTimers.forEach((timer) => clearTimeout(timer));
         if (runId === generateRunId) {
-          currentController = null;
-          resetGenerateState(runId);
+          resetGenerateState();
         } else {
           console.log("⚠️ Skipping reset — stale run");
         }
