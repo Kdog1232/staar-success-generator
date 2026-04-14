@@ -25,7 +25,8 @@
 
     body {
       margin: 0;
-      font-family: "Inter", sans-serif;
+      font-family: "Inter", Arial, sans-serif;
+      font-size: 14px;
       background:
         linear-gradient(180deg, rgba(248,250,252,0.92), rgba(241,245,249,0.95)),
         url('/background.jpg') no-repeat center center fixed;
@@ -536,11 +537,29 @@
     .question-block {
       margin-bottom: 24px;
       white-space: normal;
+      padding: 14px;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      background: #ffffff;
+    }
+
+    .question-block:hover {
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    }
+
+    .question-block > * {
+      margin-bottom: 8px;
+    }
+
+    .question-block > *:last-child {
+      margin-bottom: 0;
     }
 
     .question-text {
       font-weight: 600;
-      margin-bottom: 12px;
+      font-size: 16px;
+      line-height: 1.45;
+      margin: 0 0 10px;
     }
 
     .choices {
@@ -548,10 +567,16 @@
       padding: 0;
     }
 
+    .question-block .choices {
+      margin-top: 10px;
+    }
+
     .choice {
       display: flex;
       gap: 8px;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
+      font-size: 14px;
+      line-height: 1.45;
     }
 
     .choice-label {
@@ -561,6 +586,63 @@
     .instruction {
       margin: 0 0 8px;
       font-weight: 600;
+      font-size: 13px;
+    }
+
+    .label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #374151;
+    }
+
+    .helper-text {
+      font-size: 13px;
+      color: #6b7280;
+      line-height: 1.45;
+      margin: 4px 0;
+    }
+
+    .question-support {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px dashed #e5e7eb;
+    }
+
+    .think-details {
+      margin-top: 6px;
+    }
+
+    .think-details summary {
+      cursor: pointer;
+      font-size: 13px;
+      color: #374151;
+      font-weight: 600;
+    }
+
+    .visual-block {
+      border: 1px solid #d8e2ef;
+      background: #f8fafc;
+      border-left: 3px solid #3b82f6;
+      border-radius: 8px;
+      padding: 10px;
+      margin: 0 0 12px;
+    }
+
+    .visual-block p {
+      margin: 0 0 8px;
+    }
+
+    .visual-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    .visual-table th,
+    .visual-table td {
+      border: 1px solid #ccd9ea;
+      padding: 6px 8px;
+      text-align: left;
     }
 
     .question-item,
@@ -582,6 +664,34 @@
       font-weight: 700;
     }
 
+    .answer-card {
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      border-radius: 10px;
+      border: 1px solid #e5e7eb;
+      background: #f9fafb;
+    }
+
+    .answer-card .section {
+      margin-top: 8px;
+      margin-bottom: 0;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .answer-card .question-text {
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .tutor-item {
+      padding: 12px 14px;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      background: #f9fafb;
+      margin-bottom: 14px;
+    }
+
     .question-choices {
       margin-top: 6px;
       padding-left: 0;
@@ -596,6 +706,12 @@
       color: #4b5f7a;
       font-family: "Inter", "Segoe UI", Arial, sans-serif;
       font-size: 0.92rem;
+    }
+
+    .mode-label {
+      font-size: 12px;
+      color: #9ca3af;
+      margin-bottom: 6px;
     }
 
     @media (max-width: 760px) {
@@ -797,6 +913,7 @@
     let isRedirectingToLogin = false;
     let upgradeChecked = false;
     let isGenerating = false;
+    let isStudentView = false;
     let currentController = null;
     let generateRunId = 0;
     let lastGeneratedContentMode = null;
@@ -1231,22 +1348,93 @@
       return `${instruction}<div class="choices">${options}</div>`;
     }
 
-    function renderQuestions(questions) {
+    function renderVisual(visual) {
+      if (!visual || typeof visual !== "object") return "";
+      const type = cleanText(visual.type || "");
+      const title = cleanText(visual.title || "");
+      const description = cleanText(visual.description || "");
+      const headers = Array.isArray(visual.headers) ? visual.headers.map((h) => cleanText(h)) : [];
+      const rows = Array.isArray(visual.rows) ? visual.rows : [];
+
+      if (type === "table" && headers.length && rows.length) {
+        const headerHtml = headers.map((h) => `<th>${h}</th>`).join("");
+        const rowHtml = rows
+          .filter((row) => Array.isArray(row))
+          .map((row) => `<tr>${row.map((cell) => `<td>${cleanText(cell)}</td>`).join("")}</tr>`)
+          .join("");
+        return `
+          <div class="visual-block">
+            <p><strong>${title || "Table"}</strong></p>
+            ${description ? `<p>${description}</p>` : ""}
+            <table class="visual-table">
+              <thead><tr>${headerHtml}</tr></thead>
+              <tbody>${rowHtml}</tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="visual-block">
+          <p><strong>${title || (type ? `${type[0].toUpperCase()}${type.slice(1)}` : "Visual")}</strong></p>
+          ${description ? `<p>${description}</p>` : ""}
+        </div>
+      `;
+    }
+
+    function shouldRenderSupport(mode) {
+      const normalizedMode = String(mode || "").toLowerCase();
+      const VALID_MODES = ["practice", "cross-curricular", "tutor", "answer key"];
+
+      if (!VALID_MODES.includes(normalizedMode)) {
+        console.warn("Invalid mode:", mode);
+      }
+
+      const shouldRenderSupportByMode =
+        normalizedMode === "tutor" ||
+        normalizedMode === "answer key";
+
+      const showSupport = shouldRenderSupportByMode && !isStudentView;
+      return showSupport;
+    }
+
+    function renderQuestionSupport(question, mode) {
+      if (!shouldRenderSupport(mode)) return "";
+      const hint = cleanText(question?.hint || "Use the scenario details to support your choice.");
+      const think = cleanText(question?.think || "Eliminate options that are only partially supported.");
+      const steps = cleanText(question?.step_by_step || question?.explanation || "1) Read the prompt. 2) Compare all choices. 3) Prove your answer with evidence.");
+      return `
+        <div class="question-support">
+          <p class="helper-text"><span class="label">Hint:</span> ${hint}</p>
+          <details class="think-details">
+            <summary>Thinking support</summary>
+            <p class="helper-text"><span class="label">Think:</span> ${think}</p>
+            <p class="helper-text"><span class="label">Step-by-step:</span> ${steps}</p>
+          </details>
+        </div>
+      `;
+    }
+
+    function renderQuestions(questions, mode = "Practice") {
       if (!Array.isArray(questions) || questions.length === 0) {
         return `<p class="muted-note">No questions generated yet. Try again.</p>`;
       }
 
       return (Array.isArray(questions) ? questions : []).map((q, i) => {
         console.log("🧠 RENDERING QUESTION:", q);
+        const visualMarkup = renderVisual(q?.visual);
+        const supportMarkup = renderQuestionSupport(q, mode);
 
         if (q?.type === "scr") {
-          return `<div class="question-block">${renderAnswers(q)}</div>`;
+          return `<div class="question-block">${visualMarkup}${renderAnswers(q)}${supportMarkup}</div>`;
         }
 
         return `
           <div class="question-block">
             <p class="question-text">${i + 1}. ${cleanText(q?.question || "")}</p>
+            ${visualMarkup}
             ${renderAnswers(q)}
+            ${supportMarkup}
           </div>
         `;
       }).join("");
@@ -1270,7 +1458,8 @@
       }).join("");
     }
 
-    function renderTutor(questions) {
+    function renderTutor(questions, mode = "Practice") {
+      if (!shouldRenderSupport(mode)) return "";
       if (!Array.isArray(questions) || questions.length === 0) {
         return `<p class="muted-note">Tutor guidance is not available yet.</p>`;
       }
@@ -1279,18 +1468,28 @@
         const hint = cleanText(q.hint || "Find the part of the passage that directly answers the question.");
         const think = cleanText(q.think || "Eliminate answers that are not supported by evidence.");
         const steps = cleanText(q.step_by_step || q.explanation || "1) Read carefully. 2) Remove wrong choices. 3) Prove your answer with text evidence.");
+        const explanation = cleanText(q.explanation || "Use textual evidence to support the best answer.");
+        const commonMistake = cleanText(q.common_mistake || "Choosing an answer that sounds right but is not proven by the text.");
+        const parentTip = cleanText(q.parent_tip || "Ask your child to point to one detail that proves the best answer.");
         return `
           <div class="tutor-item">
-            <strong>${i + 1}. ${cleanText(q.question || "")}</strong><br>
-            <strong>Hint:</strong> ${hint}<br>
-            <strong>Think like this:</strong> ${think}<br>
-            <strong>Step-by-step explanation:</strong> ${steps}
+            <p class="question-text">${i + 1}. ${cleanText(q.question || "")}</p>
+            <p class="helper-text"><span class="label">Hint:</span> ${hint}</p>
+            <details class="think-details">
+              <summary>Think + Step-by-step</summary>
+              <p class="helper-text"><span class="label">Think:</span> ${think}</p>
+              <p class="helper-text"><span class="label">Step-by-step:</span> ${steps}</p>
+            </details>
+            <p class="helper-text"><span class="label">Why:</span> ${explanation}</p>
+            <p class="helper-text"><span class="label">Common Mistake:</span> ${commonMistake}</p>
+            <p class="helper-text"><span class="label">Parent Tip:</span> ${parentTip}</p>
           </div>
         `;
       }).join("");
     }
 
-    function renderAnswerKey(questions) {
+    function renderAnswerKey(questions, mode = "Practice") {
+      if (!shouldRenderSupport(mode)) return "";
       if (!Array.isArray(questions) || questions.length === 0) {
         return `<p class="muted-note">Answer key is not available yet.</p>`;
       }
@@ -1311,11 +1510,11 @@
           ? correct.map((item) => cleanText(item)).join(", ")
           : cleanText(correct || "A");
         return `
-          <div class="answer-item">
-            <strong>${i + 1}. Correct Answer:</strong> ${safeCorrect}<br>
-            <strong>Explanation:</strong> ${explanation}<br>
-            <strong>Common Mistake:</strong> ${commonMistake}<br>
-            <strong>Parent Tip:</strong> ${parentTip}
+          <div class="answer-card">
+            <div class="question-text">${i + 1}. Correct Answer: ${safeCorrect}</div>
+            <div class="section helper-text">🧠 <span class="label">Why:</span> ${explanation}</div>
+            <div class="section helper-text">⚠️ <span class="label">Common Mistake:</span> ${commonMistake}</div>
+            <div class="section helper-text">👨‍👩‍👧 <span class="label">Parent Tip:</span> ${parentTip}</div>
           </div>
         `;
       }).join("");
@@ -1396,13 +1595,14 @@
           <p>${cleanText(displayPassage)}</p>
         </div>
       `;
-      const questionMarkup = renderQuestions(structuredQuestions);
-      const tutorMarkup = renderTutor(structuredQuestions);
-      const answerMarkup = renderAnswerKey(structuredQuestions);
+      const questionMarkup = renderQuestions(structuredQuestions, "Practice");
+      const tutorMarkup = renderTutor(structuredQuestions, "Tutor");
+      const answerMarkup = renderAnswerKey(structuredQuestions, "Answer Key");
       const crossMarkup = renderCrossCurricular(structuredQuestions, activeTab);
 
       practiceSection.innerHTML = `
         <div class="worksheet-header">STAAR Practice Worksheet</div>
+        <div class="mode-label">Practice Mode</div>
         <section class="worksheet-section">
           <h3>📖 Passage</h3>
           ${passageHTML}
@@ -1414,6 +1614,7 @@
       `;
 
       crossSection.innerHTML = `
+        <div class="mode-label">Cross-Curricular Mode</div>
         <section class="worksheet-section">
           <h3>🌎 Cross-Curricular Connections</h3>
           ${crossMarkup || `<p class="muted-note">Switch to Cross-Curricular mode to view interdisciplinary links.</p>`}
@@ -1858,17 +2059,21 @@
         }
       } finally {
         console.log("🧹 FINAL CLEANUP");
+        // always clear timers
         progressTimers.forEach((timer) => clearTimeout(timer));
 
+        // 🔥 CRITICAL FIX
         isGenerating = false;
         currentController = null;
 
+        console.log("✅ GENERATE UNLOCKED");
+
+        // UI reset ONLY for active run
         if (runId === generateRunId) {
           resetGenerateState();
         } else {
           console.log("⚠️ Skipping UI reset — stale run");
         }
-        console.log("✅ GENERATE UNLOCKED");
       }
     }
 
