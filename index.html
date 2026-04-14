@@ -1089,13 +1089,15 @@
         .replaceAll(/\n/g, "<br>");
     }
 
-    function cleanText(text = "") {
-      return text
-        .replace(/\*\*/g, "")
-        .replace(/\*/g, "")
-        .replace(/__/g, "")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim();
+    function cleanText(text) {
+      if (text === null || text === undefined) return "";
+
+      // Convert EVERYTHING to string safely
+      const safe = typeof text === "string"
+        ? text
+        : JSON.stringify(text);
+
+      return safe.replace(/\s+/g, " ").trim();
     }
 
     function extractField(text, label) {
@@ -1151,23 +1153,51 @@
         .join("");
     }
 
+    function renderAnswers(question) {
+      if (!question) return "";
+
+      // SCR (short response)
+      if (question.type === "scr") {
+        return `
+      <div class="scr-container">
+        <p>${cleanText(question.question)}</p>
+        <textarea placeholder="Write your response..."></textarea>
+      </div>
+    `;
+      }
+
+      const choices = Array.isArray(question.choices)
+        ? question.choices
+        : [];
+
+      return choices.map((choice, index) => {
+        const label = ["A", "B", "C", "D"][index] || String.fromCharCode(65 + index);
+
+        const safeChoice =
+          typeof choice === "string"
+            ? choice
+            : choice?.text || "";
+
+        return `
+      <div class="choice">
+        <strong>${label}.</strong> ${cleanText(safeChoice)}
+      </div>
+    `;
+      }).join("");
+    }
+
     function renderQuestions(questions) {
       if (!Array.isArray(questions) || questions.length === 0) {
         return `<p class="muted-note">No questions generated yet. Try again.</p>`;
       }
 
-      return questions.map((q, i) => {
-        const choices = Array.isArray(q.choices) ? q.choices : [];
+      return (Array.isArray(questions) ? questions : []).map((q, i) => {
+        console.log("🧠 RENDERING QUESTION:", q);
         return `
           <div class="question-item">
-            <div class="question-stem">${i + 1}. ${cleanText(q.question || "")}</div>
+            <div class="question-stem">${i + 1}. ${cleanText(q?.question || "")}</div>
             <ul class="question-choices">
-              ${choices.map((choice, idx) => {
-                const letter = String.fromCharCode(65 + idx);
-                const formatted = String(choice || "").trim();
-                const text = /^[A-D]\.\s*/.test(formatted) ? formatted : `${letter}. ${formatted}`;
-                return `<li>${cleanText(text)}</li>`;
-              }).join("")}
+              ${renderAnswers(q)}
             </ul>
           </div>
         `;
@@ -1212,19 +1242,29 @@
       }).join("");
     }
 
-    function renderAnswers(questions) {
+    function renderAnswerKey(questions) {
       if (!Array.isArray(questions) || questions.length === 0) {
         return `<p class="muted-note">Answer key is not available yet.</p>`;
       }
 
-      return questions.map((q, i) => {
-        const correct = cleanText(q.correct_answer || "A");
+      return (Array.isArray(questions) ? questions : []).map((q, i) => {
+        console.log("🧠 RENDERING QUESTION:", q);
+        const correct = q?.correct_answer;
+        if (Array.isArray(correct)) {
+          // multi-select
+          console.log("Multi-select detected:", correct);
+        } else {
+          // single answer
+        }
         const explanation = cleanText(q.explanation || "Use textual evidence to support the best answer.");
         const commonMistake = cleanText(q.common_mistake || "Choosing an answer that sounds right but is not proven by the passage.");
         const parentTip = cleanText(q.parent_tip || "Ask your child to cite one sentence from the passage that proves the answer.");
+        const safeCorrect = Array.isArray(correct)
+          ? correct.map((item) => cleanText(item)).join(", ")
+          : cleanText(correct || "A");
         return `
           <div class="answer-item">
-            <strong>${i + 1}. Correct Answer:</strong> ${correct}<br>
+            <strong>${i + 1}. Correct Answer:</strong> ${safeCorrect}<br>
             <strong>Explanation:</strong> ${explanation}<br>
             <strong>Common Mistake:</strong> ${commonMistake}<br>
             <strong>Parent Tip:</strong> ${parentTip}
@@ -1305,7 +1345,7 @@
       const displayPassage = cleanText(generatedPassage || "A passage was not returned. Please generate again.");
       const questionMarkup = renderQuestions(structuredQuestions);
       const tutorMarkup = renderTutor(structuredQuestions);
-      const answerMarkup = renderAnswers(structuredQuestions);
+      const answerMarkup = renderAnswerKey(structuredQuestions);
       const crossMarkup = renderCrossCurricular(structuredQuestions, activeTab);
 
       practiceSection.innerHTML = `
