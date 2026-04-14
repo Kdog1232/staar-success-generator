@@ -31,6 +31,15 @@ type Question = {
   common_mistake?: string;
   parent_tip?: string;
   cross?: CrossConnection;
+  visual?: {
+    type: "diagram" | "table" | "chart" | "model" | "map";
+    title?: string;
+    description?: string;
+    headers?: string[];
+    rows?: string[][];
+    diagram_type?: string;
+    components?: Array<Record<string, unknown>>;
+  };
 };
 
 type WorkerResponse = {
@@ -46,6 +55,15 @@ const corsHeaders = {
 
 const READING_SKILL_DEFAULT = "Finding the main idea";
 const LETTERS: ChoiceLetter[] = ["A", "B", "C", "D"];
+
+function shuffledLetters(): ChoiceLetter[] {
+  const pool = [...LETTERS];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool;
+}
 
 function canonicalizeMode(mode: unknown): CanonicalMode {
   const value = String(mode || "").toLowerCase();
@@ -70,7 +88,7 @@ function normalizeLevel(level: unknown): Level {
 }
 
 function gradeWordRange(grade: number, subject: CanonicalSubject, mode: CanonicalMode): { min: number; max: number } {
-  if (mode === "Cross-Curricular") return { min: 150, max: 300 };
+  if (mode === "Cross-Curricular") return { min: 150, max: 250 };
   if (subject === "Math") return { min: 60, max: 130 };
   if (subject === "Reading") return { min: 150, max: 300 };
   if (subject === "Science") return { min: grade <= 4 ? 120 : 140, max: grade <= 4 ? 220 : 260 };
@@ -177,8 +195,227 @@ function buildPrompt(params: {
   mode: CanonicalMode;
 }): string {
   const { grade, subject, skill, level, mode } = params;
-  const effectiveSubject: CanonicalSubject = mode === "Cross-Curricular" ? "Reading" : subject;
-  const effectiveSkill = mode === "Cross-Curricular" ? (skill || READING_SKILL_DEFAULT) : skill;
+  const effectiveSubject: CanonicalSubject = subject;
+  const effectiveSkill = skill || READING_SKILL_DEFAULT;
+  if (mode === "Practice" && subject !== "Reading") {
+    return `You are a Texas STAAR 2.0 assessment expert.
+
+Your task is to generate PRACTICE MODE questions that match real STAAR item behavior.
+
+========================
+MODE: PRACTICE
+========================
+
+INPUTS:
+- Grade: ${grade}
+- Subject: ${subject}
+- Skill: ${effectiveSkill}
+- Level: ${level}
+
+========================
+GLOBAL RULES (ALL SUBJECTS)
+========================
+
+- Generate EXACTLY 5 questions:
+  1) Multiple Choice
+  2) Multiple Choice
+  3) Multiple Choice
+  4) Multi-select (MUST say "Select TWO answers.")
+  5) Short Constructed Response (SCR)
+- NO reading passage unless subject is Reading.
+- Each question must feel like a standalone STAAR item.
+- At least TWO questions MUST include a visual scenario:
+  diagram, table, chart, model, or map.
+- Visuals must be REQUIRED to answer the question.
+- Distractors MUST be plausible, reflect common student mistakes, and include partial truths.
+- All answer choices must be similar in length, structure, and tone.
+- Avoid one obviously longer correct answer or one obviously short incorrect answer.
+- Correct answers must not follow a predictable pattern; distribute across A-D.
+
+========================
+SUBJECT-SPECIFIC BEHAVIOR
+========================
+
+MATH (CRITICAL):
+- Require numerical reasoning, multi-step problem solving, and data interpretation.
+- At least ONE question must involve a table, graph, or number-based model.
+- Students MUST perform math to get the answer.
+- FORBIDDEN: purely descriptive questions or items answerable without calculation/reasoning.
+
+SCIENCE (CRITICAL):
+- Require scientific concepts, experiment/system analysis, and cause-and-effect reasoning.
+- At least ONE question must involve an experiment setup or diagram/model.
+- Students must interpret scientific relationships.
+- FORBIDDEN: definition-only or recall-only questions.
+
+SOCIAL STUDIES (CRITICAL):
+- Require historical/civic reasoning, cause-and-effect analysis, and source interpretation.
+- At least ONE question must include a map, chart, or historical scenario.
+- Questions must involve decisions, events, or impact.
+- FORBIDDEN: simple fact recall or isolated trivia.
+
+========================
+MULTI-SELECT RULE (VERY IMPORTANT)
+========================
+
+- The TWO correct answers must represent DIFFERENT valid ideas.
+- At least one wrong answer must be a strong partial truth.
+- Students must evaluate ALL options carefully.
+
+========================
+SHORT RESPONSE RULE (VERY IMPORTANT)
+========================
+
+- Q5 must begin with "Explain..."
+- Q5 must require:
+  1) correct subject reasoning
+  2) justification using the scenario, diagram, or data
+- Q5 must end with: "Write your response..."
+
+========================
+EXPLANATION / MISCONCEPTION / PARENT SUPPORT (CRITICAL)
+========================
+
+For EVERY question, provide:
+- "explanation" (specific)
+- "common_mistake" (specific)
+- "parent_tip" (specific and actionable)
+
+Rules:
+- explanation must clearly state WHY the correct answer is correct and reference the scenario/visual + concept.
+- common_mistake must name a specific wrong-reasoning pattern or wrong choice type and explain why students pick it.
+- parent_tip must include a direct question a parent can ask the student and what evidence/concept to focus on.
+
+OUTPUT FORMAT (STRICT)
+Return ONLY valid JSON (for app parsing). In each question text and choice text, use only student-facing wording:
+{
+  "passage": "NO_PASSAGE_FOR_${subject.toUpperCase()}",
+  "questions": [
+    {
+      "type": "mc|multi_select|scr",
+      "question": "...",
+      "choices": ["...", "...", "...", "..."],
+      "correct_answer": "A OR [A,C]",
+      "explanation": "...",
+      "common_mistake": "...",
+      "parent_tip": "...",
+      "sample_answer": "...",
+      "visual": {
+        "type": "table|diagram|chart|model|map",
+        "title": "...",
+        "description": "...",
+        "headers": ["...", "..."],
+        "rows": [["...", "..."]],
+        "diagram_type": "...",
+        "components": [{ "type": "...", "x": 0, "y": 0 }]
+      }
+    }
+  ]
+}
+- EXACTLY 5 questions in this order: mc, mc, mc, multi_select, scr.
+- Q4 question MUST include "Select TWO answers."
+- Include structured "visual" objects in at least two questions and make visuals necessary to answer.
+- Q5 must begin with "Explain..." and end with "Write your response..."
+- No teacher language, no extra sections, and no markdown.`;
+  }
+
+  if (mode === "Cross-Curricular") {
+    return `You are a Texas STAAR 2.0 assessment expert.
+
+Your task is to generate CROSS-CURRICULAR practice that integrates reading comprehension skills with SUBJECT content.
+
+========================
+MODE: CROSS-CURRICULAR
+========================
+
+INPUTS:
+- Grade: ${grade}
+- Subject: ${subject}
+- Skill: ${effectiveSkill}
+- Level: ${level}
+
+========================
+CORE REQUIREMENTS
+========================
+
+Generate a STAAR-style worksheet that follows this structure:
+1) HEADER with Skill, Level, and Progress line
+2) TITLE: "STAAR Practice Worksheet"
+3) PASSAGE: content-based informational text tied to subject + skill, 150-250 words, with a real-world scenario OR classroom experiment, clear cause/effect relationships, and concept vocabulary
+4) QUESTIONS: EXACTLY 5 in this order:
+   - Q1 Main Idea (mc)
+   - Q2 Supporting Detail (mc)
+   - Q3 Inference (mc, deeper thinking)
+   - Q4 Multi-select with exactly 2 correct answers
+   - Q5 SCR that begins with "Explain..." and requires passage evidence
+
+========================
+RIGOR
+========================
+
+- Questions must require close reading, evidence analysis, and idea connection.
+- Questions must require both reading comprehension and understanding of the ${subject} concept.
+- Distractors must be plausible and reflect common student mistakes.
+- At least one incorrect answer must reflect a common misunderstanding of the ${subject} concept.
+- All answer choices must be similar in length, structure, and tone.
+- Avoid one obviously longer correct answer or one obviously short incorrect answer.
+- Correct answers must not follow a predictable pattern; distribute across A-D.
+- No simple recall questions.
+
+========================
+EXPLANATION / MISCONCEPTION / PARENT SUPPORT (CRITICAL)
+========================
+
+For EVERY question, provide:
+- "explanation" (specific)
+- "common_mistake" (specific)
+- "parent_tip" (specific and actionable)
+
+Rules:
+- explanation must clearly state WHY the correct answer is correct and reference the scenario/visual + concept.
+- common_mistake must name a specific wrong-reasoning pattern or wrong choice type and explain why students pick it.
+- parent_tip must include a direct question a parent can ask the student and what evidence/concept to focus on.
+
+========================
+CROSS-CURRICULAR RULE
+========================
+
+This is reading applied to ${subject} content.
+- Every question must depend on the passage.
+- Content knowledge supports thinking but does not replace reading analysis.
+- Each question must explicitly reference:
+  - the scenario, experiment, or situation described in the passage
+  - the subject concept being tested
+- Avoid generic phrasing such as "According to the passage..."
+
+OUTPUT FORMAT (STRICT)
+Return ONLY valid JSON:
+{
+  "passage": "...",
+  "questions": [
+    {
+      "type": "mc|multi_select|scr",
+      "question": "...",
+      "choices": ["...", "...", "...", "..."],
+      "correct_answer": "A OR [A,C]",
+      "explanation": "...",
+      "common_mistake": "...",
+      "parent_tip": "...",
+      "sample_answer": "..."
+    }
+  ]
+}
+- EXACTLY 5 questions.
+- Q4 MUST include the sentence "Select TWO answers." in the question text and must have exactly 2 correct answers.
+- For Q4 multi-select:
+  - The two correct answers must represent DIFFERENT valid ideas or factors.
+  - At least one incorrect answer must be a strong partial truth.
+  - Students should need to evaluate ALL options carefully.
+- Q5 MUST begin with "Explain..." and require evidence from the passage.
+- NO markdown.
+- NO teacher notes, no extra sections, and no additional prose outside JSON.`;
+  }
+
   return `You are a Texas STAAR assessment expert.
 
 All questions MUST align to TEKS-based reading comprehension skills.
@@ -375,6 +612,76 @@ function isCompareSkill(skill: string): boolean {
   return normalized.includes("compare") || normalized.includes("contrast") || normalized.includes("two texts");
 }
 
+function buildSupportContent(
+  subject: CanonicalSubject,
+  questionText: string,
+  type: QuestionType,
+  index: number,
+): { explanation: string; common_mistake: string; parent_tip: string; hint: string; think: string; step_by_step: string } {
+  const usesVisual = /(table|diagram|model|map|chart)/i.test(questionText);
+  const sourceRef = usesVisual ? "the visual and scenario details" : "the scenario details";
+  const subjectConcept = subject === "Math"
+    ? "the mathematical relationship in the problem"
+    : subject === "Science"
+    ? "the scientific cause-and-effect relationship"
+    : subject === "Social Studies"
+    ? "the historical or civic cause-and-effect relationship"
+    : "the central idea and supporting evidence";
+
+  const explanation = type === "multi_select"
+    ? `Both correct answers are supported by ${sourceRef} and each captures a different part of ${subjectConcept}.`
+    : type === "scr"
+    ? `A strong response explains ${subjectConcept} and cites exact evidence from ${sourceRef}.`
+    : `The correct answer is supported by ${sourceRef} and correctly applies ${subjectConcept}.`;
+
+  const common_mistake = type === "multi_select"
+    ? `Students may choose one true statement and one partial-truth distractor because both sound reasonable, but only two choices are fully supported by ${sourceRef}.`
+    : type === "scr"
+    ? `Students often retell the scenario without explaining ${subjectConcept}, which misses the required evidence-based reasoning.`
+    : `Students may pick a choice that uses familiar vocabulary but does not match what ${sourceRef} shows about ${subjectConcept}.`;
+
+  const parent_tip = type === "scr"
+    ? `Ask your child, "Which exact detail from ${usesVisual ? "the visual or scenario" : "the scenario"} proves your explanation?" Then have them underline the evidence before writing.`
+    : `Ask your child, "What evidence in ${usesVisual ? "the visual and scenario" : "the scenario"} proves this answer?" Then compare that evidence to one wrong choice.`;
+
+  const hintVariants = [
+    `Find the detail in ${usesVisual ? "the visual and scenario" : "the scenario"} that directly supports the concept.`,
+    `Locate the key evidence first, then match it to the answer choice that best fits the concept.`,
+    `Underline one clue from the prompt before choosing an answer.`,
+    `Use the model/data to eliminate options that only partly fit the concept.`,
+    `Focus on what changed in the scenario and which option explains that change best.`,
+  ];
+
+  const thinkVariants = [
+    "Eliminate answers that are partly true but do not fully match the evidence.",
+    "Check whether each option explains the concept, not just a related vocabulary word.",
+    "Compare two close options and ask which one has direct evidence in the prompt.",
+    "Look for cause-and-effect language to confirm the strongest answer.",
+    "Test every option against the data/model before selecting.",
+  ];
+
+  const stepVariants = [
+    "1) Identify the concept being tested. 2) Match evidence from the prompt. 3) Confirm why other options are weaker.",
+    "1) Read the stem carefully. 2) Mark the strongest clue. 3) Choose the option with direct support.",
+    "1) Use the scenario or visual first. 2) Eliminate partial truths. 3) Select the best-supported answer.",
+    "1) Identify what must be explained. 2) Compare evidence across choices. 3) Verify the final choice.",
+    "1) Decode the question focus. 2) Cross-check with data/model details. 3) Defend the answer with evidence.",
+  ];
+
+  const hint = hintVariants[index % hintVariants.length];
+  const think = thinkVariants[index % thinkVariants.length];
+  const step_by_step = stepVariants[index % stepVariants.length];
+
+  return {
+    explanation,
+    common_mistake,
+    parent_tip,
+    hint,
+    think,
+    step_by_step,
+  };
+}
+
 function fallbackPassageContent(
   subject: CanonicalSubject,
   mode: CanonicalMode,
@@ -400,6 +707,52 @@ function fallbackPassageContent(
 function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, skill: string): Question[] {
   const effectiveSubject = mode === "Cross-Curricular" ? "Reading" : subject;
   const effectiveSkill = mode === "Cross-Curricular" ? (skill || READING_SKILL_DEFAULT) : skill;
+  const singleAnswerSequence = [...shuffledLetters(), ...shuffledLetters()];
+  let singleAnswerIndex = 0;
+  const nextSingleAnswer = (): ChoiceLetter => {
+    const letter = singleAnswerSequence[singleAnswerIndex % singleAnswerSequence.length];
+    singleAnswerIndex += 1;
+    return letter;
+  };
+  const nextMultiAnswer = (): [ChoiceLetter, ChoiceLetter] => {
+    const pair = shuffledLetters().slice(0, 2) as [ChoiceLetter, ChoiceLetter];
+    return pair[0] === pair[1] ? [pair[0], pair[0] === "A" ? "C" : "A"] : pair;
+  };
+
+  if (mode === "Cross-Curricular") {
+    const crossStems = [
+      "Which statement best expresses the main idea of the passage?",
+      "Which detail from the passage best supports the main idea?",
+      "Which inference about the scenario is best supported by the passage?",
+      "Which two details best support the author’s explanation of the topic? Select TWO answers.",
+      "Explain how the author uses details to show cause-and-effect relationships. Use evidence from the passage to support your response.",
+    ];
+
+    return crossStems.map((stem, i) => {
+      const type: QuestionType = i === 3 ? "multi_select" : i === 4 ? "scr" : "mc";
+      const support = buildSupportContent("Reading", stem, type, i);
+      return {
+        type,
+        question: stem,
+        choices: [
+          "A claim that is directly supported by key details in the passage.",
+          "A partially true idea that leaves out an important condition from the text.",
+          "A likely-sounding conclusion that goes beyond the passage evidence.",
+          "An interpretation that confuses related details from the scenario.",
+        ],
+        correct_answer: type === "multi_select" ? nextMultiAnswer() : nextSingleAnswer(),
+        explanation: support.explanation,
+        sample_answer: type === "scr"
+          ? "The author shows cause and effect by describing an action and then explaining the result. One detail identifies what changed, and another explains why that change happened. Together, these details support the passage’s main point."
+          : undefined,
+        hint: support.hint,
+        think: support.think,
+        step_by_step: support.step_by_step,
+        common_mistake: support.common_mistake,
+        parent_tip: support.parent_tip,
+      };
+    });
+  }
 
   const baseReading = [
     `Which statement best captures the ${effectiveSkill.toLowerCase().includes("theme") ? "theme" : "main idea"} of the passage?`,
@@ -410,27 +763,27 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
   ];
 
   const baseMath = [
-    "Which multi-step strategy best solves the real-world problem in the scenario?",
-    "After applying both required operations, which result is most reasonable in context?",
-    "Which statement best explains the mathematical concept used in the scenario?",
-    "How should the model be applied to a new condition in the same scenario?",
-    "A student made an error in step 2. Which correction leads to a valid solution?",
+    "What is the value of the total cost after applying all required operations in the scenario?",
+    "A table displays the number of kits sold each day and the cost per kit. Which expression represents the total revenue for Thursday?",
+    "Which expression represents the relationship between number of kits sold and total profit in the scenario?",
+    "A model illustrates two pricing plans. Which two statements are supported by the model? Select TWO answers.",
+    "Explain how to correct the mathematical process in the scenario and justify your reasoning using the model. Write your response...",
   ];
 
   const baseScience = [
-    "Which claim is best supported by the scientific information in the passage?",
-    "In the described scenario, which prediction is most scientifically reasonable?",
-    "Which cause-and-effect relationship is best supported by the evidence?",
-    "Which conclusion is justified by the data trend in the scenario?",
-    "Which piece of evidence best supports the strongest scientific explanation?",
+    "Which statement best explains the system behavior described in the investigation?",
+    "Based on the model of a closed circuit with two bulbs and a switch, which prediction is most scientifically reasonable?",
+    "Which cause-and-effect relationship is best supported by the experiment evidence?",
+    "A model illustrates energy transfer in the system. Which two conclusions are supported by the model? Select TWO answers.",
+    "Explain which evidence best supports the strongest scientific explanation. Write your response...",
   ];
 
   const baseSocial = [
-    "What is the main idea of the social studies passage?",
-    "Which event best shows a cause-and-effect relationship described in the text?",
-    "Which detail most directly supports the historical or civic context?",
-    "Which inference about decisions in the passage is best supported?",
-    "Which evidence from the text best supports the strongest conclusion?",
+    "Which factor contributed most to the change described in the historical scenario?",
+    "A map shows trade routes used by three regions. Which outcome resulted from the route changes shown on the map?",
+    "Which source detail best supports the decision made by civic leaders in the scenario?",
+    "A table displays tax and population trends before and after a policy change. Which two conclusions are best supported? Select TWO answers.",
+    "Explain which evidence best supports the strongest historical conclusion. Write your response...",
   ];
 
   const stems = effectiveSubject === "Math"
@@ -443,7 +796,8 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
 
   return stems.map((stem, i) => {
     const crossSubject = pickCrossSubject(i);
-    const type: QuestionType = i === 2 ? "part_a" : i === 3 ? "multi_select" : i === 4 ? "scr" : "mc";
+    const type: QuestionType = i === 3 ? "multi_select" : i === 4 ? "scr" : "mc";
+    const support = buildSupportContent(effectiveSubject, stem, type, i);
     const question: Question = {
       type,
       question: stem,
@@ -453,27 +807,39 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
         "Plants farther from the lamp appeared to grow faster because lower heat outweighed reduced light.",
         "Plant height changed randomly and was not related to the light conditions in the investigation.",
       ],
-      correct_answer: type === "multi_select" ? ["A", "C"] : "A",
-      explanation: "The correct choice is best supported by the passage details, context, and required reasoning steps.",
-      paired_with: type === "part_a" ? 3 : undefined,
-      part_b_question: type === "part_a" ? "Which sentence from the passage best supports the answer to Part A?" : undefined,
-      part_b_choices: type === "part_a"
-        ? [
-          "A sentence that directly proves the inference selected in Part A.",
-          "A sentence that mentions a related topic but does not prove the Part A claim.",
-          "A sentence that provides a true detail about a different point in the passage.",
-          "A sentence that sounds important but is not tied to the inference in Part A.",
-        ]
-        : undefined,
-      part_b_correct_answer: type === "part_a" ? "A" : undefined,
+      correct_answer: type === "multi_select" ? nextMultiAnswer() : nextSingleAnswer(),
+      explanation: support.explanation,
       sample_answer: type === "scr"
         ? "The author develops the central idea by introducing a problem and supporting the solution with clear evidence. One detail explains the challenge, and another shows why the response is effective. These details justify the best interpretation."
         : undefined,
-      hint: "Identify what the question asks, then match evidence precisely.",
-      think: "Eliminate options that are partly true but not fully supported.",
-      step_by_step: "1) Read carefully. 2) Test each option against evidence. 3) Select the strongest supported answer.",
-      common_mistake: "Choosing an option that sounds familiar but lacks full support.",
-      parent_tip: "Ask the student to justify the answer with exact evidence.",
+      hint: support.hint,
+      think: support.think,
+      step_by_step: support.step_by_step,
+      common_mistake: support.common_mistake,
+      parent_tip: support.parent_tip,
+      visual: i === 1
+        ? {
+          type: effectiveSubject === "Science" ? "diagram" : effectiveSubject === "Social Studies" ? "map" : "table",
+          title: effectiveSubject === "Science" ? "System Diagram" : effectiveSubject === "Social Studies" ? "Regional Map" : "Sales Table",
+          description: effectiveSubject === "Science"
+            ? "A diagram shows components in a closed system and how energy moves between them."
+            : effectiveSubject === "Social Studies"
+            ? "A map shows movement of goods between regions along labeled routes."
+            : "A table shows quantities and unit values used to calculate totals.",
+          headers: effectiveSubject === "Math" ? ["Day", "Kits Sold", "Cost per Kit"] : undefined,
+          rows: effectiveSubject === "Math" ? [["Mon", "18", "$7"], ["Tue", "21", "$7"], ["Thu", "24", "$7"]] : undefined,
+          diagram_type: effectiveSubject === "Science" ? "circuit" : undefined,
+          components: effectiveSubject === "Science"
+            ? [{ type: "battery", x: 10, y: 50 }, { type: "wire", path: [[10, 50], [80, 50]] }, { type: "bulb", x: 80, y: 50 }]
+            : undefined,
+        }
+        : i === 3
+        ? {
+          type: "model",
+          title: "Comparison Model",
+          description: "A model compares two conditions and their outcomes for decision making.",
+        }
+        : undefined,
     };
 
     if (mode === "Cross-Curricular") {
@@ -536,6 +902,30 @@ function sanitizeCross(value: unknown, index: number): CrossConnection {
   return { subject, connection };
 }
 
+function sanitizeVisual(value: unknown): Question["visual"] | undefined {
+  const obj = value && typeof value === "object" ? value as Record<string, unknown> : null;
+  if (!obj) return undefined;
+  const type = String(obj.type || "").trim().toLowerCase();
+  if (!["diagram", "table", "chart", "model", "map"].includes(type)) return undefined;
+  const headers = Array.isArray(obj.headers) ? obj.headers.map((h) => String(h)).slice(0, 6) : undefined;
+  const rows = Array.isArray(obj.rows)
+    ? obj.rows.filter((row) => Array.isArray(row)).slice(0, 8).map((row) => (row as unknown[]).map((cell) => String(cell)).slice(0, 6))
+    : undefined;
+  const components = Array.isArray(obj.components)
+    ? obj.components.filter((c) => c && typeof c === "object").slice(0, 30).map((c) => c as Record<string, unknown>)
+    : undefined;
+
+  return {
+    type: type as "diagram" | "table" | "chart" | "model" | "map",
+    title: String(obj.title || "").trim() || undefined,
+    description: String(obj.description || "").trim() || undefined,
+    headers,
+    rows,
+    diagram_type: String(obj.diagram_type || "").trim() || undefined,
+    components,
+  };
+}
+
 function sanitizeQuestions(
   raw: unknown,
   subject: CanonicalSubject,
@@ -575,6 +965,7 @@ function sanitizeQuestions(
       step_by_step: String(q.step_by_step || fallback[i].step_by_step || "").trim(),
       common_mistake: String(q.common_mistake || fallback[i].common_mistake || "").trim(),
       parent_tip: String(q.parent_tip || fallback[i].parent_tip || "").trim(),
+      visual: sanitizeVisual(q.visual) || fallback[i].visual,
     };
 
     if (mode === "Cross-Curricular") {
@@ -602,7 +993,7 @@ function buildFallbackResponse(
   skill: string,
   mode: CanonicalMode,
 ): WorkerResponse {
-  const effectiveSubject = mode === "Cross-Curricular" ? "Reading" : subject;
+  const effectiveSubject = subject;
   return {
     passage: fallbackPassageContent(effectiveSubject, mode, grade, skill),
     questions: fallbackQuestionSet(effectiveSubject, mode, skill),
@@ -668,8 +1059,8 @@ serve(async (req) => {
     skill = String(body?.skill || READING_SKILL_DEFAULT).trim() || READING_SKILL_DEFAULT;
     level = normalizeLevel(body?.level);
     mode = canonicalizeMode(body?.mode);
-    effectiveSubject = mode === "Cross-Curricular" ? "Reading" : subject;
-    effectiveSkill = mode === "Cross-Curricular" ? (skill || READING_SKILL_DEFAULT) : skill;
+    effectiveSubject = subject;
+    effectiveSkill = skill || READING_SKILL_DEFAULT;
     const range = gradeWordRange(grade, effectiveSubject, mode);
 
     const controller = new AbortController();
