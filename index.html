@@ -1233,11 +1233,11 @@
       }).join("");
     }
 
-    function showFallback(fallbackText) {
+    function showFallback(fallbackText, fallbackQuestions = []) {
       const fallback = fallbackText || "";
       standardContent = fallback;
       crossContent = "";
-      structuredQuestions = [];
+      structuredQuestions = Array.isArray(fallbackQuestions) ? fallbackQuestions.slice(0, 5) : [];
     }
 
     function showFallbackUI() {
@@ -1595,22 +1595,17 @@
 
         if (!user) halt("Please log in to continue.");
 
-        await checkAndUpgradeUser(user);
-
         const { data: profile } = await supabase
           .from("profiles")
           .select("plan, generations_used")
           .eq("id", user.id)
           .single();
 
-        if (!profile) {
-          throw new Error("Could not load profile");
-        }
+        const plan = profile?.plan || "free";
+        const currentGenerations = Number(profile?.generations_used || 0);
+        renderUsageStatus({ plan, generations_used: currentGenerations });
 
-        renderUsageStatus(profile);
-
-        const currentGenerations = Number(profile.generations_used || 0);
-        if (profile.plan !== "paid" && currentGenerations >= FREE_PLAN_LIMIT) {
+        if (plan !== "paid" && currentGenerations >= FREE_PLAN_LIMIT) {
           halt(`
             <div class="locked">
               <strong>You've reached your free limit. Upgrade to continue.</strong>
@@ -1638,10 +1633,7 @@
           token = data?.session?.access_token;
         }
 
-        if (!token) {
-          console.log("❌ NO TOKEN — HARD FAIL");
-          halt(`<div class="locked"><strong>Session expired. Please log in again.</strong></div>`);
-        }
+        if (!token) halt("Session expired. Please log in again.");
 
         currentController = new AbortController();
         isGenerating = true;
@@ -1687,7 +1679,7 @@
         }
 
         const data = await res.json();
-        console.log("📥 RESPONSE:", data);
+        console.log("🔥 FRONTEND RECEIVED:", data);
 
         if (!res.ok) {
           throw new Error("Generation request failed");
@@ -1698,7 +1690,7 @@
           halt(`<div class="locked"><strong>Something went wrong. Please try again.</strong></div>`);
         }
 
-        if (profile.plan !== "paid") {
+        if (plan !== "paid") {
           const nextGenerationsUsed = currentGenerations + 1;
           const { error: usageUpdateError } = await supabase
             .from("profiles")
@@ -1706,17 +1698,23 @@
             .eq("id", user.id);
 
           if (!usageUpdateError) {
-            profile.generations_used = nextGenerationsUsed;
-            renderUsageStatus(profile);
+            renderUsageStatus({ plan, generations_used: nextGenerationsUsed });
           }
         }
 
         generatedPassage = cleanText(data.passage || "");
         if (data.meta?.fallback) {
-          console.log("⚠️ BACKEND FORCED FALLBACK:", data.meta.reason);
-          showFallback(data.text || "");
-        } else if (Array.isArray(data.questions) && data.questions.length > 0) {
-          console.log("✅ USING AI QUESTIONS");
+          console.log("⚠️ FALLBACK MODE:", data.meta.reason || "unknown");
+          if (Array.isArray(data.questions) && data.questions.length > 0) {
+            showFallback(data.passage || "", data.questions);
+          } else {
+            console.log("❌ FALLBACK WITH NO QUESTIONS", data);
+            halt("Fallback triggered but no questions.");
+          }
+        }
+
+        if (Array.isArray(data.questions) && data.questions.length > 0) {
+          console.log("✅ RENDERING QUESTIONS");
           structuredQuestions = data.questions.slice(0, 5);
           while (structuredQuestions.length < 5) {
             structuredQuestions.push({
@@ -1732,8 +1730,8 @@
             });
           }
         } else {
-          console.log("❌ INVALID AI RESPONSE");
-          halt(`<div class="locked"><strong>Generation failed. Try again.</strong></div>`);
+          console.log("❌ NO QUESTIONS IN RESPONSE", data);
+          halt("No questions returned from server.");
         }
 
         lastGeneratedContentMode = "both";
