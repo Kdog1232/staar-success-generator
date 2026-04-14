@@ -1024,13 +1024,13 @@
 
       supabase.auth.onAuthStateChange(async (event, session) => {
         console.log("🔄 Auth state changed");
-        cachedSession = session ?? null;
-        cachedUser = cachedSession?.user ?? null;
-
         if (isGenerating) {
           console.log("⚠️ Ignoring auth change during generation");
           return;
         }
+
+        cachedSession = session ?? null;
+        cachedUser = cachedSession?.user ?? null;
 
         if (event === "SIGNED_OUT") {
           upgradeChecked = false;
@@ -1546,20 +1546,11 @@
         authReady,
         hasSession: !!cachedSession
       });
-      if (isGenerating && !currentController) {
-        console.log("⚠️ Fixing broken state");
-        isGenerating = false;
+      if (isGenerating) {
+        console.log("🚫 Blocked duplicate generate");
+        return;
       }
-      if (isGenerating && currentController) {
-        console.log("⚠️ Aborting previous run");
-        try {
-          currentController.abort();
-        } catch (e) {
-          console.log("Abort error (safe to ignore)", e);
-        }
-        isGenerating = false;
-        currentController = null;
-      }
+      isGenerating = true;
       const outputDiv = document.getElementById("output");
       const generateBtn = document.getElementById("generate-btn");
       const viewToggle = document.getElementById("view-toggle");
@@ -1626,17 +1617,13 @@
         generatedPassage = "";
         structuredQuestions = [];
 
-        let token = cachedSession?.access_token;
-
+        const sessionAtStart = await supabase.auth.getSession();
+        const token = sessionAtStart?.data?.session?.access_token;
         if (!token) {
-          const { data } = await supabase.auth.getSession();
-          token = data?.session?.access_token;
+          halt("Session expired. Please log in again.");
         }
 
-        if (!token) halt("Session expired. Please log in again.");
-
         currentController = new AbortController();
-        isGenerating = true;
         console.log("SENDING REQUEST");
         const apiMode = activeTab === "cross"
           ? "Cross-Curricular"
