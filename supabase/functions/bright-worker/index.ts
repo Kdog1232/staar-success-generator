@@ -1065,8 +1065,9 @@ function validateSeparation(practice: Question[], cross: Question[], subject: Ca
     practiceKeywords.some((k) => String(q.question || "").toLowerCase().includes(k))
   );
 
+  const subjectKeywords = crossKeywords[subject] ?? [];
   const crossValid = cross.some((q) =>
-    crossKeywords[subject].some((k) => String(q.question || "").toLowerCase().includes(k))
+    subjectKeywords.some((k) => String(q.question || "").toLowerCase().includes(k))
   );
 
   const mathChoicesAreNumeric = subject !== "Math" || cross.every((q) =>
