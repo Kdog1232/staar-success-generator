@@ -773,7 +773,10 @@
     let cachedUser = null;
     let authReady = false;
 
-    function resetGenerateState() {
+    function resetGenerateState(targetRunId = null) {
+      if (typeof targetRunId === "number" && targetRunId !== generateRunId) {
+        return;
+      }
       const generateBtn = document.getElementById("generate-btn");
       isGenerating = false;
       if (generateBtn) {
@@ -897,7 +900,7 @@
       viewToggle.style.display = "none";
       activeTab = "practice";
       contentMode = "standard";
-      isGenerating = false;
+      resetGenerateState();
       lastGeneratedContentMode = null;
       standardContent = "";
       crossContent = "";
@@ -1549,6 +1552,11 @@
       const generateBtn = document.getElementById("generate-btn");
       const viewToggle = document.getElementById("view-toggle");
       const progressTimers = [];
+      const halt = (message) => {
+        console.log("⛔ HALT:", message);
+        if (message) outputDiv.innerHTML = message;
+        throw new Error("HALT");
+      };
 
       try {
         generateBtn.disabled = true;
@@ -1574,9 +1582,7 @@
         const user = await requireAuth();
 
         if (!user) {
-          outputDiv.innerHTML = "Please log in to continue.";
-          resetGenerateState();
-          return;
+          halt("Please log in to continue.");
         }
 
         await checkAndUpgradeUser(user);
@@ -1595,16 +1601,14 @@
 
         const currentGenerations = Number(profile.generations_used || 0);
         if (profile.plan !== "paid" && currentGenerations >= FREE_PLAN_LIMIT) {
-          outputDiv.innerHTML = `
+          halt(`
             <div class="locked">
               <strong>You've reached your free limit. Upgrade to continue.</strong>
               <a href="${GUMROAD_URL}" class="unlock-btn" target="_blank" rel="noopener noreferrer">
                 Unlock Full Access for $12
               </a>
             </div>
-          `;
-          resetGenerateState();
-          return;
+          `);
         }
 
         const grade = document.getElementById("grade").value;
@@ -1674,16 +1678,14 @@
         progressTimers.forEach((timer) => clearTimeout(timer));
 
         if (res.status === 403) {
-          outputDiv.innerHTML = `
+          halt(`
             <div class="locked">
               <strong>You've reached your free limit. Upgrade to continue.</strong>
               <a href="${GUMROAD_URL}" class="unlock-btn" target="_blank">
                 Unlock Full Access for $12
               </a>
             </div>
-          `;
-          resetGenerateState();
-          return;
+          `);
         }
 
         const data = await res.json();
@@ -1694,8 +1696,7 @@
 
         if (!data.passage) {
           console.log("❌ INVALID RESPONSE SHAPE", data);
-          showFallback("Something went wrong. Try again.");
-          return;
+          halt(`<div class="locked"><strong>Something went wrong. Please try again.</strong></div>`);
         }
 
         if (profile.plan !== "paid") {
@@ -1764,25 +1765,21 @@
         }
         renderCurrentView();
       } catch (err) {
-        if (err.name === "AbortError") {
-          console.log("🛑 Previous request cancelled");
-          return;
+        if (err?.name === "AbortError") {
+          console.log("⚠️ Request aborted");
+        } else if (err?.message === "HALT") {
+          console.log("⛔ Halt handled");
+        } else if (runId === generateRunId) {
+          console.error("❌ Generate error:", err);
+          outputDiv.innerHTML = "Something went wrong. Try again.";
         }
-        if (runId !== generateRunId) {
-          return;
-        }
-        progressTimers.forEach((timer) => clearTimeout(timer));
-        console.error("Generate failed:", err);
-        outputDiv.innerHTML = `
-          <div class="locked">
-            <strong>Something went wrong. Please try again.</strong>
-          </div>
-        `;
       } finally {
         progressTimers.forEach((timer) => clearTimeout(timer));
         if (runId === generateRunId) {
           currentController = null;
-          resetGenerateState();
+          resetGenerateState(runId);
+        } else {
+          console.log("⚠️ Skipping reset — stale run");
         }
       }
     }
