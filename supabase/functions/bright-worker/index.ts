@@ -1,6 +1,20 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+type Level = "Below" | "On Level" | "Advanced";
+type Question = {
+  question: string;
+  choices: [string, string, string, string];
+  correct_answer: "A" | "B" | "C" | "D";
+  explanation: string;
+};
+
+type WorkerResponse = {
+  passage: string;
+  questions: Question[];
+  fallback?: string;
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
