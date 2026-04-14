@@ -11,11 +11,20 @@ type CrossConnection = {
   connection: string;
 };
 
+type QuestionType = "mc" | "part_a" | "part_b" | "multi_select" | "scr";
+type PassageContent = string | { text_1: string; text_2: string };
+
 type Question = {
+  type?: QuestionType;
   question: string;
   choices: [string, string, string, string];
-  correct_answer: ChoiceLetter;
+  correct_answer: ChoiceLetter | [ChoiceLetter, ChoiceLetter];
   explanation: string;
+  paired_with?: number;
+  sample_answer?: string;
+  part_b_question?: string;
+  part_b_choices?: [string, string, string, string];
+  part_b_correct_answer?: ChoiceLetter;
   hint?: string;
   think?: string;
   step_by_step?: string;
@@ -25,7 +34,7 @@ type Question = {
 };
 
 type WorkerResponse = {
-  passage: string;
+  passage: PassageContent;
   questions: Question[];
 };
 
@@ -170,83 +179,89 @@ function buildPrompt(params: {
   const { grade, subject, skill, level, mode } = params;
   const effectiveSubject: CanonicalSubject = mode === "Cross-Curricular" ? "Reading" : subject;
   const effectiveSkill = mode === "Cross-Curricular" ? (skill || READING_SKILL_DEFAULT) : skill;
-  const range = gradeWordRange(grade, effectiveSubject, mode);
+  return `You are a Texas STAAR assessment expert.
 
-  const passageRules = mode === "Cross-Curricular"
-    ? `PASSAGE RULES:\n- Informational READING passage only (no pure math/science-only prompt).\n- Include real-world content and interdisciplinary context.\n- ${range.min}-${range.max} words.`
-    : effectiveSubject === "Math"
-      ? `PASSAGE RULES:\n- Short scenario only (no long story passage).\n- ${range.min}-${range.max} words.\n- Real-world context required.`
-      : `PASSAGE RULES:\n- ${range.min}-${range.max} words.\n- Must support ALL five questions.`;
+All questions MUST align to TEKS-based reading comprehension skills.
 
-  const modeRules = mode === "Cross-Curricular"
-    ? `MODE RULES (MANDATORY):
-- Keep questions reading-skill aligned.
-- Every question must include:
-  "cross": { "subject": "Science|Math|Social Studies", "connection": "..." }
-- cross.connection must explain real-world interdisciplinary thinking.`
-    : mode === "Tutor"
-      ? "MODE RULES: Include clear hint/think/step_by_step for each question."
-      : mode === "Answer Key"
-        ? "MODE RULES: Include strong explanations plus common_mistake and parent_tip."
-        : "MODE RULES: Practice-focused question clarity and rigorous distractors.";
+Generate STAAR 2.0-style reading content with EXACTLY 5 questions.
 
-  const strictSubjectRules = effectiveSubject === "Reading"
-    ? `READING STRUCTURE (STRICT):\n${readingStructure(effectiveSkill)}`
-    : `${effectiveSubject.toUpperCase()} STRUCTURE (STRICT):\n${subjectStructure(effectiveSubject)}`;
-
-  return `You are generating production STAAR content.
-
-INPUT
+INPUTS:
 - Grade: ${grade}
 - Subject: ${effectiveSubject}
-- Original Subject Toggle: ${subject}
 - Skill: ${effectiveSkill}
 - Level: ${level}
-- Mode: ${mode}
 
-CORE CONTRACT (STRICT)
-- Return valid JSON only.
-- NEVER return malformed JSON.
-- Passage must be non-empty.
-- Exactly 5 questions.
-- Questions must align to selected subject + skill + mode.
-- Wrong answer choices must be plausible student mistakes.
-- No generic or trivial items.
-- ${rigorInstruction(level)}
+QUESTION TYPES (REQUIRED)
+- "mc"
+- "part_a"
+- "part_b"
+- "multi_select"
+- "scr"
 
-${passageRules}
+MANDATORY QUESTION ORDER (EXACTLY 5)
+1) Main Idea (type "mc")
+2) Supporting Detail (type "mc")
+3) Part A inference item (type "part_a") with paired Part B evidence data fields:
+   - "part_b_question"
+   - "part_b_choices" (4 options)
+   - "part_b_correct_answer" (A-D)
+   - "paired_with": 3
+4) Multi-select (type "multi_select") with exactly 2 correct answers in array format
+5) Short Constructed Response (type "scr") with "sample_answer" (2-4 sentences)
 
-${strictSubjectRules}
+DOK PROGRESSION (REQUIRED)
+1. DOK 1–2 main idea comprehension
+2. DOK 2 supporting detail
+3. DOK 2–3 inference + evidence pairing
+4. DOK 3 multi-select reasoning
+5. DOK 3 evidence-based SCR
 
-${modeRules}
+LEVEL DIFFERENTIATION
+- Below: mostly DOK 1-2, simpler vocabulary, more obvious evidence
+- On Level: balanced DOK 2-3, standard STAAR rigor
+- Advanced: heavy DOK 3, subtle distractors, inference-heavy reasoning
 
-SUBJECT-SPECIFIC CONSTRAINTS
-- Reading: question set must align to the specific reading skill structure.
-- Math: all five are real-world multi-step or reasoning word problems; avoid simple computation-only questions.
-- Science: enforce reasoning, cause/effect, data or experimental analysis.
-- Social Studies: enforce main idea, cause/effect, context reasoning, and evidence.
+SKILL ALIGNMENT (STRICT)
+All 5 questions must align to this skill only:
+"${effectiveSkill}"
 
-OUTPUT SHAPE
+DISTRACTOR RULES
+- Wrong answers must be plausible, text-based, and reflect student mistakes
+- Use partial truth, misinterpretation, and overgeneralization
+- Keep answer choices similar in tone and length
+
+PASSAGE RULES
+- Passage must support all five questions with enough textual evidence
+- Include details enabling inference and justification
+- If skill includes "compare", "contrast", or "two texts", return:
+  {
+    "text_1": "...",
+    "text_2": "..."
+  }
+  and require cross-text reasoning in Part A/Part B, multi-select, and SCR.
+
+OUTPUT FORMAT (STRICT)
+Return ONLY valid JSON:
 {
-  "passage": "",
+  "passage": "... OR { text_1, text_2 }",
   "questions": [
     {
-      "question": "",
-      "choices": ["A. ...","B. ...","C. ...","D. ..."],
-      "correct_answer": "A",
-      "explanation": "",
-      "hint": "",
-      "think": "",
-      "step_by_step": "",
-      "common_mistake": "",
-      "parent_tip": "",
-      "cross": {
-        "subject": "Science",
-        "connection": ""
-      }
+      "type": "mc|part_a|part_b|multi_select|scr",
+      "question": "...",
+      "choices": ["A...", "B...", "C...", "D..."],
+      "correct_answer": "A OR [A,C]",
+      "explanation": "...",
+      "paired_with": 3,
+      "sample_answer": "...",
+      "part_b_question": "...",
+      "part_b_choices": ["A...", "B...", "C...", "D..."],
+      "part_b_correct_answer": "C"
     }
   ]
-}`;
+}
+- EXACTLY 5 questions
+- NO markdown
+- NO extra text`;
 }
 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
@@ -266,6 +281,17 @@ function normalizeAnswer(letter: unknown): ChoiceLetter {
   if (v.startsWith("C")) return "C";
   if (v.startsWith("D")) return "D";
   return "A";
+}
+
+function normalizeMultiSelectAnswer(value: unknown): [ChoiceLetter, ChoiceLetter] {
+  const raw = Array.isArray(value) ? value : [];
+  const normalized = raw
+    .map((entry) => normalizeAnswer(entry))
+    .filter((entry, index, list) => list.indexOf(entry) === index);
+
+  if (normalized.length >= 2) return [normalized[0], normalized[1]];
+  if (normalized.length === 1) return [normalized[0], normalized[0] === "A" ? "C" : "A"];
+  return ["A", "C"];
 }
 
 function clampPassageWords(passage: string, min: number, max: number): string {
@@ -321,6 +347,33 @@ function fallbackPassage(subject: CanonicalSubject, mode: CanonicalMode, grade: 
   );
 }
 
+function isCompareSkill(skill: string): boolean {
+  const normalized = String(skill || "").toLowerCase();
+  return normalized.includes("compare") || normalized.includes("contrast") || normalized.includes("two texts");
+}
+
+function fallbackPassageContent(
+  subject: CanonicalSubject,
+  mode: CanonicalMode,
+  grade: number,
+  skill: string,
+): PassageContent {
+  if (!isCompareSkill(skill)) return fallbackPassage(subject, mode, grade);
+
+  return {
+    text_1: clampPassageWords(
+      "In one article, students describe how a neighborhood garden increased fresh food access by organizing volunteer planting days, tracking harvest totals, and sharing produce with nearby families.",
+      45,
+      130,
+    ),
+    text_2: clampPassageWords(
+      "In a second article, city leaders explain how the same garden improved community health goals through workshops, nutrition lessons, and partnerships that expanded participation across age groups.",
+      45,
+      130,
+    ),
+  };
+}
+
 function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, skill: string): Question[] {
   const effectiveSubject = mode === "Cross-Curricular" ? "Reading" : subject;
   const effectiveSkill = mode === "Cross-Curricular" ? (skill || READING_SKILL_DEFAULT) : skill;
@@ -367,16 +420,32 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
 
   return stems.map((stem, i) => {
     const crossSubject = pickCrossSubject(i);
-      const question: Question = {
-        question: stem,
-        choices: [
-          "A. The plants closest to the lamp grew taller due to increased light exposure",
-          "B. All plants grew equally regardless of light conditions",
-          "C. Plants farther from the lamp grew faster due to less heat",
-          "D. Plant growth was not affected by light at all",
-        ],
-        correct_answer: "A",
-        explanation: "The correct choice is best supported by the passage details, context, and required reasoning steps.",
+    const type: QuestionType = i === 2 ? "part_a" : i === 3 ? "multi_select" : i === 4 ? "scr" : "mc";
+    const question: Question = {
+      type,
+      question: stem,
+      choices: [
+        "A. The plants closest to the lamp grew taller due to increased light exposure",
+        "B. All plants grew equally regardless of light conditions",
+        "C. Plants farther from the lamp grew faster due to less heat",
+        "D. Plant growth was not affected by light at all",
+      ],
+      correct_answer: type === "multi_select" ? ["A", "C"] : "A",
+      explanation: "The correct choice is best supported by the passage details, context, and required reasoning steps.",
+      paired_with: type === "part_a" ? 3 : undefined,
+      part_b_question: type === "part_a" ? "Which sentence from the passage best supports the answer to Part A?" : undefined,
+      part_b_choices: type === "part_a"
+        ? [
+          "A. A sentence that directly supports the Part A inference",
+          "B. A sentence that is related but does not prove the inference",
+          "C. A sentence that describes a different idea in the passage",
+          "D. A sentence that does not connect to the inference",
+        ]
+        : undefined,
+      part_b_correct_answer: type === "part_a" ? "A" : undefined,
+      sample_answer: type === "scr"
+        ? "The author develops the central idea by introducing a problem and supporting the solution with clear evidence. One detail explains the challenge, and another shows why the response is effective. These details justify the best interpretation."
+        : undefined,
       hint: "Identify what the question asks, then match evidence precisely.",
       think: "Eliminate options that are partly true but not fully supported.",
       step_by_step: "1) Read carefully. 2) Test each option against evidence. 3) Select the strongest supported answer.",
@@ -454,12 +523,28 @@ function sanitizeQuestions(
   const fallback = fallbackQuestionSet(subject, mode, skill);
   const sanitized: Question[] = incoming.map((item, i) => {
     const q = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    const typeValue = String(q.type || fallback[i].type || "mc").trim();
+    const type: QuestionType = typeValue === "part_a" || typeValue === "part_b" || typeValue === "multi_select" || typeValue === "scr"
+      ? typeValue
+      : "mc";
 
     const base: Question = {
+      type,
       question: String(q.question || fallback[i].question).trim() || fallback[i].question,
       choices: normalizeChoices(q.choices),
-      correct_answer: normalizeAnswer(q.correct_answer),
+      correct_answer: type === "multi_select" ? normalizeMultiSelectAnswer(q.correct_answer) : normalizeAnswer(q.correct_answer),
       explanation: String(q.explanation || fallback[i].explanation).trim() || fallback[i].explanation,
+      paired_with: typeof q.paired_with === "number" ? q.paired_with : fallback[i].paired_with,
+      sample_answer: String(q.sample_answer || fallback[i].sample_answer || "").trim() || fallback[i].sample_answer,
+      part_b_question: type === "part_a" || type === "part_b"
+        ? (String(q.part_b_question || fallback[i].part_b_question || "").trim() || fallback[i].part_b_question)
+        : undefined,
+      part_b_choices: type === "part_a" || type === "part_b"
+        ? normalizeChoices(q.part_b_choices || fallback[i].part_b_choices)
+        : undefined,
+      part_b_correct_answer: type === "part_a" || type === "part_b"
+        ? normalizeAnswer(q.part_b_correct_answer || fallback[i].part_b_correct_answer)
+        : undefined,
       hint: String(q.hint || fallback[i].hint || "").trim(),
       think: String(q.think || fallback[i].think || "").trim(),
       step_by_step: String(q.step_by_step || fallback[i].step_by_step || "").trim(),
@@ -494,7 +579,7 @@ function buildFallbackResponse(
 ): WorkerResponse {
   const effectiveSubject = mode === "Cross-Curricular" ? "Reading" : subject;
   return {
-    passage: fallbackPassage(effectiveSubject, mode, grade),
+    passage: fallbackPassageContent(effectiveSubject, mode, grade, skill),
     questions: fallbackQuestionSet(effectiveSubject, mode, skill),
   };
 }
@@ -559,11 +644,7 @@ serve(async (req) => {
     level = normalizeLevel(body?.level);
     mode = canonicalizeMode(body?.mode);
     effectiveSubject = mode === "Cross-Curricular" ? "Reading" : subject;
-    effectiveSkill = mode === "Cross-Curricular"
-      ? (skill.toLowerCase().includes("main") || skill.toLowerCase().includes("infer") || skill.toLowerCase().includes("theme")
-        ? skill
-        : READING_SKILL_DEFAULT)
-      : skill;
+    effectiveSkill = mode === "Cross-Curricular" ? (skill || READING_SKILL_DEFAULT) : skill;
     const range = gradeWordRange(grade, effectiveSubject, mode);
 
     const controller = new AbortController();
@@ -632,11 +713,40 @@ serve(async (req) => {
             continue;
           }
 
-          const passage = clampPassageWords(String(parsed.passage || ""), range.min, range.max) ||
-            fallbackPassage(effectiveSubject, mode, grade);
+          const parsedPassage = parsed.passage;
+          const passage = parsedPassage && typeof parsedPassage === "object" && !Array.isArray(parsedPassage)
+            ? {
+              text_1: clampPassageWords(String((parsedPassage as Record<string, unknown>).text_1 || ""), 45, 220),
+              text_2: clampPassageWords(String((parsedPassage as Record<string, unknown>).text_2 || ""), 45, 220),
+            }
+            : clampPassageWords(String(parsedPassage || ""), range.min, range.max);
+          const safePassage = (
+            typeof passage === "string"
+              ? passage
+              : (passage.text_1 && passage.text_2 ? passage : null)
+          ) || fallbackPassageContent(effectiveSubject, mode, grade, effectiveSkill);
           const questions = sanitizeQuestions(parsed.questions, effectiveSubject, mode, effectiveSkill);
+          if (questions.length < 5) {
+            console.log("⚠️ Padding questions");
+          }
+
+          while (questions.length < 5) {
+            questions.push({
+              type: "mc",
+              question: "Which detail best supports the main idea?",
+              choices: [
+                "A. A detail directly supported by the passage",
+                "B. A partially correct but incomplete idea",
+                "C. A misinterpretation of the passage",
+                "D. An unrelated idea",
+              ],
+              correct_answer: "A",
+              explanation: "The correct answer is directly supported by the text.",
+            });
+          }
+
           return jsonResponse(
-            { passage, questions: questions.length ? questions : fallbackQuestionSet(effectiveSubject, mode, effectiveSkill) },
+            { passage: safePassage, questions: questions.length ? questions : fallbackQuestionSet(effectiveSubject, mode, effectiveSkill) },
             { fallback: false, reason: "ai_success" },
           );
         } catch (err) {
