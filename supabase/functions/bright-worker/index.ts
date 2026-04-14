@@ -247,7 +247,7 @@ function buildPrompt(params: {
 }): string {
   const { grade, subject, skill, level, mode } = params;
   const effectiveSubject: CanonicalSubject = subject;
-  const effectiveSkill = skill || READING_SKILL_DEFAULT;
+  const effectiveSkill: string = skill ?? "Main Idea";
   const skillType = routeBySkill(effectiveSkill);
   const difficulty = getDifficultyInstructions(level);
   const subjectRules = getSubjectInstructions(effectiveSubject);
@@ -330,7 +330,7 @@ function buildBundlePrompt(params: {
   level: Level;
 }): string {
   const { grade, subject, skill, level } = params;
-  const effectiveSkill = skill || READING_SKILL_DEFAULT;
+  const effectiveSkill: string = skill ?? "Main Idea";
   return `Generate one STAAR content bundle from one passage.
 
 INPUTS:
@@ -621,7 +621,7 @@ function buildSubjectDrivenFallback(subject: CanonicalSubject): string[] {
 }
 
 function buildPracticeFallback(skill: string): Question[] {
-  const effectiveSkill = skill || READING_SKILL_DEFAULT;
+  const effectiveSkill: string = skill ?? "Main Idea";
   const stems = [
     `What is the main idea of the passage about ${effectiveSkill.toLowerCase()}?`,
     "Which detail supports the main idea best?",
@@ -720,6 +720,9 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
   if (mode === "Cross-Curricular") return buildCrossFallback(subject);
 
   const effectiveSubject = subject;
+  const effectiveSkill: string = skill ?? "Main Idea";
+  const skillText = (effectiveSkill ?? "").toLowerCase();
+  const isTheme = skillText.includes("theme");
   const singleAnswerSequence = [...shuffledLetters(), ...shuffledLetters()];
   let singleAnswerIndex = 0;
   const nextSingleAnswer = (): ChoiceLetter => {
@@ -760,7 +763,7 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
   }
 
   const baseReading = [
-    `Which statement best captures the ${effectiveSkill.toLowerCase().includes("theme") ? "theme" : "main idea"} of the passage?`,
+    `Which statement best captures the ${isTheme ? "theme" : "main idea"} of the passage?`,
     "Which detail from the passage best supports the correct interpretation?",
     "Which additional detail most strengthens that interpretation?",
     "How does the author develop the central idea across the passage?",
@@ -1169,7 +1172,7 @@ serve(async (req) => {
     level = normalizeLevel(incomingLevel);
     mode = canonicalizeMode(incomingMode);
     effectiveSubject = subject;
-    effectiveSkill = skill || READING_SKILL_DEFAULT;
+    effectiveSkill = skill ?? "Main Idea";
     const range = gradeWordRange(grade, effectiveSubject, mode);
 
     const controller = new AbortController();
