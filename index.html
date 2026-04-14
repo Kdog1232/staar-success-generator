@@ -1510,7 +1510,28 @@
     }
 
     function renderCross(crossData) {
-      return renderQuestions(crossData?.questions || [], { mode: "cross" });
+      const questions = Array.isArray(crossData?.questions) ? crossData.questions : [];
+      console.log("🔥 CROSS QUESTIONS RECEIVED:", questions);
+
+      if (!questions.length) {
+        return `<p class="muted-note">No cross-curricular questions generated yet. Try again.</p>`;
+      }
+
+      return questions.map((q, i) => {
+        const safeChoices = Array.isArray(q?.choices) ? q.choices : [];
+        const choiceMarkup = safeChoices.map((choice, idx) => `
+          <div class="choice">
+            ${String.fromCharCode(65 + idx)}. ${cleanText(choice)}
+          </div>
+        `).join("");
+
+        return `
+          <div class="question-block">
+            <h4>${i + 1}. ${cleanText(q?.question || "")}</h4>
+            ${choiceMarkup}
+          </div>
+        `;
+      }).join("");
     }
 
     function showFallback(fallbackText, fallbackQuestions = []) {
@@ -1613,10 +1634,17 @@
       clearRenderedSections();
 
       const displayPassage = cleanText(currentData.passage || "");
+      const crossDisplayPassage = cleanText(currentData.crossPassage || currentData.passage || "");
       const hasPassage = Boolean(displayPassage.trim());
+      const hasCrossPassage = Boolean(crossDisplayPassage.trim());
       const passageHTML = `
         <div class="passage">
           ${hasPassage ? `<p>${displayPassage}</p>` : `<p class="muted-note">No passage is required for this skill set.</p>`}
+        </div>
+      `;
+      const crossPassageHTML = `
+        <div class="passage">
+          ${hasCrossPassage ? `<p>${crossDisplayPassage}</p>` : `<p class="muted-note">No passage is required for this skill set.</p>`}
         </div>
       `;
       const questionMarkup = renderPractice(currentData.practice);
@@ -1645,7 +1673,7 @@
           <div class="mode-label">Cross-Curricular Mode</div>
           <section class="worksheet-section">
             <h3>📖 Passage</h3>
-            ${passageHTML}
+            ${crossPassageHTML}
           </section>
           <section class="worksheet-section">
             <h3>🌎 Subject-Driven Questions on the Passage</h3>
@@ -1871,7 +1899,7 @@
 
     async function generate() {
       if (isGenerating) {
-        console.log("🚫 BLOCKED duplicate generate");
+        console.warn("⚠️ BLOCKED — already generating");
         return;
       }
 
@@ -1886,27 +1914,19 @@
         hasSession: !!cachedSession
       });
       const outputDiv = document.getElementById("output");
-      const generateBtn = document.getElementById("generate-btn");
+      const btn = document.getElementById("generate-btn");
       const viewToggle = document.getElementById("view-toggle");
-      if (!outputDiv || !generateBtn || !viewToggle) {
+      if (!outputDiv || !btn || !viewToggle) {
         console.error("❌ Missing DOM elements", {
           hasOutputDiv: !!outputDiv,
-          hasGenerateBtn: !!generateBtn,
+          hasGenerateBtn: !!btn,
           hasViewToggle: !!viewToggle
         });
-        isGenerating = false;
-        return;
+        throw new Error("HALT_MISSING_DOM");
       }
-
+      btn.disabled = true;
+      btn.innerText = "Generating...";
       const progressTimers = [];
-      const unlockTimeout = setTimeout(() => {
-        if (isGenerating) {
-          console.warn("⚠️ FORCE UNLOCK TRIGGERED");
-          isGenerating = false;
-          generateBtn.disabled = false;
-          generateBtn.textContent = "Generate STAAR Pack";
-        }
-      }, 15000);
 
       function halt(message) {
         console.log("⛔ HALT:", message);
@@ -1917,8 +1937,6 @@
       }
 
       try {
-        generateBtn.disabled = true;
-        generateBtn.textContent = "Generating...";
         outputDiv.innerHTML = "🧠 Analyzing skill...";
 
         progressTimers.push(setTimeout(() => {
@@ -1940,8 +1958,7 @@
         const user = await requireAuth();
 
         if (!user) {
-          outputDiv.innerHTML = "Please log in to continue.";
-          throw new Error("NO_USER");
+          throw new Error("HALT_NO_USER");
         }
 
         const { data: profile } = await supabase
@@ -2088,6 +2105,7 @@
 
         currentData = {
           passage: generatedPassage,
+          crossPassage: cleanText(data.crossPassage || ""),
           practice: {
             questions: Array.isArray(data?.practice?.questions) ? data.practice.questions.slice(0, 5) : structuredQuestions.slice(0, 5)
           },
@@ -2129,7 +2147,11 @@
         }
         window.hasRenderedThisRun = false;
         console.log(`🔥 ABOUT TO RENDER TAB: ${toTabLabel(activeTab)}`);
-        renderTab(activeTab);
+        async function renderAll() {
+          renderTab(activeTab);
+          await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+        }
+        await renderAll();
 
         const enrichPayload = {
           subject,
@@ -2144,7 +2166,8 @@
 
         enrichController = new AbortController();
         const thisEnrichController = enrichController;
-        fetch("https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker", {
+        try {
+          const enrichRes = await fetch("https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -2153,58 +2176,55 @@
           },
           body: JSON.stringify(enrichPayload),
           signal: enrichController.signal
-        })
-          .then(async (enrichRes) => {
-            if (!enrichRes.ok) {
-              throw new Error(`enrichment_status_${enrichRes.status}`);
-            }
-            return enrichRes.json();
-          })
-          .then((enrichData) => {
-            if (runId !== generateRunId) return;
-            if (!currentData || !enrichData) return;
-            currentData = {
-              passage: generatedPassage,
-              practice: {
-                questions: Array.isArray(currentData?.practice?.questions) ? currentData.practice.questions.slice(0, 5) : []
-              },
-              cross: {
-                questions: Array.isArray(enrichData?.cross?.questions) ? enrichData.cross.questions.slice(0, 5) : []
-              },
-              tutor: {
-                explanations: Array.isArray(enrichData?.tutor?.explanations) ? enrichData.tutor.explanations.slice(0, 5) : []
-              },
-              answerKey: {
-                answers: Array.isArray(enrichData?.answerKey?.answers) ? enrichData.answerKey.answers.slice(0, 5) : []
-              }
-            };
-            if (activeTab !== "practice") {
-              renderTab(activeTab);
-            }
-            const modeStatus = document.getElementById("mode-status");
-            if (modeStatus) {
-              modeStatus.textContent += " • Cross/Tutor ready";
-            }
-          })
-          .catch((enrichErr) => {
-            if (enrichErr?.name !== "AbortError") {
-              console.warn("⚠️ Enrichment request failed:", enrichErr);
-            }
-          })
-          .finally(() => {
-            if (enrichController === thisEnrichController) {
-              enrichController = null;
-            }
           });
-
-        setTimeout(() => {
-          console.log("✅ UX delay finished");
-        }, 1000);
+          if (!enrichRes.ok) {
+            throw new Error(`enrichment_status_${enrichRes.status}`);
+          }
+          const enrichData = await enrichRes.json();
+          if (runId !== generateRunId) {
+            throw new Error("HALT_STALE_RUN");
+          }
+          if (!currentData || !enrichData) {
+            throw new Error("HALT_MISSING_ENRICH_DATA");
+          }
+          currentData = {
+            passage: generatedPassage,
+            crossPassage: cleanText(enrichData?.crossPassage || currentData?.crossPassage || ""),
+            practice: {
+              questions: Array.isArray(currentData?.practice?.questions) ? currentData.practice.questions.slice(0, 5) : []
+            },
+            cross: {
+              questions: Array.isArray(enrichData?.cross?.questions) ? enrichData.cross.questions.slice(0, 5) : []
+            },
+            tutor: {
+              explanations: Array.isArray(enrichData?.tutor?.explanations) ? enrichData.tutor.explanations.slice(0, 5) : []
+            },
+            answerKey: {
+              answers: Array.isArray(enrichData?.answerKey?.answers) ? enrichData.answerKey.answers.slice(0, 5) : []
+            }
+          };
+          if (activeTab !== "practice") {
+            window.hasRenderedThisRun = false;
+            await renderAll();
+          }
+          const modeStatus = document.getElementById("mode-status");
+          if (modeStatus) {
+            modeStatus.textContent += " • Cross/Tutor ready";
+          }
+        } catch (enrichErr) {
+          if (enrichErr?.name !== "AbortError") {
+            console.warn("⚠️ Enrichment request failed:", enrichErr);
+          }
+        } finally {
+          if (enrichController === thisEnrichController) {
+            enrichController = null;
+          }
+        }
       } catch (err) {
         const message = err?.message || String(err || "");
         if (message === "HALT") {
           console.log("🟡 HALT CAUGHT");
-        } else if (message === "NO_USER") {
+        } else if (message === "HALT_NO_USER") {
           outputDiv.innerHTML = "Please log in.";
         } else if (message === "NO_SESSION") {
           outputDiv.innerHTML = "Session expired. Refresh page.";
@@ -2212,28 +2232,25 @@
           outputDiv.innerHTML = "Session check timed out. Refresh page.";
         } else if (message === "MISSING_FORM_INPUT") {
           outputDiv.innerHTML = "A required form field is missing. Refresh and try again.";
+        } else if (message === "HALT_MISSING_DOM") {
+          console.error("Critical UI element missing.");
+        } else if (message === "HALT_STALE_RUN" || message === "HALT_MISSING_ENRICH_DATA") {
+          console.warn("⚠️ Generate halted safely:", message);
         } else if (err?.name !== "AbortError" && message !== "HALT") {
           outputDiv.innerHTML = "Something went wrong. Try again.";
         }
         console.error("❌ GENERATE ERROR:", err);
       } finally {
-        clearTimeout(unlockTimeout);
         console.log("🧹 FINAL CLEANUP");
-        // always clear timers
         progressTimers.forEach((timer) => clearTimeout(timer));
-
-        // 🔥 CRITICAL FIX
         isGenerating = false;
-        currentController = null;
-
-        console.log("✅ GENERATE UNLOCKED");
-
-        // UI reset ONLY for active run
-        if (runId === generateRunId) {
-          resetGenerateState();
-        } else {
-          console.log("⚠️ Skipping UI reset — stale run");
+        const btn = document.getElementById("generate-btn");
+        if (btn) {
+          btn.disabled = false;
+          btn.innerText = "Generate";
         }
+        currentController = null;
+        console.log("✅ GENERATE FULLY COMPLETE");
       }
     }
 

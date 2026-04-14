@@ -58,6 +58,7 @@ type AnswerKeyEntry = {
 
 type WorkerResponse = {
   passage: PassageContent;
+  crossPassage: string;
   practice: {
     questions: Question[];
   };
@@ -373,9 +374,35 @@ ${JSON.stringify(practiceQuestions.slice(0, 5))}
 
 Rules:
 - cross questions must be different from practice questions.
-- cross questions must include ${subject} reasoning.
+- cross questions MUST be HYBRID: reading comprehension + ${subject} reasoning.
+- Every cross question must require interpreting passage evidence and applying subject knowledge.
+- Cross questions must sound more academic and analytical than practice questions, using longer sentence structure and domain vocabulary.
+- Include these reasoning words across stems: explain, infer, evidence, relationship, impact.
+- Include subject references in stems (as appropriate): experiment/event/data/result/pattern.
+- FORBIDDEN stems:
+  "What is the main idea", "Which detail supports", "Calculate", "Solve", "When did"
+- Each cross question must include exactly 4 REAL answer choices tied to passage evidence.
+- Choices must include plausible misconceptions and subject-specific reasoning.
+- Never use generic placeholders like:
+  "A correct interpretation...", "A partially correct...", "An incorrect conclusion..."
 - answerKey should match practice question answers.
 - JSON only.`;
+}
+
+function buildSubjectPassage(subject: CanonicalSubject): string {
+  if (subject === "Science") {
+    return "During a campus investigation, students tested how surface type affected temperature at recess. They placed thermometers on blacktop, grass, and concrete every hour and recorded wind speed, cloud cover, and sunlight. The data showed that dark pavement heated fastest in direct sun, while shaded grass stayed cooler because moisture and airflow reduced heat buildup. Students repeated the experiment after watering one section and observed a smaller temperature increase there. In their report, they explained the physical process of heat transfer and used cause-and-effect evidence to recommend shade trees and lighter playground materials.";
+  }
+
+  if (subject === "Social Studies") {
+    return "In 1908, leaders in a river town debated whether to spend limited tax funds on a bridge or a larger rail depot. Farmers argued that a bridge would move crops to market faster, while merchants supported the depot to attract outside trade. Meeting records show that the council first approved rail expansion, but repeated flooding delayed shipments and raised prices. Five years later, after population growth along the opposite bank, voters passed a bond for the bridge. Newspaper timelines and election results suggest that transportation choices changed migration patterns, business investment, and daily life across the town.";
+  }
+
+  if (subject === "Math") {
+    return "The student council planned a field-day snack sale with two pricing options for families. A combo pack cost $6 and included one drink and two snacks, while single items cost $2 each. In the first hour, volunteers sold 38 combo packs and 24 single items. In the second hour, combo sales dropped by 8, but single-item sales increased by 15 after an announcement. Organizers used these numbers to compare revenue patterns and decide whether to restock combo materials or individual items. Their final decision depended on how the quantities in both hours related to total earnings.";
+  }
+
+  return "Students read an informational text and answered reading-comprehension questions using evidence from the passage.";
 }
 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
@@ -398,6 +425,27 @@ function normalizeChoices(choices: unknown): [string, string, string, string] {
       /^choice\s*\d+$/i.test(stripped);
     return isPlaceholder ? fallbackChoices[index] : stripped;
   }) as [string, string, string, string];
+}
+
+function validateHybridCross(questions: Question[]): boolean {
+  return questions.every((q) => {
+    const text = q.question.toLowerCase();
+    const hasReading =
+      text.includes("explain") ||
+      text.includes("infer") ||
+      text.includes("evidence") ||
+      text.includes("relationship") ||
+      text.includes("impact");
+
+    const hasSubject =
+      text.includes("experiment") ||
+      text.includes("event") ||
+      text.includes("data") ||
+      text.includes("result") ||
+      text.includes("pattern");
+
+    return hasReading && hasSubject;
+  });
 }
 
 function normalizeAnswer(letter: unknown): ChoiceLetter {
@@ -434,11 +482,7 @@ function fallbackPassage(subject: CanonicalSubject, mode: CanonicalMode, grade: 
   const { min, max } = gradeWordRange(grade, mode === "Cross-Curricular" ? "Reading" : subject, mode);
 
   if (mode === "Cross-Curricular") {
-    return clampPassageWords(
-      "A city park team studied how weather, water use, and public planning affected tree growth across neighborhoods. Volunteers compared monthly rainfall records, mapped shaded and sunny zones, and interviewed families about how often they visited each area. Students summarized findings in charts and explained why some sections stayed cooler during hot afternoons. They also read short reports about urban ecosystems, budget choices, and community design. By combining evidence from reading, data, and civic decision-making, the group recommended planting native trees near playgrounds and bus stops. Their plan balanced environmental science, mathematical measurement, and social studies priorities so that more residents could safely enjoy outdoor spaces.",
-      min,
-      max,
-    );
+    return clampPassageWords(buildSubjectPassage(subject), min, max);
   }
 
   if (subject === "Math") {
@@ -569,46 +613,6 @@ function fallbackPassageContent(
   };
 }
 
-function buildSubjectDrivenFallback(subject: CanonicalSubject): string[] {
-  if (subject === "Science") {
-    return [
-      "Which cause-and-effect relationship is best supported by the passage's scientific process?",
-      "Which system interaction in the passage best explains the observed change?",
-      "Which claim is most consistent with the evidence and reasoning in the passage?",
-      "Which two conclusions are best supported by the science details in the passage? Select TWO answers.",
-      "Explain how evidence from the passage supports the strongest scientific explanation. Write your response...",
-    ];
-  }
-
-  if (subject === "Social Studies") {
-    return [
-      "Which cause-and-effect relationship best explains the historical outcome described in the passage?",
-      "Which decision in the passage most influenced civic or economic conditions?",
-      "Which conclusion is best supported by the passage's historical or economic evidence?",
-      "Which two details best support the passage's explanation of government, trade, or economy? Select TWO answers.",
-      "Explain how the passage's evidence supports the strongest historical, civic, or economic conclusion. Write your response...",
-    ];
-  }
-
-  if (subject === "Math") {
-    return [
-      "Which interpretation of the word problem in the passage is most accurate?",
-      "Which quantitative relationship in the passage is needed to solve the situation correctly?",
-      "Which multi-step reasoning path best matches the quantities described in the passage?",
-      "Which two statements correctly represent totals, values, or numbers from the passage? Select TWO answers.",
-      "Explain how the quantities in the passage should be used in a correct multi-step solution. Write your response...",
-    ];
-  }
-
-  return [
-    "Which statement best captures the main idea of the passage?",
-    "Which detail from the passage best supports that main idea?",
-    "Which inference is best supported by details in the passage?",
-    "Which two details are most strongly supported by the passage? Select TWO answers.",
-    "Explain how evidence from the passage supports your best interpretation. Write your response...",
-  ];
-}
-
 function buildPracticeFallback(skill: string): Question[] {
   const effectiveSkill: string = skill ?? "Main Idea";
   const stems = [
@@ -655,40 +659,54 @@ function buildCrossFallback(subject: CanonicalSubject): Question[] {
     singleAnswerIndex += 1;
     return letter;
   };
-  const stems = subject === "Social Studies"
+
+  const stems = subject === "Science"
     ? [
-      "What was the main cause of the event described in the passage?",
-      "What was the result of the policy decision in the passage?",
-      "Which event led to the outcome discussed in the passage?",
-      "What was the impact of leadership decisions on the community?",
-      "Which statement best explains why the outcome occurred?",
+      "Which analytical claim most effectively explains the relationship between the experiment's independent and dependent variables, using the quantitative evidence presented in the passage data?",
+      "Based on the experimental procedure and reported results, what can be inferred about the mechanism driving the observed change, and which evidence most directly justifies that inference?",
+      "Which explanation of causal interaction demonstrates the strongest alignment with the experiment data and the author’s evidence-based reasoning in the passage?",
+      "Which interpretation of the data relationship best explains the downstream impact of adjusting a single variable within the experimental system described in the passage?",
+      "Which evidence-based inference most convincingly explains the broader impact of the experiment results on the passage’s final scientific recommendation?",
     ]
-    : subject === "Science"
-      ? [
-        "Which process best explains the change described in the passage?",
-        "What cause-and-effect relationship is supported by the passage evidence?",
-        "Based on the investigation details, what result is most likely?",
-        "What prediction is best supported by the process in the passage?",
-        "Which statement best explains the scientific result?",
-      ]
-      : [
-        "Solve for the total number needed after combining all quantities in the passage scenario.",
-        "Calculate the final value after applying the two-step operation described in the passage.",
-        "How many units remain after subtracting losses from the original total in the passage?",
-        "Solve the multi-step problem to find the final total cost from the passage data.",
-        "Calculate the missing value needed to complete the math relationship in the passage.",
-      ];
+    : subject === "Social Studies"
+    ? [
+      "Which interpretation most effectively explains the relationship between the central historical event and its political or economic impact, using evidence from the passage?",
+      "What can be inferred about the motivations behind leadership decisions, and which event evidence most persuasively supports that inference?",
+      "Which causal explanation most clearly shows how one historical event contributed to a subsequent result, according to the evidence in the passage?",
+      "Which analysis of the relationship between stakeholder motivations and policy outcomes best explains the event impact described in the passage?",
+      "Which inference about long-term societal impact is most defensible when the event timeline evidence in the passage is considered as a whole?",
+    ]
+    : [
+      "Which statement most effectively explains the relationship between the quantities in the scenario data and the overall result, based on evidence from the passage?",
+      "Based on the pattern across the passage data, what can be inferred about why the result shifted between time periods, and which evidence supports that inference?",
+      "Which explanation most accurately uses evidence to characterize the underlying relationship pattern without relying on direct computation of a final value?",
+      "Which interpretation of the data relationship best explains the impact of shifting one quantity on the aggregate result described in the passage?",
+      "Which evidence-based inference most convincingly explains how the observed pattern should influence the planning decision outlined in the passage?",
+    ];
 
   return stems.map((stem, i) => {
     const support = buildSupportContent(subject, stem, "mc", i);
     const choices = subject === "Math"
-      ? ["12", "18", "24", "30"]
+      ? [
+        "The evidence indicates an interdependent relationship pattern in which the aggregate result is shaped by the combined movement of multiple quantities rather than by a single isolated change.",
+        "The data demonstrate that one dominant quantity fully determines the result, making the remaining values analytically irrelevant to interpreting the relationship.",
+        "Because one interval shows growth, the pattern confirms that the overall result must increase whenever any single quantity rises, regardless of offsetting changes elsewhere.",
+        "The passage does not provide sufficient relational evidence, so no defensible inference about the pattern can be made without computing every final value.",
+      ]
+      : subject === "Science"
+      ? [
+        "The experiment evidence supports a plausible causal relationship in which modifying the tested condition produced a consistent directional shift in the measured outcome.",
+        "The observed result appears statistically random, so the evidence does not substantiate a meaningful relationship between the manipulated variable and the outcome.",
+        "The most reasonable inference is that external confounding factors alone produced the change, because the experimental variable itself did not materially influence the result.",
+        "Because the data represent only isolated observations, the passage does not provide enough evidence to justify an explanation of the variable-result relationship.",
+      ]
       : [
-        "A choice directly supported by subject-specific evidence in the passage",
-        "A partially correct statement missing a key subject-specific detail",
-        "A conclusion not supported by the subject evidence in the passage",
-        "A statement that confuses the subject relationship in the passage",
+        "The event evidence supports the interpretation that decision-makers responded to contemporary conditions and that those choices produced measurable civic and economic impact.",
+        "The timeline indicates that impact emerged independently of leadership decisions, so the passage does not support a causal relationship between policy actions and outcomes.",
+        "Because one influential group shaped the debate, the evidence shows that broader community conditions did not materially affect the historical result.",
+        "Although the passage describes multiple events, it lacks sufficiently specific impact evidence to justify defensible historical inference about causation.",
       ];
+
     return {
       type: "mc",
       question: stem,
@@ -724,30 +742,7 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
   };
 
   if (mode === "Cross-Curricular") {
-    return buildSubjectDrivenFallback(subject).map((stem, i) => {
-      const type: QuestionType = i === 3 ? "multi_select" : i === 4 ? "scr" : "mc";
-      const support = buildSupportContent(subject, stem, type, i);
-      return {
-        type,
-        question: stem,
-        choices: [
-          "A correct interpretation based on the passage",
-          "A partially correct idea missing key details",
-          "An incorrect conclusion not supported by the passage",
-          "A misunderstanding of the information provided",
-        ],
-        correct_answer: type === "multi_select" ? nextMultiAnswer() : nextSingleAnswer(),
-        explanation: support.explanation,
-        sample_answer: type === "scr"
-          ? "The response uses specific evidence from the passage to explain the strongest subject-based conclusion and shows how key details support the reasoning."
-          : undefined,
-        hint: support.hint,
-        think: support.think,
-        step_by_step: support.step_by_step,
-        common_mistake: support.common_mistake,
-        parent_tip: support.parent_tip,
-      };
-    });
+    return buildCrossFallback(subject);
   }
 
   const baseReading = [
@@ -880,10 +875,19 @@ function sanitizeQuestions(
       ? `${rawQuestion.replace(/\s+$/g, "")} Select TWO answers.`
       : rawQuestion;
 
+    const normalizedChoices = normalizeChoices(q.choices);
+    const hasGenericChoices = normalizedChoices.some((choice) => {
+      const text = String(choice || "").toLowerCase();
+      return text.includes("correct interpretation") ||
+        text.includes("partially correct") ||
+        text.includes("incorrect conclusion") ||
+        text.includes("misunderstanding of the information");
+    });
+
     const base: Question = {
       type,
       question: questionText,
-      choices: normalizeChoices(q.choices),
+      choices: mode === "Cross-Curricular" && hasGenericChoices ? fallback[i].choices : normalizedChoices,
       correct_answer: type === "multi_select" ? normalizeMultiSelectAnswer(q.correct_answer) : normalizeAnswer(q.correct_answer),
       explanation: String(q.explanation || fallback[i].explanation).trim() || fallback[i].explanation,
       paired_with: typeof q.paired_with === "number" ? q.paired_with : fallback[i].paired_with,
@@ -938,30 +942,6 @@ function validateCrossCurricular(data: { passage?: unknown; questions?: unknown[
   ];
 
   return !badPhrases.some((phrase) => passage.includes(phrase));
-}
-
-function validateSubjectAlignment(subject: CanonicalSubject, questions: Question[]): boolean {
-  const text = JSON.stringify(questions || []).toLowerCase();
-
-  if (subject === "Science") {
-    return text.includes("energy") ||
-      text.includes("system") ||
-      text.includes("process");
-  }
-
-  if (subject === "Social Studies") {
-    return text.includes("trade") ||
-      text.includes("government") ||
-      text.includes("economy");
-  }
-
-  if (subject === "Math") {
-    return text.includes("total") ||
-      text.includes("value") ||
-      text.includes("number");
-  }
-
-  return true;
 }
 
 function normalizeAnswerKeyEntry(value: unknown): string {
@@ -1043,10 +1023,10 @@ function areQuestionSetsDistinct(practiceQuestions: Question[], crossQuestions: 
 function validateSeparation(practice: Question[], cross: Question[], subject: CanonicalSubject): boolean {
   const practiceKeywords = ["main idea", "detail", "infer", "meaning", "summary"];
   const crossKeywords: Record<CanonicalSubject, string[]> = {
-    Reading: ["cause", "effect", "result", "impact", "led"],
-    "Social Studies": ["cause", "effect", "result", "impact", "led"],
-    Science: ["process", "change", "predict", "result"],
-    Math: ["solve", "total", "how many", "calculate"],
+    Reading: ["explain", "infer", "evidence", "relationship", "impact"],
+    "Social Studies": ["explain", "infer", "evidence", "relationship", "impact"],
+    Science: ["explain", "infer", "evidence", "relationship", "impact"],
+    Math: ["explain", "infer", "evidence", "relationship", "impact"],
   };
 
   const practiceValid = practice.every((q) =>
@@ -1058,11 +1038,7 @@ function validateSeparation(practice: Question[], cross: Question[], subject: Ca
     subjectKeywords.some((k) => String(q.question || "").toLowerCase().includes(k))
   );
 
-  const mathChoicesAreNumeric = subject !== "Math" || cross.every((q) =>
-    Array.isArray(q.choices) && q.choices.every((choice) => /^-?\d+(\.\d+)?$/.test(String(choice).trim()))
-  );
-
-  return practiceValid && crossValid && mathChoicesAreNumeric;
+  return practiceValid && crossValid;
 }
 
 function buildFallbackResponse(
@@ -1075,6 +1051,7 @@ function buildFallbackResponse(
   const crossQuestions = buildCrossFallback(effectiveSubject);
   return {
     passage: fallbackPassageContent(effectiveSubject, "Practice", grade, skill),
+    crossPassage: buildSubjectPassage(effectiveSubject),
     practice: { questions: practiceQuestions },
     cross: { questions: crossQuestions },
     tutor: { explanations: sanitizeTutorExplanations([], practiceQuestions) },
@@ -1101,6 +1078,7 @@ serve(async (req) => {
   ) =>
     new Response(JSON.stringify({
       passage: payload.passage,
+      crossPassage: payload.crossPassage,
       practice: payload.practice,
       cross: payload.cross,
       tutor: payload.tutor,
@@ -1260,6 +1238,7 @@ serve(async (req) => {
           return jsonResponse(
             {
               passage: safePassage,
+              crossPassage: buildSubjectPassage(effectiveSubject),
               practice: { questions: practiceQuestions },
               cross: { questions: [] },
               tutor: { explanations: [] },
@@ -1292,6 +1271,7 @@ serve(async (req) => {
             ? clampPassageWords(normalizedPassage, range.min, range.max)
             : normalizedPassage
         ) || fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill);
+        const subjectCrossPassage = buildSubjectPassage(effectiveSubject);
 
         console.time("OPENAI_CALL");
         const enrichRes = await fetch("https://api.openai.com/v1/responses", {
@@ -1340,14 +1320,14 @@ serve(async (req) => {
           effectiveSkill,
         );
         const crossInvalid = !validateCrossCurricular({
-          passage: typeof safePassage === "string" ? safePassage : "",
+          passage: subjectCrossPassage,
           questions: crossQuestions,
         }) ||
-          !validateSubjectAlignment(effectiveSubject, crossQuestions) ||
+          !validateHybridCross(crossQuestions) ||
           !validateSeparation(normalizedPractice, crossQuestions, effectiveSubject) ||
           !areQuestionSetsDistinct(normalizedPractice, crossQuestions);
         if (crossInvalid) {
-          console.warn("⚠️ Cross output partially invalid; using safe fallback cross questions.");
+          console.warn("⚠️ Cross output partially invalid; regenerating cross questions only.");
           crossQuestions = buildCrossFallback(effectiveSubject);
         }
 
@@ -1368,6 +1348,7 @@ serve(async (req) => {
         return jsonResponse(
           {
             passage: safePassage,
+            crossPassage: subjectCrossPassage,
             practice: { questions: normalizedPractice },
             cross: { questions: crossQuestions },
             tutor: { explanations: tutorExplanations },
