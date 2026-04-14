@@ -1631,15 +1631,17 @@
         generatedPassage = "";
         structuredQuestions = [];
 
-        const { data: freshSessionData, error: freshSessionError } = await supabase.auth.getSession();
-        if (freshSessionError) {
-          throw new Error("Session refresh failed");
+        let token = cachedSession?.access_token;
+
+        if (!token) {
+          const { data } = await supabase.auth.getSession();
+          token = data?.session?.access_token;
         }
-        const session = freshSessionData?.session ?? null;
 
-        const token = session?.access_token;
-
-        if (!token) halt(`<div class="locked"><strong>Session expired. Please log in again.</strong></div>`);
+        if (!token) {
+          console.log("❌ NO TOKEN — HARD FAIL");
+          halt(`<div class="locked"><strong>Session expired. Please log in again.</strong></div>`);
+        }
 
         currentController = new AbortController();
         isGenerating = true;
@@ -1709,11 +1711,12 @@
           }
         }
 
-        const fallback = data.fallback || data.standard || data.text || "";
-
-        // 🔥 ALWAYS ATTEMPT TO USE DATA FIRST
         generatedPassage = cleanText(data.passage || "");
-        if (Array.isArray(data.questions) && data.questions.length > 0) {
+        if (data.meta?.fallback) {
+          console.log("⚠️ BACKEND FORCED FALLBACK:", data.meta.reason);
+          showFallback(data.text || "");
+        } else if (Array.isArray(data.questions) && data.questions.length > 0) {
+          console.log("✅ USING AI QUESTIONS");
           structuredQuestions = data.questions.slice(0, 5);
           while (structuredQuestions.length < 5) {
             structuredQuestions.push({
@@ -1728,12 +1731,9 @@
               explanation: "The best answer is the detail that is directly supported by the passage."
             });
           }
-        } else if (fallback) {
-          console.log("⚠️ FALLBACK USED");
-          showFallback(fallback);
         } else {
-          console.log("❌ NO VALID DATA");
-          structuredQuestions = [];
+          console.log("❌ INVALID AI RESPONSE");
+          halt(`<div class="locked"><strong>Generation failed. Try again.</strong></div>`);
         }
 
         lastGeneratedContentMode = "both";

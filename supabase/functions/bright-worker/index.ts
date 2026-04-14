@@ -413,10 +413,15 @@ function parseJsonPayload(text: string): Record<string, unknown> {
 }
 
 function isBadOutput(text: string): boolean {
+  const normalized = String(text || "").toLowerCase();
+
   return (
-    text.includes("fully supported by evidence") ||
-    text.includes("plausible interpretation") ||
-    text.includes("common misconception")
+    normalized.includes("as an ai language model") ||
+    normalized.includes("i can't") ||
+    normalized.includes("i cannot") ||
+    normalized.includes("i'm unable to") ||
+    normalized.includes("placeholder") ||
+    normalized.includes("lorem ipsum")
   );
 }
 
@@ -536,6 +541,7 @@ serve(async (req) => {
 
       let attempts = 0;
       let text = "";
+      let retryFailureReason = "bad_output_after_retry";
 
       while (attempts < 2) {
         console.log("🧠 CALLING OPENAI (attempt)", attempts + 1);
@@ -563,7 +569,10 @@ serve(async (req) => {
         console.log("OPENAI STATUS", aiRes.status);
 
         if (!aiRes.ok) {
-          throw new Error(`OpenAI request failed with status ${aiRes.status}`);
+          console.log("⚠️ OpenAI non-OK response — retrying...", aiRes.status);
+          retryFailureReason = `openai_status_${aiRes.status}`;
+          attempts++;
+          continue;
         }
 
         const aiJson = await aiRes.json();
@@ -571,11 +580,12 @@ serve(async (req) => {
 
         if (!isBadOutput(text)) break;
 
+        retryFailureReason = "bad_output_after_retry";
         console.log("⚠️ Bad output detected — retrying...");
         attempts++;
       }
 
-      if (isBadOutput(text)) {
+      if (!text || isBadOutput(text)) {
         console.log("🚨 FINAL FALLBACK TRIGGERED (SAFE)");
 
         const safeFallback = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, mode);
@@ -584,7 +594,7 @@ serve(async (req) => {
           ...safeFallback,
           meta: {
             fallback: true,
-            reason: "bad_output_after_retry",
+            reason: retryFailureReason,
           },
         }), {
           status: 200,
@@ -623,7 +633,13 @@ serve(async (req) => {
 
       console.log("RETURNING CONTENT");
 
-      return new Response(JSON.stringify(result), {
+      return new Response(JSON.stringify({
+        ...result,
+        meta: {
+          fallback: false,
+          reason: "ai_success",
+        },
+      }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -648,7 +664,13 @@ serve(async (req) => {
           })),
         };
       }
-      return new Response(JSON.stringify(result), {
+      return new Response(JSON.stringify({
+        ...result,
+        meta: {
+          fallback: true,
+          reason: "ai_failure_catch",
+        },
+      }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -657,7 +679,13 @@ serve(async (req) => {
     }
   } catch {
     const fallback = buildFallbackResponse(5, "Reading", READING_SKILL_DEFAULT, "Practice");
-    return new Response(JSON.stringify(fallback), {
+    return new Response(JSON.stringify({
+      ...fallback,
+      meta: {
+        fallback: true,
+        reason: "request_failure_outer_catch",
+      },
+    }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
