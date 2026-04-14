@@ -42,9 +42,34 @@ type Question = {
   };
 };
 
+type TutorExplanation = {
+  question: string;
+  explanation: string;
+  common_mistake: string;
+  parent_tip: string;
+  hint?: string;
+  think?: string;
+  step_by_step?: string;
+};
+
+type AnswerKeyEntry = {
+  answer: string;
+};
+
 type WorkerResponse = {
   passage: PassageContent;
-  questions: Question[];
+  practice: {
+    questions: Question[];
+  };
+  cross: {
+    questions: Question[];
+  };
+  tutor: {
+    explanations: TutorExplanation[];
+  };
+  answerKey: {
+    answers: AnswerKeyEntry[];
+  };
 };
 
 const corsHeaders = {
@@ -298,6 +323,72 @@ Return strict JSON only with:
 - explanation, common_mistake, and parent_tip fields per question.`;
 }
 
+function buildBundlePrompt(params: {
+  grade: number;
+  subject: CanonicalSubject;
+  skill: string;
+  level: Level;
+}): string {
+  const { grade, subject, skill, level } = params;
+  const effectiveSkill = skill || READING_SKILL_DEFAULT;
+  return `Generate one STAAR content bundle from one passage.
+
+INPUTS:
+- Grade: ${grade}
+- Subject focus: ${subject}
+- Skill focus: ${effectiveSkill}
+- Level: ${level}
+
+CRITICAL:
+- All sections must be based on the SAME passage.
+- practice.questions and cross.questions MUST be different.
+- practice.questions must be ELAR-only (main idea, supporting detail, inference, vocabulary in context, summary).
+- practice.questions must use stems like "What is the main idea...", "Which detail supports...", "What can the reader infer...".
+- practice.questions must not use historical reasoning, computation, or generic subject-content mastery stems.
+- cross.questions must include ${subject} reasoning (not generic ELAR only).
+- cross.questions must be subject-driven:
+  - Social Studies: cause/effect, significance, event outcomes, impact of decisions.
+  - Science: process, cause/effect, predictions, scientific reasoning.
+  - Math: multi-step computation with numeric answer choices only.
+- tutor.explanations must provide step-by-step support, common mistakes, and parent tips.
+- answerKey.answers must contain answers only (A/B/C/D or "A, C" for multi-select), no question text.
+
+RETURN STRICT JSON ONLY:
+{
+  "passage": "string",
+  "practice": { "questions": [5 STAAR ELAR-style questions with choices/correct_answer/explanation] },
+  "cross": { "questions": [5 distinct subject-connected reasoning questions with choices/correct_answer/explanation] },
+  "tutor": { "explanations": [5 items with question/explanation/common_mistake/parent_tip/hint/think/step_by_step] },
+  "answerKey": { "answers": [5 items like {"answer":"A"}] }
+}`;
+}
+
+function buildCrossOnlyPrompt(params: {
+  subject: CanonicalSubject;
+  passage: PassageContent;
+}): string {
+  const { subject, passage } = params;
+  const passageText = typeof passage === "string"
+    ? passage
+    : `${passage.text_1 || ""}\n\n${passage.text_2 || ""}`;
+  const subjectRules = subject === "Social Studies"
+    ? "Use cause/effect, event outcomes, significance, and decision impact stems. Do not use main idea or generic comprehension stems."
+    : subject === "Science"
+      ? "Use process, cause/effect, prediction, and scientific reasoning stems."
+      : "Use multi-step computation stems with numeric answer choices only.";
+
+  return `Using the passage below, generate ONLY cross-curricular questions for ${subject}.
+
+PASSAGE:
+${passageText}
+
+RULES:
+- Return exactly 5 questions.
+- ${subjectRules}
+- Questions must not be ELAR-style main idea/detail/inference stems.
+- Use JSON only: { "cross": { "questions": [...] } }`;
+}
+
 function normalizeChoices(choices: unknown): [string, string, string, string] {
   const fallbackChoices = [
     "A correct interpretation based on the passage",
@@ -529,9 +620,106 @@ function buildSubjectDrivenFallback(subject: CanonicalSubject): string[] {
   ];
 }
 
-function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, skill: string): Question[] {
-  const effectiveSubject = subject;
+function buildPracticeFallback(skill: string): Question[] {
   const effectiveSkill = skill || READING_SKILL_DEFAULT;
+  const stems = [
+    `What is the main idea of the passage about ${effectiveSkill.toLowerCase()}?`,
+    "Which detail supports the main idea best?",
+    "What can the reader infer from the passage details?",
+    "Which word meaning is best supported by context in the passage?",
+    "Which summary best matches the passage?",
+  ];
+  const singleAnswerSequence = [...shuffledLetters(), ...shuffledLetters()];
+  let singleAnswerIndex = 0;
+  const nextSingleAnswer = (): ChoiceLetter => {
+    const letter = singleAnswerSequence[singleAnswerIndex % singleAnswerSequence.length];
+    singleAnswerIndex += 1;
+    return letter;
+  };
+  return stems.map((stem, i) => {
+    const support = buildSupportContent("Reading", stem, "mc", i);
+    return {
+      type: "mc",
+      question: stem,
+      choices: [
+        "A choice directly supported by passage evidence",
+        "A partially supported detail that misses key evidence",
+        "A statement not supported by the passage",
+        "An unrelated claim from outside the passage",
+      ],
+      correct_answer: nextSingleAnswer(),
+      explanation: support.explanation,
+      hint: support.hint,
+      think: support.think,
+      step_by_step: support.step_by_step,
+      common_mistake: support.common_mistake,
+      parent_tip: support.parent_tip,
+    };
+  });
+}
+
+function buildCrossFallback(subject: CanonicalSubject): Question[] {
+  const singleAnswerSequence = [...shuffledLetters(), ...shuffledLetters()];
+  let singleAnswerIndex = 0;
+  const nextSingleAnswer = (): ChoiceLetter => {
+    const letter = singleAnswerSequence[singleAnswerIndex % singleAnswerSequence.length];
+    singleAnswerIndex += 1;
+    return letter;
+  };
+  const stems = subject === "Social Studies"
+    ? [
+      "What was the main cause of the event described in the passage?",
+      "What was the result of the policy decision in the passage?",
+      "Which event led to the outcome discussed in the passage?",
+      "What was the impact of leadership decisions on the community?",
+      "Which statement best explains why the outcome occurred?",
+    ]
+    : subject === "Science"
+      ? [
+        "Which process best explains the change described in the passage?",
+        "What cause-and-effect relationship is supported by the passage evidence?",
+        "Based on the investigation details, what result is most likely?",
+        "What prediction is best supported by the process in the passage?",
+        "Which statement best explains the scientific result?",
+      ]
+      : [
+        "Solve for the total number needed after combining all quantities in the passage scenario.",
+        "Calculate the final value after applying the two-step operation described in the passage.",
+        "How many units remain after subtracting losses from the original total in the passage?",
+        "Solve the multi-step problem to find the final total cost from the passage data.",
+        "Calculate the missing value needed to complete the math relationship in the passage.",
+      ];
+
+  return stems.map((stem, i) => {
+    const support = buildSupportContent(subject, stem, "mc", i);
+    const choices = subject === "Math"
+      ? ["12", "18", "24", "30"]
+      : [
+        "A choice directly supported by subject-specific evidence in the passage",
+        "A partially correct statement missing a key subject-specific detail",
+        "A conclusion not supported by the subject evidence in the passage",
+        "A statement that confuses the subject relationship in the passage",
+      ];
+    return {
+      type: "mc",
+      question: stem,
+      choices: choices as [string, string, string, string],
+      correct_answer: nextSingleAnswer(),
+      explanation: support.explanation,
+      hint: support.hint,
+      think: support.think,
+      step_by_step: support.step_by_step,
+      common_mistake: support.common_mistake,
+      parent_tip: support.parent_tip,
+    };
+  });
+}
+
+function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, skill: string): Question[] {
+  if (mode === "Practice") return buildPracticeFallback(skill);
+  if (mode === "Cross-Curricular") return buildCrossFallback(subject);
+
+  const effectiveSubject = subject;
   const singleAnswerSequence = [...shuffledLetters(), ...shuffledLetters()];
   let singleAnswerIndex = 0;
   const nextSingleAnswer = (): ChoiceLetter => {
@@ -785,16 +973,120 @@ function validateSubjectAlignment(subject: CanonicalSubject, questions: Question
   return true;
 }
 
+function normalizeAnswerKeyEntry(value: unknown): string {
+  if (Array.isArray(value)) {
+    const letters = value.map((entry) => normalizeAnswer(entry));
+    return letters.join(", ");
+  }
+  return normalizeAnswer(value);
+}
+
+function sanitizeTutorExplanations(raw: unknown, practiceQuestions: Question[]): TutorExplanation[] {
+  const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
+  const fallback = practiceQuestions.slice(0, 5).map((q, index) => ({
+    question: q.question,
+    explanation: q.explanation || `Use evidence from the passage to answer Question ${index + 1}.`,
+    common_mistake: q.common_mistake || "Picking a choice that sounds right but is not proven by the passage.",
+    parent_tip: q.parent_tip || "Ask your child to cite one line of evidence before choosing.",
+    hint: q.hint || "Underline the key words in the question.",
+    think: q.think || "Eliminate choices that are only partially supported.",
+    step_by_step: q.step_by_step || "1) Read question 2) Check evidence 3) Confirm answer.",
+  }));
+
+  const sanitized = incoming.map((item, index) => {
+    const entry = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    const base = fallback[index] || fallback[fallback.length - 1];
+    return {
+      question: String(entry.question || base.question).trim() || base.question,
+      explanation: String(entry.explanation || base.explanation).trim() || base.explanation,
+      common_mistake: String(entry.common_mistake || base.common_mistake).trim() || base.common_mistake,
+      parent_tip: String(entry.parent_tip || base.parent_tip).trim() || base.parent_tip,
+      hint: String(entry.hint || base.hint || "").trim() || base.hint,
+      think: String(entry.think || base.think || "").trim() || base.think,
+      step_by_step: String(entry.step_by_step || base.step_by_step || "").trim() || base.step_by_step,
+    };
+  });
+
+  while (sanitized.length < 5) sanitized.push(fallback[sanitized.length]);
+  return sanitized.slice(0, 5);
+}
+
+function sanitizeAnswerKey(raw: unknown, practiceQuestions: Question[]): AnswerKeyEntry[] {
+  const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
+  const fallback = practiceQuestions.slice(0, 5).map((q) => ({
+    answer: normalizeAnswerKeyEntry(q.correct_answer),
+  }));
+  const sanitized = incoming.map((item, index) => {
+    const entry = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    const base = fallback[index] || fallback[fallback.length - 1];
+    return {
+      answer: normalizeAnswerKeyEntry(entry.answer || base.answer),
+    };
+  });
+
+  while (sanitized.length < 5) sanitized.push(fallback[sanitized.length]);
+  return sanitized.slice(0, 5);
+}
+
+function areQuestionSetsDistinct(practiceQuestions: Question[], crossQuestions: Question[]): boolean {
+  const practiceText = new Set(practiceQuestions.map((q) => String(q.question || "").trim().toLowerCase()));
+  const overlap = crossQuestions.filter((q) => practiceText.has(String(q.question || "").trim().toLowerCase())).length;
+  const skillBucket = (value: string): string => {
+    const v = value.toLowerCase();
+    if (v.includes("main idea")) return "main_idea";
+    if (v.includes("detail")) return "detail";
+    if (v.includes("infer")) return "inference";
+    if (v.includes("meaning") || v.includes("vocabulary")) return "vocab";
+    if (v.includes("summary")) return "summary";
+    if (v.includes("cause") || v.includes("effect") || v.includes("result") || v.includes("impact") || v.includes("led")) return "cause_effect";
+    if (v.includes("process") || v.includes("predict") || v.includes("change")) return "science_reasoning";
+    if (v.includes("solve") || v.includes("total") || v.includes("calculate") || v.includes("how many")) return "math_compute";
+    return "other";
+  };
+  const practiceBuckets = new Set(practiceQuestions.map((q) => skillBucket(String(q.question || ""))));
+  const crossBuckets = new Set(crossQuestions.map((q) => skillBucket(String(q.question || ""))));
+  const sharedBuckets = [...crossBuckets].filter((bucket) => practiceBuckets.has(bucket)).length;
+  return overlap < 2 && sharedBuckets < 2;
+}
+
+function validateSeparation(practice: Question[], cross: Question[], subject: CanonicalSubject): boolean {
+  const practiceKeywords = ["main idea", "detail", "infer", "meaning", "summary"];
+  const crossKeywords: Record<CanonicalSubject, string[]> = {
+    Reading: ["cause", "effect", "result", "impact", "led"],
+    "Social Studies": ["cause", "effect", "result", "impact", "led"],
+    Science: ["process", "change", "predict", "result"],
+    Math: ["solve", "total", "how many", "calculate"],
+  };
+
+  const practiceValid = practice.every((q) =>
+    practiceKeywords.some((k) => String(q.question || "").toLowerCase().includes(k))
+  );
+
+  const crossValid = cross.some((q) =>
+    crossKeywords[subject].some((k) => String(q.question || "").toLowerCase().includes(k))
+  );
+
+  const mathChoicesAreNumeric = subject !== "Math" || cross.every((q) =>
+    Array.isArray(q.choices) && q.choices.every((choice) => /^-?\d+(\.\d+)?$/.test(String(choice).trim()))
+  );
+
+  return practiceValid && crossValid && mathChoicesAreNumeric;
+}
+
 function buildFallbackResponse(
   grade: number,
   subject: CanonicalSubject,
   skill: string,
-  mode: CanonicalMode,
 ): WorkerResponse {
   const effectiveSubject = subject;
+  const practiceQuestions = buildPracticeFallback(skill);
+  const crossQuestions = buildCrossFallback(effectiveSubject);
   return {
-    passage: fallbackPassageContent(effectiveSubject, mode, grade, skill),
-    questions: fallbackQuestionSet(effectiveSubject, mode, skill),
+    passage: fallbackPassageContent(effectiveSubject, "Practice", grade, skill),
+    practice: { questions: practiceQuestions },
+    cross: { questions: crossQuestions },
+    tutor: { explanations: sanitizeTutorExplanations([], practiceQuestions) },
+    answerKey: { answers: sanitizeAnswerKey([], practiceQuestions) },
   };
 }
 
@@ -817,7 +1109,10 @@ serve(async (req) => {
   ) =>
     new Response(JSON.stringify({
       passage: payload.passage,
-      questions: Array.isArray(payload.questions) ? payload.questions : fallbackQuestionSet(effectiveSubject, mode, effectiveSkill),
+      practice: payload.practice,
+      cross: payload.cross,
+      tutor: payload.tutor,
+      answerKey: payload.answerKey,
       meta,
     }), {
       status: 200,
@@ -825,7 +1120,7 @@ serve(async (req) => {
     });
 
   const safeFallback = (reason: string, error?: string) => {
-    const payload = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, mode);
+    const payload = buildFallbackResponse(grade, effectiveSubject, effectiveSkill);
     return jsonResponse(payload, { fallback: true, reason, ...(error ? { error } : {}) });
   };
 
@@ -894,12 +1189,11 @@ serve(async (req) => {
             },
             body: JSON.stringify({
               model: "gpt-4o-mini",
-              input: buildPrompt({
+              input: buildBundlePrompt({
                 grade,
                 subject,
                 skill: effectiveSkill,
                 level,
-                mode,
               }),
               max_output_tokens: 2500,
             }),
@@ -954,50 +1248,133 @@ serve(async (req) => {
             typeof passage === "string"
               ? passage
               : (passage.text_1 && passage.text_2 ? passage : null)
-          ) || fallbackPassageContent(effectiveSubject, mode, grade, effectiveSkill);
-          const questions = sanitizeQuestions(parsed.questions, effectiveSubject, mode, effectiveSkill);
-          if (mode === "Cross-Curricular" && !validateCrossCurricular({
+          ) || fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill);
+
+          const practiceQuestions = sanitizeQuestions(
+            parsed?.practice && typeof parsed.practice === "object"
+              ? (parsed.practice as Record<string, unknown>).questions
+              : parsed.questions,
+            effectiveSubject,
+            "Practice",
+            effectiveSkill,
+          );
+
+          const crossQuestions = sanitizeQuestions(
+            parsed?.cross && typeof parsed.cross === "object"
+              ? (parsed.cross as Record<string, unknown>).questions
+              : [],
+            effectiveSubject,
+            "Cross-Curricular",
+            effectiveSkill,
+          );
+
+          let resolvedCrossQuestions = crossQuestions;
+          const crossNeedsRegeneration =
+            !validateCrossCurricular({
+              passage: typeof safePassage === "string" ? safePassage : "",
+              questions: resolvedCrossQuestions,
+            }) ||
+            !validateSubjectAlignment(effectiveSubject, resolvedCrossQuestions) ||
+            !validateSeparation(practiceQuestions, resolvedCrossQuestions, effectiveSubject) ||
+            !areQuestionSetsDistinct(practiceQuestions, resolvedCrossQuestions);
+
+          if (crossNeedsRegeneration) {
+            try {
+              const crossRes = await fetch("https://api.openai.com/v1/responses", {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  model: "gpt-4o-mini",
+                  input: buildCrossOnlyPrompt({ subject: effectiveSubject, passage: safePassage }),
+                  max_output_tokens: 1400,
+                }),
+                signal: controller.signal,
+              });
+              if (crossRes.ok) {
+                const crossJson = await crossRes.json() as Record<string, unknown>;
+                const crossAny = crossJson as {
+                  output?: Array<{ content?: Array<{ text?: string }> }>;
+                  output_text?: string;
+                };
+                const crossText = String(
+                  crossAny.output?.[0]?.content?.[0]?.text ||
+                  crossAny.output_text ||
+                  "",
+                ).trim();
+                const parsedCross = tryParseJsonPayload(crossText) || {};
+                resolvedCrossQuestions = sanitizeQuestions(
+                  parsedCross?.cross && typeof parsedCross.cross === "object"
+                    ? (parsedCross.cross as Record<string, unknown>).questions
+                    : parsedCross.questions,
+                  effectiveSubject,
+                  "Cross-Curricular",
+                  effectiveSkill,
+                );
+              }
+            } catch (crossErr) {
+              console.warn("⚠️ Cross-only regeneration failed:", crossErr);
+            }
+          }
+
+          if (!validateCrossCurricular({
             passage: typeof safePassage === "string" ? safePassage : "",
-            questions,
+            questions: resolvedCrossQuestions,
           })) {
             console.warn("🚨 Invalid cross-curricular output — regenerating once");
             retryFailureReason = "invalid_cross_curricular_output";
             attempts++;
             continue;
           }
-          if (mode === "Cross-Curricular" && !validateSubjectAlignment(effectiveSubject, questions)) {
+          if (!validateSubjectAlignment(effectiveSubject, resolvedCrossQuestions)) {
             console.warn("🚨 Subject alignment failed for cross-curricular output — regenerating once");
             retryFailureReason = "invalid_cross_subject_alignment";
             attempts++;
             continue;
           }
-          if (!validateSkillAlignment(effectiveSkill, questions)) {
+          if (!validateSeparation(practiceQuestions, resolvedCrossQuestions, effectiveSubject)) {
+            console.warn("🚨 Practice/Cross separation failed — regenerating once");
+            retryFailureReason = "invalid_practice_cross_separation";
+            attempts++;
+            continue;
+          }
+          if (!validateSkillAlignment(effectiveSkill, practiceQuestions)) {
             console.warn("⚠️ Skill mismatch detected, regenerating...");
             retryFailureReason = "skill_mismatch_after_retry";
             attempts++;
             continue;
           }
-          if (questions.length < 5) {
-            console.log("⚠️ Padding questions");
+          if (!areQuestionSetsDistinct(practiceQuestions, resolvedCrossQuestions)) {
+            console.warn("⚠️ Practice/Cross overlap detected, regenerating...");
+            retryFailureReason = "duplicate_practice_cross_content";
+            attempts++;
+            continue;
           }
 
-          while (questions.length < 5) {
-            questions.push({
-              type: "mc",
-              question: "Which detail best supports the main idea?",
-              choices: [
-                "A detail that is directly supported by the passage evidence",
-                "A partially correct idea that leaves out an important condition",
-                "A plausible misinterpretation of what the passage says",
-                "An idea that is not connected to the passage details",
-              ],
-              correct_answer: "A",
-              explanation: "The correct answer is directly supported by the text.",
-            });
-          }
+          const tutorExplanations = sanitizeTutorExplanations(
+            parsed?.tutor && typeof parsed.tutor === "object"
+              ? (parsed.tutor as Record<string, unknown>).explanations
+              : [],
+            practiceQuestions,
+          );
+
+          const answerKeyAnswers = sanitizeAnswerKey(
+            parsed?.answerKey && typeof parsed.answerKey === "object"
+              ? (parsed.answerKey as Record<string, unknown>).answers
+              : [],
+            practiceQuestions,
+          );
 
           return jsonResponse(
-            { passage: safePassage, questions: questions.length ? questions : fallbackQuestionSet(effectiveSubject, mode, effectiveSkill) },
+            {
+              passage: safePassage,
+              practice: { questions: practiceQuestions },
+              cross: { questions: resolvedCrossQuestions },
+              tutor: { explanations: tutorExplanations },
+              answerKey: { answers: answerKeyAnswers },
+            },
             { fallback: false, reason: "ai_success" },
           );
         } catch (err) {
