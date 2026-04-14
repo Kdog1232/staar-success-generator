@@ -323,70 +323,59 @@ Return strict JSON only with:
 - explanation, common_mistake, and parent_tip fields per question.`;
 }
 
-function buildBundlePrompt(params: {
+function buildCorePrompt(params: {
   grade: number;
   subject: CanonicalSubject;
   skill: string;
   level: Level;
 }): string {
   const { grade, subject, skill, level } = params;
-  const effectiveSkill: string = skill ?? "Main Idea";
-  return `Generate one STAAR content bundle from one passage.
+  return `Create JSON only for a STAAR reading set.
+Grade: ${grade}
+Subject context: ${subject}
+Skill: ${skill}
+Level: ${level}
 
-INPUTS:
-- Grade: ${grade}
-- Subject focus: ${subject}
-- Skill focus: ${effectiveSkill}
-- Level: ${level}
-
-CRITICAL:
-- All sections must be based on the SAME passage.
-- practice.questions and cross.questions MUST be different.
-- practice.questions must be ELAR-only (main idea, supporting detail, inference, vocabulary in context, summary).
-- practice.questions must use stems like "What is the main idea...", "Which detail supports...", "What can the reader infer...".
-- practice.questions must not use historical reasoning, computation, or generic subject-content mastery stems.
-- cross.questions must include ${subject} reasoning (not generic ELAR only).
-- cross.questions must be subject-driven:
-  - Social Studies: cause/effect, significance, event outcomes, impact of decisions.
-  - Science: process, cause/effect, predictions, scientific reasoning.
-  - Math: multi-step computation with numeric answer choices only.
-- tutor.explanations must provide step-by-step support, common mistakes, and parent tips.
-- answerKey.answers must contain answers only (A/B/C/D or "A, C" for multi-select), no question text.
-
-RETURN STRICT JSON ONLY:
+Return exactly:
 {
   "passage": "string",
-  "practice": { "questions": [5 STAAR ELAR-style questions with choices/correct_answer/explanation] },
-  "cross": { "questions": [5 distinct subject-connected reasoning questions with choices/correct_answer/explanation] },
-  "tutor": { "explanations": [5 items with question/explanation/common_mistake/parent_tip/hint/think/step_by_step] },
-  "answerKey": { "answers": [5 items like {"answer":"A"}] }
-}`;
+  "practice": { "questions": [5 items with question, choices, correct_answer, explanation] }
 }
 
-function buildCrossOnlyPrompt(params: {
+Rules:
+- Passage must support all 5 questions.
+- Questions must be ELAR comprehension focused.
+- No markdown. JSON only.`;
+}
+
+function buildEnrichmentPrompt(params: {
   subject: CanonicalSubject;
   passage: PassageContent;
+  practiceQuestions: Question[];
 }): string {
-  const { subject, passage } = params;
+  const { subject, passage, practiceQuestions } = params;
   const passageText = typeof passage === "string"
     ? passage
     : `${passage.text_1 || ""}\n\n${passage.text_2 || ""}`;
-  const subjectRules = subject === "Social Studies"
-    ? "Use cause/effect, event outcomes, significance, and decision impact stems. Do not use main idea or generic comprehension stems."
-    : subject === "Science"
-      ? "Use process, cause/effect, prediction, and scientific reasoning stems."
-      : "Use multi-step computation stems with numeric answer choices only.";
+  return `Using the passage and practice questions, return JSON only:
+{
+  "cross": { "questions": [5 subject-aligned questions] },
+  "tutor": { "explanations": [5 entries with question, explanation, common_mistake, parent_tip, hint, think, step_by_step] },
+  "answerKey": { "answers": [5 entries with answer] }
+}
 
-  return `Using the passage below, generate ONLY cross-curricular questions for ${subject}.
-
-PASSAGE:
+Subject: ${subject}
+Passage:
 ${passageText}
 
-RULES:
-- Return exactly 5 questions.
-- ${subjectRules}
-- Questions must not be ELAR-style main idea/detail/inference stems.
-- Use JSON only: { "cross": { "questions": [...] } }`;
+Practice questions:
+${JSON.stringify(practiceQuestions.slice(0, 5))}
+
+Rules:
+- cross questions must be different from practice questions.
+- cross questions must include ${subject} reasoning.
+- answerKey should match practice question answers.
+- JSON only.`;
 }
 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
@@ -1176,15 +1165,14 @@ serve(async (req) => {
     effectiveSkill = skill ?? "Main Idea";
     const range = gradeWordRange(grade, effectiveSubject, mode);
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    let attempts = 0;
+    let retryFailureReason = "bad_output_after_retry";
+    const phase = String(body.phase || "core").toLowerCase() === "enrich" ? "enrich" : "core";
 
-    try {
-      let attempts = 0;
-      let retryFailureReason = "bad_output_after_retry";
-
-      while (attempts < 2) {
-        try {
+    while (attempts < 2) {
+      try {
+        if (phase === "core") {
+          console.time("OPENAI_CALL");
           const aiRes = await fetch("https://api.openai.com/v1/responses", {
             method: "POST",
             headers: {
@@ -1193,16 +1181,17 @@ serve(async (req) => {
             },
             body: JSON.stringify({
               model: "gpt-4o-mini",
-              input: buildBundlePrompt({
+              input: buildCorePrompt({
                 grade,
                 subject,
                 skill: effectiveSkill,
                 level,
               }),
-              max_output_tokens: 2500,
+              max_output_tokens: 1800,
             }),
-            signal: controller.signal,
+            signal: AbortSignal.timeout(45000),
           });
+          console.timeEnd("OPENAI_CALL");
 
           if (!aiRes.ok) {
             retryFailureReason = `openai_status_${aiRes.status}`;
@@ -1263,135 +1252,137 @@ serve(async (req) => {
             effectiveSkill,
           );
 
-          const crossQuestions = sanitizeQuestions(
-            parsed?.cross && typeof parsed.cross === "object"
-              ? (parsed.cross as Record<string, unknown>).questions
-              : [],
-            effectiveSubject,
-            "Cross-Curricular",
-            effectiveSkill,
-          );
-
-          let resolvedCrossQuestions = crossQuestions;
-          const crossNeedsRegeneration =
-            !validateCrossCurricular({
-              passage: typeof safePassage === "string" ? safePassage : "",
-              questions: resolvedCrossQuestions,
-            }) ||
-            !validateSubjectAlignment(effectiveSubject, resolvedCrossQuestions) ||
-            !validateSeparation(practiceQuestions, resolvedCrossQuestions, effectiveSubject) ||
-            !areQuestionSetsDistinct(practiceQuestions, resolvedCrossQuestions);
-
-          if (crossNeedsRegeneration) {
-            try {
-              const crossRes = await fetch("https://api.openai.com/v1/responses", {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  model: "gpt-4o-mini",
-                  input: buildCrossOnlyPrompt({ subject: effectiveSubject, passage: safePassage }),
-                  max_output_tokens: 1400,
-                }),
-                signal: controller.signal,
-              });
-              if (crossRes.ok) {
-                const crossJson = await crossRes.json() as Record<string, unknown>;
-                const crossAny = crossJson as {
-                  output?: Array<{ content?: Array<{ text?: string }> }>;
-                  output_text?: string;
-                };
-                const crossText = String(
-                  crossAny.output?.[0]?.content?.[0]?.text ||
-                  crossAny.output_text ||
-                  "",
-                ).trim();
-                const parsedCross = tryParseJsonPayload(crossText) || {};
-                resolvedCrossQuestions = sanitizeQuestions(
-                  parsedCross?.cross && typeof parsedCross.cross === "object"
-                    ? (parsedCross.cross as Record<string, unknown>).questions
-                    : parsedCross.questions,
-                  effectiveSubject,
-                  "Cross-Curricular",
-                  effectiveSkill,
-                );
-              }
-            } catch (crossErr) {
-              console.warn("⚠️ Cross-only regeneration failed:", crossErr);
-            }
+          const skillAligned = validateSkillAlignment(effectiveSkill, practiceQuestions);
+          if (!skillAligned) {
+            console.warn("⚠️ Skill mismatch detected; accepting sanitized questions to avoid retries.");
           }
-
-          if (!validateCrossCurricular({
-            passage: typeof safePassage === "string" ? safePassage : "",
-            questions: resolvedCrossQuestions,
-          })) {
-            console.warn("🚨 Invalid cross-curricular output — regenerating once");
-            retryFailureReason = "invalid_cross_curricular_output";
-            attempts++;
-            continue;
-          }
-          if (!validateSubjectAlignment(effectiveSubject, resolvedCrossQuestions)) {
-            console.warn("🚨 Subject alignment failed for cross-curricular output — regenerating once");
-            retryFailureReason = "invalid_cross_subject_alignment";
-            attempts++;
-            continue;
-          }
-          if (!validateSeparation(practiceQuestions, resolvedCrossQuestions, effectiveSubject)) {
-            console.warn("🚨 Practice/Cross separation failed — regenerating once");
-            retryFailureReason = "invalid_practice_cross_separation";
-            attempts++;
-            continue;
-          }
-          if (!validateSkillAlignment(effectiveSkill, practiceQuestions)) {
-            console.warn("⚠️ Skill mismatch detected, regenerating...");
-            retryFailureReason = "skill_mismatch_after_retry";
-            attempts++;
-            continue;
-          }
-          if (!areQuestionSetsDistinct(practiceQuestions, resolvedCrossQuestions)) {
-            console.warn("⚠️ Practice/Cross overlap detected, regenerating...");
-            retryFailureReason = "duplicate_practice_cross_content";
-            attempts++;
-            continue;
-          }
-
-          const tutorExplanations = sanitizeTutorExplanations(
-            parsed?.tutor && typeof parsed.tutor === "object"
-              ? (parsed.tutor as Record<string, unknown>).explanations
-              : [],
-            practiceQuestions,
-          );
-
-          const answerKeyAnswers = sanitizeAnswerKey(
-            parsed?.answerKey && typeof parsed.answerKey === "object"
-              ? (parsed.answerKey as Record<string, unknown>).answers
-              : [],
-            practiceQuestions,
-          );
 
           return jsonResponse(
             {
               passage: safePassage,
               practice: { questions: practiceQuestions },
-              cross: { questions: resolvedCrossQuestions },
-              tutor: { explanations: tutorExplanations },
-              answerKey: { answers: answerKeyAnswers },
+              cross: { questions: [] },
+              tutor: { explanations: [] },
+              answerKey: { answers: [] },
             },
-            { fallback: false, reason: "ai_success" },
+            { fallback: false, reason: "ai_core_success" },
           );
-        } catch (err) {
-          console.error("BACKEND ERROR:", err);
-          retryFailureReason = controller.signal.aborted ? "openai_timeout_abort" : "openai_request_failed";
-          attempts++;
         }
-      }
 
-      return safeFallback(retryFailureReason);
-    } finally {
-      clearTimeout(timeoutId);
+        const priorPassage = body.passage;
+        const priorPractice = body.practiceQuestions;
+        if (!priorPassage || !Array.isArray(priorPractice) || priorPractice.length === 0) {
+          return safeFallback("missing_enrichment_inputs");
+        }
+
+        const normalizedPractice = sanitizeQuestions(
+          priorPractice,
+          effectiveSubject,
+          "Practice",
+          effectiveSkill,
+        );
+        const normalizedPassage = typeof priorPassage === "object" && priorPassage !== null
+          ? {
+            text_1: String((priorPassage as Record<string, unknown>).text_1 || ""),
+            text_2: String((priorPassage as Record<string, unknown>).text_2 || ""),
+          }
+          : String(priorPassage || "").trim();
+        const safePassage = (
+          typeof normalizedPassage === "string"
+            ? clampPassageWords(normalizedPassage, range.min, range.max)
+            : normalizedPassage
+        ) || fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill);
+
+        console.time("OPENAI_CALL");
+        const enrichRes = await fetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            input: buildEnrichmentPrompt({
+              subject: effectiveSubject,
+              passage: safePassage,
+              practiceQuestions: normalizedPractice,
+            }),
+            max_output_tokens: 2200,
+          }),
+          signal: AbortSignal.timeout(45000),
+        });
+        console.timeEnd("OPENAI_CALL");
+
+        if (!enrichRes.ok) {
+          retryFailureReason = `openai_status_${enrichRes.status}`;
+          attempts++;
+          continue;
+        }
+
+        const enrichJson = await enrichRes.json() as Record<string, unknown>;
+        const enrichAny = enrichJson as {
+          output?: Array<{ content?: Array<{ text?: string }> }>;
+          output_text?: string;
+        };
+        const enrichText = String(
+          enrichAny.output?.[0]?.content?.[0]?.text ||
+          enrichAny.output_text ||
+          "",
+        ).trim();
+        const parsed = tryParseJsonPayload(enrichText) || {};
+
+        let crossQuestions = sanitizeQuestions(
+          parsed?.cross && typeof parsed.cross === "object"
+            ? (parsed.cross as Record<string, unknown>).questions
+            : [],
+          effectiveSubject,
+          "Cross-Curricular",
+          effectiveSkill,
+        );
+        const crossInvalid = !validateCrossCurricular({
+          passage: typeof safePassage === "string" ? safePassage : "",
+          questions: crossQuestions,
+        }) ||
+          !validateSubjectAlignment(effectiveSubject, crossQuestions) ||
+          !validateSeparation(normalizedPractice, crossQuestions, effectiveSubject) ||
+          !areQuestionSetsDistinct(normalizedPractice, crossQuestions);
+        if (crossInvalid) {
+          console.warn("⚠️ Cross output partially invalid; using safe fallback cross questions.");
+          crossQuestions = buildCrossFallback(effectiveSubject);
+        }
+
+        const tutorExplanations = sanitizeTutorExplanations(
+          parsed?.tutor && typeof parsed.tutor === "object"
+            ? (parsed.tutor as Record<string, unknown>).explanations
+            : [],
+          normalizedPractice,
+        );
+
+        const answerKeyAnswers = sanitizeAnswerKey(
+          parsed?.answerKey && typeof parsed.answerKey === "object"
+            ? (parsed.answerKey as Record<string, unknown>).answers
+            : [],
+          normalizedPractice,
+        );
+
+        return jsonResponse(
+          {
+            passage: safePassage,
+            practice: { questions: normalizedPractice },
+            cross: { questions: crossQuestions },
+            tutor: { explanations: tutorExplanations },
+            answerKey: { answers: answerKeyAnswers },
+          },
+          { fallback: false, reason: "ai_enrichment_success" },
+        );
+      } catch (err) {
+        console.error("BACKEND ERROR:", err);
+        retryFailureReason = "openai_request_failed";
+        attempts++;
+      }
     }
+
+    return safeFallback(retryFailureReason);
   } catch (err) {
     console.error("BACKEND ERROR:", err);
     return safeFallback("ai_failure_catch", err instanceof Error ? err.message : String(err));

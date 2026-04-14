@@ -926,6 +926,7 @@
     let isGenerating = false;
     let isStudentView = false;
     let currentController = null;
+    let enrichController = null;
     let generateRunId = 0;
     let lastGeneratedContentMode = null;
     let standardContent = "";
@@ -1987,6 +1988,13 @@
         console.log("🟢 Session OK");
         const token = session.access_token;
 
+        if (currentController) {
+          currentController.abort();
+        }
+        if (enrichController) {
+          enrichController.abort();
+          enrichController = null;
+        }
         currentController = new AbortController();
         console.log("SENDING REQUEST");
         const apiMode = activeTab === "cross"
@@ -2001,7 +2009,8 @@
           grade,
           skill,
           level,
-          mode: apiMode
+          mode: apiMode,
+          phase: "core"
         };
         console.log("🚀 PAYLOAD SENT TO BACKEND:", payload);
         const res = await fetch(
@@ -2121,6 +2130,73 @@
         window.hasRenderedThisRun = false;
         console.log(`🔥 ABOUT TO RENDER TAB: ${toTabLabel(activeTab)}`);
         renderTab(activeTab);
+
+        const enrichPayload = {
+          subject,
+          grade,
+          skill,
+          level,
+          mode: apiMode,
+          phase: "enrich",
+          passage: data.passage,
+          practiceQuestions: Array.isArray(data?.practice?.questions) ? data.practice.questions.slice(0, 5) : []
+        };
+
+        enrichController = new AbortController();
+        const thisEnrichController = enrichController;
+        fetch("https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            apikey: SUPABASE_ANON_KEY
+          },
+          body: JSON.stringify(enrichPayload),
+          signal: enrichController.signal
+        })
+          .then(async (enrichRes) => {
+            if (!enrichRes.ok) {
+              throw new Error(`enrichment_status_${enrichRes.status}`);
+            }
+            return enrichRes.json();
+          })
+          .then((enrichData) => {
+            if (runId !== generateRunId) return;
+            if (!currentData || !enrichData) return;
+            currentData = {
+              passage: generatedPassage,
+              practice: {
+                questions: Array.isArray(currentData?.practice?.questions) ? currentData.practice.questions.slice(0, 5) : []
+              },
+              cross: {
+                questions: Array.isArray(enrichData?.cross?.questions) ? enrichData.cross.questions.slice(0, 5) : []
+              },
+              tutor: {
+                explanations: Array.isArray(enrichData?.tutor?.explanations) ? enrichData.tutor.explanations.slice(0, 5) : []
+              },
+              answerKey: {
+                answers: Array.isArray(enrichData?.answerKey?.answers) ? enrichData.answerKey.answers.slice(0, 5) : []
+              }
+            };
+            if (activeTab !== "practice") {
+              renderTab(activeTab);
+            }
+            const modeStatus = document.getElementById("mode-status");
+            if (modeStatus) {
+              modeStatus.textContent += " • Cross/Tutor ready";
+            }
+          })
+          .catch((enrichErr) => {
+            if (enrichErr?.name !== "AbortError") {
+              console.warn("⚠️ Enrichment request failed:", enrichErr);
+            }
+          })
+          .finally(() => {
+            if (enrichController === thisEnrichController) {
+              enrichController = null;
+            }
+          });
+
         setTimeout(() => {
           console.log("✅ UX delay finished");
         }, 1000);

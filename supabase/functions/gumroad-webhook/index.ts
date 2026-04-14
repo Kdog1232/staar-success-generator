@@ -17,7 +17,26 @@ serve(async (req) => {
     const body = await req.json();
     console.log("[gumroad-webhook] Payload received");
 
-    const expectedSellerId = Deno.env.get("GUMROAD_SELLER_ID")?.trim() || "";
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+
+    const { data: secretData, error: secretError } = await supabaseAdmin
+      .from("vault.secrets")
+      .select("secret")
+      .eq("name", "GUMROAD_SELLER_ID")
+      .single();
+
+    if (secretError) {
+      console.log("[gumroad-webhook] Vault lookup error:", secretError.message);
+      return new Response(JSON.stringify({ error: "Server misconfigured" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const expectedSellerId = secretData?.secret?.trim() || "";
     const expectedProductId = Deno.env.get("GUMROAD_PRODUCT_ID")?.trim() || "";
     const sellerId = String(body?.seller_id || body?.purchase?.seller_id || "").trim();
     const productId = String(body?.product_id || body?.purchase?.product_id || "").trim();
@@ -26,7 +45,7 @@ serve(async (req) => {
     console.log("[gumroad-webhook] product_id:", productId || "(missing)");
 
     if (!expectedSellerId) {
-      console.log("[gumroad-webhook] Validation result: missing GUMROAD_SELLER_ID environment variable");
+      console.log("[gumroad-webhook] Validation result: missing GUMROAD_SELLER_ID secret in vault");
       return new Response(JSON.stringify({ error: "Server misconfigured" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -63,13 +82,8 @@ serve(async (req) => {
       });
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-    );
-
     // Lookup user profile by normalized email.
-    const { data: profile, error: profileError } = await supabase
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from("profiles")
       .select("id, plan")
       .eq("email", email)
@@ -111,7 +125,7 @@ serve(async (req) => {
       });
     }
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await supabaseAdmin
       .from("profiles")
       .update({
         plan: "paid",
