@@ -668,6 +668,14 @@ function buildCrossFallback(subject: CanonicalSubject): Question[] {
     return letter;
   };
 
+  const mathStemVariants = [
+    "Which statement best explains the relationship between the quantities in the scenario data and the overall result, based on evidence from the passage?",
+    "Which conclusion about the quantity relationship is most supported by the pattern across the passage data?",
+    "What inference can be made about how the quantities interact based on the evidence in the passage?",
+    "Which interpretation best describes the pattern in the data relationship and its impact on the aggregate result?",
+    "Which explanation best justifies the change in results and supports the planning decision in the passage?",
+  ];
+
   const stems = subject === "Science"
     ? [
       "Which analytical claim most effectively explains the relationship between the experiment's independent and dependent variables, using the quantitative evidence presented in the passage data?",
@@ -684,13 +692,7 @@ function buildCrossFallback(subject: CanonicalSubject): Question[] {
       "Which analysis of the relationship between stakeholder motivations and policy outcomes best explains the event impact described in the passage?",
       "Which inference about long-term societal impact is most defensible when the event timeline evidence in the passage is considered as a whole?",
     ]
-    : [
-      "Which statement most effectively explains the relationship between the quantities in the scenario data and the overall result, based on evidence from the passage?",
-      "Based on the pattern across the passage data, what can be inferred about why the result shifted between time periods, and which evidence supports that inference?",
-      "Which explanation most accurately uses evidence to characterize the underlying relationship pattern without relying on direct computation of a final value?",
-      "Which interpretation of the data relationship best explains the impact of shifting one quantity on the aggregate result described in the passage?",
-      "Which evidence-based inference most convincingly explains how the observed pattern should influence the planning decision outlined in the passage?",
-    ];
+    : mathStemVariants;
 
   const choiceBanks: [string, string, string, string][] = subject === "Math"
     ? [
@@ -791,9 +793,16 @@ function buildCrossFallback(subject: CanonicalSubject): Question[] {
       ],
     ];
 
-  return stems.map((stem, i) => {
+  const shuffledChoiceBanks = [...choiceBanks];
+  for (let i = shuffledChoiceBanks.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffledChoiceBanks[i], shuffledChoiceBanks[j]] = [shuffledChoiceBanks[j], shuffledChoiceBanks[i]];
+  }
+
+  return stems.map((_, i) => {
+    const stem = subject === "Math" ? mathStemVariants[i] : stems[i];
     const support = buildSupportContent(subject, stem, "mc", i);
-    const choices = choiceBanks[i % choiceBanks.length];
+    const choices = shuffledChoiceBanks[i % shuffledChoiceBanks.length];
 
     return {
       type: "mc",
@@ -1198,7 +1207,7 @@ serve(async (req) => {
 
   const jsonResponse = (
     payload: WorkerResponse,
-    meta: { fallback: boolean; reason: string; error?: string },
+    meta: { fallback: boolean; reason: string; error?: string; usedFallbackCross?: boolean },
   ) =>
     new Response(JSON.stringify({
       passage: payload.passage,
@@ -1216,7 +1225,7 @@ serve(async (req) => {
   const safeFallback = (reason: string, error?: string) => {
     console.log("🚨 FALLBACK TRIGGERED:", reason);
     const payload = buildFallbackResponse(grade, effectiveSubject, effectiveSkill);
-    return jsonResponse(payload, { fallback: true, reason, ...(error ? { error } : {}) });
+    return jsonResponse(payload, { fallback: true, reason, usedFallbackCross: false, ...(error ? { error } : {}) });
   };
 
   try {
@@ -1368,7 +1377,7 @@ serve(async (req) => {
               tutor: { explanations: [] },
               answerKey: { answers: [] },
             },
-            { fallback: false, reason: "ai_core_success" },
+            { fallback: false, reason: "ai_core_success", usedFallbackCross: false },
           );
         }
 
@@ -1448,15 +1457,21 @@ serve(async (req) => {
           "Cross-Curricular",
           effectiveSkill,
         );
-        const crossInvalid = !validateCrossCurricular({
-          passage: subjectCrossPassage,
-          questions: crossQuestions,
-        }) ||
-          !validateHybridCross(crossQuestions) ||
-          !validateUniqueChoices(crossQuestions) ||
-          !validateChoiceSubjectAlignment(effectiveSubject, crossQuestions) ||
-          !validateSeparation(normalizedPractice, crossQuestions, effectiveSubject) ||
-          !areQuestionSetsDistinct(normalizedPractice, crossQuestions);
+        const crossChoiceSubjectAligned = validateChoiceSubjectAlignment(effectiveSubject, crossQuestions);
+        if (!crossChoiceSubjectAligned) {
+          console.warn("⚠️ Cross choice-subject alignment warning: accepting output without fallback.");
+        }
+        const crossSeparationValid = validateSeparation(normalizedPractice, crossQuestions, effectiveSubject);
+        if (!crossSeparationValid) {
+          console.warn("⚠️ Cross separation warning: accepting output without fallback.");
+        }
+        const crossQuestionSetsDistinct = areQuestionSetsDistinct(normalizedPractice, crossQuestions);
+        if (!crossQuestionSetsDistinct) {
+          console.warn("⚠️ Cross question-set distinctness warning: accepting output without fallback.");
+        }
+
+        const crossInvalid = !validateHybridCross(crossQuestions) ||
+          !validateUniqueChoices(crossQuestions);
         if (crossInvalid) {
           console.warn("⚠️ Cross output partially invalid; regenerating cross questions only.");
           crossQuestions = buildCrossFallback(effectiveSubject);
@@ -1485,7 +1500,11 @@ serve(async (req) => {
             tutor: { explanations: tutorExplanations },
             answerKey: { answers: answerKeyAnswers },
           },
-          { fallback: false, reason: "ai_enrichment_success" },
+          {
+            fallback: false,
+            reason: crossInvalid ? "ai_enrichment_success_with_cross_fallback" : "ai_enrichment_success",
+            usedFallbackCross: crossInvalid,
+          },
         );
       } catch (err) {
         console.error("BACKEND ERROR:", err);
