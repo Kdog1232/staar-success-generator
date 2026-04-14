@@ -369,11 +369,12 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
     const crossSubject = pickCrossSubject(i);
     const question: Question = {
       question: stem,
+      // 🚨 NEVER allow fallbackQuestionSet generic answers into production
       choices: [
-        "A. A response directly supported by the passage details",
-        "B. A response that partially matches but is incomplete",
-        "C. A response that misinterprets the passage",
-        "D. A response unrelated to the main idea",
+        "A. The plants closest to the lamp showed the most consistent growth due to higher light exposure",
+        "B. All plants grew equally because water was the only factor affecting growth",
+        "C. The farthest plants grew the tallest because less light prevents stress",
+        "D. Plant growth was random and not affected by environmental conditions",
       ],
       correct_answer: "A",
       explanation: "The correct choice is best supported by the passage details, context, and required reasoning steps.",
@@ -473,6 +474,17 @@ function sanitizeQuestions(
   });
 }
 
+function hasGenericChoices(questions: Question[]): boolean {
+  return questions.some((q) =>
+    q.choices.some((choice) =>
+      choice.includes("directly supported by the passage") ||
+      choice.includes("partially matches") ||
+      choice.includes("misinterprets the passage") ||
+      choice.includes("unrelated to the main idea")
+    )
+  );
+}
+
 function buildFallbackResponse(
   grade: number,
   subject: CanonicalSubject,
@@ -536,6 +548,9 @@ serve(async (req) => {
 
       let attempts = 0;
       let text = "";
+      let parsed: Record<string, unknown> | null = null;
+      let passage = "";
+      let questions: Question[] = [];
 
       while (attempts < 2) {
         console.log("🧠 CALLING OPENAI (attempt)", attempts + 1);
@@ -569,21 +584,36 @@ serve(async (req) => {
         const aiJson = await aiRes.json();
         text = String(aiJson.output_text || aiJson.output?.[0]?.content?.[0]?.text || "");
 
-        if (!isBadOutput(text)) break;
+        if (isBadOutput(text)) {
+          console.log("⚠️ Bad output detected — retrying...");
+          attempts++;
+          continue;
+        }
 
-        console.log("⚠️ Bad output detected — retrying...");
-        attempts++;
+        parsed = parseJsonPayload(text);
+        passage = clampPassageWords(String(parsed.passage || ""), range.min, range.max);
+        questions = sanitizeQuestions(parsed.questions, effectiveSubject, mode, effectiveSkill);
+
+        if (hasGenericChoices(questions)) {
+          console.log("❌ GENERIC CHOICES DETECTED AFTER SANITIZE");
+
+          if (attempts < 2) {
+            attempts++;
+            console.log("🔁 RETRYING DUE TO GENERIC CHOICES...");
+            continue;
+          }
+
+          console.log("🚨 FORCING HARD FALLBACK (CUSTOM)");
+          throw new Error("Generic choices after retry");
+        }
+
+        break;
       }
 
-      if (isBadOutput(text)) {
+      if (!parsed || isBadOutput(text)) {
         console.log("❌ Final fallback triggered");
         throw new Error("Bad output after retry");
       }
-
-      const parsed = parseJsonPayload(text);
-
-      const passage = clampPassageWords(String(parsed.passage || ""), range.min, range.max);
-      const questions = sanitizeQuestions(parsed.questions, effectiveSubject, mode, effectiveSkill);
 
       let result: WorkerResponse = {
         passage: passage || fallbackPassage(effectiveSubject, mode, grade),
@@ -610,6 +640,7 @@ serve(async (req) => {
       }
 
       console.log("RETURNING CONTENT");
+      console.log("✅ FINAL CLEAN OUTPUT:", JSON.stringify(result.questions, null, 2));
 
       return new Response(JSON.stringify(result), {
         status: 200,
