@@ -932,6 +932,8 @@
     let crossContent = "";
     let structuredQuestions = [];
     let generatedPassage = "";
+    let currentData = null;
+    window.hasRenderedThisRun = false;
     let cachedSession = null;
     let cachedUser = null;
     let authReady = false;
@@ -1551,7 +1553,34 @@
       }).join("");
     }
 
-    function renderCurrentView() {
+    function clearRenderedSections() {
+      const practiceSection = document.getElementById("practice-section");
+      const crossSection = document.getElementById("cross-section");
+      const tutorSection = document.getElementById("tutor-section");
+      const answerSection = document.getElementById("answer-section");
+      if (!practiceSection || !crossSection || !tutorSection || !answerSection) return;
+      console.log("🧹 CLEAN UI");
+
+      practiceSection.innerHTML = "";
+      crossSection.innerHTML = "";
+      tutorSection.innerHTML = "";
+      answerSection.innerHTML = "";
+      practiceSection.style.display = "none";
+      crossSection.style.display = "none";
+      tutorSection.style.display = "none";
+      answerSection.style.display = "none";
+    }
+
+    function toTabLabel(tab) {
+      if (tab === "cross") return "Cross";
+      if (tab === "tutor") return "Tutor";
+      if (tab === "answer") return "AnswerKey";
+      return "Practice";
+    }
+
+    function renderTab(tab = activeTab) {
+      if (window.hasRenderedThisRun) return;
+      window.hasRenderedThisRun = true;
       const practiceSection = document.getElementById("practice-section");
       const crossSection = document.getElementById("cross-section");
       const tutorSection = document.getElementById("tutor-section");
@@ -1562,79 +1591,85 @@
       const answerTab = document.getElementById("answer-tab");
       const modeStatus = document.getElementById("mode-status");
       if (!practiceSection || !crossSection || !tutorSection || !answerSection || !practiceTab || !crossTab || !tutorTab || !answerTab || !modeStatus) return;
+      if (!currentData) return;
 
-      const displayPassage = cleanText(generatedPassage || "");
+      clearRenderedSections();
+
+      const displayPassage = cleanText(currentData.passage || "");
       const hasPassage = Boolean(displayPassage.trim());
       const passageHTML = `
         <div class="passage">
           ${hasPassage ? `<p>${displayPassage}</p>` : `<p class="muted-note">No passage is required for this skill set.</p>`}
         </div>
       `;
-      const questionMarkup = renderQuestions(structuredQuestions, { mode: "practice" });
-      const tutorMarkup = renderTutor(structuredQuestions, "Tutor");
-      const answerMarkup = renderAnswerKey(structuredQuestions, "Answer Key");
-      const crossQuestionMarkup = renderQuestions(structuredQuestions, { mode: "cross" });
+      const questionMarkup = renderQuestions(currentData.questions, { mode: "practice" });
+      const tutorMarkup = renderTutor(currentData.questions, "Tutor");
+      const answerMarkup = renderAnswerKey(currentData.questions, "Answer Key");
+      const crossQuestionMarkup = renderQuestions(currentData.questions, { mode: "cross" });
 
-      practiceSection.innerHTML = `
-        <div class="worksheet-header">STAAR Practice Worksheet</div>
-        <div class="mode-label">Practice Mode</div>
-        <section class="worksheet-section">
-          <h3>📖 Passage</h3>
-          ${passageHTML}
-        </section>
-        <section class="worksheet-section">
-          <h3>❓ Questions</h3>
-          ${questionMarkup}
-        </section>
-      `;
+      if (tab === "practice") {
+        practiceSection.innerHTML = `
+          <div class="worksheet-header">STAAR Practice Worksheet</div>
+          <div class="mode-label">Practice Mode</div>
+          <section class="worksheet-section">
+            <h3>📖 Passage</h3>
+            ${passageHTML}
+          </section>
+          <section class="worksheet-section">
+            <h3>❓ Questions</h3>
+            ${questionMarkup}
+          </section>
+        `;
+        practiceSection.style.display = "block";
+      }
 
-      crossSection.innerHTML = `
-        <div class="mode-label">Cross-Curricular Mode</div>
-        <section class="worksheet-section">
-          <h3>📖 Passage</h3>
-          ${passageHTML}
-        </section>
-        <section class="worksheet-section">
-          <h3>🌎 ELAR Questions on Content Area Passage</h3>
-          ${crossQuestionMarkup}
-        </section>
-      `;
+      if (tab === "cross") {
+        crossSection.innerHTML = `
+          <div class="mode-label">Cross-Curricular Mode</div>
+          <section class="worksheet-section">
+            <h3>📖 Passage</h3>
+            ${passageHTML}
+          </section>
+          <section class="worksheet-section">
+            <h3>🌎 Subject-Driven Questions on the Passage</h3>
+            ${crossQuestionMarkup}
+          </section>
+        `;
+        crossSection.style.display = "block";
+      }
 
-      tutorSection.innerHTML = `
-        <section class="worksheet-section">
-          <h3>🧠 Think Like This</h3>
-          ${tutorMarkup}
-        </section>
-      `;
+      if (tab === "tutor") {
+        tutorSection.innerHTML = `
+          <section class="worksheet-section">
+            <h3>🧠 Think Like This</h3>
+            ${tutorMarkup}
+          </section>
+        `;
+        tutorSection.style.display = "block";
+      }
 
-      answerSection.innerHTML = `
-        <section class="worksheet-section">
-          <h3>✅ Answer Key</h3>
-          ${answerMarkup}
-        </section>
-      `;
+      if (tab === "answer") {
+        answerSection.innerHTML = `
+          <section class="worksheet-section">
+            <h3>✅ Answer Key</h3>
+            ${answerMarkup}
+          </section>
+        `;
+        answerSection.style.display = "block";
+      }
 
-      const showingPractice = activeTab === "practice";
-      const showingCross = activeTab === "cross";
-      const showingTutor = activeTab === "tutor";
-      const showingAnswer = activeTab === "answer";
-      practiceSection.style.display = showingPractice ? "block" : "none";
-      crossSection.style.display = showingCross ? "block" : "none";
-      tutorSection.style.display = showingTutor ? "block" : "none";
-      answerSection.style.display = showingAnswer ? "block" : "none";
+      const showingPractice = tab === "practice";
+      const showingCross = tab === "cross";
+      const showingTutor = tab === "tutor";
+      const showingAnswer = tab === "answer";
 
       practiceTab.classList.toggle("active", showingPractice);
       crossTab.classList.toggle("active", showingCross);
       tutorTab.classList.toggle("active", showingTutor);
       answerTab.classList.toggle("active", showingAnswer);
       crossTab.style.display = "block";
-      if (showingCross) {
-        console.log("🌍 Rendering Cross-Curricular Mode", {
-          passage: generatedPassage,
-          questions: structuredQuestions
-        });
-      }
-      modeStatus.textContent = `Mode: ${activeTab === "cross" ? "Cross-Curricular ON" : activeTab === "tutor" ? "Tutor Mode ON" : activeTab === "answer" ? "Answer Key ON" : "Practice Mode ON"}`;
+      modeStatus.textContent = `Mode: ${tab === "cross" ? "Cross-Curricular ON" : tab === "tutor" ? "Tutor Mode ON" : tab === "answer" ? "Answer Key ON" : "Practice Mode ON"}`;
+      console.log("✅ RENDER COMPLETE");
     }
 
     function setMode(mode) {
@@ -1646,7 +1681,8 @@
         contentMode = "standard";
       }
 
-      renderCurrentView();
+      window.hasRenderedThisRun = false;
+      renderTab(activeTab);
     }
 
     function toggleView(view) {
@@ -1661,7 +1697,6 @@
         button.setAttribute("aria-checked", isActive ? "true" : "false");
       });
       populateSkills(subject);
-      renderCurrentView();
     }
 
     function populateSubjectButtons() {
@@ -1825,6 +1860,7 @@
       }
       isGenerating = true;
       const runId = ++generateRunId;
+      window.hasRenderedThisRun = false;
       console.log("🚀 GENERATE START");
       console.log("GENERATE TRIGGERED");
       console.log("STATE:", {
@@ -1903,6 +1939,7 @@
         crossContent = "";
         generatedPassage = "";
         structuredQuestions = [];
+        currentData = null;
 
         const sessionAtStart = await supabase.auth.getSession();
         const token = sessionAtStart?.data?.session?.access_token;
@@ -2012,6 +2049,12 @@
           halt("No questions returned from server.");
         }
 
+        currentData = {
+          passage: generatedPassage,
+          questions: structuredQuestions.slice(0, 5)
+        };
+        activeTab = "practice";
+
         lastGeneratedContentMode = "both";
         const progressCount = incrementDailyProgress();
 
@@ -2036,8 +2079,9 @@
         if (!Array.isArray(data.questions) || data.questions.length === 0) {
           outputDiv.innerHTML += `<div class="muted-note" style="margin-top:10px;">No questions were returned, so fallback guidance is shown.</div>`;
         }
-        console.log("🔥 ABOUT TO RENDER");
-        renderCurrentView();
+        window.hasRenderedThisRun = false;
+        console.log(`🔥 ABOUT TO RENDER TAB: ${toTabLabel(activeTab)}`);
+        renderTab(activeTab);
         setTimeout(() => {
           console.log("✅ UX delay finished");
         }, 1000);
