@@ -1160,15 +1160,37 @@
       return user;
     }
 
+    function withTimeout(promise, ms = 8000) {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), ms))
+      ]);
+    }
+
+    async function getSafeSession() {
+      await withTimeout(supabase.auth.getUser(), 5000);
+      const { data, error } = await withTimeout(supabase.auth.getSession(), 5000);
+      if (error || !data?.session) {
+        throw new Error("NO_SESSION");
+      }
+      return data.session;
+    }
+
     async function initAuth() {
       console.log("🔐 Initializing auth...");
 
       try {
-        const { data, error } = await supabase.auth.getSession();
-        if (error) {
-          console.error("❌ Initial auth session load failed:", error);
+        let session = null;
+        try {
+          session = await getSafeSession();
+        } catch (error) {
+          if (error?.message !== "NO_SESSION" && error?.message !== "TIMEOUT") {
+            console.error("❌ Initial auth session load failed:", error);
+          } else {
+            console.warn("⚠️ No active session at startup.");
+          }
         }
-        cachedSession = data?.session ?? null;
+        cachedSession = session;
         cachedUser = cachedSession?.user ?? null;
         console.log("✅ Initial session:", cachedSession);
       } catch (error) {
@@ -1848,7 +1870,7 @@
 
     async function generate() {
       if (isGenerating) {
-        console.warn("🚫 BLOCKED: Already generating");
+        console.log("🚫 BLOCKED duplicate generate");
         return;
       }
 
@@ -1865,17 +1887,25 @@
       const outputDiv = document.getElementById("output");
       const generateBtn = document.getElementById("generate-btn");
       const viewToggle = document.getElementById("view-toggle");
+      if (!outputDiv || !generateBtn || !viewToggle) {
+        console.error("❌ Missing DOM elements", {
+          hasOutputDiv: !!outputDiv,
+          hasGenerateBtn: !!generateBtn,
+          hasViewToggle: !!viewToggle
+        });
+        isGenerating = false;
+        return;
+      }
+
       const progressTimers = [];
       const unlockTimeout = setTimeout(() => {
         if (isGenerating) {
-          console.warn("⚠️ FORCE UNLOCK");
+          console.warn("⚠️ FORCE UNLOCK TRIGGERED");
           isGenerating = false;
-          if (generateBtn) {
-            generateBtn.disabled = false;
-            generateBtn.textContent = "Generate STAAR Pack";
-          }
+          generateBtn.disabled = false;
+          generateBtn.textContent = "Generate STAAR Pack";
         }
-      }, 30000);
+      }, 15000);
 
       function halt(message) {
         console.log("⛔ HALT:", message);
@@ -1886,10 +1916,8 @@
       }
 
       try {
-        if (generateBtn) {
-          generateBtn.disabled = isGenerating;
-          generateBtn.textContent = "Generating...";
-        }
+        generateBtn.disabled = true;
+        generateBtn.textContent = "Generating...";
         outputDiv.innerHTML = "🧠 Analyzing skill...";
 
         progressTimers.push(setTimeout(() => {
@@ -1936,10 +1964,17 @@
           `);
         }
 
-        const grade = document.getElementById("grade").value;
-        const subject = document.getElementById("subject").value;
-        const skill = document.getElementById("skill").value;
-        const level = document.getElementById("level").value;
+        const gradeInput = document.getElementById("grade");
+        const subjectInput = document.getElementById("subject");
+        const skillInput = document.getElementById("skill");
+        const levelInput = document.getElementById("level");
+        if (!gradeInput || !subjectInput || !skillInput || !levelInput) {
+          throw new Error("MISSING_FORM_INPUT");
+        }
+        const grade = gradeInput.value;
+        const subject = subjectInput.value;
+        const skill = skillInput.value;
+        const level = levelInput.value;
 
         standardContent = "";
         crossContent = "";
@@ -1947,11 +1982,10 @@
         structuredQuestions = [];
         currentData = null;
 
-        const sessionAtStart = await supabase.auth.getSession();
-        const token = sessionAtStart?.data?.session?.access_token;
-        if (!token) {
-          halt("Session expired. Please log in again.");
-        }
+        console.log("🟡 Getting session...");
+        const session = await getSafeSession();
+        console.log("🟢 Session OK");
+        const token = session.access_token;
 
         currentController = new AbortController();
         console.log("SENDING REQUEST");
@@ -1983,7 +2017,7 @@
             signal: currentController.signal
           }
         );
-        console.log("RESPONSE RECEIVED");
+        console.log("🟢 Fetch sent");
         progressTimers.forEach((timer) => clearTimeout(timer));
 
         if (res.status === 403) {
@@ -1998,6 +2032,7 @@
         }
 
         const data = await res.json();
+        console.log("🟢 Data received");
         console.log("🔥 FRONTEND RECEIVED:", data);
 
         if (!res.ok) {
@@ -2090,7 +2125,18 @@
           console.log("✅ UX delay finished");
         }, 1000);
       } catch (err) {
-        if (err?.name !== "AbortError" && err?.message !== "NO_USER" && err?.message !== "HALT") {
+        const message = err?.message || String(err || "");
+        if (message === "HALT") {
+          console.log("🟡 HALT CAUGHT");
+        } else if (message === "NO_USER") {
+          outputDiv.innerHTML = "Please log in.";
+        } else if (message === "NO_SESSION") {
+          outputDiv.innerHTML = "Session expired. Refresh page.";
+        } else if (message === "TIMEOUT") {
+          outputDiv.innerHTML = "Session check timed out. Refresh page.";
+        } else if (message === "MISSING_FORM_INPUT") {
+          outputDiv.innerHTML = "A required form field is missing. Refresh and try again.";
+        } else if (err?.name !== "AbortError" && message !== "HALT") {
           outputDiv.innerHTML = "Something went wrong. Try again.";
         }
         console.error("❌ GENERATE ERROR:", err);

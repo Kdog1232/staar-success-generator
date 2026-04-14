@@ -1123,6 +1123,7 @@ serve(async (req) => {
     });
 
   const safeFallback = (reason: string, error?: string) => {
+    console.log("🚨 FALLBACK TRIGGERED:", reason);
     const payload = buildFallbackResponse(grade, effectiveSubject, effectiveSkill);
     return jsonResponse(payload, { fallback: true, reason, ...(error ? { error } : {}) });
   };
