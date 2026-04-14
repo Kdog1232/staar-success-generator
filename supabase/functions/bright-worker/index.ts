@@ -383,6 +383,14 @@ Rules:
   "What is the main idea", "Which detail supports", "Calculate", "Solve", "When did"
 - Each cross question must include exactly 4 REAL answer choices tied to passage evidence.
 - Choices must include plausible misconceptions and subject-specific reasoning.
+- Each question MUST have its own unique answer choices.
+- Do NOT reuse answer choices across questions.
+- Each set of choices must reflect the specific question being asked.
+- Choices must directly reference passage content, not generic reasoning.
+- Answer choices MUST reflect the subject context of the passage:
+  - Science → experiments, variables, results
+  - Social Studies → events, decisions, impact
+  - Math → relationships, quantities, patterns
 - Never use generic placeholders like:
   "A correct interpretation...", "A partially correct...", "An incorrect conclusion..."
 - answerKey should match practice question answers.
@@ -684,28 +692,108 @@ function buildCrossFallback(subject: CanonicalSubject): Question[] {
       "Which evidence-based inference most convincingly explains how the observed pattern should influence the planning decision outlined in the passage?",
     ];
 
+  const choiceBanks: [string, string, string, string][] = subject === "Math"
+    ? [
+      [
+        "The relationship evidence indicates the total is driven by how multiple quantities move together across both time periods, not by one value in isolation.",
+        "A single quantity controls the final outcome completely, so the other values have no meaningful relationship to the result.",
+        "Any increase in one quantity guarantees a higher total even when another quantity decreases by a larger amount.",
+        "The pattern cannot be interpreted at all unless every final value is computed first, so no relationship claim is justified.",
+      ],
+      [
+        "The pattern suggests the result shifted because the quantity relationship changed between periods, with one increase partially offsetting another decrease.",
+        "The data prove the second period must be better only because one quantity increased, regardless of all other relationships.",
+        "No meaningful pattern exists because the quantities are from different time periods and cannot be compared.",
+        "The shift happened randomly, so relationship-based inference is not possible from the quantities provided.",
+      ],
+      [
+        "The strongest explanation describes a stable relationship pattern in which combined quantities, not isolated arithmetic steps, drive the interpretation.",
+        "The best claim is that the largest number always determines the outcome, regardless of the relationship among the other quantities.",
+        "Because one quantity stayed close to its earlier value, the overall relationship pattern did not change in any relevant way.",
+        "The scenario is descriptive only, so no quantitative relationship can be inferred from the passage evidence.",
+      ],
+      [
+        "The evidence shows that adjusting one quantity changes the overall relationship and therefore changes planning decisions tied to total results.",
+        "Changing one quantity has no meaningful effect on the aggregate result if at least one other quantity remains constant.",
+        "The passage implies every quantity contributes equally, so shifting one value cannot alter the relationship interpretation.",
+        "The impact is unknowable because relationship evidence does not apply to real planning decisions.",
+      ],
+      [
+        "The observed pattern supports choosing the option that accounts for quantity relationships across both periods before making the final plan.",
+        "The best plan is to focus only on the latest quantity and ignore earlier relationship patterns in the evidence.",
+        "Pattern evidence is less reliable than intuition, so planning should not depend on quantity relationships.",
+        "The data are too general to support any defensible pattern-based planning inference.",
+      ],
+    ]
+    : subject === "Science"
+    ? [
+      [
+        "The experiment evidence supports a variable-result relationship in which changing the tested condition produced a consistent directional result.",
+        "The result appears random, indicating no meaningful relationship between the manipulated variable and the measured outcome.",
+        "The experiment shows that outside conditions alone caused the change, so the tested variable had no effect on the result.",
+        "Because the observations were limited, no variable-result explanation can be made from the experiment evidence.",
+      ],
+      [
+        "The procedure and results support an inference that the independent variable influenced the outcome through a repeatable experimental mechanism.",
+        "The results show the dependent variable changed on its own, so the experiment does not support variable-based causation.",
+        "The best inference is that measurement errors explain all result changes better than the tested variable does.",
+        "The experiment lacks enough structure to infer how any variable affected the final result.",
+      ],
+      [
+        "The strongest causal explanation connects the reported experiment result to the interaction between the tested variable and observed conditions.",
+        "The best claim is that the result was unaffected by the tested variable because one data point did not follow the trend exactly.",
+        "The evidence supports rejecting all causal interpretations since experiments cannot show variable relationships reliably.",
+        "The passage provides descriptive notes but no result evidence relevant to variable-based explanation.",
+      ],
+      [
+        "The data relationship indicates that adjusting one variable changed downstream results in a way consistent with the experiment evidence.",
+        "The downstream result cannot be tied to the adjusted variable because all experimental changes are equally irrelevant.",
+        "Any impact in the results must come from uncontrolled factors, not from the variable intentionally adjusted in the experiment.",
+        "No defensible inference can be made because variable-result relationships require perfect data with zero uncertainty.",
+      ],
+      [
+        "The passage supports inferring that the experiment results justify the recommendation because variable-driven evidence aligns with the final claim.",
+        "The recommendation is unsupported because experiment results cannot inform decisions beyond the exact trial conditions.",
+        "The results imply the opposite conclusion: the tested variable should be ignored in future explanations.",
+        "The final claim is unrelated to the experiment because no measurable variable-result pattern appears in the passage.",
+      ],
+    ]
+    : [
+      [
+        "The event evidence shows that leadership decisions responded to conditions and produced measurable social and economic impact over time.",
+        "The passage suggests outcomes happened independently of key decisions, so no event-impact relationship is supported.",
+        "Because one group influenced debate, broader events had no role in shaping final outcomes or impact.",
+        "The timeline is descriptive only and cannot support inference about decisions or civic impact.",
+      ],
+      [
+        "The strongest inference is that leaders made decisions based on immediate event pressures and expected long-term community impact.",
+        "The evidence shows decisions were symbolic only and had no meaningful relationship to later events or impact.",
+        "Motivations cannot be inferred because event records never help explain why decisions were made.",
+        "The passage proves all leaders shared identical goals, so decision analysis is unnecessary for impact claims.",
+      ],
+      [
+        "The causal chain is best supported by linking one documented event to a later decision and its measurable community impact.",
+        "The best interpretation is that events and decisions were unrelated, with impact determined only by outside forces.",
+        "Because the timeline includes multiple events, no single decision can be evaluated for impact.",
+        "The evidence supports only short-term description, not causal reasoning about event-driven impact.",
+      ],
+      [
+        "The passage supports analyzing how competing stakeholder decisions shaped policy outcomes and changed event impact across groups.",
+        "Stakeholder positions did not influence policy decisions, so impact differences must be ignored in interpretation.",
+        "Policy outcomes in the passage were accidental, making decision-based event analysis invalid.",
+        "The event sequence lacks enough information to reason about decision tradeoffs or impact.",
+      ],
+      [
+        "Considering the full event timeline, the most defensible claim is that key decisions produced cumulative long-term civic impact.",
+        "Long-term impact cannot be inferred because earlier events are irrelevant once a final decision appears.",
+        "The timeline shows that impact was fixed from the start, so later decisions did not matter.",
+        "No conclusion about societal impact is possible because event evidence never supports long-range inference.",
+      ],
+    ];
+
   return stems.map((stem, i) => {
     const support = buildSupportContent(subject, stem, "mc", i);
-    const choices = subject === "Math"
-      ? [
-        "The evidence indicates an interdependent relationship pattern in which the aggregate result is shaped by the combined movement of multiple quantities rather than by a single isolated change.",
-        "The data demonstrate that one dominant quantity fully determines the result, making the remaining values analytically irrelevant to interpreting the relationship.",
-        "Because one interval shows growth, the pattern confirms that the overall result must increase whenever any single quantity rises, regardless of offsetting changes elsewhere.",
-        "The passage does not provide sufficient relational evidence, so no defensible inference about the pattern can be made without computing every final value.",
-      ]
-      : subject === "Science"
-      ? [
-        "The experiment evidence supports a plausible causal relationship in which modifying the tested condition produced a consistent directional shift in the measured outcome.",
-        "The observed result appears statistically random, so the evidence does not substantiate a meaningful relationship between the manipulated variable and the outcome.",
-        "The most reasonable inference is that external confounding factors alone produced the change, because the experimental variable itself did not materially influence the result.",
-        "Because the data represent only isolated observations, the passage does not provide enough evidence to justify an explanation of the variable-result relationship.",
-      ]
-      : [
-        "The event evidence supports the interpretation that decision-makers responded to contemporary conditions and that those choices produced measurable civic and economic impact.",
-        "The timeline indicates that impact emerged independently of leadership decisions, so the passage does not support a causal relationship between policy actions and outcomes.",
-        "Because one influential group shaped the debate, the evidence shows that broader community conditions did not materially affect the historical result.",
-        "Although the passage describes multiple events, it lacks sufficiently specific impact evidence to justify defensible historical inference about causation.",
-      ];
+    const choices = choiceBanks[i % choiceBanks.length];
 
     return {
       type: "mc",
@@ -942,6 +1030,42 @@ function validateCrossCurricular(data: { passage?: unknown; questions?: unknown[
   ];
 
   return !badPhrases.some((phrase) => passage.includes(phrase));
+}
+
+function validateUniqueChoices(questions: Question[]): boolean {
+  const seen = new Set<string>();
+
+  return questions.every((q) => {
+    const key = JSON.stringify(q.choices);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function validateChoiceSubjectAlignment(subject: CanonicalSubject, questions: Question[]): boolean {
+  return questions.every((q) => {
+    const text = q.choices.join(" ").toLowerCase();
+
+    if (subject === "Science") {
+      return text.includes("experiment") || text.includes("result") || text.includes("variable");
+    }
+
+    if (subject === "Social Studies") {
+      return text.includes("event") || text.includes("decision") || text.includes("impact");
+    }
+
+    if (subject === "Math") {
+      return text.includes("quantity") || text.includes("relationship") || text.includes("pattern");
+    }
+
+    return true;
+  });
+}
+
+function validateCrossPassage(passage: string): boolean {
+  const text = passage.toLowerCase();
+  return !text.includes("students read an informational text");
 }
 
 function normalizeAnswerKeyEntry(value: unknown): string {
@@ -1271,7 +1395,7 @@ serve(async (req) => {
             ? clampPassageWords(normalizedPassage, range.min, range.max)
             : normalizedPassage
         ) || fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill);
-        const subjectCrossPassage = buildSubjectPassage(effectiveSubject);
+        let subjectCrossPassage = buildSubjectPassage(effectiveSubject);
 
         console.time("OPENAI_CALL");
         const enrichRes = await fetch("https://api.openai.com/v1/responses", {
@@ -1310,6 +1434,11 @@ serve(async (req) => {
           "",
         ).trim();
         const parsed = tryParseJsonPayload(enrichText) || {};
+        const candidateCrossPassage = String((parsed as Record<string, unknown>).crossPassage || "").trim();
+        if (candidateCrossPassage) subjectCrossPassage = candidateCrossPassage;
+        if (!validateCrossPassage(subjectCrossPassage)) {
+          subjectCrossPassage = buildSubjectPassage(effectiveSubject);
+        }
 
         let crossQuestions = sanitizeQuestions(
           parsed?.cross && typeof parsed.cross === "object"
@@ -1324,6 +1453,8 @@ serve(async (req) => {
           questions: crossQuestions,
         }) ||
           !validateHybridCross(crossQuestions) ||
+          !validateUniqueChoices(crossQuestions) ||
+          !validateChoiceSubjectAlignment(effectiveSubject, crossQuestions) ||
           !validateSeparation(normalizedPractice, crossQuestions, effectiveSubject) ||
           !areQuestionSetsDistinct(normalizedPractice, crossQuestions);
         if (crossInvalid) {
