@@ -412,6 +412,14 @@ function parseJsonPayload(text: string): Record<string, unknown> {
   }
 }
 
+function tryParseJsonPayload(text: string): Record<string, unknown> | null {
+  try {
+    return parseJsonPayload(text);
+  } catch {
+    return null;
+  }
+}
+
 function isBadOutput(text: string): boolean {
   const normalized = String(text || "").toLowerCase();
 
@@ -496,6 +504,32 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  let grade = 5;
+  let subject: CanonicalSubject = "Reading";
+  let skill = READING_SKILL_DEFAULT;
+  let level: Level = "On Level";
+  let mode: CanonicalMode = "Practice";
+  let effectiveSubject: CanonicalSubject = "Reading";
+  let effectiveSkill = READING_SKILL_DEFAULT;
+
+  const jsonResponse = (
+    payload: WorkerResponse,
+    meta: { fallback: boolean; reason: string; error?: string },
+  ) =>
+    new Response(JSON.stringify({
+      passage: payload.passage,
+      questions: Array.isArray(payload.questions) ? payload.questions : fallbackQuestionSet(effectiveSubject, mode, effectiveSkill),
+      meta,
+    }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+
+  const safeFallback = (reason: string, error?: string) => {
+    const payload = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, mode);
+    return jsonResponse(payload, { fallback: true, reason, ...(error ? { error } : {}) });
+  };
+
   try {
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -507,26 +541,25 @@ serve(async (req) => {
       },
     );
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const authResult = await supabase.auth.getUser();
+    const user = authResult?.data?.user;
+    if (!user) return safeFallback("unauthorized");
 
-    if (!user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    let body: Record<string, unknown> = {};
+    try {
+      body = await req.json();
+    } catch (err) {
+      console.error("BACKEND ERROR:", err);
+      return safeFallback("invalid_request_json", err instanceof Error ? err.message : String(err));
     }
 
-    const body = await req.json();
-    const grade = Number(body?.grade || 5);
-    const subject = canonicalizeSubject(body?.subject);
-    const skill = String(body?.skill || READING_SKILL_DEFAULT).trim() || READING_SKILL_DEFAULT;
-    const level = normalizeLevel(body?.level);
-    const mode = canonicalizeMode(body?.mode);
-
-    const effectiveSubject: CanonicalSubject = mode === "Cross-Curricular" ? "Reading" : subject;
-    const effectiveSkill = mode === "Cross-Curricular"
+    grade = Number(body?.grade || 5);
+    subject = canonicalizeSubject(body?.subject);
+    skill = String(body?.skill || READING_SKILL_DEFAULT).trim() || READING_SKILL_DEFAULT;
+    level = normalizeLevel(body?.level);
+    mode = canonicalizeMode(body?.mode);
+    effectiveSubject = mode === "Cross-Curricular" ? "Reading" : subject;
+    effectiveSkill = mode === "Cross-Curricular"
       ? (skill.toLowerCase().includes("main") || skill.toLowerCase().includes("infer") || skill.toLowerCase().includes("theme")
         ? skill
         : READING_SKILL_DEFAULT)
@@ -534,160 +567,91 @@ serve(async (req) => {
     const range = gradeWordRange(grade, effectiveSubject, mode);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
 
     try {
-      console.log("CALLING OPENAI");
-
       let attempts = 0;
-      let text = "";
       let retryFailureReason = "bad_output_after_retry";
 
       while (attempts < 2) {
-        console.log("🧠 CALLING OPENAI (attempt)", attempts + 1);
-
-        const aiRes = await fetch("https://api.openai.com/v1/responses", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "gpt-4o-mini",
-            input: buildPrompt({
-              grade,
-              subject,
-              skill: effectiveSkill,
-              level,
-              mode,
+        try {
+          const aiRes = await fetch("https://api.openai.com/v1/responses", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "gpt-4o-mini",
+              input: buildPrompt({
+                grade,
+                subject,
+                skill: effectiveSkill,
+                level,
+                mode,
+              }),
+              max_output_tokens: 2500,
             }),
-            max_output_tokens: 2500,
-          }),
-          signal: controller.signal,
-        });
+            signal: controller.signal,
+          });
 
-        console.log("OPENAI STATUS", aiRes.status);
+          if (!aiRes.ok) {
+            retryFailureReason = `openai_status_${aiRes.status}`;
+            attempts++;
+            continue;
+          }
 
-        if (!aiRes.ok) {
-          console.log("⚠️ OpenAI non-OK response — retrying...", aiRes.status);
-          retryFailureReason = `openai_status_${aiRes.status}`;
+          const aiJson = await aiRes.json() as Record<string, unknown>;
+          const aiAny = aiJson as {
+            output?: Array<{ content?: Array<{ text?: string }> }>;
+            output_text?: string;
+          };
+          const text = String(
+            aiAny.output?.[0]?.content?.[0]?.text ||
+            aiAny.output_text ||
+            "",
+          ).trim();
+
+          if (!text || isBadOutput(text)) {
+            retryFailureReason = "bad_output_after_retry";
+            attempts++;
+            continue;
+          }
+
+          let parsed: Record<string, unknown>;
+          try {
+            parsed = JSON.parse(text);
+          } catch (err) {
+            console.error("JSON PARSE ERROR:", err);
+            parsed = tryParseJsonPayload(text) || {};
+          }
+
+          if (!parsed || !Object.keys(parsed).length) {
+            retryFailureReason = "json_parse_failed";
+            attempts++;
+            continue;
+          }
+
+          const passage = clampPassageWords(String(parsed.passage || ""), range.min, range.max) ||
+            fallbackPassage(effectiveSubject, mode, grade);
+          const questions = sanitizeQuestions(parsed.questions, effectiveSubject, mode, effectiveSkill);
+          return jsonResponse(
+            { passage, questions: questions.length ? questions : fallbackQuestionSet(effectiveSubject, mode, effectiveSkill) },
+            { fallback: false, reason: "ai_success" },
+          );
+        } catch (err) {
+          console.error("BACKEND ERROR:", err);
+          retryFailureReason = controller.signal.aborted ? "openai_timeout_abort" : "openai_request_failed";
           attempts++;
-          continue;
         }
-
-        const aiJson = await aiRes.json();
-        text = String(aiJson.output_text || aiJson.output?.[0]?.content?.[0]?.text || "");
-
-        if (!isBadOutput(text)) break;
-
-        retryFailureReason = "bad_output_after_retry";
-        console.log("⚠️ Bad output detected — retrying...");
-        attempts++;
       }
 
-      if (!text || isBadOutput(text)) {
-        console.log("🚨 FINAL FALLBACK TRIGGERED (SAFE)");
-
-        const safeFallback = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, mode);
-
-        return new Response(JSON.stringify({
-          ...safeFallback,
-          meta: {
-            fallback: true,
-            reason: retryFailureReason,
-          },
-        }), {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      const parsed = parseJsonPayload(text);
-
-      const passage = clampPassageWords(String(parsed.passage || ""), range.min, range.max);
-      const questions = sanitizeQuestions(parsed.questions, effectiveSubject, mode, effectiveSkill);
-
-      let result: WorkerResponse = {
-        passage: passage || fallbackPassage(effectiveSubject, mode, grade),
-        questions: questions.length === 5 ? questions : fallbackQuestionSet(effectiveSubject, mode, effectiveSkill),
-      };
-
-      if (!result.passage || !Array.isArray(result.questions)) {
-        console.log("❌ INVALID FINAL SHAPE");
-
-        result = {
-          passage: "Students worked together to solve a problem and learned an important lesson.",
-          questions: Array.from({ length: 5 }).map(() => ({
-            question: "What is the main idea?",
-            choices: [
-              "A. Teamwork helps solve problems",
-              "B. Working alone is better",
-              "C. School is hard",
-              "D. Friends are fun",
-            ],
-            correct_answer: "A",
-            explanation: "This answer best matches the central idea.",
-          })),
-        };
-      }
-
-      console.log("RETURNING CONTENT");
-
-      return new Response(JSON.stringify({
-        ...result,
-        meta: {
-          fallback: false,
-          reason: "ai_success",
-        },
-      }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    } catch (err) {
-      console.log("AI FAILURE", err instanceof Error ? err.message : String(err));
-      let result = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, mode);
-      if (!result.passage || !Array.isArray(result.questions)) {
-        console.log("❌ INVALID FINAL SHAPE");
-
-        result = {
-          passage: "Students worked together to solve a problem and learned an important lesson.",
-          questions: Array.from({ length: 5 }).map(() => ({
-            question: "What is the main idea?",
-            choices: [
-              "A. Teamwork helps solve problems",
-              "B. Working alone is better",
-              "C. School is hard",
-              "D. Friends are fun",
-            ],
-            correct_answer: "A",
-            explanation: "This answer best matches the central idea.",
-          })),
-        };
-      }
-      return new Response(JSON.stringify({
-        ...result,
-        meta: {
-          fallback: true,
-          reason: "ai_failure_catch",
-        },
-      }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return safeFallback(retryFailureReason);
     } finally {
       clearTimeout(timeoutId);
     }
-  } catch {
-    const fallback = buildFallbackResponse(5, "Reading", READING_SKILL_DEFAULT, "Practice");
-    return new Response(JSON.stringify({
-      ...fallback,
-      meta: {
-        fallback: true,
-        reason: "request_failure_outer_catch",
-      },
-    }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  } catch (err) {
+    console.error("BACKEND ERROR:", err);
+    return safeFallback("ai_failure_catch", err instanceof Error ? err.message : String(err));
   }
 });
