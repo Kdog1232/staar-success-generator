@@ -2206,11 +2206,11 @@
             },
             body: JSON.stringify(enrichPayload),
             signal: enrichController.signal
-          }), API_FETCH_TIMEOUT_MS);
+          }), 45000);
           if (!enrichRes.ok) {
             throw new Error(`enrichment_status_${enrichRes.status}`);
           }
-          const enrichData = await withTimeout(enrichRes.json(), API_PARSE_TIMEOUT_MS);
+          const enrichData = await withTimeout(enrichRes.json(), 20000);
           if (runId !== generateRunId) {
             throw new Error("HALT_STALE_RUN");
           }
