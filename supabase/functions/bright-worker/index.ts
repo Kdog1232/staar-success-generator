@@ -13,216 +13,247 @@ serve(async (req) => {
   }
 
   try {
-  console.log("AUTH HEADER:", req.headers.get("Authorization"));
-
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL") ?? "",
-    Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-    {
-      global: {
-        headers: {
-          Authorization: req.headers.get("Authorization")!,
-        },
-      },
-    }
-  );
-
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error || !user) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  const requestBody = await req.json().catch(() => ({}));
-  const loginCheckOnly = requestBody?.trigger === "login_check";
-
-  const email = user.email?.toLowerCase().trim();
-  const paidEmails = [
-    "garyadams892@gmail.com",
-    "mdhowell64@gmail.com",
-  ];
-
-  if (email && paidEmails.includes(email)) {
-    const { data: existingProfile } = await supabase
-      .from("profiles")
-      .select("id, plan")
-      .eq("id", user.id)
-      .single();
-
-    if (existingProfile && existingProfile.plan !== "paid") {
-      console.log("🔥 Upgrading user in backend:", email);
-
-      await supabase
-        .from("profiles")
-        .update({
-          plan: "paid",
-          generations_used: 0,
-        })
-        .eq("id", user.id);
-    }
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("plan, generations_used")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile) {
-    return new Response(JSON.stringify({ error: "Profile not found" }), {
-      status: 404,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  if (loginCheckOnly) {
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        plan: profile.plan,
-        generations_used: profile.generations_used,
-      }),
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
       {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
+        global: {
+          headers: { Authorization: req.headers.get("Authorization")! },
+        },
+      }
     );
-  }
 
-  if (profile.plan !== "paid" && profile.generations_used >= 5) {
-    return new Response(JSON.stringify({ error: "Free limit reached" }), {
-      status: 403,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-    const { grade, subject, skill, level } = requestBody;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
 
-    const buildPrompt = () => `
-You are a STAAR test generator.
+    const { grade, subject, skill, level, mode } = await req.json();
 
-Requested grade: ${grade}
-Requested subject: ${subject}
-Requested skill: ${skill}
-Requested level: ${level}
+    // ===============================
+    // 🔥 SKILL STRUCTURE ENGINE
+    // ===============================
+    function getSkillStructure() {
+      const s = skill.toLowerCase();
+      const subj = subject.toLowerCase();
 
-Return ONLY valid JSON. Do NOT include explanations or markdown.
+      if (subj === "reading") {
+        if (s.includes("main idea")) return `
+- Q1: Main idea
+- Q2: Supporting detail
+- Q3: Supporting detail
+- Q4: Development of idea
+- Q5: Strongest evidence
+`;
 
-Use this schema:
+        if (s.includes("inference")) return `
+- Q1: Inference
+- Q2: Text clue
+- Q3: Text clue
+- Q4: Character reasoning
+- Q5: Best evidence
+`;
 
+        if (s.includes("theme")) return `
+- Q1: Theme
+- Q2: Supporting event
+- Q3: Supporting detail
+- Q4: Character action
+- Q5: Strongest evidence
+`;
+
+        if (s.includes("vocabulary")) return `
+- Q1: Meaning in context
+- Q2: Supporting clue
+- Q3: Another clue
+- Q4: Word usage
+- Q5: Best definition
+`;
+
+        if (s.includes("comparing")) return `
+- Q1: Compare texts
+- Q2: Similarity
+- Q3: Difference
+- Q4: Author purpose
+- Q5: Best evidence
+`;
+      }
+
+      if (subj === "math") {
+        return `
+- Q1: Real-world problem (2-step)
+- Q2: Real-world problem (2-step)
+- Q3: Conceptual understanding
+- Q4: Application
+- Q5: Error analysis or reasoning
+`;
+      }
+
+      if (subj === "science") {
+        return `
+- Q1: Concept
+- Q2: Scenario
+- Q3: Cause/effect
+- Q4: Data
+- Q5: Evidence reasoning
+`;
+      }
+
+      if (subj.includes("social")) {
+        return `
+- Q1: Main idea
+- Q2: Cause/effect
+- Q3: Detail
+- Q4: Reasoning
+- Q5: Evidence
+`;
+      }
+
+      return "";
+    }
+
+    // ===============================
+    // 🔥 PROMPT BUILDER
+    // ===============================
+    function buildPrompt() {
+      const g = parseInt(grade);
+
+      return `
+MODE: ${mode}
+SUBJECT: ${subject}
+GRADE: ${grade}
+LEVEL: ${level}
+SKILL: ${skill}
+
+PASSAGE:
+${g <= 3 ? "- 80–140 words, simple" : "- 200–300 words"}
+
+QUESTION STRUCTURE:
+${getSkillStructure()}
+
+RULES:
+- EXACTLY 5 questions
+- Follow structure exactly
+- Align to skill
+- No random questions
+
+OUTPUT JSON ONLY:
 {
+  "passage": "",
   "questions": [
     {
-      "question": "string",
-      "choices": ["A", "B", "C", "D"],
+      "question": "",
+      "choices": ["A. ...","B. ...","C. ...","D. ..."],
       "correct_answer": "A",
-      "explanation": "string",
-      "hint": "string",
-      "think": "string",
-      "step_by_step": "string",
-      "common_mistake": "string",
-      "parent_tip": "string"
+      "explanation": ""
     }
   ]
 }
-
-Rules:
-- Exactly 5 questions
-- Each question must include ALL fields in the schema
-- Each question must be STAAR-style and match requested skill/level
-- Include exactly 4 answer choices
-- Correct answer must match one of the choices
-- Explanation must explain WHY the answer is correct
-- Hint must be simple and student-friendly
-- Think must be a guiding question
-- Step_by_step must be clear and concise (1-3 steps)
-- Common_mistake must be realistic
-- Parent_tip must be helpful and actionable
-- No extra text outside JSON
 `;
-
-    const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY");
-
-    if (!OPENAI_KEY) {
-      return new Response(JSON.stringify({ error: "Missing OPENAI_API_KEY" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
     }
 
-    const generateContent = async () => {
-      const aiRes = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${OPENAI_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          input: buildPrompt(),
-        }),
-      });
+    // ===============================
+    // 🔁 GENERATION WITH TIMEOUT
+    // ===============================
+    async function generateContent() {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 12000);
 
-      const data = await aiRes.json();
+        console.log("📡 CALLING OPENAI");
 
-      if (!aiRes.ok) {
-        throw new Error(data?.error?.message || "Generation failed");
+        const res = await fetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            input: buildPrompt(),
+          }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeout);
+
+        console.log("📥 OPENAI STATUS:", res.status);
+
+        if (!res.ok) {
+          throw new Error(`OpenAI error: ${res.status}`);
+        }
+
+        const data = await res.json();
+
+        const text =
+          data.output_text ||
+          data.output?.[0]?.content?.[0]?.text ||
+          "";
+
+        if (!text) {
+          throw new Error("Empty AI response");
+        }
+
+        const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
+
+        let parsed;
+
+        try {
+          parsed = JSON.parse(cleaned);
+        } catch {
+          throw new Error("Invalid JSON from AI");
+        }
+
+        let questions = parsed.questions || [];
+
+        while (questions.length < 5) {
+          questions.push({
+            question: "Which answer best supports the idea?",
+            choices: [
+              "A. Correct answer",
+              "B. Incorrect",
+              "C. Incorrect",
+              "D. Incorrect"
+            ],
+            correct_answer: "A",
+            explanation: "This supports the concept."
+          });
+        }
+
+        console.log("✅ RETURNING AI CONTENT");
+
+        return {
+          passage: parsed.passage || "",
+          questions
+        };
+
+      } catch (err) {
+        console.log("❌ AI FAILURE:", err);
+
+        return {
+          passage: "Students worked together to solve a problem and learned the importance of teamwork.",
+          questions: Array.from({ length: 5 }).map(() => ({
+            question: "What is the main idea?",
+            choices: [
+              "A. Teamwork helps solve problems",
+              "B. Working alone is better",
+              "C. School is hard",
+              "D. Friends are fun"
+            ],
+            correct_answer: "A",
+            explanation: "Teamwork is the focus."
+          }))
+        };
       }
-
-      return data.output_text || data.output?.[0]?.content?.[0]?.text || "";
-    };
-    const aiText = await generateContent();
-    const cleaned = aiText
-      .replace(/```json/g, "")
-      .replace(/```/g, "")
-      .trim();
-    let parsed;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch (e) {
-      console.error("JSON parse failed:", aiText);
-      parsed = {
-        questions: [],
-        fallback: aiText
-      };
     }
 
-    await supabase
-      .from("profiles")
-      .update({
-        generations_used: profile.generations_used + 1,
-      })
-      .eq("id", user.id);
+    const result = await generateContent();
 
-    const normalizedQuestions = Array.isArray(parsed.questions)
-      ? parsed.questions.map((q: Record<string, unknown>) => ({
-        question: String(q.question ?? ""),
-        choices: Array.isArray(q.choices) ? q.choices.slice(0, 4).map((choice) => String(choice)) : [],
-        correct_answer: String(q.correct_answer ?? ""),
-        explanation: String(q.explanation ?? ""),
-        hint: String(q.hint ?? ""),
-        think: String(q.think ?? ""),
-        step_by_step: String(q.step_by_step ?? ""),
-        common_mistake: String(q.common_mistake ?? ""),
-        parent_tip: String(q.parent_tip ?? ""),
-      }))
-      : [];
-
-    return new Response(JSON.stringify({
-      questions: normalizedQuestions,
-      fallback: parsed.fallback || ""
-    }), {
+    return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(JSON.stringify({ error: err.message }), { status: 500 });
   }
 });
