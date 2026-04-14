@@ -1630,7 +1630,8 @@
         const token = session?.access_token;
 
         if (!token) {
-          halt(`<div class="locked"><strong>Session expired. Please log in again.</strong></div>`);
+          outputDiv.innerHTML = `<div class="locked"><strong>Session expired. Please log in again.</strong></div>`;
+          return;
         }
 
         const startTime = Date.now();
