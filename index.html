@@ -928,7 +928,7 @@
     let currentController = null;
     let enrichController = null;
     let generateRunId = 0;
-    let lastRenderRunId = 0;
+    let hasRenderedThisRun = false;
     let lastGeneratedContentMode = null;
     let standardContent = "";
     let crossContent = "";
@@ -1456,8 +1456,9 @@
         console.log(logLabel, q);
         const visualMarkup = renderVisual(q?.visual);
         const supportMarkup = renderQuestionSupport(q, crossCurricular ? "Cross-Curricular" : mode);
+        const selectedSubject = document.getElementById("subject")?.value || "Reading";
         const crossMarkup = crossCurricular
-          ? `<div class="mode-tag">🌍 Cross-Curricular (ELAR)</div>`
+          ? `<div class="mode-tag">🌍 Cross-Curricular (${cleanText(selectedSubject)})</div>`
           : "";
 
         if (q?.type === "scr") {
@@ -1559,7 +1560,7 @@
 
       if (!questionsToUse || !questionsToUse.length) {
         console.warn("⚠️ Missing question set for mode:", mode);
-        questionsToUse = data?.practice?.questions || [];
+        questionsToUse = isCross ? [] : (data?.practice?.questions || []);
       }
 
       console.log("🔥 MODE:", mode);
@@ -1668,13 +1669,17 @@
       const practiceSection = document.getElementById("practice-section");
       if (!practiceSection) return;
       const questionMarkup = renderPractice(practiceData);
+      const selectedSubject = document.getElementById("subject")?.value || "Reading";
+      const shouldRenderPracticePassage = selectedSubject === "Reading";
       practiceSection.innerHTML = `
         <div class="worksheet-header">STAAR Practice Worksheet</div>
         <div class="mode-label">Practice Mode</div>
-        <section class="worksheet-section">
-          <h3>📖 Passage</h3>
-          ${renderPassage(passageText)}
-        </section>
+        ${shouldRenderPracticePassage ? `
+          <section class="worksheet-section">
+            <h3>📖 Passage</h3>
+            ${renderPassage(passageText)}
+          </section>
+        ` : ""}
         <section class="worksheet-section">
           <h3>❓ Questions</h3>
           ${questionMarkup}
@@ -1726,13 +1731,17 @@
       `;
     }
 
-    function renderTab(tab = activeTab) {
-      if (lastRenderRunId === generateRunId) {
-        console.log("⛔ SKIPPING duplicate render");
+    function renderTab(tab = activeTab, options = {}) {
+      const { fromGenerate = false } = options;
+
+      if (fromGenerate && hasRenderedThisRun) {
+        console.log("⛔ SKIPPING duplicate render (generate)");
         return;
       }
 
-      lastRenderRunId = generateRunId;
+      if (fromGenerate) {
+        hasRenderedThisRun = true;
+      }
 
       const practiceSection = document.getElementById("practice-section");
       const crossSection = document.getElementById("cross-section");
@@ -1931,7 +1940,7 @@
         return;
       }
 
-      lastRenderRunId = 0;
+      hasRenderedThisRun = false;
       isGenerating = true;
       setTimeout(() => {
         if (isGenerating) {
@@ -2107,7 +2116,7 @@
           throw new Error("Generation request failed");
         }
 
-        if (!data.passage) {
+        if (subject === "Reading" && !data.passage) {
           console.log("❌ INVALID RESPONSE SHAPE", data);
           halt(`<div class="locked"><strong>Something went wrong. Please try again.</strong></div>`);
         }
@@ -2124,11 +2133,11 @@
           }
         }
 
-        generatedPassage = cleanText(data.passage || "");
+        generatedPassage = subject === "Reading" ? cleanText(data.passage || "") : "";
         if (data.meta?.fallback) {
           console.log("⚠️ FALLBACK MODE:", data.meta.reason || "unknown");
           if (Array.isArray(data?.practice?.questions) && data.practice.questions.length > 0) {
-            showFallback(data.passage || "", data.practice.questions);
+            showFallback(subject === "Reading" ? (data.passage || "") : "", data.practice.questions);
           } else {
             console.log("❌ FALLBACK WITH NO QUESTIONS", data);
             halt("Fallback triggered but no questions.");
@@ -2197,14 +2206,14 @@
           modeStatus.textContent = "Step 2: Adding explanations...";
         }
 
-        if (selectedContent.isCross) {
+        if (Array.isArray(currentData?.cross?.questions) && currentData.cross.questions.length) {
           renderCrossSection(
-            { questions: selectedContent.questionsToUse },
-            selectedContent.passageToUse,
+            currentData.cross,
+            currentData.cross.passage,
             { loading: false }
           );
         }
-        renderTab(activeTab);
+        renderTab("practice", { fromGenerate: true });
         await new Promise((resolve) => requestAnimationFrame(() => resolve()));
         console.log("STEP 6: render complete");
 
