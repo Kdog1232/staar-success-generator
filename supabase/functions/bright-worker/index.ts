@@ -2723,32 +2723,50 @@ serve(async (req) => {
     mode = canonicalizeMode(incomingContentMode);
     effectiveSubject = subject;
     effectiveSkill = skill ?? "Main Idea";
-    console.log("🔥 FINAL MODE:", mode);
-    if (mode === "cross") {
-      const crossContent = effectiveSubject === "Reading"
-        ? buildELARFallback(level)
-        : buildSubjectCrossContent(effectiveSubject, level);
 
-      return Response.json({
+    console.log("🔥 FINAL MODE:", mode);
+
+    // 🚀 NEW MODE ROUTING
+    if (mode === "cross") {
+      const crossContent = buildSubjectCrossContent(subject, level);
+
+      return new Response(JSON.stringify({
         cross: {
           passage: crossContent.passage,
           questions: crossContent.questions,
         },
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     if (mode === "support") {
-      const supportContent = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, level);
+      const core = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, level);
+      const practiceQuestions = core.practice?.questions || [];
 
-      return Response.json({
+      const supportContent = {
         tutor: {
-          practice: supportContent.tutor.practice,
-          cross: supportContent.tutor.cross,
+          practice: practiceQuestions.map((q, i) => ({
+            question_id: `practice_${i}`,
+            question: q.question,
+            ...buildSupportContent(subject, q.question, q.type || "mc", i, level, "Practice", core.passage || ""),
+          })),
+          cross: [],
         },
         answerKey: {
-          practice: supportContent.answerKey.practice,
-          cross: supportContent.answerKey.cross,
+          practice: practiceQuestions.map((q, i) => ({
+            question_id: `practice_${i}`,
+            correct_answer: String(q.correct_answer),
+            explanation: q.explanation || "",
+            common_mistake: q.common_mistake || "",
+            parent_tip: q.parent_tip || "",
+          })),
+          cross: [],
         },
+      };
+
+      return new Response(JSON.stringify(supportContent), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
     console.log("🔥 RAW MODE:", rawMode);
