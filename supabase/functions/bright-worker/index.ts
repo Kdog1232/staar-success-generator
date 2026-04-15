@@ -619,42 +619,52 @@ function buildSSFallbackChoices(): [string, string, string, string] {
   ];
 }
 
-function buildReadingFallbackChoices(): [string, string, string, string] {
+function buildReadingChoices(
+  passage: PassageContent | string = "",
+  questionText = "",
+  level: Level = "On Level",
+): [string, string, string, string] {
+  void questionText;
+  void level;
+  const text = getPassageText(passage);
+  const keywords = passageKeywords(text).slice(0, 4);
+
+  const focus = keywords[0] || "the main idea";
+  const detail = keywords[1] || "key evidence";
+  const context = keywords[2] || "supporting detail";
+  const shift = keywords[3] || "a later development";
+
   return [
-    "The author shows that communities solve problems by comparing evidence before deciding.",
-    "The passage suggests decisions are made quickly without reviewing all details.",
-    "The text focuses on one example but ignores how other evidence changes the outcome.",
-    "The passage describes an unrelated situation not connected to the main idea.",
+    `${focus} is supported by evidence about ${detail} in the passage.`,
+    `${detail} is mentioned, but its role in ${focus} is misunderstood.`,
+    `${context} is overemphasized even though it is not central to ${focus}.`,
+    `${shift} is treated as the main idea even though it changes the conclusion.`,
   ];
 }
 
-function getFallbackChoices(subject: CanonicalSubject, skill: string): [string, string, string, string] {
+function getFallbackChoices(
+  subject: CanonicalSubject,
+  skill: string,
+  passage: PassageContent | string = "",
+  questionText = "",
+  level: Level = "On Level",
+): [string, string, string, string] {
   void skill;
   if (subject === "Math") return buildMathFallbackChoices();
   if (subject === "Science") return buildScienceFallbackChoices();
   if (subject === "Social Studies") return buildSSFallbackChoices();
-  return buildReadingFallbackChoices();
-}
-
-function enforceChoiceQuality(
-  choices: [string, string, string, string],
-  subject: CanonicalSubject,
-  skill: string,
-): [string, string, string, string] {
-  const hasGenericMeta = choices.some((choice) => {
-    const text = String(choice || "");
-    return /this choice|response grounded/i.test(text);
-  });
-  if (!hasGenericMeta) return choices;
-  return getFallbackChoices(subject, skill);
+  return buildReadingChoices(passage, questionText, level);
 }
 
 function normalizeChoices(
   choices: unknown,
   subject: CanonicalSubject = "Reading",
   skill = "",
+  passage: PassageContent | string = "",
+  questionText = "",
+  level: Level = "On Level",
 ): [string, string, string, string] {
-  const fallbackChoices = getFallbackChoices(subject, skill);
+  const fallbackChoices = getFallbackChoices(subject, skill, passage, questionText, level);
   const raw = Array.isArray(choices) ? choices.slice(0, 4) : [];
   while (raw.length < 4) raw.push(fallbackChoices[raw.length]);
 
@@ -668,7 +678,17 @@ function normalizeChoices(
       /^choice\s*\d+$/i.test(stripped);
     return isPlaceholder ? fallbackChoices[index] : stripped;
   }) as [string, string, string, string];
-  return enforceChoiceQuality(normalized, subject, skill);
+
+  if (subject === "Reading") {
+    return strengthenChoiceSet(
+      buildReadingChoices(passage, questionText, level),
+      questionText,
+      passage,
+      subject,
+    );
+  }
+
+  return normalized;
 }
 
 function strengthenChoiceSet(
@@ -1021,7 +1041,6 @@ function buildPracticeFallback(
     singleAnswerIndex += 1;
     return letter;
   };
-  const passageDrivenChoices = passage ? generateChoicesFromPassage(passage, level) : null;
   const mathChoiceBanks: [string, string, string, string][] = [
     ["$135", "$81", "$45", "$162"],
     ["9 pages", "41 pages", "23 pages", "5 pages"],
@@ -1116,15 +1135,60 @@ function buildPracticeFallback(
         "Voters approved the bridge bond first, and rail improvements were added only after that success.",
         "Population growth reduced cross-river travel demand, so no major transportation decision was necessary.",
       ]
-      : (passageDrivenChoices || [
-        "The editor revised the headline after checking interview notes, which means evidence controlled the final claim.",
-        "The editor kept the original headline despite conflicting quotes, so wording did not affect meaning.",
-        "Survey totals were ignored during revision, indicating data was less important than opinion.",
-        "The team added a new event not in the notes, which means outside information drove the conclusion.",
-      ]);
-    const safeChoices = enforceChoiceQuality(choices as [string, string, string, string], subject, "");
-    const safePartAChoices = enforceChoiceQuality(partAChoices, subject, "");
-    const safePartBChoices = enforceChoiceQuality(partBChoices, subject, "");
+      : buildReadingChoices(passage || "", leveledStem, level);
+    const safeChoices = subject === "Reading"
+      ? strengthenChoiceSet(
+        buildReadingChoices(passage || "", leveledStem, level),
+        leveledStem,
+        passage || "",
+        subject,
+      )
+      : normalizeChoices(choices as [string, string, string, string], subject, "", passage || "", leveledStem, level);
+    const safePartAChoices = subject === "Reading"
+      ? strengthenChoiceSet(
+        buildReadingChoices(passage || "", `Part A: ${leveledStem}`, level),
+        `Part A: ${leveledStem}`,
+        passage || "",
+        subject,
+      )
+      : normalizeChoices(partAChoices, subject, "", passage || "", `Part A: ${leveledStem}`, level);
+    const safePartBChoices = subject === "Reading"
+      ? strengthenChoiceSet(
+        buildReadingChoices(
+          passage || "",
+          subject === "Math"
+            ? "Part B: Which step shows the correct reasoning for your Part A answer?"
+            : subject === "Science"
+            ? "Part B: Which evidence from the scenario supports your Part A answer?"
+            : subject === "Social Studies"
+            ? "Part B: Which detail from the event timeline best supports your Part A answer?"
+            : "Part B: Which sentence best supports your Part A answer?",
+          level,
+        ),
+        subject === "Math"
+          ? "Part B: Which step shows the correct reasoning for your Part A answer?"
+          : subject === "Science"
+          ? "Part B: Which evidence from the scenario supports your Part A answer?"
+          : subject === "Social Studies"
+          ? "Part B: Which detail from the event timeline best supports your Part A answer?"
+          : "Part B: Which sentence best supports your Part A answer?",
+        passage || "",
+        subject,
+      )
+      : normalizeChoices(
+        partBChoices,
+        subject,
+        "",
+        passage || "",
+        subject === "Math"
+          ? "Part B: Which step shows the correct reasoning for your Part A answer?"
+          : subject === "Science"
+          ? "Part B: Which evidence from the scenario supports your Part A answer?"
+          : subject === "Social Studies"
+          ? "Part B: Which detail from the event timeline best supports your Part A answer?"
+          : "Part B: Which sentence best supports your Part A answer?",
+        level,
+      );
     const question: Question = {
       type,
       question: leveledStem,
@@ -1159,39 +1223,6 @@ function buildPracticeFallback(
     };
     return question;
   });
-}
-
-function generateChoicesFromPassage(passage: PassageContent | string, level: Level = "On Level"): [string, string, string, string] {
-  const text = getPassageText(passage).trim();
-  const keywords = passageKeywords(text).slice(0, 4);
-  const focus = keywords[0] || "the passage topic";
-  const detail = keywords[1] || "key details";
-  const context = keywords[2] || "supporting evidence";
-  const outlier = keywords[3] || "an unrelated detail";
-
-  if (level === "Below") {
-    return [
-      `${focus} is explained through a direct detail about ${detail}.`,
-      `${outlier} appears in the article, but it is not the reason ${focus} changes.`,
-      `${context} is described as a new event that was never mentioned in the article.`,
-      `${focus} is said to decrease when ${detail} increases, reversing the article's relationship.`,
-    ];
-  }
-  if (level === "Advanced") {
-    return [
-      `${focus} and ${detail} interact, and together they explain the article's conclusion.`,
-      `${focus} is identified correctly, but ${context} is interpreted in a way that changes the conclusion incorrectly.`,
-      `${detail} is generalized into a wider conclusion than the evidence in the article supports.`,
-      `${outlier} is treated as the central cause even though the article presents it as a minor detail.`,
-    ];
-  }
-
-  return [
-    `${focus} is supported by the article's detail about ${detail}.`,
-    `${detail} is repeated, but the role of ${context} in the main point is ignored.`,
-    `${outlier} is overemphasized even though the article treats it as secondary.`,
-    `${context} is explained with outside information that does not appear in the article.`,
-  ];
 }
 
 function buildCrossFallback(subject: CanonicalSubject, level: Level = "On Level"): Question[] {
@@ -1646,18 +1677,18 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
   return stems.map((stem, i) => {
     const type: QuestionType = i === 1 ? "part_a_b" : i === 3 ? "multi_select" : i === 4 ? "scr" : "mc";
     const support = buildSupportContent(effectiveSubject, stem, type, i, level, mode, "");
-    const baseChoices = enforceChoiceQuality([
+    const baseChoices = normalizeChoices([
       "The plants closest to the lamp grew taller because they received more direct light.",
       "All plants grew at the same rate, so light intensity did not matter in this setup.",
       "Plants farther from the lamp appeared to grow faster because lower heat outweighed reduced light.",
       "Plant height changed randomly and was not related to the light conditions in the investigation.",
-    ], effectiveSubject, skill);
-    const partBChoices = enforceChoiceQuality([
+    ], effectiveSubject, skill, "", stem, level);
+    const partBChoices = normalizeChoices([
       "The investigation compared plant growth at different distances from the lamp over two weeks.",
       "The passage says all plants were measured only once at the end of the week.",
       "The class ignored light distance and focused only on soil color.",
       "The scenario states that light intensity never changed during the test.",
-    ], effectiveSubject, skill);
+    ], effectiveSubject, skill, "", `Part B: ${stem}`, level);
     const question: Question = {
       type,
       question: stem,
@@ -1935,8 +1966,8 @@ function sanitizeQuestions(
 
     let normalizedChoices = (
       subject === "Reading"
-        ? strengthenChoiceSet(normalizeChoices(q.choices, subject, skill), questionText, passage, subject)
-        : normalizeChoices(q.choices, subject, skill).map((choice) => cleanChoiceText(choice))
+        ? strengthenChoiceSet(buildReadingChoices(passage, questionText, level), questionText, passage, subject)
+        : normalizeChoices(q.choices, subject, skill, passage, questionText, level).map((choice) => cleanChoiceText(choice))
     ) as [string, string, string, string];
 
     if (subject === "Math") {
@@ -1958,11 +1989,11 @@ function sanitizeQuestions(
 
     const fallbackPartA = fallback[i].partA || {
       question: "Part A: What is the best answer?",
-      choices: normalizeChoices(fallback[i].choices, subject, skill),
+      choices: normalizeChoices(fallback[i].choices, subject, skill, passage, "Part A: What is the best answer?", level),
     };
     const fallbackPartB = fallback[i].partB || {
       question: "Part B: Which evidence best supports Part A?",
-      choices: normalizeChoices(fallback[i].choices, subject, skill),
+      choices: normalizeChoices(fallback[i].choices, subject, skill, passage, "Part B: Which evidence best supports Part A?", level),
     };
 
     const base: Question = {
@@ -1978,7 +2009,14 @@ function sanitizeQuestions(
         ? {
           question: String((q.partA as Record<string, unknown> | undefined)?.question || fallbackPartA.question).trim() || fallbackPartA.question,
           choices: strengthenChoiceSet(
-            normalizeChoices((q.partA as Record<string, unknown> | undefined)?.choices || fallbackPartA.choices, subject, skill),
+            normalizeChoices(
+              (q.partA as Record<string, unknown> | undefined)?.choices || fallbackPartA.choices,
+              subject,
+              skill,
+              passage,
+              String((q.partA as Record<string, unknown> | undefined)?.question || fallbackPartA.question),
+              level,
+            ),
             String((q.partA as Record<string, unknown> | undefined)?.question || fallbackPartA.question),
             passage,
             subject,
@@ -1989,7 +2027,14 @@ function sanitizeQuestions(
         ? {
           question: String((q.partB as Record<string, unknown> | undefined)?.question || fallbackPartB.question).trim() || fallbackPartB.question,
           choices: strengthenChoiceSet(
-            normalizeChoices((q.partB as Record<string, unknown> | undefined)?.choices || fallbackPartB.choices, subject, skill),
+            normalizeChoices(
+              (q.partB as Record<string, unknown> | undefined)?.choices || fallbackPartB.choices,
+              subject,
+              skill,
+              passage,
+              String((q.partB as Record<string, unknown> | undefined)?.question || fallbackPartB.question),
+              level,
+            ),
             String((q.partB as Record<string, unknown> | undefined)?.question || fallbackPartB.question),
             passage,
             subject,
@@ -2003,7 +2048,7 @@ function sanitizeQuestions(
         ? (String(q.part_b_question || fallback[i].part_b_question || "").trim() || fallback[i].part_b_question)
         : undefined,
       part_b_choices: type === "part_a" || type === "part_b"
-        ? normalizeChoices(q.part_b_choices || fallback[i].part_b_choices, subject, skill)
+        ? normalizeChoices(q.part_b_choices || fallback[i].part_b_choices, subject, skill, passage, questionText, level)
         : undefined,
       part_b_correct_answer: type === "part_a" || type === "part_b"
         ? normalizeAnswer(q.part_b_correct_answer || fallback[i].part_b_correct_answer)
