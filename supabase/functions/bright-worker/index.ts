@@ -64,7 +64,7 @@ type AnswerKeyEntry = {
 };
 
 type CoreResponse = {
-  passage: PassageContent;
+  passage?: PassageContent;
   practice: {
     questions: Question[];
   };
@@ -374,14 +374,8 @@ function buildCorePrompt(params: {
 }): string {
   const { grade, subject, skill, level } = params;
   const rigor = applyRigor(level);
-  const practiceRulesBySubject: Record<CanonicalSubject, string> = {
-    Reading: "Reading practice MUST include a passage and STAAR-style comprehension questions tied directly to that passage.",
-    Math: "Math practice MUST include a passage-based scenario with direct, measurable word problems and multi-step reasoning tied to that passage.",
-    Science: "Science practice MUST include a coherent informational passage and questions that depend on evidence from that passage.",
-    "Social Studies": "Social Studies practice MUST include a coherent informational passage and questions that depend on events/details from that passage.",
-  };
-
-  return `Create JSON only for PRACTICE MODE.
+  if (subject === "Reading") {
+    return `Create JSON only for PRACTICE MODE.
 Grade: ${grade}
 Subject: ${subject}
 Skill: ${skill}
@@ -395,28 +389,39 @@ Return exactly:
 
 Rules:
 - PRACTICE MODE ONLY. Do not generate cross-curricular content.
-- NO cross-curricular mixing.
-- ${practiceRulesBySubject[subject]}
-- CRITICAL:
-  - You MUST generate a passage between 250–300 words.
-  - Minimum 250 words, maximum 300 words.
-  - If under 250 words, expand before returning.
-  - NEVER return empty passage.
-  - Passage must include:
-    - clear scenario or topic
-    - multiple key details for evidence
-    - logical structure (beginning, middle, end)
+- Subject is Reading, so include a new 250–300 word passage.
+- Generate exactly 5 STAAR-style reading questions tied directly to that passage.
 - Rigor profile:
   - passage complexity: ${rigor.passage}
   - question depth: ${rigor.questionDepth}
   - distractor quality: ${rigor.distractorQuality}
 - Use clear, student-friendly STAAR language.
-- Question set format must include exactly:
-  - 3 MC questions
-  - 1 Part A / Part B question (type: "part_a_b")
-  - 1 SCR or multi-select question
 - Every question has 4 distinct, specific answer choices.
-- Avoid generic wording and abstract meta language.
+- No markdown. JSON only.`;
+  }
+
+  return `Create JSON only for PRACTICE MODE.
+Grade: ${grade}
+Subject: ${subject}
+Skill: ${skill}
+Level: ${level}
+
+Return exactly:
+{
+  "practice": { "questions": [5 items with question, choices, correct_answer, explanation] }
+}
+
+Rules:
+- PRACTICE MODE ONLY. Do not generate cross-curricular content.
+- Subject is ${subject}, so DO NOT generate a passage.
+- Generate exactly 5 standalone STAAR-style ${subject} questions.
+- Use multi-step reasoning where appropriate.
+- Questions must be subject-driven and not ELAR-framed.
+- Forbidden wording in questions/choices: "main idea", "central idea", "author", "theme", "reader", "claim".
+- Rigor profile:
+  - question depth: ${rigor.questionDepth}
+  - distractor quality: ${rigor.distractorQuality}
+- Every question has 4 distinct, specific answer choices.
 - No markdown. JSON only.`;
 }
 
@@ -427,11 +432,30 @@ function buildEnrichmentPrompt(params: {
 }): string {
   const { subject, practiceQuestions, level } = params;
   const rigor = applyRigor(level);
-  const subjectFocus = subject === "Science"
-    ? "Science focus: cause/effect, systems interactions, experiments/results, evidence-based reasoning."
+  const subjectFocus = subject === "Math"
+    ? [
+      "Math passage must include numbers, quantities, rates, or comparisons.",
+      "Questions MUST require calculations or numerical reasoning.",
+      "Use stems like: \"What is the total...\", \"How much...\", \"Which calculation...\", \"What is the difference...\".",
+      "DO NOT use ELAR wording.",
+    ].join("\n- ")
+    : subject === "Science"
+    ? [
+      "Science passage must describe a system, experiment, or process.",
+      "Questions must focus on cause/effect, variables, results, and conclusions.",
+      "Use stems like: \"What happens when...\", \"Which factor affects...\", \"What can be concluded...\".",
+      "DO NOT use ELAR wording.",
+    ].join("\n- ")
     : subject === "Social Studies"
-    ? "Social Studies focus: cause/effect, decisions/consequences, timeline of events, impact on people/community."
-    : "Math focus: passage includes numbers/data; require interpreting quantities, choosing operations, and solving from context.";
+    ? [
+      "Social Studies passage must include historical or economic context.",
+      "Questions must focus on decisions, impact, cause/effect, and influence.",
+      "Use stems like: \"Why did...\", \"What was the effect of...\", \"Which factor influenced...\".",
+      "DO NOT use ELAR wording.",
+    ].join("\n- ")
+    : [
+      "Reading uses ELAR-style focus: central idea, inference, evidence, structure.",
+    ].join("\n- ");
 
   return `Generate a NEW cross-curricular passage and cross-curricular questions, then return JSON only:
 {
@@ -450,34 +474,23 @@ ${JSON.stringify(practiceQuestions.slice(0, 5))}
 
 Rules:
 - CROSS-CURRICULAR MODE ONLY.
-- Generate a NEW passage aligned to the subject.
 - CRITICAL: Generate a NEW passage (250–300 words).
 - Passage MUST be different from practice passage.
 - Passage MUST be aligned to ${subject}.
 - Questions MUST be based ONLY on this new passage.
 - Do NOT reuse or paraphrase the original practice passage.
-- CRITICAL: if a question can be answered without reading the passage, reject it and rewrite it.
-- cross questions must be different from practice questions.
-- cross questions MUST be HYBRID: reading comprehension + ${subject} reasoning.
+- If a question can be answered without reading the passage, rewrite it.
+- Cross questions must be different from practice questions.
+- Cross questions MUST be subject-driven for ${subject}.
 - ${subjectFocus}
+- For Math/Science/Social Studies, forbidden wording: "main idea", "central idea", "author", "theme", "reader", "claim".
 - Rigor profile:
   - passage complexity: ${rigor.passage}
   - question depth: ${rigor.questionDepth}
   - distractor quality: ${rigor.distractorQuality}
-- Include exactly these 5 question intents in order:
-  1) cause and effect (stem starts with "What caused" or "Why did")
-  2) sequence/timeline (stem starts with "Which event happened after")
-  3) evidence-based (stem starts with "Which detail shows")
-  4) inference (stem starts with "Why did" or "What can be inferred")
-  5) conclusion (stem starts with "What can be concluded")
 - Each question must include exactly 4 clear, distinct, passage-specific answer choices.
-- Replace one regular MC with one Part A / Part B question (type: "part_a_b"), where:
-  - Part A asks the main claim/inference/solution
-  - Part B asks for evidence/reasoning that depends on Part A
-- Choices must be plausible but clearly different and tied to specific passage details.
-- Never use generic/meta answers like "this supports the claim" or "this shows reasoning."
-- Do NOT use academic fluff terms like "most defensible claim", "civic impact", or "event reasoning".
-- answerKey should match practice question answers.
+- Choices must be clean answer options only (no explanations or commentary text).
+- answerKey should match cross question answers.
 - JSON only.`;
 }
 
@@ -548,7 +561,10 @@ function strengthenChoiceSet(
   choices: [string, string, string, string],
   questionText: string,
   passage: PassageContent | string = "",
+  subject: CanonicalSubject = "Reading",
 ): [string, string, string, string] {
+  if (subject !== "Reading") return normalizeChoices(choices);
+
   const text = getPassageText(passage);
   const keywords = passageKeywords(text).slice(0, 4);
   const defaultKeywords = questionText
@@ -574,7 +590,13 @@ function strengthenChoiceSet(
     }
 
     if (clean.split(/\s+/).length < 8) {
-      return `${clean} This interpretation sounds possible, but it misses an important passage detail about ${anchorA}.`;
+      const shortVariants = [
+        `${clean} based on ${anchorA} and ${anchorB}.`,
+        `${clean} using the passage details about ${anchorA}.`,
+        `${clean} with evidence connected to ${anchorB}.`,
+        `${clean} from the scenario data on ${anchorA}.`,
+      ];
+      return shortVariants[index % shortVariants.length];
     }
 
     return clean;
@@ -1328,7 +1350,7 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
   });
 }
 
-function buildELARCrossContent(level: Level = "On Level"): { passage: string; questions: Question[] } {
+function buildELARFallback(level: Level = "On Level"): { passage: string; questions: Question[] } {
   const crossSubject = randomChoice<CanonicalSubject>(["Science", "Social Studies", "Math"]);
   return {
     passage: buildSubjectPassage(crossSubject, level),
@@ -1336,10 +1358,35 @@ function buildELARCrossContent(level: Level = "On Level"): { passage: string; qu
   };
 }
 
-function buildSubjectCrossContent(subject: CanonicalSubject, level: Level = "On Level"): { passage: string; questions: Question[] } {
+function buildMathFallback(level: Level = "On Level"): { passage: string; questions: Question[] } {
   return {
-    passage: buildSubjectPassage(subject, level),
-    questions: buildCrossFallback(subject, level),
+    passage: buildSubjectPassage("Math", level),
+    questions: buildCrossFallback("Math", level),
+  };
+}
+
+function buildScienceFallback(level: Level = "On Level"): { passage: string; questions: Question[] } {
+  return {
+    passage: buildSubjectPassage("Science", level),
+    questions: buildCrossFallback("Science", level),
+  };
+}
+
+function buildSSFallback(level: Level = "On Level"): { passage: string; questions: Question[] } {
+  return {
+    passage: buildSubjectPassage("Social Studies", level),
+    questions: buildCrossFallback("Social Studies", level),
+  };
+}
+
+function buildSubjectCrossContent(subject: CanonicalSubject, level: Level = "On Level"): { passage: string; questions: Question[] } {
+  if (subject === "Math") return buildMathFallback(level);
+  if (subject === "Science") return buildScienceFallback(level);
+  if (subject === "Social Studies") return buildSSFallback(level);
+  const readingFallback = buildELARFallback(level);
+  return {
+    passage: readingFallback.passage,
+    questions: readingFallback.questions,
   };
 }
 
@@ -1350,7 +1397,7 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
   if (mode === "Cross-Curricular") {
     // Cross structure is subject-driven (or ELAR-over-content for Reading), not skill-driven.
     if (effectiveSubject === "Reading") {
-      return buildELARCrossContent(level).questions;
+      return buildELARFallback(level).questions;
     }
     return buildSubjectCrossContent(effectiveSubject, level).questions;
   }
@@ -1519,8 +1566,17 @@ function sanitizeQuestions(
 ): Question[] {
   const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
   const fallback = fallbackQuestionSet(subject, mode, skill, level);
+  const cleanChoiceText = (value: unknown): string =>
+    String(value ?? "")
+      .replace(/^[A-D]\.\s*/i, "")
+      .replace(/\s*(This interpretation sounds possible.*)$/i, "")
+      .replace(/\s*\b(because|since|so that)\b.*$/i, "")
+      .trim();
   const sanitized: Question[] = incoming.map((item, i) => {
     const q = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    if (!q.question || !q.choices || !Array.isArray(q.choices) || q.choices.length < 4) {
+      return fallback[i];
+    }
     const expectedType = fallback[i].type || "mc";
     const type: QuestionType = expectedType;
     const rawQuestion = String(q.question || fallback[i].question).trim() || fallback[i].question;
@@ -1528,25 +1584,28 @@ function sanitizeQuestions(
       ? `${rawQuestion.replace(/\s+$/g, "")} Select TWO answers.`
       : rawQuestion;
 
-    const normalizedChoices = strengthenChoiceSet(normalizeChoices(q.choices), questionText, passage);
-    const hasGenericChoices = normalizedChoices.some((choice) => {
-      const text = String(choice || "").toLowerCase();
-      return text.includes("correct interpretation") ||
-        text.includes("partially correct") ||
-        text.includes("incorrect conclusion") ||
-        text.includes("misunderstanding of the information") ||
-        text.includes("placeholder");
-    });
-    const hasGenericPartChoices = (choices: [string, string, string, string]): boolean =>
-      choices.some((choice) => {
-        const text = String(choice || "").toLowerCase();
-        return text.includes("directly supports") ||
-          text.includes("main claim") ||
-          text.includes("side detail") ||
-          text.includes("unrelated") ||
-          text.includes("best answer") ||
-          text.includes("statement");
-      });
+    let normalizedChoices = (
+      subject === "Reading"
+        ? strengthenChoiceSet(normalizeChoices(q.choices), questionText, passage, subject)
+        : normalizeChoices(q.choices).map((choice) => cleanChoiceText(choice))
+    ) as [string, string, string, string];
+
+    if (subject === "Math") {
+      normalizedChoices = normalizedChoices.map((choice) => {
+        const cleaned = String(choice).trim();
+        if (/[+\-*/=]/.test(cleaned)) return cleaned;
+        const match = cleaned.match(/-?\d+(\.\d+)?/);
+        return match ? match[0] : cleaned;
+      }) as [string, string, string, string];
+    }
+
+    const forbidden = /(interpretation|supports|claim|evidence|conclusion)/i;
+    if (subject !== "Reading") {
+      const fallbackChoices = [...fallback[i].choices];
+      normalizedChoices = normalizedChoices.map((choice) =>
+        forbidden.test(choice) ? (fallbackChoices.shift() || choice) : choice
+      ) as [string, string, string, string];
+    }
 
     const fallbackPartA = fallback[i].partA || {
       question: "Part A: What is the best answer?",
@@ -1560,36 +1619,32 @@ function sanitizeQuestions(
     const base: Question = {
       type,
       question: questionText,
-      choices: mode === "Cross-Curricular" && hasGenericChoices ? fallback[i].choices : normalizedChoices,
+      choices: normalizedChoices,
       correct_answer: type === "multi_select"
-        ? normalizeMultiSelectAnswer(q.correct_answer)
+        ? normalizeMultiSelectAnswer(q.correct_answer || fallback[i].correct_answer)
         : type === "part_a_b"
         ? normalizePartABAnswer(q.correct_answer || fallback[i].correct_answer)
-        : normalizeAnswer(q.correct_answer),
+        : normalizeAnswer(q.correct_answer || fallback[i].correct_answer),
       partA: type === "part_a_b"
         ? {
           question: String((q.partA as Record<string, unknown> | undefined)?.question || fallbackPartA.question).trim() || fallbackPartA.question,
-          choices: (() => {
-            const normalized = strengthenChoiceSet(
-              normalizeChoices((q.partA as Record<string, unknown> | undefined)?.choices || fallbackPartA.choices),
-              String((q.partA as Record<string, unknown> | undefined)?.question || fallbackPartA.question),
-              passage,
-            );
-            return hasGenericPartChoices(normalized) ? fallbackPartA.choices : normalized;
-          })(),
+          choices: strengthenChoiceSet(
+            normalizeChoices((q.partA as Record<string, unknown> | undefined)?.choices || fallbackPartA.choices),
+            String((q.partA as Record<string, unknown> | undefined)?.question || fallbackPartA.question),
+            passage,
+            subject,
+          ).map((choice) => cleanChoiceText(choice)) as [string, string, string, string],
         }
         : undefined,
       partB: type === "part_a_b"
         ? {
           question: String((q.partB as Record<string, unknown> | undefined)?.question || fallbackPartB.question).trim() || fallbackPartB.question,
-          choices: (() => {
-            const normalized = strengthenChoiceSet(
-              normalizeChoices((q.partB as Record<string, unknown> | undefined)?.choices || fallbackPartB.choices),
-              String((q.partB as Record<string, unknown> | undefined)?.question || fallbackPartB.question),
-              passage,
-            );
-            return hasGenericPartChoices(normalized) ? fallbackPartB.choices : normalized;
-          })(),
+          choices: strengthenChoiceSet(
+            normalizeChoices((q.partB as Record<string, unknown> | undefined)?.choices || fallbackPartB.choices),
+            String((q.partB as Record<string, unknown> | undefined)?.question || fallbackPartB.question),
+            passage,
+            subject,
+          ).map((choice) => cleanChoiceText(choice)) as [string, string, string, string],
         }
         : undefined,
       explanation: String(q.explanation || fallback[i].explanation).trim() || fallback[i].explanation,
@@ -1894,21 +1949,27 @@ function areQuestionSetsDistinct(practiceQuestions: Question[], crossQuestions: 
 
 function validateSeparation(practice: Question[], cross: Question[], subject: CanonicalSubject): boolean {
   const practiceKeywords = ["main idea", "detail", "infer", "meaning", "summary"];
-  const crossKeywords: Record<CanonicalSubject, string[]> = {
-    Reading: ["explain", "infer", "evidence", "relationship", "impact"],
-    "Social Studies": ["explain", "infer", "evidence", "relationship", "impact"],
-    Science: ["explain", "infer", "evidence", "relationship", "impact"],
-    Math: ["explain", "infer", "evidence", "relationship", "impact"],
-  };
-
   const practiceValid = practice.every((q) =>
     practiceKeywords.some((k) => String(q.question || "").toLowerCase().includes(k))
   );
 
-  const subjectKeywords = crossKeywords[subject] ?? [];
-  const crossValid = cross.some((q) =>
-    subjectKeywords.some((k) => String(q.question || "").toLowerCase().includes(k))
-  );
+  const crossValid = cross.every((q) => {
+    const text = String(q.question || "").toLowerCase();
+
+    if (subject === "Math") {
+      return /\d/.test(text);
+    }
+
+    if (subject === "Science") {
+      return text.includes("experiment") || text.includes("result");
+    }
+
+    if (subject === "Social Studies") {
+      return text.includes("event") || text.includes("effect");
+    }
+
+    return true;
+  });
 
   return practiceValid && crossValid;
 }
@@ -1921,13 +1982,13 @@ function buildFallbackResponse(
 ): WorkerAttempt {
   const effectiveSubject = subject;
   const crossContent = effectiveSubject === "Reading"
-    ? buildELARCrossContent(level)
+    ? buildELARFallback(level)
     : buildSubjectCrossContent(effectiveSubject, level);
   console.log("🧠 CROSS SUBJECT:", effectiveSubject);
   const practicePassage = fallbackPassageContent(effectiveSubject, "Practice", grade, skill, level);
   const practiceQuestions = buildPracticeFallback(skill, effectiveSubject, level, practicePassage);
   return {
-    passage: practicePassage,
+    passage: subject === "Reading" ? practicePassage : "",
     practice: { questions: practiceQuestions },
     cross: { passage: crossContent.passage, questions: crossContent.questions },
     tutor: { explanations: sanitizeTutorExplanations([], practiceQuestions) },
@@ -1955,10 +2016,14 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   const returnCore = (data: CoreResponse) =>
-    jsonResponse({
-      passage: ensurePassageLength(getPassageText(data.passage), 250, 300),
-      practice: data.practice,
-    });
+    jsonResponse(subject === "Reading"
+      ? {
+        passage: ensurePassageLength(getPassageText(data.passage || ""), 250, 300),
+        practice: data.practice,
+      }
+      : {
+        practice: data.practice,
+      });
   const returnEnrichment = (data: EnrichmentResponse) =>
     jsonResponse({
       cross: data.cross,
@@ -2113,16 +2178,18 @@ serve(async (req) => {
               text_2: ensurePassageLength(clampPassageWords(String((parsedPassage as Record<string, unknown>).text_2 || ""), range.min, range.max), range.min, range.max),
             }
             : ensurePassageLength(clampPassageWords(String(parsedPassage || ""), range.min, range.max), range.min, range.max);
-          const safePassage = (
-            typeof passage === "string"
-              ? passage
-              : (passage.text_1 && passage.text_2 ? passage : null)
-          );
-          if (!safePassage || !getPassageText(safePassage).trim()) {
+          const safePassage = subject === "Reading"
+            ? (
+              typeof passage === "string"
+                ? passage
+                : (passage.text_1 && passage.text_2 ? passage : null)
+            )
+            : "";
+          if (subject === "Reading" && (!safePassage || !getPassageText(safePassage).trim())) {
             retryFailureReason = "empty_passage";
             continue;
           }
-          if (isWeakPassage(safePassage) && attempts < MAX_ATTEMPTS) {
+          if (subject === "Reading" && isWeakPassage(safePassage) && attempts < MAX_ATTEMPTS) {
             console.log("🔁 Weak passage — regenerating...");
             retryFailureReason = "weak_passage";
             continue;
@@ -2136,7 +2203,7 @@ serve(async (req) => {
             "Practice",
             effectiveSkill,
             level,
-            safePassage,
+            subject === "Reading" ? safePassage : "",
           );
 
           const skillAligned = validateSkillAlignment(effectiveSkill, practiceQuestions);
@@ -2144,17 +2211,22 @@ serve(async (req) => {
             console.warn("⚠️ Skill mismatch detected; accepting sanitized questions to avoid retries.");
           }
 
-          const outputValid = isValidOutput(practiceQuestions, safePassage);
+          const outputValid = subject === "Reading"
+            ? isValidOutput(practiceQuestions, safePassage)
+            : Array.isArray(practiceQuestions) && practiceQuestions.length === 5;
           if (!outputValid) {
             console.warn("⚠️ Minor issue, keeping AI output");
           }
 
-          const payload = {
-            passage: ensurePassageLength(getPassageText(safePassage), range.min, range.max),
+          const payload: CoreResponse = {
+            passage: subject === "Reading" ? ensurePassageLength(getPassageText(safePassage), range.min, range.max) : undefined,
             practice: { questions: practiceQuestions },
           };
+          if (subject !== "Reading") {
+            delete payload.passage;
+          }
           bestAttempt = {
-            passage: payload.passage,
+            passage: payload.passage || "",
             practice: payload.practice,
             cross: { passage: "", questions: [] },
             tutor: { explanations: [] },
@@ -2185,7 +2257,7 @@ serve(async (req) => {
         );
         console.log("🧠 CROSS SUBJECT:", effectiveSubject);
         const crossContent = effectiveSubject === "Reading"
-          ? buildELARCrossContent(level)
+          ? buildELARFallback(level)
           : buildSubjectCrossContent(effectiveSubject, level);
         const baseCrossPassage = crossContent.passage;
         if (baseCrossPassage === corePassageForChecks) {
