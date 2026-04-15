@@ -391,8 +391,7 @@ Rules:
   - Science → experiments, variables, results
   - Social Studies → events, decisions, impact
   - Math → relationships, quantities, patterns
-- Never use generic placeholders like:
-  "A correct interpretation...", "A partially correct...", "An incorrect conclusion..."
+- Never use generic meta placeholders in answer choices.
 - answerKey should match practice question answers.
 - JSON only.`;
 }
@@ -410,16 +409,15 @@ function buildSubjectPassage(subject: CanonicalSubject): string {
     return "The student council planned a field-day snack sale with two pricing options for families. A combo pack cost $6 and included one drink and two snacks, while single items cost $2 each. In the first hour, volunteers sold 38 combo packs and 24 single items. In the second hour, combo sales dropped by 8, but single-item sales increased by 15 after an announcement. Organizers used these numbers to compare revenue patterns and decide whether to restock combo materials or individual items. Their final decision depended on how the quantities in both hours related to total earnings.";
   }
 
-  const subjects: CanonicalSubject[] = ["Science", "Social Studies", "Math"];
-  return buildSubjectPassage(subjects[Math.floor(Math.random() * subjects.length)]);
+  return "A school newspaper team reviewed interviews, survey results, and meeting notes to understand why students preferred different reading formats. Some students said short articles helped them find key ideas quickly, while others preferred longer features with more examples and context. Editors compared quotations, checked which claims were supported by multiple sources, and revised headlines to match the evidence in each story. When two reports appeared to conflict, the team re-read the original statements and identified how word choice changed the meaning. Their final publication explained how careful reading and evidence-based reasoning led to clearer conclusions.";
 }
 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
   const fallbackChoices = [
-    "A correct interpretation based on the passage",
-    "A partially correct idea missing key details",
-    "An incorrect conclusion not supported by the passage",
-    "A misunderstanding of the information provided",
+    "The claim is best supported by details from the middle section where results and outcomes are compared across groups.",
+    "The claim is partly supported by one detail, but it ignores a later detail that changes the conclusion.",
+    "The claim misreads the evidence by treating one early event as the final result described in the passage.",
+    "The claim confuses background context with the author’s main evidence for the final conclusion.",
   ];
   const raw = Array.isArray(choices) ? choices.slice(0, 4) : [];
   while (raw.length < 4) raw.push(fallbackChoices[raw.length]);
@@ -670,28 +668,28 @@ function buildCrossFallback(subject: CanonicalSubject): Question[] {
   };
 
   const mathStemVariants = [
-    "Which statement best explains the relationship between the quantities in the scenario data and the overall result, based on evidence from the passage?",
-    "Which conclusion about the quantity relationship is most supported by the pattern across the passage data?",
-    "What inference can be made about how the quantities interact based on the evidence in the passage?",
-    "Which interpretation best describes the pattern in the data relationship and its impact on the aggregate result?",
-    "Which explanation best justifies the change in results and supports the planning decision in the passage?",
+    "What is the value of the total result when the quantities from both time periods in the passage are combined correctly?",
+    "Which relationship between the quantities best explains why the final total changed from one period to the next?",
+    "How does the data show that changing one quantity can affect the overall result in the passage scenario?",
+    "What is the value of the net change between periods, and which operation sequence supports that result?",
+    "Which quantitative reasoning best justifies the planning decision described in the passage?",
   ];
 
   const stems = subject === "Science"
     ? [
-      "Which analytical claim most effectively explains the relationship between the experiment's independent and dependent variables, using the quantitative evidence presented in the passage data?",
-      "Based on the experimental procedure and reported results, what can be inferred about the mechanism driving the observed change, and which evidence most directly justifies that inference?",
-      "Which explanation of causal interaction demonstrates the strongest alignment with the experiment data and the author’s evidence-based reasoning in the passage?",
-      "Which interpretation of the data relationship best explains the downstream impact of adjusting a single variable within the experimental system described in the passage?",
-      "Which evidence-based inference most convincingly explains the broader impact of the experiment results on the passage’s final scientific recommendation?",
+      "Which process explains the temperature differences observed across surfaces in the passage investigation?",
+      "What is the cause of the smaller temperature increase after watering, based on the evidence trend in the passage?",
+      "Which system interaction best explains how sunlight, moisture, and airflow worked together to influence the results?",
+      "Which evidence from the passage most strongly supports a cause-and-effect claim about the tested variable?",
+      "Which scientific reasoning best connects the observed data pattern to the final recommendation in the passage?",
     ]
     : subject === "Social Studies"
     ? [
-      "Which interpretation most effectively explains the relationship between the central historical event and its political or economic impact, using evidence from the passage?",
-      "What can be inferred about the motivations behind leadership decisions, and which event evidence most persuasively supports that inference?",
-      "Which causal explanation most clearly shows how one historical event contributed to a subsequent result, according to the evidence in the passage?",
-      "Which analysis of the relationship between stakeholder motivations and policy outcomes best explains the event impact described in the passage?",
-      "Which inference about long-term societal impact is most defensible when the event timeline evidence in the passage is considered as a whole?",
+      "Which factor most influenced the town council’s final transportation decision in the passage timeline?",
+      "What was the primary cause of the policy shift between the first decision and the later bond vote in the passage?",
+      "Which evidence best supports the claim that transportation choices changed migration and local business activity?",
+      "Which event in the passage most directly influenced how leaders balanced competing community priorities?",
+      "Which historical reasoning best explains the long-term civic impact of the decisions described in the passage?",
     ]
     : mathStemVariants;
 
@@ -820,10 +818,99 @@ function buildCrossFallback(subject: CanonicalSubject): Question[] {
   });
 }
 
+function randomChoice<T>(items: T[]): T {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function buildMainIdeaQuestion(): string {
+  return "Which statement best expresses the central idea developed across the entire passage?";
+}
+
+function buildEvidenceQuestion(): string {
+  return "Which sentence from the passage best supports the idea that the author’s claim is based on evidence rather than opinion?";
+}
+
+function buildInferenceQuestion(): string {
+  return "What is the most likely reason the author includes multiple examples before presenting the final conclusion?";
+}
+
+function buildVocabQuestion(): string {
+  return "As used in the passage, what does the word \"impact\" most nearly mean in context?";
+}
+
+function buildShortResponse(): string {
+  return "What is the author’s purpose in organizing the passage this way, and which two details best support your response?";
+}
+
+function buildELARCrossQuestions(): Question[] {
+  const stems = [
+    buildMainIdeaQuestion(),
+    buildEvidenceQuestion(),
+    buildInferenceQuestion(),
+    buildVocabQuestion(),
+    buildShortResponse(),
+  ];
+  const singleAnswerSequence = [...shuffledLetters(), ...shuffledLetters()];
+  let singleAnswerIndex = 0;
+  const nextSingleAnswer = (): ChoiceLetter => {
+    const letter = singleAnswerSequence[singleAnswerIndex % singleAnswerSequence.length];
+    singleAnswerIndex += 1;
+    return letter;
+  };
+
+  return stems.map((stem, i) => {
+    const type: QuestionType = i === 4 ? "scr" : "mc";
+    const support = buildSupportContent("Reading", stem, type, i);
+    return {
+      type,
+      question: stem,
+      choices: [
+        "It matches the central claim and is supported by details from both the earlier explanation and the final section of the passage.",
+        "It uses one accurate detail from the opening paragraph but ignores later evidence that changes the author’s conclusion.",
+        "It focuses on a side detail mentioned once in the passage and treats it as the main point.",
+        "It reverses the relationship between evidence and conclusion described across the passage sections.",
+      ],
+      correct_answer: type === "scr" ? "A" : nextSingleAnswer(),
+      explanation: support.explanation,
+      sample_answer: type === "scr"
+        ? "The author’s purpose is to inform readers about the topic using evidence and examples. Key details in the passage show how those examples support the central claim."
+        : undefined,
+      hint: support.hint,
+      think: support.think,
+      step_by_step: support.step_by_step,
+      common_mistake: support.common_mistake,
+      parent_tip: support.parent_tip,
+    };
+  });
+}
+
+function buildELARCrossContent(): { passage: string; questions: Question[] } {
+  const crossSubject = randomChoice<CanonicalSubject>(["Science", "Social Studies", "Math"]);
+  return {
+    passage: buildSubjectPassage(crossSubject),
+    questions: buildELARCrossQuestions(),
+  };
+}
+
+function buildSubjectCrossContent(subject: CanonicalSubject): { passage: string; questions: Question[] } {
+  return {
+    passage: buildSubjectPassage(subject),
+    questions: buildCrossFallback(subject),
+  };
+}
+
 function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, skill: string): Question[] {
   if (mode === "Practice") return buildPracticeFallback(skill);
 
   const effectiveSubject = subject;
+  if (mode === "Cross-Curricular") {
+    // Cross structure is subject-driven (or ELAR-over-content for Reading), not skill-driven.
+    if (effectiveSubject === "Reading") {
+      return buildELARCrossContent().questions;
+    }
+    return buildSubjectCrossContent(effectiveSubject).questions;
+  }
+
   const effectiveSkill: string = skill ?? "Main Idea";
   const skillText = (effectiveSkill ?? "").toLowerCase();
   const isTheme = skillText.includes("theme");
@@ -838,10 +925,6 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
     const pair = shuffledLetters().slice(0, 2) as [ChoiceLetter, ChoiceLetter];
     return pair[0] === pair[1] ? [pair[0], pair[0] === "A" ? "C" : "A"] : pair;
   };
-
-  if (mode === "Cross-Curricular") {
-    return buildCrossFallback(subject);
-  }
 
   const baseReading = [
     `Which statement best captures the ${isTheme ? "theme" : "main idea"} of the passage?`,
@@ -979,7 +1062,8 @@ function sanitizeQuestions(
       return text.includes("correct interpretation") ||
         text.includes("partially correct") ||
         text.includes("incorrect conclusion") ||
-        text.includes("misunderstanding of the information");
+        text.includes("misunderstanding of the information") ||
+        text.includes("placeholder");
     });
 
     const base: Question = {
@@ -1181,13 +1265,16 @@ function buildFallbackResponse(
   skill: string,
 ): WorkerResponse {
   const effectiveSubject = subject;
+  const crossContent = effectiveSubject === "Reading"
+    ? buildELARCrossContent()
+    : buildSubjectCrossContent(effectiveSubject);
+  console.log("🧠 CROSS SUBJECT:", effectiveSubject);
   const practiceQuestions = buildPracticeFallback(skill);
-  const crossQuestions = buildCrossFallback(effectiveSubject);
   return {
     passage: fallbackPassageContent(effectiveSubject, "Practice", grade, skill),
-    crossPassage: buildSubjectPassage(effectiveSubject),
+    crossPassage: crossContent.passage,
     practice: { questions: practiceQuestions },
-    cross: { questions: crossQuestions },
+    cross: { questions: crossContent.questions },
     tutor: { explanations: sanitizeTutorExplanations([], practiceQuestions) },
     answerKey: { answers: sanitizeAnswerKey([], practiceQuestions) },
   };
@@ -1273,15 +1360,11 @@ serve(async (req) => {
     skill = String(incomingSkill || READING_SKILL_DEFAULT).trim() || READING_SKILL_DEFAULT;
     level = normalizeLevel(incomingLevel);
     mode = canonicalizeMode(incomingMode);
-    if (mode === "Cross-Curricular") {
-      if (subject === "Reading") {
-        const subjects: CanonicalSubject[] = ["Science", "Social Studies", "Math"];
-        subject = subjects[Math.floor(Math.random() * subjects.length)];
-        console.log("🔥 Forced Cross subject:", subject);
-      }
-    }
     effectiveSubject = subject;
     effectiveSkill = skill ?? "Main Idea";
+    console.log("🧠 CROSS MODE:", mode);
+    console.log("🧠 SUBJECT:", subject);
+    console.log("🧠 EFFECTIVE SUBJECT:", effectiveSubject);
     const range = gradeWordRange(grade, effectiveSubject, mode);
 
     let attempts = 0;
@@ -1412,7 +1495,11 @@ serve(async (req) => {
             ? clampPassageWords(normalizedPassage, range.min, range.max)
             : normalizedPassage
         ) || fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill);
-        let subjectCrossPassage = buildSubjectPassage(effectiveSubject);
+        console.log("🧠 CROSS SUBJECT:", effectiveSubject);
+        const crossContent = effectiveSubject === "Reading"
+          ? buildELARCrossContent()
+          : buildSubjectCrossContent(effectiveSubject);
+        let subjectCrossPassage = crossContent.passage;
 
         console.time("OPENAI_CALL");
         const enrichRes = await fetch("https://api.openai.com/v1/responses", {
@@ -1453,7 +1540,7 @@ serve(async (req) => {
         const parsed = tryParseJsonPayload(enrichText) || {};
         const candidateCrossPassage = String((parsed as Record<string, unknown>).crossPassage || "").trim();
         if (candidateCrossPassage) subjectCrossPassage = candidateCrossPassage;
-        if (!validateCrossPassage(subjectCrossPassage) || effectiveSubject === "Reading") {
+        if (!validateCrossPassage(subjectCrossPassage)) {
           console.warn("⚠️ Invalid cross passage, forcing subject passage");
           subjectCrossPassage = buildSubjectPassage(effectiveSubject);
         }
@@ -1464,7 +1551,7 @@ serve(async (req) => {
             : [],
           effectiveSubject,
           "Cross-Curricular",
-          effectiveSkill,
+          "Main Idea",
         );
         const crossChoiceSubjectAligned = validateChoiceSubjectAlignment(effectiveSubject, crossQuestions);
         if (!crossChoiceSubjectAligned) {
@@ -1483,7 +1570,15 @@ serve(async (req) => {
           !validateUniqueChoices(crossQuestions);
         if (crossInvalid) {
           console.warn("⚠️ Cross output partially invalid; regenerating cross questions only.");
-          crossQuestions = buildCrossFallback(effectiveSubject);
+          if (effectiveSubject === "Reading") {
+            const elarFallback = buildELARCrossContent();
+            subjectCrossPassage = elarFallback.passage;
+            crossQuestions = elarFallback.questions;
+          } else {
+            const subjectFallback = buildSubjectCrossContent(effectiveSubject);
+            subjectCrossPassage = subjectFallback.passage;
+            crossQuestions = subjectFallback.questions;
+          }
         }
 
         const tutorExplanations = sanitizeTutorExplanations(

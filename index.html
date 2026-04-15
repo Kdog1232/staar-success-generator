@@ -934,7 +934,6 @@
     let structuredQuestions = [];
     let generatedPassage = "";
     let currentData = null;
-    window.hasRenderedThisRun = false;
     let cachedSession = null;
     let cachedUser = null;
     let authReady = false;
@@ -1503,9 +1502,19 @@
 
       return answers.map((entry, i) => {
         const safeCorrect = cleanText(entry?.answer || "A");
+        const safeExplanation = cleanText(entry?.explanation || "Use text evidence to justify the best answer.");
+        const safeCommonMistake = cleanText(entry?.common_mistake || "Choosing an answer that sounds right but is not supported by the passage.");
+        const safeParentTip = cleanText(entry?.parent_tip || "Ask your child to point to one line in the passage that proves the correct answer.");
         return `
-          <div class="answer-card">
-            <div class="question-text">${i + 1}. ${safeCorrect}</div>
+          <div class="answer-card answer-block">
+            <div class="question-text"><strong>${i + 1}. ${safeCorrect}</strong></div>
+            <div class="explanation">${safeExplanation}</div>
+            <div class="common-mistake">
+              <strong>Common Mistake:</strong> ${safeCommonMistake}
+            </div>
+            <div class="parent-tip">
+              <strong>Parent Tip:</strong> ${safeParentTip}
+            </div>
           </div>
         `;
       }).join("");
@@ -1622,9 +1631,79 @@
       return "Practice";
     }
 
+    function renderPassage(passageText) {
+      const displayPassage = cleanText(passageText || "");
+      const hasPassage = Boolean(displayPassage.trim());
+      return `
+        <div class="passage">
+          ${hasPassage ? `<p>${displayPassage}</p>` : `<p class="muted-note">No passage is required for this skill set.</p>`}
+        </div>
+      `;
+    }
+
+    function renderPracticeSection(practiceData, passageText) {
+      const practiceSection = document.getElementById("practice-section");
+      if (!practiceSection) return;
+      const questionMarkup = renderPractice(practiceData);
+      practiceSection.innerHTML = `
+        <div class="worksheet-header">STAAR Practice Worksheet</div>
+        <div class="mode-label">Practice Mode</div>
+        <section class="worksheet-section">
+          <h3>📖 Passage</h3>
+          ${renderPassage(passageText)}
+        </section>
+        <section class="worksheet-section">
+          <h3>❓ Questions</h3>
+          ${questionMarkup}
+        </section>
+      `;
+    }
+
+    function renderCrossSection(crossData, crossPassageText, options = {}) {
+      const crossSection = document.getElementById("cross-section");
+      if (!crossSection) return;
+      const isLoading = Boolean(options.loading);
+      const crossQuestionMarkup = isLoading
+        ? `<p class="muted-note">⏳ Loading Cross-Curricular Questions...</p>`
+        : renderCross(crossData);
+      crossSection.innerHTML = `
+        <div class="mode-label">Cross-Curricular Mode</div>
+        <section class="worksheet-section">
+          <h3>📖 Passage</h3>
+          ${renderPassage(crossPassageText)}
+        </section>
+        <section class="worksheet-section">
+          <h3>🌎 Subject-Driven Questions on the Passage</h3>
+          ${crossQuestionMarkup}
+        </section>
+      `;
+    }
+
+    function renderTutorSection(tutorData) {
+      const tutorSection = document.getElementById("tutor-section");
+      if (!tutorSection) return;
+      const tutorMarkup = renderTutor(tutorData, "Tutor");
+      tutorSection.innerHTML = `
+        <section class="worksheet-section">
+          <h3>🧠 Think Like This</h3>
+          ${tutorMarkup}
+        </section>
+      `;
+    }
+
+    function renderAnswerSection(answerKeyData) {
+      const answerSection = document.getElementById("answer-section");
+      if (!answerSection) return;
+      const answerMarkup = renderAnswerKey(answerKeyData, "Answer Key");
+      answerSection.innerHTML = `
+        <section class="worksheet-section">
+          <h3>✅ Answer Key</h3>
+          ${answerMarkup}
+        </section>
+      `;
+    }
+
     function renderTab(tab = activeTab) {
-      if (window.hasRenderedThisRun) return;
-      window.hasRenderedThisRun = true;
       const practiceSection = document.getElementById("practice-section");
       const crossSection = document.getElementById("cross-section");
       const tutorSection = document.getElementById("tutor-section");
@@ -1636,78 +1715,10 @@
       const modeStatus = document.getElementById("mode-status");
       if (!practiceSection || !crossSection || !tutorSection || !answerSection || !practiceTab || !crossTab || !tutorTab || !answerTab || !modeStatus) return;
       if (!currentData) return;
-
-      clearRenderedSections();
-
-      const displayPassage = cleanText(currentData.passage || "");
-      const crossDisplayPassage = cleanText(currentData.crossPassage || currentData.passage || "");
-      const hasPassage = Boolean(displayPassage.trim());
-      const hasCrossPassage = Boolean(crossDisplayPassage.trim());
-      const passageHTML = `
-        <div class="passage">
-          ${hasPassage ? `<p>${displayPassage}</p>` : `<p class="muted-note">No passage is required for this skill set.</p>`}
-        </div>
-      `;
-      const crossPassageHTML = `
-        <div class="passage">
-          ${hasCrossPassage ? `<p>${crossDisplayPassage}</p>` : `<p class="muted-note">No passage is required for this skill set.</p>`}
-        </div>
-      `;
-      const questionMarkup = renderPractice(currentData.practice);
-      const tutorMarkup = renderTutor(currentData.tutor, "Tutor");
-      const answerMarkup = renderAnswerKey(currentData.answerKey, "Answer Key");
-      const crossQuestionMarkup = renderCross(currentData.cross);
-
-      if (tab === "practice") {
-        practiceSection.innerHTML = `
-          <div class="worksheet-header">STAAR Practice Worksheet</div>
-          <div class="mode-label">Practice Mode</div>
-          <section class="worksheet-section">
-            <h3>📖 Passage</h3>
-            ${passageHTML}
-          </section>
-          <section class="worksheet-section">
-            <h3>❓ Questions</h3>
-            ${questionMarkup}
-          </section>
-        `;
-        practiceSection.style.display = "block";
-      }
-
-      if (tab === "cross") {
-        crossSection.innerHTML = `
-          <div class="mode-label">Cross-Curricular Mode</div>
-          <section class="worksheet-section">
-            <h3>📖 Passage</h3>
-            ${crossPassageHTML}
-          </section>
-          <section class="worksheet-section">
-            <h3>🌎 Subject-Driven Questions on the Passage</h3>
-            ${crossQuestionMarkup}
-          </section>
-        `;
-        crossSection.style.display = "block";
-      }
-
-      if (tab === "tutor") {
-        tutorSection.innerHTML = `
-          <section class="worksheet-section">
-            <h3>🧠 Think Like This</h3>
-            ${tutorMarkup}
-          </section>
-        `;
-        tutorSection.style.display = "block";
-      }
-
-      if (tab === "answer") {
-        answerSection.innerHTML = `
-          <section class="worksheet-section">
-            <h3>✅ Answer Key</h3>
-            ${answerMarkup}
-          </section>
-        `;
-        answerSection.style.display = "block";
-      }
+      practiceSection.style.display = tab === "practice" ? "block" : "none";
+      crossSection.style.display = tab === "cross" ? "block" : "none";
+      tutorSection.style.display = tab === "tutor" ? "block" : "none";
+      answerSection.style.display = tab === "answer" ? "block" : "none";
 
       const showingPractice = tab === "practice";
       const showingCross = tab === "cross";
@@ -1732,7 +1743,6 @@
         contentMode = "standard";
       }
 
-      window.hasRenderedThisRun = false;
       renderTab(activeTab);
     }
 
@@ -1911,7 +1921,6 @@
 
       isGenerating = true;
       const runId = ++generateRunId;
-      window.hasRenderedThisRun = false;
       console.log("🚀 GENERATE START");
       console.log("GENERATE TRIGGERED");
       console.log("STATE:", {
@@ -2174,19 +2183,11 @@
         if (!Array.isArray(data?.practice?.questions) || data.practice.questions.length === 0) {
           outputDiv.innerHTML += `<div class="muted-note" style="margin-top:10px;">No questions were returned, so fallback guidance is shown.</div>`;
         }
-        window.hasRenderedThisRun = false;
-        console.log(`🔥 ABOUT TO RENDER TAB: ${toTabLabel(activeTab)}`);
-        async function renderAll() {
-          renderTab(activeTab);
-          await new Promise((resolve) => requestAnimationFrame(() => resolve()));
-        }
-        async function renderEnrichmentOnly() {
-          if (activeTab === "practice") return;
-          window.hasRenderedThisRun = false;
-          renderTab(activeTab);
-          await new Promise((resolve) => requestAnimationFrame(() => resolve()));
-        }
-        await withTimeout(renderAll(data), RENDER_TIMEOUT_MS);
+        clearRenderedSections();
+        renderPracticeSection(currentData.practice, currentData.passage);
+        renderCrossSection(currentData.cross, currentData.crossPassage || currentData.passage, { loading: true });
+        renderTab(activeTab);
+        await new Promise((resolve) => requestAnimationFrame(() => resolve()));
         console.log("STEP 6: render complete");
 
         const enrichPayload = {
@@ -2223,23 +2224,37 @@
           if (!currentData || !enrichData) {
             throw new Error("HALT_MISSING_ENRICH_DATA");
           }
-          currentData = {
-            passage: generatedPassage,
-            crossPassage: cleanText(enrichData?.crossPassage || currentData?.crossPassage || ""),
-            practice: {
-              questions: Array.isArray(currentData?.practice?.questions) ? currentData.practice.questions.slice(0, 5) : []
-            },
-            cross: {
-              questions: Array.isArray(enrichData?.cross?.questions) ? enrichData.cross.questions.slice(0, 5) : []
-            },
-            tutor: {
-              explanations: Array.isArray(enrichData?.tutor?.explanations) ? enrichData.tutor.explanations.slice(0, 5) : []
-            },
-            answerKey: {
-              answers: Array.isArray(enrichData?.answerKey?.answers) ? enrichData.answerKey.answers.slice(0, 5) : []
-            }
+          const enrichedCross = {
+            questions: Array.isArray(enrichData?.cross?.questions) ? enrichData.cross.questions.slice(0, 5) : []
           };
-          await withTimeout(renderEnrichmentOnly(), RENDER_TIMEOUT_MS);
+          const enrichedTutor = {
+            explanations: Array.isArray(enrichData?.tutor?.explanations) ? enrichData.tutor.explanations.slice(0, 5) : []
+          };
+          const enrichedAnswerKey = {
+            answers: Array.isArray(enrichData?.answerKey?.answers) ? enrichData.answerKey.answers.slice(0, 5) : []
+          };
+          currentData = {
+            ...currentData,
+            crossPassage: cleanText(enrichData?.crossPassage || currentData?.crossPassage || ""),
+            cross: enrichedCross,
+            tutor: enrichedTutor,
+            answerKey: enrichedAnswerKey
+          };
+
+          if (enrichedCross?.questions?.length) {
+            renderCrossSection(enrichedCross, currentData.crossPassage || currentData.passage);
+          }
+
+          if (enrichedTutor?.explanations?.length) {
+            renderTutorSection(enrichedTutor);
+          }
+
+          if (enrichedAnswerKey?.answers?.length) {
+            renderAnswerSection(enrichedAnswerKey);
+          }
+
+          await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+          renderTab(activeTab);
           const modeStatus = document.getElementById("mode-status");
           if (modeStatus) {
             modeStatus.textContent += " • Cross/Tutor ready";
