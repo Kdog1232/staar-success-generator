@@ -121,9 +121,10 @@ function shuffledLetters(): ChoiceLetter[] {
   return pool;
 }
 
-function canonicalizeMode(mode: unknown): CanonicalMode {
+function canonicalizeMode(mode: unknown): CanonicalMode | "support" | "cross" {
   const value = String(mode || "").toLowerCase();
-  if (value.includes("cross")) return "Cross-Curricular";
+  if (value === "cross" || value.includes("cross")) return "cross";
+  if (value === "support") return "support";
   if (value.includes("tutor")) return "Tutor";
   if (value.includes("answer")) return "Answer Key";
   return "Practice";
@@ -2626,7 +2627,7 @@ serve(async (req) => {
   let subject: CanonicalSubject = "Reading";
   let skill = READING_SKILL_DEFAULT;
   let level: Level = "On Level";
-  let mode: CanonicalMode = "Practice";
+  let mode: CanonicalMode | "support" | "cross" = "Practice";
   let requestMode: "core" | "enrichment" = "core";
   let effectiveMode: "core" | "cross" | "support" | "enrichment" = "core";
   let effectiveSubject: CanonicalSubject = "Reading";
@@ -2722,6 +2723,34 @@ serve(async (req) => {
     mode = canonicalizeMode(incomingContentMode);
     effectiveSubject = subject;
     effectiveSkill = skill ?? "Main Idea";
+    console.log("🔥 FINAL MODE:", mode);
+    if (mode === "cross") {
+      const crossContent = effectiveSubject === "Reading"
+        ? buildELARFallback(level)
+        : buildSubjectCrossContent(effectiveSubject, level);
+
+      return Response.json({
+        cross: {
+          passage: crossContent.passage,
+          questions: crossContent.questions,
+        },
+      });
+    }
+
+    if (mode === "support") {
+      const supportContent = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, level);
+
+      return Response.json({
+        tutor: {
+          practice: supportContent.tutor.practice,
+          cross: supportContent.tutor.cross,
+        },
+        answerKey: {
+          practice: supportContent.answerKey.practice,
+          cross: supportContent.answerKey.cross,
+        },
+      });
+    }
     console.log("🔥 RAW MODE:", rawMode);
     console.log("🔥 EFFECTIVE MODE:", effectiveMode);
     console.log("🧠 REQUEST MODE:", requestMode);
