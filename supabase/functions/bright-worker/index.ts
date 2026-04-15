@@ -63,12 +63,14 @@ type AnswerKeyEntry = {
   answer: string;
 };
 
-type WorkerResponse = {
+type CoreResponse = {
   passage: PassageContent;
-  crossPassage: string;
   practice: {
     questions: Question[];
   };
+};
+
+type EnrichmentResponse = {
   cross: {
     questions: Question[];
   };
@@ -79,6 +81,8 @@ type WorkerResponse = {
     answers: AnswerKeyEntry[];
   };
 };
+
+type WorkerAttempt = CoreResponse & EnrichmentResponse;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1910,7 +1914,7 @@ function buildFallbackResponse(
   subject: CanonicalSubject,
   skill: string,
   level: Level = "On Level",
-): WorkerResponse {
+): WorkerAttempt {
   const effectiveSubject = subject;
   const crossContent = effectiveSubject === "Reading"
     ? buildELARCrossContent(level)
@@ -1920,7 +1924,6 @@ function buildFallbackResponse(
   const practiceQuestions = buildPracticeFallback(skill, effectiveSubject, level, practicePassage);
   return {
     passage: practicePassage,
-    crossPassage: crossContent.passage,
     practice: { questions: practiceQuestions },
     cross: { questions: crossContent.questions },
     tutor: { explanations: sanitizeTutorExplanations([], practiceQuestions) },
@@ -1947,23 +1950,26 @@ serve(async (req) => {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  const returnCore = (data: CoreResponse) =>
+    jsonResponse({
+      passage: ensurePassageLength(getPassageText(data.passage), 250, 300),
+      practice: data.practice,
+    });
+  const returnEnrichment = (data: EnrichmentResponse) =>
+    jsonResponse({
+      cross: data.cross,
+      tutor: data.tutor,
+      answerKey: data.answerKey,
+    });
 
   const safeFallback = (reason: string, error?: string) => {
     console.log("🚨 FALLBACK TRIGGERED:", reason);
+    if (error) console.log("🚨 FALLBACK ERROR:", error);
     const payload = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, level);
     if (requestMode === "enrichment") {
-      return jsonResponse({
-        cross: payload.cross,
-        tutor: payload.tutor,
-        answerKey: payload.answerKey,
-        meta: { fallback: true, reason, usedFallbackCross: false, ...(error ? { error } : {}) },
-      });
+      return returnEnrichment(payload);
     }
-    return jsonResponse({
-      passage: ensurePassageLength(getPassageText(payload.passage), 250, 300),
-      practice: payload.practice,
-      meta: { fallback: true, reason, ...(error ? { error } : {}) },
-    });
+    return returnCore(payload);
   };
 
   try {
@@ -2026,8 +2032,7 @@ serve(async (req) => {
     const MAX_TIME = 15000;
     const isTimedOut = () => Date.now() - start > MAX_TIME;
     let retryFailureReason = "bad_output_after_retry";
-    let bestAttempt: WorkerResponse | null = null;
-    let bestMeta: { fallback: boolean; reason: string; error?: string; usedFallbackCross?: boolean } | null = null;
+    let bestAttempt: WorkerAttempt | null = null;
     let returnType = "UNKNOWN";
     const logReturnMetrics = () => {
       console.log("🔁 ATTEMPTS USED:", attempts);
@@ -2143,20 +2148,17 @@ serve(async (req) => {
           const payload = {
             passage: ensurePassageLength(getPassageText(safePassage), range.min, range.max),
             practice: { questions: practiceQuestions },
-            meta: { fallback: false, reason: "ai_core_success" },
           };
           bestAttempt = {
             passage: payload.passage,
-            crossPassage: "",
             practice: payload.practice,
             cross: { questions: [] },
             tutor: { explanations: [] },
             answerKey: { answers: [] },
           };
-          bestMeta = { fallback: false, reason: "ai_core_success" };
           returnType = "PRIMARY";
           logReturnMetrics();
-          return jsonResponse(payload);
+          return returnCore(payload);
         }
 
         const priorPassage = body.passage;
@@ -2292,51 +2294,30 @@ serve(async (req) => {
           cross: { questions: crossQuestions },
           tutor: { explanations: tutorExplanations },
           answerKey: { answers: answerKeyAnswers },
-          meta: {
-            fallback: false,
-            reason: crossInvalid ? "ai_enrichment_success_with_cross_warning" : "ai_enrichment_success",
-            usedFallbackCross: false,
-          },
-        };
-        const meta = {
-          fallback: false,
-          reason: crossInvalid ? "ai_enrichment_success_with_cross_warning" : "ai_enrichment_success",
-          usedFallbackCross: false,
         };
         bestAttempt = {
           passage: safePassage,
-          crossPassage: subjectCrossPassage,
           practice: { questions: normalizedPractice },
           cross: payload.cross,
           tutor: payload.tutor,
           answerKey: payload.answerKey,
         };
-        bestMeta = meta;
         returnType = "PRIMARY";
         logReturnMetrics();
-        return jsonResponse(payload);
+        return returnEnrichment(payload);
       } catch (err) {
         console.error("BACKEND ERROR:", err);
         retryFailureReason = "openai_request_failed";
       }
     }
 
-    if (bestAttempt && bestMeta) {
+    if (bestAttempt) {
       returnType = "BEST_ATTEMPT";
       logReturnMetrics();
       if (requestMode === "enrichment") {
-        return jsonResponse({
-          cross: bestAttempt.cross,
-          tutor: bestAttempt.tutor,
-          answerKey: bestAttempt.answerKey,
-          meta: bestMeta,
-        });
+        return returnEnrichment(bestAttempt);
       }
-      return jsonResponse({
-        passage: ensurePassageLength(getPassageText(bestAttempt.passage), 250, 300),
-        practice: bestAttempt.practice,
-        meta: bestMeta,
-      });
+      return returnCore(bestAttempt);
     }
     returnType = "FALLBACK";
     logReturnMetrics();
