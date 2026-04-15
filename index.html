@@ -917,6 +917,7 @@
       "Social Studies": "🌎 Social Studies"
     };
     let activeTab = "practice"; // practice | cross | tutor | answer
+    let currentMode = "Practice"; // Practice | Cross-Curricular
     let contentMode = "standard"; // standard | cross_curricular
     let profileUpdatesChannel = null;
     let profileUpdatesUserId = null;
@@ -1064,6 +1065,7 @@
       viewToggle.style.display = "none";
       activeTab = "practice";
       contentMode = "standard";
+      currentMode = "Practice";
       resetGenerateState();
       lastGeneratedContentMode = null;
       standardContent = "";
@@ -1574,6 +1576,22 @@
       };
     }
 
+    function validateTutorAnswerAlignment(questions = [], tutorEntries = [], answerEntries = [], modePrefix = "practice") {
+      if (!Array.isArray(questions) || !Array.isArray(tutorEntries) || !Array.isArray(answerEntries)) return false;
+      if (questions.length !== 5 || tutorEntries.length !== 5 || answerEntries.length !== 5) return false;
+      return questions.every((_, i) => {
+        const expectedId = `${modePrefix}_q${i + 1}`;
+        const tutor = tutorEntries[i] || {};
+        const answer = answerEntries[i] || {};
+        const tutorOk = tutor.question_id === expectedId &&
+          tutor.explanation && tutor.hint && tutor.step_by_step && tutor.common_mistake && tutor.parent_tip;
+        const answerOk = answer.question_id === expectedId &&
+          answer.correct_answer && answer.explanation && answer.common_mistake && answer.parent_tip &&
+          answer.hint && answer.step_by_step;
+        return Boolean(tutorOk && answerOk);
+      });
+    }
+
     function showFallback(fallbackText, fallbackQuestions = []) {
       const fallback = fallbackText || "";
       standardContent = fallback;
@@ -1737,6 +1755,20 @@
       `;
     }
 
+    function getActiveMode() {
+      return currentMode === "Cross-Curricular" ? "cross" : "practice";
+    }
+
+    function renderActivePanels() {
+      if (!currentData) return;
+      const mode = getActiveMode();
+      console.log("🔥 MODE:", mode);
+      console.log("🔥 TUTOR LENGTH:", currentData?.tutor?.[mode]?.length);
+      console.log("🔥 ANSWER LENGTH:", currentData?.answerKey?.[mode]?.length);
+      renderTutorSection(currentData.tutor, mode);
+      renderAnswerSection(currentData.answerKey, mode);
+    }
+
     function renderTab(tab = activeTab, options = {}) {
       const { fromGenerate = false } = options;
 
@@ -1766,18 +1798,14 @@
 
       if (activeTab === "cross") {
         contentMode = "cross_curricular";
+        currentMode = "Cross-Curricular";
       } else if (activeTab === "practice") {
         contentMode = "standard";
+        currentMode = "Practice";
       }
 
       if (currentData) {
-        const supportMode = contentMode === "cross_curricular" ? "cross" : "practice";
-        if (activeTab === "tutor") {
-          renderTutorSection(currentData.tutor, supportMode);
-        }
-        if (activeTab === "answer") {
-          renderAnswerSection(currentData.answerKey, supportMode);
-        }
+        renderActivePanels();
       }
       renderTab(activeTab);
     }
@@ -2188,6 +2216,7 @@
         const selectedMode = apiMode === "Cross-Curricular" ? "Cross-Curricular" : "Practice";
         const selectedContent = resolveModeContent(currentData, selectedMode);
         activeTab = selectedContent.isCross ? "cross" : "practice";
+        currentMode = selectedContent.isCross ? "Cross-Curricular" : "Practice";
 
         lastGeneratedContentMode = "both";
         const progressCount = incrementDailyProgress();
@@ -2230,6 +2259,7 @@
             { loading: false }
           );
         }
+        renderActivePanels();
         renderTab("practice", { fromGenerate: true });
         await new Promise((resolve) => requestAnimationFrame(() => resolve()));
         console.log("STEP 6: render complete");
@@ -2276,6 +2306,24 @@
             practice: Array.isArray(enrichData?.answerKey?.practice) ? enrichData.answerKey.practice.slice(0, 5) : [],
             cross: Array.isArray(enrichData?.answerKey?.cross) ? enrichData.answerKey.cross.slice(0, 5) : []
           };
+          const practiceAligned = validateTutorAnswerAlignment(
+            currentData?.practice?.questions || [],
+            enrichedTutor.practice,
+            enrichedAnswerKey.practice,
+            "practice"
+          );
+          const crossAligned = validateTutorAnswerAlignment(
+            enrichedCross.questions,
+            enrichedTutor.cross,
+            enrichedAnswerKey.cross,
+            "cross"
+          );
+          if (!practiceAligned) {
+            console.warn("⚠️ Practice tutor misaligned — using received data");
+          }
+          if (!crossAligned) {
+            console.warn("⚠️ Cross tutor misaligned — using received data");
+          }
           currentData = {
             ...currentData,
             cross: {
@@ -2294,13 +2342,7 @@
             );
           }
 
-          if ((enrichedTutor?.practice?.length || 0) > 0 || (enrichedTutor?.cross?.length || 0) > 0) {
-            renderTutorSection(enrichedTutor, contentMode === "cross_curricular" ? "cross" : "practice");
-          }
-
-          if ((enrichedAnswerKey?.practice?.length || 0) > 0 || (enrichedAnswerKey?.cross?.length || 0) > 0) {
-            renderAnswerSection(enrichedAnswerKey, contentMode === "cross_curricular" ? "cross" : "practice");
-          }
+          renderActivePanels();
 
           await new Promise((resolve) => requestAnimationFrame(() => resolve()));
           renderTab(activeTab);

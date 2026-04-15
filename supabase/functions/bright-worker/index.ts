@@ -66,6 +66,8 @@ type AnswerKeyEntry = {
   explanation: string;
   common_mistake: string;
   parent_tip: string;
+  hint?: string;
+  step_by_step?: string;
 };
 
 type CoreResponse = {
@@ -98,8 +100,17 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const READING_SKILL_DEFAULT = "Finding the main idea";
+const READING_SKILL_DEFAULT = "Inference";
 const LETTERS: ChoiceLetter[] = ["A", "B", "C", "D"];
+const FORBIDDEN_GENERIC_ANSWER_PATTERNS: RegExp[] = [
+  /a response grounded in passage evidence/i,
+  /a nearly correct idea/i,
+  /a statement not supported/i,
+  /partially supported/i,
+  /unrelated claim/i,
+  /choice directly supported/i,
+  /best explains/i,
+];
 
 function shuffledLetters(): ChoiceLetter[] {
   const pool = [...LETTERS];
@@ -557,10 +568,10 @@ function buildSubjectPassage(subject: CanonicalSubject, level: Level = "On Level
 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
   const fallbackChoices = [
-    "The claim is best supported by details from the middle section where results and outcomes are compared across groups.",
-    "The claim is partly supported by one detail, but it ignores a later detail that changes the conclusion.",
-    "The claim misreads the evidence by treating one early event as the final result described in the passage.",
-    "The claim confuses background context with the author’s main evidence for the final conclusion.",
+    "The blacktop data point shows faster heat gain, which means direct sunlight increased surface temperature quickly.",
+    "The rail-depot decision appears first, which means leaders prioritized trade before flood delays changed public support.",
+    "The second-hour snack counts shifted after the gym announcement, indicating demand moved toward single-item purchases.",
+    "The watered test section warmed more slowly, showing moisture changed the heat-transfer pattern in the investigation.",
   ];
   const raw = Array.isArray(choices) ? choices.slice(0, 4) : [];
   while (raw.length < 4) raw.push(fallbackChoices[raw.length]);
@@ -871,11 +882,11 @@ function buildPracticeFallback(
       "Which statement best explains how a local election can change a community?",
     ]
     : [
-      `What is the main idea of the passage about ${effectiveSkill.toLowerCase()}?`,
-      "Which detail supports the main idea best?",
-      "What can the reader infer from the passage details?",
-      "Which word meaning is best supported by context in the passage?",
-      "Which summary best matches the passage?",
+      `What can be inferred about ${effectiveSkill.toLowerCase()} based on the passage details?`,
+      "Which detail from the passage best supports the strongest inference?",
+      "Which theme is most supported by the events in the passage?",
+      "Which sentence from the passage is the best evidence for the theme?",
+      "What conclusion is best supported by two details in the passage?",
     ];
   const singleAnswerSequence = [...shuffledLetters(), ...shuffledLetters()];
   let singleAnswerIndex = 0;
@@ -967,20 +978,16 @@ function buildPracticeFallback(
       ]
       : subject === "Social Studies"
       ? [
-        "A response that matches the event, timeline, or consequence described.",
-        "A response that mixes the order of events in the scenario.",
-        "A response that confuses a cause with a later result.",
-        "A response not supported by the historical/civic details provided.",
+        "Flood-related shipment delays raised prices, which means residents questioned the rail-only plan.",
+        "Flooding ended before rail expansion began, so transportation costs dropped immediately.",
+        "Voters approved the bridge bond first, which means rail improvements happened later.",
+        "Population growth reduced travel demand, indicating no infrastructure decision was needed.",
       ]
       : (passageDrivenChoices || [
-        rigor.distractorQuality === "obvious"
-          ? "The choice that directly matches the passage idea."
-          : "A response grounded in passage evidence",
-        rigor.distractorQuality === "subtle"
-          ? "A nearly correct idea that misses one key detail from later in the passage."
-          : "A partially supported detail that misses key evidence",
-        "A statement not supported by the passage",
-        "An unrelated claim from outside the passage",
+        "The editor revised the headline after checking interview notes, which means evidence controlled the final claim.",
+        "The editor kept the original headline despite conflicting quotes, so wording did not affect meaning.",
+        "Survey totals were ignored during revision, indicating data was less important than opinion.",
+        "The team added a new event not in the notes, which means outside information drove the conclusion.",
       ]);
     const question: Question = {
       type,
@@ -1576,6 +1583,29 @@ function sanitizeVisual(value: unknown): Question["visual"] | undefined {
   return undefined;
 }
 
+function isGenericAnswerChoice(choice: string): boolean {
+  const text = String(choice || "").trim();
+  if (!text) return true;
+  if (FORBIDDEN_GENERIC_ANSWER_PATTERNS.some((pattern) => pattern.test(text))) return true;
+  if (text.split(/\s+/).length < 6) return true;
+  const genericMeta = /(passage evidence|key detail|main point|correct interpretation|strongest evidence)/i;
+  return genericMeta.test(text);
+}
+
+function hasConcreteDetail(choice: string, passage: PassageContent | string, subject: CanonicalSubject): boolean {
+  const text = String(choice || "").toLowerCase();
+  const source = getPassageText(passage).toLowerCase();
+  if (!text) return false;
+  const hasNumeric = /\d/.test(text);
+  const concreteNouns = /(bridge|flooding|shipment|voters|bond|grass|blacktop|moisture|airflow|combo|single-item|announcement|temperature|rail|market|experiment|results)/i
+    .test(text);
+  const hasInterpretationConnector = /(because|so|therefore|which means|showing|leading to|resulting in|indicating)/i.test(text);
+  const keywordOverlap = passageKeywords(source).slice(0, 12).filter((k) => text.includes(k)).length;
+
+  if (subject === "Math") return (hasNumeric || concreteNouns) && hasInterpretationConnector;
+  return (concreteNouns || keywordOverlap >= 1) && hasInterpretationConnector;
+}
+
 function sanitizeQuestions(
   raw: unknown,
   subject: CanonicalSubject,
@@ -1614,6 +1644,9 @@ function sanitizeQuestions(
         /(according to the passage|based on the passage|from the passage|in the passage|scenario|data|table|model|investigation|timeline)/i
           .test(questionText);
       if (!requiresPassageSignal) return false;
+      const overlap = passageKeywords(getPassageText(passage).toLowerCase()).slice(0, 14)
+        .filter((token) => questionText.includes(token)).length;
+      if (overlap < 1) return false;
     }
     if (q.type === "part_a_b") {
       const partAText = String(q.partA?.question || "").toLowerCase();
@@ -1733,15 +1766,34 @@ function sanitizeQuestions(
       visual: sanitizeVisual(q.visual) || fallback[i].visual,
     };
 
-    if (!isSelfContained(base) || !answerFitsQuestion(base)) {
+    const choiceFailures = base.choices.some((choice) => {
+      if (isGenericAnswerChoice(choice)) return true;
+      if (mode === "Cross-Curricular" || subject === "Reading") {
+        return !hasConcreteDetail(choice, passage, subject);
+      }
+      return false;
+    });
+
+    if (!isSelfContained(base) || !answerFitsQuestion(base) || choiceFailures) {
       return replaceWithFallback(i);
     }
     return base;
   });
 
   while (sanitized.length < 5) sanitized.push(replaceWithFallback(sanitized.length));
+  const finalSet = sanitized.slice(0, 5).map((q) => q);
+  const fullSetFailed = finalSet.some((q) =>
+    !q?.question ||
+    !Array.isArray(q?.choices) ||
+    q.choices.length < 4 ||
+    q.choices.some((choice) => isGenericAnswerChoice(choice))
+  );
 
-  return sanitized.slice(0, 5).map((q) => q);
+  if (fullSetFailed) {
+    return fallback.slice(0, 5).map((q) => ({ ...q }));
+  }
+
+  return finalSet;
 }
 
 function validateSkillAlignment(skill: string, questions: Question[]): boolean {
@@ -1753,7 +1805,9 @@ function validateSkillAlignment(skill: string, questions: Question[]): boolean {
     .filter((token) => token.length > 3);
   return questions.every((q) => {
     const text = `${q?.question || ""} ${(q?.choices || []).join(" ")}`.toLowerCase();
-    return tokens.length === 0 || tokens.some((token) => text.includes(token));
+    const overlap = tokens.filter((token) => text.includes(token)).length;
+    if (tokens.length <= 2) return overlap >= 1;
+    return overlap >= 2;
   });
 }
 
@@ -1891,10 +1945,12 @@ function validateCrossQuestionRequirements(subject: CanonicalSubject, passage: s
     if (!matchesPrefix) return false;
     if (bannedFluff.some((phrase) => stem.includes(phrase))) return false;
     if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
+    if (!/(passage|scenario|investigation|timeline|data)/i.test(stem)) return false;
 
     const combined = `${q.question} ${q.choices.join(" ")}`.toLowerCase();
     const overlap = keywords.filter((k) => combined.includes(k)).length;
-    if (overlap < 2) return false;
+    if (overlap < 3) return false;
+    if (q.choices.some((choice) => isGenericAnswerChoice(choice) || !hasConcreteDetail(choice, passage, subject))) return false;
 
     const choiceSet = new Set(q.choices.map((c) => c.toLowerCase().trim()));
     return choiceSet.size === 4;
@@ -1960,7 +2016,8 @@ function sanitizeTutorExplanations(
   crossPassage = "",
 ): TutorExplanation[] {
   const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
-  const fallback = sourceQuestions.slice(0, 5).map((q, index) => ({
+  const fallbackSeed = sourceQuestions.length ? sourceQuestions : buildCrossFallback("Science");
+  const fallback = fallbackSeed.slice(0, 5).map((q, index) => ({
     question_id: ensureQuestionId(q, index, mode),
     question: q.question,
     explanation: mode === "cross"
@@ -1981,7 +2038,7 @@ function sanitizeTutorExplanations(
       ? (/\bpassage\b/i.test(explanation) ? explanation : `${explanation} Use details from the cross passage.`)
       : explanation;
     return {
-      question_id: String(entry.question_id || base.question_id),
+      question_id: base.question_id,
       question: String(entry.question || base.question).trim() || base.question,
       explanation: resolvedExplanation,
       common_mistake: String(entry.common_mistake || base.common_mistake).trim() || base.common_mistake,
@@ -2004,30 +2061,62 @@ function sanitizeAnswerKey(
   crossPassage = "",
 ): AnswerKeyEntry[] {
   const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
-  const fallback = sourceQuestions.slice(0, 5).map((q, index) => ({
+  const fallbackSeed = sourceQuestions.length ? sourceQuestions : buildCrossFallback("Science");
+  const fallback = fallbackSeed.slice(0, 5).map((q, index) => ({
     question_id: ensureQuestionId(q, index, mode),
     correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
     explanation: tutor[index]?.explanation || q.explanation || "Use evidence to justify the correct answer.",
     common_mistake: tutor[index]?.common_mistake || q.common_mistake || "Choosing an answer without evidence.",
     parent_tip: tutor[index]?.parent_tip || q.parent_tip || "Ask your child to cite evidence before deciding.",
+    hint: tutor[index]?.hint || q.hint || "Underline the key words in the question.",
+    step_by_step: tutor[index]?.step_by_step || q.step_by_step || "1) Read question 2) Check evidence 3) Confirm answer.",
   }));
   const sanitized = incoming.map((item, index) => {
     const entry = item && typeof item === "object" ? item as Record<string, unknown> : {};
     const base = fallback[index] || fallback[fallback.length - 1];
     const explanation = String(entry.explanation || base.explanation).trim() || base.explanation;
     return {
-      question_id: String(entry.question_id || base.question_id),
+      question_id: base.question_id,
       correct_answer: normalizeAnswerKeyEntry(entry.correct_answer || entry.answer || base.correct_answer),
       explanation: mode === "cross" && crossPassage && !/\bpassage\b/i.test(explanation)
         ? `${explanation} Refer to evidence in the cross passage.`
         : explanation,
       common_mistake: String(entry.common_mistake || base.common_mistake).trim() || base.common_mistake,
       parent_tip: String(entry.parent_tip || base.parent_tip).trim() || base.parent_tip,
+      hint: String(entry.hint || base.hint || "").trim() || base.hint,
+      step_by_step: String(entry.step_by_step || base.step_by_step || "").trim() || base.step_by_step,
     };
   });
 
   while (sanitized.length < 5) sanitized.push(fallback[sanitized.length]);
   return sanitized.slice(0, 5);
+}
+
+function validateTutorAnswerKeyAlignment(
+  questions: Question[],
+  tutor: TutorExplanation[],
+  answerKey: AnswerKeyEntry[],
+  mode: "practice" | "cross",
+): boolean {
+  if (questions.length !== 5 || tutor.length !== 5 || answerKey.length !== 5) return false;
+  return questions.every((q, index) => {
+    const expectedId = ensureQuestionId(q, index, mode);
+    const tutorEntry = tutor[index];
+    const answerEntry = answerKey[index];
+    const tutorRequired = Boolean(
+      tutorEntry?.explanation && tutorEntry?.hint && tutorEntry?.step_by_step &&
+      tutorEntry?.common_mistake && tutorEntry?.parent_tip,
+    );
+    const answerRequired = Boolean(
+      answerEntry?.correct_answer && answerEntry?.explanation &&
+      answerEntry?.common_mistake && answerEntry?.parent_tip &&
+      answerEntry?.hint && answerEntry?.step_by_step,
+    );
+    return tutorRequired &&
+      answerRequired &&
+      tutorEntry.question_id === expectedId &&
+      answerEntry.question_id === expectedId;
+  });
 }
 
 function areQuestionSetsDistinct(practiceQuestions: Question[], crossQuestions: Question[]): boolean {
@@ -2052,10 +2141,14 @@ function areQuestionSetsDistinct(practiceQuestions: Question[], crossQuestions: 
 }
 
 function validateSeparation(practice: Question[], cross: Question[], subject: CanonicalSubject): boolean {
-  const practiceKeywords = ["main idea", "detail", "infer", "meaning", "summary"];
-  const practiceValid = practice.every((q) =>
-    practiceKeywords.some((k) => String(q.question || "").toLowerCase().includes(k))
-  );
+  const practiceValid = practice.every((q) => {
+    const text = String(q.question || "").toLowerCase();
+    if (subject === "Reading") return /(infer|theme|evidence|conclusion)/i.test(text);
+    if (subject === "Math") return /\d|total|difference|equation|calculate|rate/i.test(text);
+    if (subject === "Science") return /(cause|effect|system|result|variable|experiment)/i.test(text);
+    if (subject === "Social Studies") return /(event|decision|impact|cause|effect|timeline|policy)/i.test(text);
+    return true;
+  });
 
   const crossValid = cross.every((q) => {
     const text = String(q.question || "").toLowerCase();
@@ -2316,15 +2409,19 @@ serve(async (req) => {
           );
 
           const skillAligned = validateSkillAlignment(effectiveSkill, practiceQuestions);
-          if (!skillAligned) {
-            console.warn("⚠️ Skill mismatch detected; accepting sanitized questions to avoid retries.");
+          const hasGenericChoices = practiceQuestions.some((q) => q.choices.some((c) => isGenericAnswerChoice(c)));
+          const hasMixedOrInvalid = practiceQuestions.some((q) => !q.question || q.choices.length < 4);
+          if (!skillAligned || hasGenericChoices || hasMixedOrInvalid) {
+            retryFailureReason = "practice_validation_failed";
+            continue;
           }
 
           const outputValid = subject === "Reading"
             ? isValidOutput(practiceQuestions, safePassage)
             : Array.isArray(practiceQuestions) && practiceQuestions.length === 5;
           if (!outputValid) {
-            console.warn("⚠️ Minor issue, keeping AI output");
+            retryFailureReason = "practice_output_invalid";
+            continue;
           }
 
           const payload: CoreResponse = {
@@ -2430,20 +2527,24 @@ serve(async (req) => {
         );
         const crossChoiceSubjectAligned = validateChoiceSubjectAlignment(effectiveSubject, crossQuestions);
         if (!crossChoiceSubjectAligned) {
-          console.warn("⚠️ Cross choice-subject alignment warning: accepting output without fallback.");
+          retryFailureReason = "cross_subject_alignment_failed";
+          continue;
         }
         const crossSeparationValid = validateSeparation(normalizedPractice, crossQuestions, effectiveSubject);
         if (!crossSeparationValid) {
-          console.warn("⚠️ Cross separation warning: accepting output without fallback.");
+          retryFailureReason = "cross_separation_failed";
+          continue;
         }
         const crossQuestionSetsDistinct = areQuestionSetsDistinct(normalizedPractice, crossQuestions);
         if (!crossQuestionSetsDistinct) {
-          console.warn("⚠️ Cross question-set distinctness warning: accepting output without fallback.");
+          retryFailureReason = "cross_not_distinct";
+          continue;
         }
 
         const distractorQualityOk = validateDistractorQuality(crossQuestions, subjectCrossPassage);
         if (!distractorQualityOk) {
-          console.warn("⚠️ Weak distractors, continuing anyway");
+          retryFailureReason = "cross_distractors_weak";
+          continue;
         }
 
         const crossInvalid = !validateCrossCurricular({ passage: subjectCrossPassage, questions: crossQuestions }) ||
@@ -2452,17 +2553,8 @@ serve(async (req) => {
           !validateHybridCross(crossQuestions) ||
           !validateUniqueChoices(crossQuestions);
         if (crossInvalid) {
-          console.warn("⚠️ Invalid cross output detected; replacing full cross set.");
-          const forcedCross = buildSubjectCrossContent(effectiveSubject, level);
-          subjectCrossPassage = ensurePassageLength(forcedCross.passage, 250, 300);
-          crossQuestions = sanitizeQuestions(
-            forcedCross.questions,
-            effectiveSubject,
-            "Cross-Curricular",
-            effectiveSkill,
-            level,
-            subjectCrossPassage,
-          );
+          retryFailureReason = "cross_validation_failed";
+          continue;
         }
 
         const parsedTutor = parsed?.tutor && typeof parsed.tutor === "object"
@@ -2477,7 +2569,7 @@ serve(async (req) => {
           normalizedPractice,
           "practice",
         );
-        const tutorCross = sanitizeTutorExplanations(
+        let tutorCross = sanitizeTutorExplanations(
           parsedTutor.cross || [],
           crossQuestions,
           "cross",
@@ -2490,13 +2582,36 @@ serve(async (req) => {
           tutorPractice,
           "practice",
         );
-        const answerKeyCross = sanitizeAnswerKey(
+        let answerKeyCross = sanitizeAnswerKey(
           parsedAnswerKey.cross || [],
           crossQuestions,
           tutorCross,
           "cross",
           subjectCrossPassage,
         );
+        const practiceAligned = validateTutorAnswerKeyAlignment(normalizedPractice, tutorPractice, answerKeyPractice, "practice");
+        const crossAligned = validateTutorAnswerKeyAlignment(crossQuestions, tutorCross, answerKeyCross, "cross");
+        if (!practiceAligned) {
+          console.warn("⚠️ Practice tutor misaligned — using fallback");
+        }
+
+        if (!crossAligned) {
+          console.warn("⚠️ Cross tutor misaligned — rebuilding");
+          tutorCross = sanitizeTutorExplanations(
+            [],
+            crossQuestions,
+            "cross",
+            subjectCrossPassage,
+          );
+
+          answerKeyCross = sanitizeAnswerKey(
+            [],
+            crossQuestions,
+            tutorCross,
+            "cross",
+            subjectCrossPassage,
+          );
+        }
 
         console.log("🔥 FINAL CROSS SUBJECT:", effectiveSubject);
         console.log("🔥 FINAL CROSS PASSAGE:", subjectCrossPassage);
