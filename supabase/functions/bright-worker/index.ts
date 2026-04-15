@@ -621,10 +621,10 @@ function buildSSFallbackChoices(): [string, string, string, string] {
 
 function buildReadingFallbackChoices(): [string, string, string, string] {
   return [
-    "This choice cites a passage detail and explains how it supports the inference.",
-    "This choice mentions the topic but lacks text evidence that proves the claim.",
-    "This choice conflicts with details stated directly in the passage.",
-    "This choice introduces outside information not supported by the passage text.",
+    "The author shows that communities solve problems by comparing evidence before deciding.",
+    "The passage suggests decisions are made quickly without reviewing all details.",
+    "The text focuses on one example but ignores how other evidence changes the outcome.",
+    "The passage describes an unrelated situation not connected to the main idea.",
   ];
 }
 
@@ -636,6 +636,19 @@ function getFallbackChoices(subject: CanonicalSubject, skill: string): [string, 
   return buildReadingFallbackChoices();
 }
 
+function enforceChoiceQuality(
+  choices: [string, string, string, string],
+  subject: CanonicalSubject,
+  skill: string,
+): [string, string, string, string] {
+  const hasGenericMeta = choices.some((choice) => {
+    const text = String(choice || "");
+    return /this choice|response grounded/i.test(text);
+  });
+  if (!hasGenericMeta) return choices;
+  return getFallbackChoices(subject, skill);
+}
+
 function normalizeChoices(
   choices: unknown,
   subject: CanonicalSubject = "Reading",
@@ -645,7 +658,7 @@ function normalizeChoices(
   const raw = Array.isArray(choices) ? choices.slice(0, 4) : [];
   while (raw.length < 4) raw.push(fallbackChoices[raw.length]);
 
-  return raw.map((entry, index) => {
+  const normalized = raw.map((entry, index) => {
     const stripped = String(entry ?? "").trim().replace(/^[A-D]\.\s*/i, "");
     const normalized = stripped.toLowerCase();
     const isPlaceholder = !stripped ||
@@ -655,6 +668,7 @@ function normalizeChoices(
       /^choice\s*\d+$/i.test(stripped);
     return isPlaceholder ? fallbackChoices[index] : stripped;
   }) as [string, string, string, string];
+  return enforceChoiceQuality(normalized, subject, skill);
 }
 
 function strengthenChoiceSet(
@@ -681,10 +695,10 @@ function strengthenChoiceSet(
     const clean = String(choice || "").trim();
     if (!clean || weakSignal.test(clean)) {
       const variants = [
-        `This option uses one true detail about ${anchorA} but misreads how it connects to ${anchorB}.`,
-        `This option is partly correct about ${anchorA}, but it ignores a later detail that changes the result.`,
-        `This option confuses the sequence of ${anchorA} and ${anchorB}, leading to a wrong conclusion.`,
-        `This option applies the passage details to the wrong cause-and-effect relationship involving ${anchorA}.`,
+        `A report can name ${anchorA} correctly but still draw the wrong conclusion if it links ${anchorA} to ${anchorB} incorrectly.`,
+        `A writer may describe ${anchorA} accurately but miss a later detail that changes the result for ${anchorB}.`,
+        `Reversing the order of ${anchorA} and ${anchorB} can make a conclusion sound reasonable even when the timeline is wrong.`,
+        `A claim can cite details about ${anchorA} but apply them to the wrong cause-and-effect relationship.`,
       ];
       return variants[index % variants.length];
     }
@@ -763,17 +777,26 @@ function clampPassageWords(passage: string, min: number, max: number): string {
   return words.slice(0, max).join(" ");
 }
 
-function ensurePassageLength(passage: string, min = 250, max = 300): string {
+function ensurePassageLength(
+  passage: string,
+  min = 250,
+  max = 300,
+  subject: CanonicalSubject = "Reading",
+  mode: CanonicalMode = "Practice",
+  grade = 5,
+  level: Level = "On Level",
+  allowFallback = true,
+): string {
   const cleaned = String(passage || "").replace(/\s+/g, " ").trim();
+  if (cleaned.includes("The report adds key evidence")) {
+    console.log("⚠️ BAD PASSAGE DETECTED — USING FALLBACK");
+    return fallbackPassage(subject, mode, grade, level);
+  }
   const words = cleaned.split(" ").filter(Boolean);
   if (words.length >= min && words.length <= max) return cleaned;
   if (words.length > max) return words.slice(0, max).join(" ");
-  const extension = "The report adds key evidence, compares outcomes, and explains why each detail matters for the final conclusion.";
-  let expanded = cleaned;
-  while (expanded.split(/\s+/).filter(Boolean).length < min) {
-    expanded = `${expanded} ${extension}`.trim();
-  }
-  return expanded.split(/\s+/).filter(Boolean).slice(0, max).join(" ");
+  if (allowFallback) return fallbackPassage(subject, mode, grade, level);
+  return cleaned;
 }
 
 function isWeakPassage(passage: PassageContent | string): boolean {
@@ -786,7 +809,7 @@ function fallbackPassage(subject: CanonicalSubject, mode: CanonicalMode, grade: 
   const max = 300;
 
   if (mode === "Cross-Curricular") {
-    return ensurePassageLength(clampPassageWords(buildSubjectPassage(subject, level), min, max), min, max);
+    return ensurePassageLength(clampPassageWords(buildSubjectPassage(subject, level), min, max), min, max, subject, mode, grade, level, false);
   }
 
   if (subject === "Math") {
@@ -794,7 +817,7 @@ function fallbackPassage(subject: CanonicalSubject, mode: CanonicalMode, grade: 
       "A school is planning a weekend market fundraiser. Student teams must decide pricing, estimate supply needs, and compare costs for materials and transportation. Their plan includes tracking sales data, calculating totals after discounts, and checking whether the final profit meets a goal for classroom technology.",
       min,
       max,
-    ), min, max);
+    ), min, max, subject, mode, grade, level, false);
   }
 
   if (subject === "Science") {
@@ -802,7 +825,7 @@ function fallbackPassage(subject: CanonicalSubject, mode: CanonicalMode, grade: 
       "Students tested how light intensity affects plant growth by placing seedlings at different distances from a lamp. They measured height changes, tracked water use, and recorded observations over two weeks. The class analyzed patterns in the data and debated which variables might have influenced unexpected results.",
       min,
       max,
-    ), min, max);
+    ), min, max, subject, mode, grade, level, false);
   }
 
   if (subject === "Social Studies") {
@@ -810,14 +833,14 @@ function fallbackPassage(subject: CanonicalSubject, mode: CanonicalMode, grade: 
       "In the early years of a growing town, leaders debated whether to invest limited funds in roads, irrigation, or a public market. Farmers, merchants, and families offered different priorities based on geography, trade routes, and available jobs. Newspaper editorials from the period show how economic choices shaped civic life and daily routines.",
       min,
       max,
-    ), min, max);
+    ), min, max, subject, mode, grade, level, false);
   }
 
   return ensurePassageLength(clampPassageWords(
     "A class read an informational article about how communities solve local problems by collecting evidence, comparing ideas, and choosing the most effective solution. Students tracked key details, discussed author choices, and explained which evidence best supported the central claim.",
     min,
     max,
-  ), min, max);
+  ), min, max, subject, mode, grade, level, false);
 }
 
 function isCompareSkill(skill: string): boolean {
@@ -1044,10 +1067,10 @@ function buildPracticeFallback(
         "Rivers were important only for recreation, not survival or trade.",
       ]
       : [
-        "A detail from the passage directly supports the main idea.",
-        "A detail from the passage is repeated but does not support the main idea.",
-        "A detail from outside the passage is introduced as evidence.",
-        "A detail contradicts the main idea presented in the passage.",
+        "Editors compared interviews and survey results, then revised headlines so each claim matched the strongest source evidence.",
+        "Editors kept the first draft headline even when later quotes changed what the article was really saying.",
+        "Editors replaced survey evidence with a new fact about cafeteria prices that did not appear in their notes.",
+        "Editors removed conflicting quotes and based the final conclusion on only one student comment.",
       ];
 
     const partBChoices: [string, string, string, string] = subject === "Math"
@@ -1072,46 +1095,26 @@ function buildPracticeFallback(
         "The question says rivers mattered only after railroads were built.",
       ]
       : [
-        "The sentence includes a passage detail that proves the main idea.",
-        "The sentence repeats a side detail without proving the main idea.",
-        "The sentence gives background context but no supporting evidence.",
-        "The sentence conflicts with the main point of the passage.",
+        "The final publication says the team re-read original statements and adjusted wording so claims matched verified sources.",
+        "The final publication says headline wording never affected meaning as long as articles stayed the same length.",
+        "The final publication says interview quotes were optional because survey totals alone answer every question.",
+        "The final publication says conflicting reports should be combined without checking the original statements.",
       ];
     const choices = subject === "Math"
       ? mathChoiceBanks[i % mathChoiceBanks.length]
       : subject === "Science"
       ? [
-        level === "Below"
-          ? "The answer that directly matches the observed cause/effect in the scenario."
-          : level === "Advanced"
-          ? "An explanation that correctly compares interacting variables and matches the observed system behavior."
-          : "An explanation that matches the cause/effect or data shown in the scenario.",
-        level === "Below"
-          ? "An answer that uses a science word but does not match what happened."
-          : level === "Advanced"
-          ? "A plausible explanation that uses correct terms but confuses correlation with causation."
-          : "An explanation with one true detail but a wrong scientific connection.",
-        level === "Advanced"
-          ? "A trap answer that treats the dependent variable as if it were controlled by design."
-          : "An explanation that ignores the tested variable or observed result.",
-        level === "Advanced"
-          ? "A close answer that fits one data point but fails across the full set of observations."
-          : "An explanation not supported by the scenario evidence.",
+        "Darker pavement absorbed and retained more solar energy, so it heated faster than shaded grass with moisture and airflow.",
+        "Grass should heat faster because chlorophyll creates extra heat during photosynthesis in full daylight.",
+        "Surface temperature was controlled mainly by thermometer placement, so surface type did not affect results.",
+        "Watering one section proves sunlight had no role because moisture always overrides every other variable.",
       ]
       : subject === "Social Studies"
       ? [
-        level === "Below"
-          ? "The event led to a clear outcome shown in the timeline."
-          : "Flood-related shipment delays raised prices, which means residents questioned the rail-only plan.",
-        level === "Advanced"
-          ? "A plausible claim that matches one stakeholder view but ignores longer-term policy tradeoffs."
-          : "Flooding ended before rail expansion began, so transportation costs dropped immediately.",
-        level === "Advanced"
-          ? "A misconception trap that reverses timeline order while sounding historically reasonable."
-          : "Voters approved the bridge bond first, which means rail improvements happened later.",
-        level === "Below"
-          ? "An answer choice not supported by the event timeline."
-          : "Population growth reduced travel demand, indicating no infrastructure decision was needed.",
+        "Flood-related shipment delays raised prices, which pushed residents to question rail-only investment.",
+        "Flooding ended before rail expansion began, so transportation costs dropped immediately after the first vote.",
+        "Voters approved the bridge bond first, and rail improvements were added only after that success.",
+        "Population growth reduced cross-river travel demand, so no major transportation decision was necessary.",
       ]
       : (passageDrivenChoices || [
         "The editor revised the headline after checking interview notes, which means evidence controlled the final claim.",
@@ -1119,17 +1122,20 @@ function buildPracticeFallback(
         "Survey totals were ignored during revision, indicating data was less important than opinion.",
         "The team added a new event not in the notes, which means outside information drove the conclusion.",
       ]);
+    const safeChoices = enforceChoiceQuality(choices as [string, string, string, string], subject, "");
+    const safePartAChoices = enforceChoiceQuality(partAChoices, subject, "");
+    const safePartBChoices = enforceChoiceQuality(partBChoices, subject, "");
     const question: Question = {
       type,
       question: leveledStem,
-      choices: choices as [string, string, string, string],
+      choices: safeChoices,
       correct_answer: type === "part_a_b"
         ? { partA: nextSingleAnswer(), partB: nextSingleAnswer() }
         : nextSingleAnswer(),
       partA: type === "part_a_b"
         ? {
           question: `Part A: ${leveledStem}`,
-          choices: partAChoices,
+          choices: safePartAChoices,
         }
         : undefined,
       partB: type === "part_a_b"
@@ -1141,7 +1147,7 @@ function buildPracticeFallback(
             : subject === "Social Studies"
             ? "Part B: Which detail from the event timeline best supports your Part A answer?"
             : "Part B: Which sentence best supports your Part A answer?",
-          choices: partBChoices,
+          choices: safePartBChoices,
         }
         : undefined,
       explanation: support.explanation,
@@ -1165,26 +1171,26 @@ function generateChoicesFromPassage(passage: PassageContent | string, level: Lev
 
   if (level === "Below") {
     return [
-      `It states ${focus} and matches a direct detail from the passage.`,
-      `It mentions ${outlier}, which is not the main detail asked for.`,
-      "It gives an idea that does not appear in the passage.",
-      "It contradicts a clear sentence from the passage.",
+      `${focus} is explained through a direct detail about ${detail}.`,
+      `${outlier} appears in the article, but it is not the reason ${focus} changes.`,
+      `${context} is described as a new event that was never mentioned in the article.`,
+      `${focus} is said to decrease when ${detail} increases, reversing the article's relationship.`,
     ];
   }
   if (level === "Advanced") {
     return [
-      `It synthesizes ${focus} with ${detail} and aligns with the strongest evidence.`,
-      `It sounds correct about ${focus} but misinterprets how ${context} changes the claim.`,
-      `It overextends ${detail} into a conclusion the passage does not fully support.`,
-      `It uses a common misconception by treating ${outlier} as the central argument.`,
+      `${focus} and ${detail} interact, and together they explain the article's conclusion.`,
+      `${focus} is identified correctly, but ${context} is interpreted in a way that changes the conclusion incorrectly.`,
+      `${detail} is generalized into a wider conclusion than the evidence in the article supports.`,
+      `${outlier} is treated as the central cause even though the article presents it as a minor detail.`,
     ];
   }
 
   return [
-    `It focuses on ${focus} and is supported by ${detail} in the passage.`,
-    `It mentions ${detail} but ignores how ${context} shapes the main point.`,
-    `It overemphasizes ${outlier} even though it is not central to the passage.`,
-    "It introduces outside information that is not stated in the passage.",
+    `${focus} is supported by the article's detail about ${detail}.`,
+    `${detail} is repeated, but the role of ${context} in the main point is ignored.`,
+    `${outlier} is overemphasized even though the article treats it as secondary.`,
+    `${context} is explained with outside information that does not appear in the article.`,
   ];
 }
 
@@ -1640,15 +1646,22 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
   return stems.map((stem, i) => {
     const type: QuestionType = i === 1 ? "part_a_b" : i === 3 ? "multi_select" : i === 4 ? "scr" : "mc";
     const support = buildSupportContent(effectiveSubject, stem, type, i, level, mode, "");
+    const baseChoices = enforceChoiceQuality([
+      "The plants closest to the lamp grew taller because they received more direct light.",
+      "All plants grew at the same rate, so light intensity did not matter in this setup.",
+      "Plants farther from the lamp appeared to grow faster because lower heat outweighed reduced light.",
+      "Plant height changed randomly and was not related to the light conditions in the investigation.",
+    ], effectiveSubject, skill);
+    const partBChoices = enforceChoiceQuality([
+      "The investigation compared plant growth at different distances from the lamp over two weeks.",
+      "The passage says all plants were measured only once at the end of the week.",
+      "The class ignored light distance and focused only on soil color.",
+      "The scenario states that light intensity never changed during the test.",
+    ], effectiveSubject, skill);
     const question: Question = {
       type,
       question: stem,
-      choices: [
-        "The plants closest to the lamp grew taller because they received more direct light.",
-        "All plants grew at the same rate, so light intensity did not matter in this setup.",
-        "Plants farther from the lamp appeared to grow faster because lower heat outweighed reduced light.",
-        "Plant height changed randomly and was not related to the light conditions in the investigation.",
-      ],
+      choices: baseChoices,
       correct_answer: type === "multi_select"
         ? nextMultiAnswer()
         : type === "part_a_b"
@@ -1657,23 +1670,13 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
       partA: type === "part_a_b"
         ? {
           question: `Part A: ${stem}`,
-          choices: [
-            "The plants closest to the lamp grew taller because they received more direct light.",
-            "All plants grew at the same rate, so light intensity did not matter in this setup.",
-            "Plants farther from the lamp appeared to grow faster because lower heat outweighed reduced light.",
-            "Plant height changed randomly and was not related to the light conditions in the investigation.",
-          ],
+          choices: baseChoices,
         }
         : undefined,
       partB: type === "part_a_b"
         ? {
           question: "Part B: Which evidence best supports your Part A answer?",
-          choices: [
-            "The investigation compared plant growth at different distances from the lamp over two weeks.",
-            "The passage says all plants were measured only once at the end of the week.",
-            "The class ignored light distance and focused only on soil color.",
-            "The scenario states that light intensity never changed during the test.",
-          ],
+          choices: partBChoices,
         }
         : undefined,
       explanation: support.explanation,
@@ -2652,7 +2655,7 @@ serve(async (req) => {
   const returnCore = (data: CoreResponse) =>
     jsonResponse(subject === "Reading"
       ? {
-        passage: ensurePassageLength(getPassageText(data.passage || ""), 250, 300),
+        passage: ensurePassageLength(getPassageText(data.passage || ""), 250, 300, subject, mode, grade, level),
         practice: data.practice,
       }
       : {
@@ -2808,10 +2811,34 @@ serve(async (req) => {
           const parsedPassage = parsed.passage;
           const passage = parsedPassage && typeof parsedPassage === "object" && !Array.isArray(parsedPassage)
             ? {
-              text_1: ensurePassageLength(clampPassageWords(String((parsedPassage as Record<string, unknown>).text_1 || ""), range.min, range.max), range.min, range.max),
-              text_2: ensurePassageLength(clampPassageWords(String((parsedPassage as Record<string, unknown>).text_2 || ""), range.min, range.max), range.min, range.max),
+              text_1: ensurePassageLength(
+                clampPassageWords(String((parsedPassage as Record<string, unknown>).text_1 || ""), range.min, range.max),
+                range.min,
+                range.max,
+                subject,
+                mode,
+                grade,
+                level,
+              ),
+              text_2: ensurePassageLength(
+                clampPassageWords(String((parsedPassage as Record<string, unknown>).text_2 || ""), range.min, range.max),
+                range.min,
+                range.max,
+                subject,
+                mode,
+                grade,
+                level,
+              ),
             }
-            : ensurePassageLength(clampPassageWords(String(parsedPassage || ""), range.min, range.max), range.min, range.max);
+            : ensurePassageLength(
+              clampPassageWords(String(parsedPassage || ""), range.min, range.max),
+              range.min,
+              range.max,
+              subject,
+              mode,
+              grade,
+              level,
+            );
           const safePassage = subject === "Reading"
             ? (
               typeof passage === "string"
@@ -2857,7 +2884,9 @@ serve(async (req) => {
           }
 
           const payload: CoreResponse = {
-            passage: subject === "Reading" ? ensurePassageLength(getPassageText(safePassage), range.min, range.max) : undefined,
+            passage: subject === "Reading"
+              ? ensurePassageLength(getPassageText(safePassage), range.min, range.max, subject, mode, grade, level)
+              : undefined,
             practice: { questions: practiceQuestions },
           };
           if (subject !== "Reading") {
@@ -2947,7 +2976,15 @@ serve(async (req) => {
           console.warn("⚠️ Invalid or duplicated cross passage, forcing subject passage");
           subjectCrossPassage = baseCrossPassage;
         }
-        subjectCrossPassage = ensurePassageLength(subjectCrossPassage, 250, 300);
+        subjectCrossPassage = ensurePassageLength(
+          subjectCrossPassage,
+          250,
+          300,
+          effectiveSubject,
+          "Cross-Curricular",
+          grade,
+          level,
+        );
 
         let crossQuestions = sanitizeQuestions(
           parsedCross.questions || [],
