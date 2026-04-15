@@ -2743,29 +2743,57 @@ serve(async (req) => {
     if (mode === "support") {
       const core = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, level);
       const practiceQuestions = core.practice?.questions || [];
+      const crossQuestions = Array.isArray(body?.cross?.questions)
+        ? body.cross.questions
+        : [];
+      const crossPassage = String(body?.cross?.passage || "");
 
-      const supportContent = {
+      const tutor = practiceQuestions.map((q, i) => ({
+        question_id: `practice_${i}`,
+        question: q.question,
+        ...buildSupportContent(subject, q.question, q.type || "mc", i, level, "Practice", core.passage || ""),
+      }));
+
+      const crossTutor = crossQuestions.map((q, i) => ({
+        question_id: `cross_${i}`,
+        question: q.question,
+        ...buildSupportContent(
+          subject,
+          q.question,
+          q.type || "mc",
+          i,
+          level,
+          "Cross-Curricular",
+          crossPassage,
+        ),
+      }));
+
+      const answerKey = practiceQuestions.map((q, i) => ({
+        question_id: `practice_${i}`,
+        correct_answer: String(q.correct_answer),
+        explanation: q.explanation || "",
+        common_mistake: q.common_mistake || "",
+        parent_tip: q.parent_tip || "",
+      }));
+
+      const crossAnswerKey = crossQuestions.map((q, i) => ({
+        question_id: `cross_${i}`,
+        correct_answer: String(q.correct_answer),
+        explanation: q.explanation || "",
+        common_mistake: q.common_mistake || "",
+        parent_tip: q.parent_tip || "",
+      }));
+
+      return new Response(JSON.stringify({
         tutor: {
-          practice: practiceQuestions.map((q, i) => ({
-            question_id: `practice_${i}`,
-            question: q.question,
-            ...buildSupportContent(subject, q.question, q.type || "mc", i, level, "Practice", core.passage || ""),
-          })),
-          cross: [],
+          practice: tutor,
+          cross: crossTutor,
         },
         answerKey: {
-          practice: practiceQuestions.map((q, i) => ({
-            question_id: `practice_${i}`,
-            correct_answer: String(q.correct_answer),
-            explanation: q.explanation || "",
-            common_mistake: q.common_mistake || "",
-            parent_tip: q.parent_tip || "",
-          })),
-          cross: [],
+          practice: answerKey,
+          cross: crossAnswerKey,
         },
-      };
-
-      return new Response(JSON.stringify(supportContent), {
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
