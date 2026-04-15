@@ -1998,6 +1998,12 @@ serve(async (req) => {
     let retryFailureReason = "bad_output_after_retry";
     let bestAttempt: WorkerResponse | null = null;
     let bestMeta: { fallback: boolean; reason: string; error?: string; usedFallbackCross?: boolean } | null = null;
+    let returnType = "UNKNOWN";
+    const logReturnMetrics = () => {
+      console.log("🔁 ATTEMPTS USED:", attempts);
+      console.log("🎯 RETURN TYPE:", returnType);
+      console.log("⏱ TOTAL TIME:", Date.now() - start, "ms");
+    };
     const phase = String(body.phase || "core").toLowerCase() === "enrich" ? "enrich" : "core";
 
     while (attempts < MAX_ATTEMPTS) {
@@ -2025,7 +2031,7 @@ serve(async (req) => {
               }),
               max_output_tokens: 1800,
             }),
-            signal: AbortSignal.timeout(12000),
+            signal: AbortSignal.timeout(18000),
           });
           console.timeEnd("OPENAI_CALL");
 
@@ -2111,6 +2117,8 @@ serve(async (req) => {
           };
           bestAttempt = payload;
           bestMeta = { fallback: false, reason: "ai_core_success", usedFallbackCross: false };
+          returnType = "PRIMARY";
+          logReturnMetrics();
           return jsonResponse(payload, bestMeta);
         }
 
@@ -2162,7 +2170,7 @@ serve(async (req) => {
             }),
             max_output_tokens: 2200,
           }),
-          signal: AbortSignal.timeout(12000),
+          signal: AbortSignal.timeout(18000),
         });
         console.timeEnd("OPENAI_CALL");
 
@@ -2258,6 +2266,8 @@ serve(async (req) => {
         };
         bestAttempt = payload;
         bestMeta = meta;
+        returnType = "PRIMARY";
+        logReturnMetrics();
         return jsonResponse(payload, meta);
       } catch (err) {
         console.error("BACKEND ERROR:", err);
@@ -2266,8 +2276,12 @@ serve(async (req) => {
     }
 
     if (bestAttempt && bestMeta) {
+      returnType = "BEST_ATTEMPT";
+      logReturnMetrics();
       return jsonResponse(bestAttempt, bestMeta);
     }
+    returnType = "FALLBACK";
+    logReturnMetrics();
     return safeFallback(retryFailureReason);
   } catch (err) {
     console.error("BACKEND ERROR:", err);
