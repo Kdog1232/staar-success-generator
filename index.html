@@ -1477,9 +1477,9 @@
       }).join("");
     }
 
-    function renderTutor(tutorData, mode = "Practice") {
+    function renderTutor(tutorEntries, mode = "Practice") {
       if (!shouldRenderSupport(mode)) return "";
-      const explanations = Array.isArray(tutorData?.explanations) ? tutorData.explanations : [];
+      const explanations = Array.isArray(tutorEntries) ? tutorEntries : [];
       if (!Array.isArray(explanations) || explanations.length === 0) {
         return `<p class="muted-note">Tutor guidance is not available yet.</p>`;
       }
@@ -1508,15 +1508,15 @@
       }).join("");
     }
 
-    function renderAnswerKey(answerKeyData, mode = "Practice") {
+    function renderAnswerKey(answerEntries, mode = "Practice") {
       if (!shouldRenderSupport(mode)) return "";
-      const answers = Array.isArray(answerKeyData?.answers) ? answerKeyData.answers : [];
+      const answers = Array.isArray(answerEntries) ? answerEntries : [];
       if (!Array.isArray(answers) || answers.length === 0) {
         return `<p class="muted-note">Answer key is not available yet.</p>`;
       }
 
       return answers.map((entry, i) => {
-        const safeCorrect = cleanText(entry?.answer || "A");
+        const safeCorrect = cleanText(entry?.correct_answer || entry?.answer || "A");
         const safeExplanation = cleanText(entry?.explanation || "Use text evidence to justify the best answer.");
         const safeCommonMistake = cleanText(entry?.common_mistake || "Choosing an answer that sounds right but is not supported by the passage.");
         const safeParentTip = cleanText(entry?.parent_tip || "Ask your child to point to one line in the passage that proves the correct answer.");
@@ -1707,10 +1707,13 @@
       `;
     }
 
-    function renderTutorSection(tutorData) {
+    function renderTutorSection(tutorData, mode = activeTab) {
       const tutorSection = document.getElementById("tutor-section");
       if (!tutorSection) return;
-      const tutorMarkup = renderTutor(tutorData, "Tutor");
+      const tutorEntries = mode === "cross"
+        ? (Array.isArray(tutorData?.cross) ? tutorData.cross : [])
+        : (Array.isArray(tutorData?.practice) ? tutorData.practice : []);
+      const tutorMarkup = renderTutor(tutorEntries, "Tutor");
       tutorSection.innerHTML = `
         <section class="worksheet-section">
           <h3>🧠 Think Like This</h3>
@@ -1719,10 +1722,13 @@
       `;
     }
 
-    function renderAnswerSection(answerKeyData) {
+    function renderAnswerSection(answerKeyData, mode = activeTab) {
       const answerSection = document.getElementById("answer-section");
       if (!answerSection) return;
-      const answerMarkup = renderAnswerKey(answerKeyData, "Answer Key");
+      const answerEntries = mode === "cross"
+        ? (Array.isArray(answerKeyData?.cross) ? answerKeyData.cross : [])
+        : (Array.isArray(answerKeyData?.practice) ? answerKeyData.practice : []);
+      const answerMarkup = renderAnswerKey(answerEntries, "Answer Key");
       answerSection.innerHTML = `
         <section class="worksheet-section">
           <h3>✅ Answer Key</h3>
@@ -1764,6 +1770,15 @@
         contentMode = "standard";
       }
 
+      if (currentData) {
+        const supportMode = contentMode === "cross_curricular" ? "cross" : "practice";
+        if (activeTab === "tutor") {
+          renderTutorSection(currentData.tutor, supportMode);
+        }
+        if (activeTab === "answer") {
+          renderAnswerSection(currentData.answerKey, supportMode);
+        }
+      }
       renderTab(activeTab);
     }
 
@@ -2162,10 +2177,12 @@
             questions: Array.isArray(data?.cross?.questions) ? data.cross.questions.slice(0, 5) : []
           },
           tutor: {
-            explanations: Array.isArray(data?.tutor?.explanations) ? data.tutor.explanations.slice(0, 5) : []
+            practice: Array.isArray(data?.tutor?.practice) ? data.tutor.practice.slice(0, 5) : [],
+            cross: Array.isArray(data?.tutor?.cross) ? data.tutor.cross.slice(0, 5) : []
           },
           answerKey: {
-            answers: Array.isArray(data?.answerKey?.answers) ? data.answerKey.answers.slice(0, 5) : []
+            practice: Array.isArray(data?.answerKey?.practice) ? data.answerKey.practice.slice(0, 5) : [],
+            cross: Array.isArray(data?.answerKey?.cross) ? data.answerKey.cross.slice(0, 5) : []
           }
         };
         const selectedMode = apiMode === "Cross-Curricular" ? "Cross-Curricular" : "Practice";
@@ -2252,10 +2269,12 @@
             questions: Array.isArray(enrichData?.cross?.questions) ? enrichData.cross.questions.slice(0, 5) : []
           };
           const enrichedTutor = {
-            explanations: Array.isArray(enrichData?.tutor?.explanations) ? enrichData.tutor.explanations.slice(0, 5) : []
+            practice: Array.isArray(enrichData?.tutor?.practice) ? enrichData.tutor.practice.slice(0, 5) : [],
+            cross: Array.isArray(enrichData?.tutor?.cross) ? enrichData.tutor.cross.slice(0, 5) : []
           };
           const enrichedAnswerKey = {
-            answers: Array.isArray(enrichData?.answerKey?.answers) ? enrichData.answerKey.answers.slice(0, 5) : []
+            practice: Array.isArray(enrichData?.answerKey?.practice) ? enrichData.answerKey.practice.slice(0, 5) : [],
+            cross: Array.isArray(enrichData?.answerKey?.cross) ? enrichData.answerKey.cross.slice(0, 5) : []
           };
           currentData = {
             ...currentData,
@@ -2275,12 +2294,12 @@
             );
           }
 
-          if (enrichedTutor?.explanations?.length) {
-            renderTutorSection(enrichedTutor);
+          if ((enrichedTutor?.practice?.length || 0) > 0 || (enrichedTutor?.cross?.length || 0) > 0) {
+            renderTutorSection(enrichedTutor, contentMode === "cross_curricular" ? "cross" : "practice");
           }
 
-          if (enrichedAnswerKey?.answers?.length) {
-            renderAnswerSection(enrichedAnswerKey);
+          if ((enrichedAnswerKey?.practice?.length || 0) > 0 || (enrichedAnswerKey?.cross?.length || 0) > 0) {
+            renderAnswerSection(enrichedAnswerKey, contentMode === "cross_curricular" ? "cross" : "practice");
           }
 
           await new Promise((resolve) => requestAnimationFrame(() => resolve()));
