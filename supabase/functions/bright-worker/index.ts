@@ -130,6 +130,10 @@ function canonicalizeMode(mode: unknown): CanonicalMode | "support" | "cross" {
   return "Practice";
 }
 
+function isCrossCurricularMode(mode: CanonicalMode | "cross"): boolean {
+  return mode === "cross" || mode === "Cross-Curricular";
+}
+
 function canonicalizeSubject(subject: unknown): CanonicalSubject {
   const value = String(subject || "").toLowerCase();
   if (value.includes("math")) return "Math";
@@ -1740,7 +1744,7 @@ function isGenericAnswerChoice(choice: string): boolean {
   return genericMeta.test(text);
 }
 
-function isBadQuestion(q: Question | null | undefined, mode: CanonicalMode): boolean {
+function isBadQuestion(q: Question | null | undefined, mode: CanonicalMode | "cross"): boolean {
   if (!q) return true;
 
   const text = String(q.question || "").toLowerCase();
@@ -1764,7 +1768,7 @@ function isBadQuestion(q: Question | null | undefined, mode: CanonicalMode): boo
   if (choices.some((choice) => String(choice).split(/\s+/).length < 6)) return true;
   if (text.length < 15) return true;
   if (text.includes("the report adds key evidence")) return true;
-  if (mode === "Cross-Curricular") {
+  if (isCrossCurricularMode(mode)) {
     const textCombined = [q.question, ...(q.choices || [])].join(" ").toLowerCase();
     const hasPassageReference =
       /(according to the passage|based on the passage|in the passage|scenario|data|table|model|investigation|timeline)/i
@@ -1913,7 +1917,7 @@ function sanitizeQuestions(
     const allChoiceText = (q.choices || []).map((choice) => String(choice || "").toLowerCase()).join(" ");
     if (hasForbiddenLanguage(allChoiceText)) return false;
     if (!hasSkillSignal(`${questionText} ${allChoiceText}`)) return false;
-    if (mode === "Cross-Curricular") {
+    if (isCrossCurricularMode(mode)) {
       const requiresPassageSignal =
         /(according to the passage|based on the passage|from the passage|in the passage|scenario|data|table|model|investigation|timeline)/i
           .test(questionText);
@@ -2054,7 +2058,7 @@ function sanitizeQuestions(
 
   while (sanitized.length < 5) sanitized.push(replaceWithFallback(sanitized.length));
   const fallbackQuestions =
-    mode === "Cross-Curricular"
+    isCrossCurricularMode(mode)
       ? buildCrossFallback(subject, skill, level)
       : buildPracticeFallback(skill, subject, level);
 
