@@ -632,21 +632,18 @@ function normalizeChoices(
   subject: CanonicalSubject = "Reading",
   skill = "",
 ): [string, string, string, string] {
-  const fallbackChoices = getFallbackChoices(subject, skill);
   const raw = Array.isArray(choices) ? choices.slice(0, 4) : [];
-  while (raw.length < 4) raw.push(fallbackChoices[raw.length]);
+  void subject;
+  void skill;
 
-  const normalized = raw.map((entry, index) => {
-    const stripped = String(entry ?? "").trim().replace(/^[A-D]\.\s*/i, "");
-    const normalized = stripped.toLowerCase();
-    const isPlaceholder = !stripped ||
-      normalized === "option" ||
-      /^option\s*\d+$/i.test(stripped) ||
-      /^choice\s*[a-d]$/i.test(stripped) ||
-      /^choice\s*\d+$/i.test(stripped);
-    return isPlaceholder ? fallbackChoices[index] : stripped;
+  // Only ensure length — DO NOT inject content logic
+  while (raw.length < 4) raw.push(" ");
+
+  return raw.map((entry) => {
+    return String(entry ?? "")
+      .trim()
+      .replace(/^[A-D]\.\s*/i, "");
   }) as [string, string, string, string];
-  return normalized;
 }
 
 function strengthenChoiceSet(
