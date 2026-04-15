@@ -1564,7 +1564,7 @@
     function resolveModeContent(data, mode) {
       const isCross = mode === "Cross-Curricular";
       const passageToUse = isCross
-        ? (data?.crossPassage || data?.passage || "")
+        ? (data?.cross?.passage || "")
         : (data?.passage || "");
       let questionsToUse = isCross
         ? data?.cross?.questions
@@ -1695,7 +1695,7 @@
       `;
     }
 
-    function renderCrossSection(crossData, crossPassageText, options = {}) {
+    function renderCrossSection(crossData, crossText, options = {}) {
       const crossSection = document.getElementById("cross-section");
       if (!crossSection) return;
       const isLoading = Boolean(options.loading);
@@ -1706,7 +1706,7 @@
         <div class="mode-label">Cross-Curricular Mode</div>
         <section class="worksheet-section">
           <h3>📖 Passage</h3>
-          ${renderPassage(crossPassageText)}
+          ${renderPassage(crossText)}
         </section>
         <section class="worksheet-section">
           <h3>🌎 Subject-Driven Questions on the Passage</h3>
@@ -1963,6 +1963,15 @@
       }, 15000);
       const runId = ++generateRunId;
       console.log("🚀 GENERATE START");
+      // 🔥 FORCE NEW CONTROLLERS EVERY TIME
+      if (currentController) {
+        currentController.abort();
+      }
+      if (enrichController) {
+        enrichController.abort();
+      }
+      currentController = new AbortController();
+      enrichController = new AbortController();
       console.log("GENERATE TRIGGERED");
       console.log("STATE:", {
         isGenerating,
@@ -2065,14 +2074,6 @@
         console.log("🟢 Session OK");
         const token = session.access_token;
 
-        if (currentController) {
-          currentController.abort();
-        }
-        if (enrichController) {
-          enrichController.abort();
-          enrichController = null;
-        }
-        currentController = new AbortController();
         console.log("SENDING REQUEST");
         const apiMode = activeTab === "cross"
           ? "Cross-Curricular"
@@ -2090,6 +2091,7 @@
           contentMode: apiMode
         };
         console.log("🚀 PAYLOAD SENT TO BACKEND:", payload);
+        console.log("📡 BEFORE FETCH");
         const res = await fetch(
           "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
           {
@@ -2103,6 +2105,7 @@
             signal: currentController.signal
           }
         );
+        console.log("📡 AFTER FETCH");
         console.log("STEP 4: fetch response");
         console.log("🟢 Fetch sent");
         progressTimers.forEach((timer) => clearTimeout(timer));
@@ -2165,11 +2168,11 @@
 
         currentData = {
           passage: generatedPassage,
-          crossPassage: cleanText(data.crossPassage || data.passage || ""),
           practice: {
             questions: Array.isArray(data?.practice?.questions) ? data.practice.questions.slice(0, 5) : structuredQuestions.slice(0, 5)
           },
           cross: {
+            passage: cleanText(data?.cross?.passage || ""),
             questions: Array.isArray(data?.cross?.questions) ? data.cross.questions.slice(0, 5) : []
           },
           tutor: {
@@ -2211,7 +2214,7 @@
         }
         clearRenderedSections();
         renderPracticeSection(currentData.practice, currentData.passage);
-        renderCrossSection(currentData.cross, currentData.crossPassage || currentData.passage, { loading: true });
+        renderCrossSection(currentData.cross, currentData.cross?.passage || "", { loading: true });
         const modeStatus = document.getElementById("mode-status");
         if (modeStatus) {
           modeStatus.textContent = "Step 2: Adding explanations...";
@@ -2235,12 +2238,9 @@
           level,
           mode: "enrichment",
           contentMode: apiMode,
-          passage: data.passage,
           practiceQuestions: Array.isArray(data?.practice?.questions) ? data.practice.questions.slice(0, 5) : []
         };
 
-        enrichController = new AbortController();
-        const thisEnrichController = enrichController;
         try {
           const enrichRes = await fetch("https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker", {
             method: "POST",
@@ -2273,8 +2273,10 @@
           };
           currentData = {
             ...currentData,
-            crossPassage: cleanText(enrichData?.crossPassage || currentData?.crossPassage || ""),
-            cross: enrichedCross,
+            cross: {
+              passage: cleanText(enrichData?.cross?.passage || currentData?.cross?.passage || ""),
+              questions: enrichedCross.questions
+            },
             tutor: enrichedTutor,
             answerKey: enrichedAnswerKey
           };
@@ -2304,10 +2306,6 @@
         } catch (enrichErr) {
           if (enrichErr?.name !== "AbortError") {
             console.warn("⚠️ Enrichment request failed:", enrichErr);
-          }
-        } finally {
-          if (enrichController === thisEnrichController) {
-            enrichController = null;
           }
         }
       } catch (err) {
@@ -2339,15 +2337,16 @@
         }
         console.error("❌ GENERATE ERROR:", err);
       } finally {
-        console.log("🧹 FINAL CLEANUP");
         progressTimers.forEach((timer) => clearTimeout(timer));
         isGenerating = false;
+        currentController = null;
+        enrichController = null;
+        console.log("🧹 FINAL CLEANUP");
         const btn = document.getElementById("generate-btn");
         if (btn) {
           btn.disabled = false;
           btn.textContent = "Generate STAAR Pack";
         }
-        currentController = null;
         console.log("✅ GENERATE FULLY COMPLETE");
       }
     }

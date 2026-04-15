@@ -72,6 +72,7 @@ type CoreResponse = {
 
 type EnrichmentResponse = {
   cross: {
+    passage: string;
     questions: Question[];
   };
   tutor: {
@@ -421,37 +422,40 @@ Rules:
 
 function buildEnrichmentPrompt(params: {
   subject: CanonicalSubject;
-  passage: PassageContent;
   practiceQuestions: Question[];
   level: Level;
 }): string {
-  const { subject, passage, practiceQuestions, level } = params;
+  const { subject, practiceQuestions, level } = params;
   const rigor = applyRigor(level);
-  const passageText = typeof passage === "string"
-    ? passage
-    : `${passage.text_1 || ""}\n\n${passage.text_2 || ""}`;
   const subjectFocus = subject === "Science"
     ? "Science focus: cause/effect, systems interactions, experiments/results, evidence-based reasoning."
     : subject === "Social Studies"
     ? "Social Studies focus: cause/effect, decisions/consequences, timeline of events, impact on people/community."
     : "Math focus: passage includes numbers/data; require interpreting quantities, choosing operations, and solving from context.";
 
-  return `Using the passage and practice questions, return JSON only:
+  return `Generate a NEW cross-curricular passage and cross-curricular questions, then return JSON only:
 {
-  "cross": { "questions": [5 subject-aligned questions] },
+  "cross": {
+    "passage": "REQUIRED string (250–300 words)",
+    "questions": [5 subject-aligned questions]
+  },
   "tutor": { "explanations": [5 entries with question, explanation, common_mistake, parent_tip, hint, think, step_by_step] },
   "answerKey": { "answers": [5 entries with answer] }
 }
 
 Subject: ${subject}
-Passage:
-${passageText}
 
 Practice questions:
 ${JSON.stringify(practiceQuestions.slice(0, 5))}
 
 Rules:
-- CROSS-CURRICULAR MODE ONLY. ALWAYS use the passage first.
+- CROSS-CURRICULAR MODE ONLY.
+- Generate a NEW passage aligned to the subject.
+- CRITICAL: Generate a NEW passage (250–300 words).
+- Passage MUST be different from practice passage.
+- Passage MUST be aligned to ${subject}.
+- Questions MUST be based ONLY on this new passage.
+- Do NOT reuse or paraphrase the original practice passage.
 - CRITICAL: if a question can be answered without reading the passage, reject it and rewrite it.
 - cross questions must be different from practice questions.
 - cross questions MUST be HYBRID: reading comprehension + ${subject} reasoning.
@@ -1925,7 +1929,7 @@ function buildFallbackResponse(
   return {
     passage: practicePassage,
     practice: { questions: practiceQuestions },
-    cross: { questions: crossContent.questions },
+    cross: { passage: crossContent.passage, questions: crossContent.questions },
     tutor: { explanations: sanitizeTutorExplanations([], practiceQuestions) },
     answerKey: { answers: sanitizeAnswerKey([], practiceQuestions) },
   };
@@ -2152,7 +2156,7 @@ serve(async (req) => {
           bestAttempt = {
             passage: payload.passage,
             practice: payload.practice,
-            cross: { questions: [] },
+            cross: { passage: "", questions: [] },
             tutor: { explanations: [] },
             answerKey: { answers: [] },
           };
@@ -2161,36 +2165,32 @@ serve(async (req) => {
           return returnCore(payload);
         }
 
-        const priorPassage = body.passage;
         const priorPractice = body.practiceQuestions;
-        if (!priorPassage || !Array.isArray(priorPractice) || priorPractice.length === 0) {
+        if (!Array.isArray(priorPractice) || priorPractice.length === 0) {
           return safeFallback("missing_enrichment_inputs");
         }
 
+        const corePassageFromRequest = typeof body.passage === "string"
+          ? String(body.passage || "").trim()
+          : "";
+        const fallbackPracticePassage = fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill, level);
+        const corePassageForChecks = corePassageFromRequest || getPassageText(fallbackPracticePassage);
         const normalizedPractice = sanitizeQuestions(
           priorPractice,
           effectiveSubject,
           "Practice",
           effectiveSkill,
           level,
-          priorPassage as PassageContent | string,
+          corePassageForChecks,
         );
-        const normalizedPassage = typeof priorPassage === "object" && priorPassage !== null
-          ? {
-            text_1: String((priorPassage as Record<string, unknown>).text_1 || ""),
-            text_2: String((priorPassage as Record<string, unknown>).text_2 || ""),
-          }
-          : String(priorPassage || "").trim();
-        const safePassage = (
-          typeof normalizedPassage === "string"
-            ? clampPassageWords(normalizedPassage, range.min, range.max)
-            : normalizedPassage
-        ) || fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill, level);
         console.log("🧠 CROSS SUBJECT:", effectiveSubject);
         const crossContent = effectiveSubject === "Reading"
           ? buildELARCrossContent(level)
           : buildSubjectCrossContent(effectiveSubject, level);
-        let subjectCrossPassage = crossContent.passage;
+        const baseCrossPassage = crossContent.passage;
+        if (baseCrossPassage === corePassageForChecks) {
+          console.log("⚠️ Cross passage duplication detected");
+        }
 
         console.time("OPENAI_CALL");
         const enrichRes = await fetch("https://api.openai.com/v1/responses", {
@@ -2203,7 +2203,6 @@ serve(async (req) => {
             model: "gpt-4o-mini",
             input: buildEnrichmentPrompt({
               subject: effectiveSubject,
-              passage: safePassage,
               practiceQuestions: normalizedPractice,
               level,
             }),
@@ -2229,17 +2228,17 @@ serve(async (req) => {
           "",
         ).trim();
         const parsed = tryParseJsonPayload(enrichText) || {};
-        const candidateCrossPassage = String((parsed as Record<string, unknown>).crossPassage || "").trim();
-        if (candidateCrossPassage) subjectCrossPassage = candidateCrossPassage;
-        if (!validateCrossPassage(subjectCrossPassage)) {
-          console.warn("⚠️ Invalid cross passage, forcing subject passage");
-            subjectCrossPassage = buildSubjectPassage(effectiveSubject, level);
+        const parsedCross = parsed?.cross && typeof parsed.cross === "object"
+          ? parsed.cross as Record<string, unknown>
+          : {};
+        let subjectCrossPassage = String(parsedCross.passage || "").trim() || baseCrossPassage;
+        if (!validateCrossPassage(subjectCrossPassage) || subjectCrossPassage === corePassageForChecks) {
+          console.warn("⚠️ Invalid or duplicated cross passage, forcing subject passage");
+          subjectCrossPassage = baseCrossPassage;
         }
 
         let crossQuestions = sanitizeQuestions(
-          parsed?.cross && typeof parsed.cross === "object"
-            ? (parsed.cross as Record<string, unknown>).questions
-            : [],
+          parsedCross.questions || [],
           effectiveSubject,
           "Cross-Curricular",
           "Main Idea",
@@ -2290,13 +2289,17 @@ serve(async (req) => {
         console.log("🔥 FINAL CROSS SUBJECT:", effectiveSubject);
         console.log("🔥 FINAL CROSS PASSAGE:", subjectCrossPassage);
 
+        if (!crossQuestions.length) {
+          crossQuestions = crossContent.questions;
+        }
+
         const payload = {
-          cross: { questions: crossQuestions },
+          cross: { passage: subjectCrossPassage, questions: crossQuestions },
           tutor: { explanations: tutorExplanations },
           answerKey: { answers: answerKeyAnswers },
         };
         bestAttempt = {
-          passage: safePassage,
+          passage: corePassageForChecks,
           practice: { questions: normalizedPractice },
           cross: payload.cross,
           tutor: payload.tutor,
