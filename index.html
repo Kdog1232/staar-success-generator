@@ -1919,6 +1919,11 @@
       }
 
       isGenerating = true;
+      setTimeout(() => {
+        if (isGenerating) {
+          console.warn("⏳ Still generating (slow request)");
+        }
+      }, 15000);
       const runId = ++generateRunId;
       console.log("🚀 GENERATE START");
       console.log("GENERATE TRIGGERED");
@@ -1941,6 +1946,7 @@
       btn.disabled = true;
       btn.textContent = "Generating...";
       const progressTimers = [];
+      let hasRendered = false;
 
       function halt(message) {
         console.log("⛔ HALT:", message);
@@ -1970,21 +1976,18 @@
         }, 3200));
         viewToggle.style.display = "none";
         console.log("STEP 1: start");
-        const user = await withTimeout(requireAuth(), AUTH_TIMEOUT_MS);
+        const user = await requireAuth();
         console.log("STEP 2: auth complete");
 
         if (!user) {
           throw new Error("HALT_NO_USER");
         }
 
-        const { data: profile } = await withTimeout(
-          supabase
-            .from("profiles")
-            .select("plan, generations_used")
-            .eq("id", user.id)
-            .single(),
-          AUTH_TIMEOUT_MS
-        );
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("plan, generations_used")
+          .eq("id", user.id)
+          .single();
 
         const plan = profile?.plan || "free";
         const currentGenerations = Number(profile?.generations_used || 0);
@@ -2020,7 +2023,7 @@
         currentData = null;
 
         console.log("🟡 Getting session...");
-        const session = await withTimeout(getSafeSession(), AUTH_TIMEOUT_MS);
+        const session = await getSafeSession();
         console.log("STEP 3: session complete");
         console.log("🟢 Session OK");
         const token = session.access_token;
@@ -2050,21 +2053,18 @@
           phase: "core"
         };
         console.log("🚀 PAYLOAD SENT TO BACKEND:", payload);
-        const res = await withTimeout(
-          fetch(
-            "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
-                apikey: SUPABASE_ANON_KEY
-              },
-              body: JSON.stringify(payload),
-              signal: currentController.signal
-            }
-          ),
-          API_FETCH_TIMEOUT_MS
+        const res = await fetch(
+          "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+              apikey: SUPABASE_ANON_KEY
+            },
+            body: JSON.stringify(payload),
+            signal: currentController.signal
+          }
         );
         console.log("STEP 4: fetch response");
         console.log("🟢 Fetch sent");
@@ -2081,7 +2081,7 @@
           `);
         }
 
-        const data = await withTimeout(res.json(), API_PARSE_TIMEOUT_MS);
+        const data = await res.json();
         console.log("STEP 5: json parsed");
         console.log("🟢 Data received");
         console.log("🔥 FRONTEND RECEIVED:", data);
@@ -2097,13 +2097,10 @@
 
         if (plan !== "paid") {
           const nextGenerationsUsed = currentGenerations + 1;
-          const { error: usageUpdateError } = await withTimeout(
-            supabase
-              .from("profiles")
-              .update({ generations_used: nextGenerationsUsed })
-              .eq("id", user.id),
-            AUTH_TIMEOUT_MS
-          );
+          const { error: usageUpdateError } = await supabase
+            .from("profiles")
+            .update({ generations_used: nextGenerationsUsed })
+            .eq("id", user.id);
 
           if (!usageUpdateError) {
             renderUsageStatus({ plan, generations_used: nextGenerationsUsed });
@@ -2152,6 +2149,8 @@
         lastGeneratedContentMode = "both";
         const progressCount = incrementDailyProgress();
 
+        if (hasRendered) return;
+        hasRendered = true;
         outputDiv.innerHTML = `
           <div class="worksheet">
             <p class="mode-status" id="mode-status">Mode: Practice Mode ON</p>
@@ -2207,7 +2206,7 @@
           if (!enrichRes.ok) {
             throw new Error(`enrichment_status_${enrichRes.status}`);
           }
-          const enrichData = await withTimeout(enrichRes.json(), 20000);
+          const enrichData = await enrichRes.json();
           if (runId !== generateRunId) {
             throw new Error("HALT_STALE_RUN");
           }
@@ -2268,7 +2267,14 @@
           outputDiv.innerHTML = "Session expired. Refresh page.";
         } else if (message === "TIMEOUT") {
           console.error("⏰ TIMEOUT DETECTED");
-          outputDiv.innerHTML = "This request is taking longer than expected. Please wait a moment, then try again.";
+          if (!hasRendered) {
+            outputDiv.innerHTML = `
+              <div class="locked">
+                <strong>Still working...</strong><br>
+                This request is taking longer than usual.
+              </div>
+            `;
+          }
         } else if (message === "MISSING_FORM_INPUT") {
           outputDiv.innerHTML = "A required form field is missing. Refresh and try again.";
         } else if (message === "HALT_MISSING_DOM") {
