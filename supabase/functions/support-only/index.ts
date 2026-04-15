@@ -14,7 +14,7 @@ serve(async (req) => {
     const body = await req.json();
     const payload = {
       ...body,
-      mode: "enrichment",
+      mode: "support",
     };
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");

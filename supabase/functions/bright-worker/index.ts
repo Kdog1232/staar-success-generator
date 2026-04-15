@@ -2628,6 +2628,7 @@ serve(async (req) => {
   let level: Level = "On Level";
   let mode: CanonicalMode = "Practice";
   let requestMode: "core" | "enrichment" = "core";
+  let effectiveMode: "core" | "cross" | "support" | "enrichment" = "core";
   let effectiveSubject: CanonicalSubject = "Reading";
   let effectiveSkill = READING_SKILL_DEFAULT;
 
@@ -2706,10 +2707,23 @@ serve(async (req) => {
     subject = canonicalizeSubject(incomingSubject);
     skill = String(incomingSkill || READING_SKILL_DEFAULT).trim() || READING_SKILL_DEFAULT;
     level = normalizeLevel(incomingLevel);
-    requestMode = String(incomingMode || "core").toLowerCase() === "enrichment" ? "enrichment" : "core";
+    const rawMode = String(body?.mode || "").toLowerCase();
+
+    if (rawMode === "cross" || rawMode === "cross-curricular") {
+      effectiveMode = "cross";
+    } else if (rawMode === "support") {
+      effectiveMode = "support";
+    } else if (rawMode === "enrichment") {
+      effectiveMode = "enrichment";
+    } else {
+      effectiveMode = "core";
+    }
+    requestMode = effectiveMode === "enrichment" ? "enrichment" : "core";
     mode = canonicalizeMode(incomingContentMode);
     effectiveSubject = subject;
     effectiveSkill = skill ?? "Main Idea";
+    console.log("🔥 RAW MODE:", rawMode);
+    console.log("🔥 EFFECTIVE MODE:", effectiveMode);
     console.log("🧠 REQUEST MODE:", requestMode);
     console.log("🧠 CONTENT MODE:", mode);
     console.log("🧠 SUBJECT:", subject);
@@ -2736,7 +2750,7 @@ serve(async (req) => {
       }
       attempts++;
       try {
-        if (requestMode === "core") {
+        if (effectiveMode === "core") {
           console.time("OPENAI_CALL");
           const aiRes = await fetch("https://api.openai.com/v1/responses", {
             method: "POST",
@@ -2913,6 +2927,105 @@ serve(async (req) => {
         const baseCrossPassage = crossContent.passage;
         if (baseCrossPassage === corePassageForChecks) {
           console.log("⚠️ Cross passage duplication detected");
+        }
+
+        if (effectiveMode === "cross") {
+          const crossPassage = ensurePassageLength(
+            baseCrossPassage,
+            250,
+            300,
+            effectiveSubject,
+            "Cross-Curricular",
+            grade,
+            level,
+          );
+          const crossQuestions = sanitizeQuestions(
+            crossContent.questions || [],
+            effectiveSubject,
+            "Cross-Curricular",
+            effectiveSkill,
+            level,
+            crossPassage,
+          );
+          const payload = {
+            cross: {
+              passage: crossPassage,
+              questions: crossQuestions,
+            },
+          };
+          bestAttempt = {
+            passage: corePassageForChecks,
+            practice: { questions: normalizedPractice },
+            cross: payload.cross,
+            tutor: { practice: [], cross: [] },
+            answerKey: { practice: [], cross: [] },
+          };
+          returnType = "PRIMARY";
+          logReturnMetrics();
+          return jsonResponse(payload);
+        }
+
+        if (effectiveMode === "support") {
+          const priorCrossQuestions = Array.isArray(body.crossQuestions) ? body.crossQuestions : [];
+          const priorCrossPassage = typeof body.crossPassage === "string"
+            ? String(body.crossPassage || "").trim()
+            : "";
+          const sanitizedCrossQuestions = sanitizeQuestions(
+            priorCrossQuestions,
+            effectiveSubject,
+            "Cross-Curricular",
+            effectiveSkill,
+            level,
+            priorCrossPassage,
+          );
+          const tutorPractice = sanitizeTutorExplanations(
+            [],
+            normalizedPractice,
+            effectiveSubject,
+            "practice",
+          );
+          const tutorCross = sanitizeTutorExplanations(
+            [],
+            sanitizedCrossQuestions,
+            effectiveSubject,
+            "cross",
+            priorCrossPassage,
+          );
+          const answerKeyPractice = sanitizeAnswerKey(
+            [],
+            normalizedPractice,
+            effectiveSubject,
+            tutorPractice,
+            "practice",
+          );
+          const answerKeyCross = sanitizeAnswerKey(
+            [],
+            sanitizedCrossQuestions,
+            effectiveSubject,
+            tutorCross,
+            "cross",
+            priorCrossPassage,
+          );
+          const payload = {
+            tutor: {
+              practice: tutorPractice,
+              cross: tutorCross,
+            },
+            answerKey: {
+              practice: answerKeyPractice,
+              cross: answerKeyCross,
+            },
+          };
+          bestAttempt = {
+            passage: corePassageForChecks,
+            practice: { questions: normalizedPractice },
+            cross: { passage: priorCrossPassage, questions: sanitizedCrossQuestions },
+            tutor: payload.tutor,
+            answerKey: payload.answerKey,
+          };
+          returnType = "PRIMARY";
+          logReturnMetrics();
+          return jsonResponse(payload);
         }
 
         console.time("OPENAI_CALL");
@@ -3105,6 +3218,15 @@ serve(async (req) => {
       logReturnMetrics();
       if (requestMode === "enrichment") {
         return returnEnrichment(bestAttempt);
+      }
+      if (effectiveMode === "cross") {
+        return jsonResponse({ cross: bestAttempt.cross });
+      }
+      if (effectiveMode === "support") {
+        return jsonResponse({
+          tutor: bestAttempt.tutor,
+          answerKey: bestAttempt.answerKey,
+        });
       }
       return returnCore(bestAttempt);
     }
