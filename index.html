@@ -928,6 +928,7 @@
     let currentController = null;
     let enrichController = null;
     let generateRunId = 0;
+    let lastRenderRunId = 0;
     let lastGeneratedContentMode = null;
     let standardContent = "";
     let crossContent = "";
@@ -1217,30 +1218,16 @@
       supabase.auth.onAuthStateChange(async (event, session) => {
         console.log("🔄 Auth state changed");
         if (isGenerating) {
-          console.log("⚠️ Ignoring auth change during generation");
           return;
         }
 
         cachedSession = session ?? null;
         cachedUser = cachedSession?.user ?? null;
 
-        if (event === "SIGNED_OUT") {
-          upgradeChecked = false;
-          stopProfileUpdatesSubscription();
-          setAppAuthenticatedState(false);
-          resetProtectedUI();
-          redirectToLogin();
+        if (!cachedUser) {
           return;
         }
-
-        const currentUser = await requireAuth({ showPrompt: false });
-        if (!currentUser) {
-          setAppAuthenticatedState(false);
-          return;
-        }
-
-        await checkAndUpgradeUser(currentUser);
-        await refreshUsageStatus(currentUser.id);
+        // Only update lightweight auth state here.
       });
     }
 
@@ -1740,33 +1727,22 @@
     }
 
     function renderTab(tab = activeTab) {
+      if (lastRenderRunId === generateRunId) {
+        console.log("⛔ SKIPPING duplicate render");
+        return;
+      }
+
+      lastRenderRunId = generateRunId;
+
       const practiceSection = document.getElementById("practice-section");
       const crossSection = document.getElementById("cross-section");
       const tutorSection = document.getElementById("tutor-section");
       const answerSection = document.getElementById("answer-section");
-      const practiceTab = document.getElementById("practice-tab");
-      const crossTab = document.getElementById("cross-tab");
-      const tutorTab = document.getElementById("tutor-tab");
-      const answerTab = document.getElementById("answer-tab");
-      const modeStatus = document.getElementById("mode-status");
-      if (!practiceSection || !crossSection || !tutorSection || !answerSection || !practiceTab || !crossTab || !tutorTab || !answerTab || !modeStatus) return;
-      if (!currentData) return;
+      if (!practiceSection || !crossSection || !tutorSection || !answerSection) return;
       practiceSection.style.display = tab === "practice" ? "block" : "none";
       crossSection.style.display = tab === "cross" ? "block" : "none";
       tutorSection.style.display = tab === "tutor" ? "block" : "none";
       answerSection.style.display = tab === "answer" ? "block" : "none";
-
-      const showingPractice = tab === "practice";
-      const showingCross = tab === "cross";
-      const showingTutor = tab === "tutor";
-      const showingAnswer = tab === "answer";
-
-      practiceTab.classList.toggle("active", showingPractice);
-      crossTab.classList.toggle("active", showingCross);
-      tutorTab.classList.toggle("active", showingTutor);
-      answerTab.classList.toggle("active", showingAnswer);
-      crossTab.style.display = "block";
-      modeStatus.textContent = `Mode: ${tab === "cross" ? "Cross-Curricular ON" : tab === "tutor" ? "Tutor Mode ON" : tab === "answer" ? "Answer Key ON" : "Practice Mode ON"}`;
       console.log("✅ RENDER COMPLETE");
     }
 
@@ -1955,6 +1931,7 @@
         return;
       }
 
+      lastRenderRunId = 0;
       isGenerating = true;
       setTimeout(() => {
         if (isGenerating) {
@@ -2337,11 +2314,11 @@
         }
         console.error("❌ GENERATE ERROR:", err);
       } finally {
+        console.log("🧹 FINAL CLEANUP");
         progressTimers.forEach((timer) => clearTimeout(timer));
         isGenerating = false;
         currentController = null;
         enrichController = null;
-        console.log("🧹 FINAL CLEANUP");
         const btn = document.getElementById("generate-btn");
         if (btn) {
           btn.disabled = false;
