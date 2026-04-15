@@ -619,34 +619,12 @@ function buildSSFallbackChoices(): [string, string, string, string] {
   ];
 }
 
-function buildReadingFallbackChoices(): [string, string, string, string] {
-  return [
-    "The author shows that communities solve problems by comparing evidence before deciding.",
-    "The passage suggests decisions are made quickly without reviewing all details.",
-    "The text focuses on one example but ignores how other evidence changes the outcome.",
-    "The passage describes an unrelated situation not connected to the main idea.",
-  ];
-}
-
 function getFallbackChoices(subject: CanonicalSubject, skill: string): [string, string, string, string] {
   void skill;
   if (subject === "Math") return buildMathFallbackChoices();
   if (subject === "Science") return buildScienceFallbackChoices();
   if (subject === "Social Studies") return buildSSFallbackChoices();
-  return buildReadingFallbackChoices();
-}
-
-function enforceChoiceQuality(
-  choices: [string, string, string, string],
-  subject: CanonicalSubject,
-  skill: string,
-): [string, string, string, string] {
-  const hasGenericMeta = choices.some((choice) => {
-    const text = String(choice || "");
-    return /this choice|response grounded/i.test(text);
-  });
-  if (!hasGenericMeta) return choices;
-  return getFallbackChoices(subject, skill);
+  return buildReadingChoices("", "", "On Level");
 }
 
 function normalizeChoices(
@@ -668,7 +646,7 @@ function normalizeChoices(
       /^choice\s*\d+$/i.test(stripped);
     return isPlaceholder ? fallbackChoices[index] : stripped;
   }) as [string, string, string, string];
-  return enforceChoiceQuality(normalized, subject, skill);
+  return normalized;
 }
 
 function strengthenChoiceSet(
@@ -1021,7 +999,6 @@ function buildPracticeFallback(
     singleAnswerIndex += 1;
     return letter;
   };
-  const passageDrivenChoices = passage ? generateChoicesFromPassage(passage, level) : null;
   const mathChoiceBanks: [string, string, string, string][] = [
     ["$135", "$81", "$45", "$162"],
     ["9 pages", "41 pages", "23 pages", "5 pages"],
@@ -1100,7 +1077,7 @@ function buildPracticeFallback(
         "The final publication says interview quotes were optional because survey totals alone answer every question.",
         "The final publication says conflicting reports should be combined without checking the original statements.",
       ];
-    const choices = subject === "Math"
+    let choices = subject === "Math"
       ? mathChoiceBanks[i % mathChoiceBanks.length]
       : subject === "Science"
       ? [
@@ -1116,15 +1093,19 @@ function buildPracticeFallback(
         "Voters approved the bridge bond first, and rail improvements were added only after that success.",
         "Population growth reduced cross-river travel demand, so no major transportation decision was necessary.",
       ]
-      : (passageDrivenChoices || [
-        "The editor revised the headline after checking interview notes, which means evidence controlled the final claim.",
-        "The editor kept the original headline despite conflicting quotes, so wording did not affect meaning.",
-        "Survey totals were ignored during revision, indicating data was less important than opinion.",
-        "The team added a new event not in the notes, which means outside information drove the conclusion.",
-      ]);
-    const safeChoices = enforceChoiceQuality(choices as [string, string, string, string], subject, "");
-    const safePartAChoices = enforceChoiceQuality(partAChoices, subject, "");
-    const safePartBChoices = enforceChoiceQuality(partBChoices, subject, "");
+      : buildReadingChoices(passage || "", leveledStem, level);
+    if (subject === "Reading") {
+      choices = buildReadingChoices(passage || "", leveledStem, level);
+    }
+    choices = strengthenChoiceSet(
+      choices as [string, string, string, string],
+      leveledStem,
+      passage || "",
+      subject,
+    );
+    const safeChoices = normalizeChoices(choices as [string, string, string, string], subject, "");
+    const safePartAChoices = normalizeChoices(partAChoices, subject, "");
+    const safePartBChoices = normalizeChoices(partBChoices, subject, "");
     const question: Question = {
       type,
       question: leveledStem,
@@ -1161,36 +1142,42 @@ function buildPracticeFallback(
   });
 }
 
-function generateChoicesFromPassage(passage: PassageContent | string, level: Level = "On Level"): [string, string, string, string] {
+function buildReadingChoices(
+  passage: PassageContent | string,
+  questionText: string,
+  level: Level = "On Level",
+): [string, string, string, string] {
+  void questionText;
   const text = getPassageText(passage).trim();
   const keywords = passageKeywords(text).slice(0, 4);
-  const focus = keywords[0] || "the passage topic";
-  const detail = keywords[1] || "key details";
-  const context = keywords[2] || "supporting evidence";
-  const outlier = keywords[3] || "an unrelated detail";
+  const focus = keywords[0] || "the main idea";
+  const detail = keywords[1] || "key evidence";
+  const context = keywords[2] || "supporting detail";
+  const shift = keywords[3] || "a later development";
 
   if (level === "Below") {
     return [
-      `${focus} is explained through a direct detail about ${detail}.`,
-      `${outlier} appears in the article, but it is not the reason ${focus} changes.`,
-      `${context} is described as a new event that was never mentioned in the article.`,
-      `${focus} is said to decrease when ${detail} increases, reversing the article's relationship.`,
+      `${focus} is directly explained using ${detail} in the passage.`,
+      `${detail} is mentioned but not connected to ${focus}.`,
+      `${context} is incorrectly treated as the main idea.`,
+      `${shift} changes the outcome but is ignored.`,
     ];
   }
+
   if (level === "Advanced") {
     return [
-      `${focus} and ${detail} interact, and together they explain the article's conclusion.`,
-      `${focus} is identified correctly, but ${context} is interpreted in a way that changes the conclusion incorrectly.`,
-      `${detail} is generalized into a wider conclusion than the evidence in the article supports.`,
-      `${outlier} is treated as the central cause even though the article presents it as a minor detail.`,
+      `${focus} is supported through a relationship between ${detail} and ${context}.`,
+      `${detail} is accurate but misinterpreted in how it affects ${focus}.`,
+      `${context} is overgeneralized beyond what the passage supports.`,
+      `${shift} is treated as central even though it alters the conclusion.`,
     ];
   }
 
   return [
-    `${focus} is supported by the article's detail about ${detail}.`,
-    `${detail} is repeated, but the role of ${context} in the main point is ignored.`,
-    `${outlier} is overemphasized even though the article treats it as secondary.`,
-    `${context} is explained with outside information that does not appear in the article.`,
+    `${focus} is supported by evidence about ${detail}.`,
+    `${detail} is mentioned but its role in ${focus} is misunderstood.`,
+    `${context} is overemphasized even though it is not central.`,
+    `${shift} is treated as the main idea even though it changes the conclusion.`,
   ];
 }
 
@@ -1646,13 +1633,13 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
   return stems.map((stem, i) => {
     const type: QuestionType = i === 1 ? "part_a_b" : i === 3 ? "multi_select" : i === 4 ? "scr" : "mc";
     const support = buildSupportContent(effectiveSubject, stem, type, i, level, mode, "");
-    const baseChoices = enforceChoiceQuality([
+    const baseChoices = normalizeChoices([
       "The plants closest to the lamp grew taller because they received more direct light.",
       "All plants grew at the same rate, so light intensity did not matter in this setup.",
       "Plants farther from the lamp appeared to grow faster because lower heat outweighed reduced light.",
       "Plant height changed randomly and was not related to the light conditions in the investigation.",
     ], effectiveSubject, skill);
-    const partBChoices = enforceChoiceQuality([
+    const partBChoices = normalizeChoices([
       "The investigation compared plant growth at different distances from the lamp over two weeks.",
       "The passage says all plants were measured only once at the end of the week.",
       "The class ignored light distance and focused only on soil color.",
