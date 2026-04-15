@@ -11,14 +11,21 @@ type CrossConnection = {
   connection: string;
 };
 
-type QuestionType = "mc" | "part_a" | "part_b" | "multi_select" | "scr";
+type QuestionType = "mc" | "part_a" | "part_b" | "part_a_b" | "multi_select" | "scr";
 type PassageContent = string | { text_1: string; text_2: string };
+type PartABAnswer = { partA: ChoiceLetter; partB: ChoiceLetter };
+type PartBlock = {
+  question: string;
+  choices: [string, string, string, string];
+};
 
 type Question = {
   type?: QuestionType;
   question: string;
   choices: [string, string, string, string];
-  correct_answer: ChoiceLetter | [ChoiceLetter, ChoiceLetter];
+  correct_answer: ChoiceLetter | [ChoiceLetter, ChoiceLetter] | PartABAnswer;
+  partA?: PartBlock;
+  partB?: PartBlock;
   explanation: string;
   paired_with?: number;
   sample_answer?: string;
@@ -125,6 +132,36 @@ function rigorInstruction(level: Level): string {
   if (level === "Below") return "Use simpler language while keeping the same thinking depth and rigor.";
   if (level === "Advanced") return "Increase reasoning depth, abstraction, and evidence precision.";
   return "Use grade-level language and reasoning rigor.";
+}
+
+type RigorProfile = {
+  passage: "simple" | "grade" | "complex";
+  questionDepth: "low" | "medium" | "high";
+  distractorQuality: "obvious" | "plausible" | "subtle";
+};
+
+function applyRigor(level: Level): RigorProfile {
+  if (level === "Below") {
+    return {
+      passage: "simple",
+      questionDepth: "low",
+      distractorQuality: "obvious",
+    };
+  }
+
+  if (level === "Advanced") {
+    return {
+      passage: "complex",
+      questionDepth: "high",
+      distractorQuality: "subtle",
+    };
+  }
+
+  return {
+    passage: "grade",
+    questionDepth: "medium",
+    distractorQuality: "plausible",
+  };
 }
 
 function routeBySkill(skill: string): "vocab" | "main_idea" | "inference" | "theme" | "generic" {
@@ -331,21 +368,41 @@ function buildCorePrompt(params: {
   level: Level;
 }): string {
   const { grade, subject, skill, level } = params;
-  return `Create JSON only for a STAAR reading set.
+  const rigor = applyRigor(level);
+  const practiceRulesBySubject: Record<CanonicalSubject, string> = {
+    Reading: "Reading practice MUST include a passage and STAAR-style comprehension questions tied directly to that passage.",
+    Math: "Math practice MUST include direct, measurable word problems with multi-step reasoning and no passage dependency.",
+    Science: "Science practice MUST include direct concept/cause-effect/data interpretation questions and no passage dependency.",
+    "Social Studies": "Social Studies practice MUST include direct events/timeline/basic understanding questions and no passage dependency.",
+  };
+
+  return `Create JSON only for PRACTICE MODE.
 Grade: ${grade}
-Subject context: ${subject}
+Subject: ${subject}
 Skill: ${skill}
 Level: ${level}
 
 Return exactly:
 {
-  "passage": "string",
+  "passage": "string (empty string allowed for non-Reading)",
   "practice": { "questions": [5 items with question, choices, correct_answer, explanation] }
 }
 
 Rules:
-- Passage must support all 5 questions.
-- Questions must be ELAR comprehension focused.
+- PRACTICE MODE ONLY. Do not generate cross-curricular content.
+- NO cross-curricular mixing.
+- ${practiceRulesBySubject[subject]}
+- Rigor profile:
+  - passage complexity: ${rigor.passage}
+  - question depth: ${rigor.questionDepth}
+  - distractor quality: ${rigor.distractorQuality}
+- Use clear, student-friendly STAAR language.
+- Question set format must include exactly:
+  - 3 MC questions
+  - 1 Part A / Part B question (type: "part_a_b")
+  - 1 SCR or multi-select question
+- Every question has 4 distinct, specific answer choices.
+- Avoid generic wording and abstract meta language.
 - No markdown. JSON only.`;
 }
 
@@ -353,11 +410,19 @@ function buildEnrichmentPrompt(params: {
   subject: CanonicalSubject;
   passage: PassageContent;
   practiceQuestions: Question[];
+  level: Level;
 }): string {
-  const { subject, passage, practiceQuestions } = params;
+  const { subject, passage, practiceQuestions, level } = params;
+  const rigor = applyRigor(level);
   const passageText = typeof passage === "string"
     ? passage
     : `${passage.text_1 || ""}\n\n${passage.text_2 || ""}`;
+  const subjectFocus = subject === "Science"
+    ? "Science focus: cause/effect, systems interactions, experiments/results, evidence-based reasoning."
+    : subject === "Social Studies"
+    ? "Social Studies focus: cause/effect, decisions/consequences, timeline of events, impact on people/community."
+    : "Math focus: passage includes numbers/data; require interpreting quantities, choosing operations, and solving from context.";
+
   return `Using the passage and practice questions, return JSON only:
 {
   "cross": { "questions": [5 subject-aligned questions] },
@@ -373,42 +438,70 @@ Practice questions:
 ${JSON.stringify(practiceQuestions.slice(0, 5))}
 
 Rules:
+- CROSS-CURRICULAR MODE ONLY. ALWAYS use the passage first.
+- CRITICAL: if a question can be answered without reading the passage, reject it and rewrite it.
 - cross questions must be different from practice questions.
 - cross questions MUST be HYBRID: reading comprehension + ${subject} reasoning.
-- Every cross question must require interpreting passage evidence and applying subject knowledge.
-- Cross questions must sound more academic and analytical than practice questions, using longer sentence structure and domain vocabulary.
-- Include these reasoning words across stems: explain, infer, evidence, relationship, impact.
-- Include subject references in stems (as appropriate): experiment/event/data/result/pattern.
-- FORBIDDEN stems:
-  "What is the main idea", "Which detail supports", "Calculate", "Solve", "When did"
-- Each cross question must include exactly 4 REAL answer choices tied to passage evidence.
-- Choices must include plausible misconceptions and subject-specific reasoning.
-- Each question MUST have its own unique answer choices.
-- Do NOT reuse answer choices across questions.
-- Each set of choices must reflect the specific question being asked.
-- Choices must directly reference passage content, not generic reasoning.
-- Answer choices MUST reflect the subject context of the passage:
-  - Science → experiments, variables, results
-  - Social Studies → events, decisions, impact
-  - Math → relationships, quantities, patterns
-- Never use generic meta placeholders in answer choices.
+- ${subjectFocus}
+- Rigor profile:
+  - passage complexity: ${rigor.passage}
+  - question depth: ${rigor.questionDepth}
+  - distractor quality: ${rigor.distractorQuality}
+- Include exactly these 5 question intents in order:
+  1) cause and effect (stem starts with "What caused" or "Why did")
+  2) sequence/timeline (stem starts with "Which event happened after")
+  3) evidence-based (stem starts with "Which detail shows")
+  4) inference (stem starts with "Why did" or "What can be inferred")
+  5) conclusion (stem starts with "What can be concluded")
+- Each question must include exactly 4 clear, distinct, passage-specific answer choices.
+- Replace one regular MC with one Part A / Part B question (type: "part_a_b"), where:
+  - Part A asks the main claim/inference/solution
+  - Part B asks for evidence/reasoning that depends on Part A
+- Choices must be plausible but clearly different and tied to specific passage details.
+- Never use generic/meta answers like "this supports the claim" or "this shows reasoning."
+- Do NOT use academic fluff terms like "most defensible claim", "civic impact", or "event reasoning".
 - answerKey should match practice question answers.
 - JSON only.`;
 }
 
-function buildSubjectPassage(subject: CanonicalSubject): string {
+function buildSubjectPassage(subject: CanonicalSubject, level: Level = "On Level"): string {
+  const rigor = applyRigor(level);
   if (subject === "Science") {
+    if (rigor.passage === "simple") {
+      return "Students tested playground surfaces at school. They checked blacktop, grass, and concrete each hour. Blacktop got hottest in direct sun. Grass in the shade stayed cooler. After watering one area, that area warmed up more slowly. Students used this evidence to suggest more shade and lighter materials.";
+    }
+    if (rigor.passage === "complex") {
+      return "During a campus heat-transfer inquiry, student teams tracked how surface composition and environmental conditions influenced recess temperatures. They measured blacktop, concrete, and grass hourly while recording cloud cover, wind speed, and direct-sun exposure.\n\nThe results showed a persistent interaction: darker pavement absorbed and retained heat rapidly, while shaded grass moderated temperature through moisture and airflow. When students repeated the procedure after watering one test area, the rate of temperature increase fell, suggesting that evaporative effects altered heat buildup. In their final report, students connected these observations to design choices, arguing that material selection and shade planning could reduce thermal stress for the wider school community.";
+    }
     return "During a campus investigation, students tested how surface type affected temperature at recess. They placed thermometers on blacktop, grass, and concrete every hour and recorded wind speed, cloud cover, and sunlight. The data showed that dark pavement heated fastest in direct sun, while shaded grass stayed cooler because moisture and airflow reduced heat buildup. Students repeated the experiment after watering one section and observed a smaller temperature increase there. In their report, they explained the physical process of heat transfer and used cause-and-effect evidence to recommend shade trees and lighter playground materials.";
   }
 
   if (subject === "Social Studies") {
+    if (rigor.passage === "simple") {
+      return "In 1908, town leaders debated a bridge or a bigger rail depot. Farmers wanted the bridge to move crops faster. Merchants wanted rail growth for trade. Leaders first chose rail expansion. Flooding then delayed shipments and raised prices. Later, voters approved money for a bridge. These decisions changed where people lived and worked.";
+    }
+    if (rigor.passage === "complex") {
+      return "In 1908, leaders in a river town argued over two competing transportation investments: a bridge linking both banks or an expanded rail depot intended to attract outside commerce. Farmers favored the bridge for faster crop movement, while merchants expected rail expansion to widen regional trade.\n\nCouncil records show rail improvements were approved first, but repeated flooding disrupted shipments, increased prices, and weakened confidence in that strategy. Over the next several years, population growth on the opposite bank shifted daily travel patterns and voting priorities. When residents later passed a bridge bond, newspapers connected the decision to broader outcomes—migration shifts, business relocation, and new debates over how public funds should balance immediate needs with long-term community stability.";
+    }
     return "In 1908, leaders in a river town debated whether to spend limited tax funds on a bridge or a larger rail depot. Farmers argued that a bridge would move crops to market faster, while merchants supported the depot to attract outside trade. Meeting records show that the council first approved rail expansion, but repeated flooding delayed shipments and raised prices. Five years later, after population growth along the opposite bank, voters passed a bond for the bridge. Newspaper timelines and election results suggest that transportation choices changed migration patterns, business investment, and daily life across the town.";
   }
 
   if (subject === "Math") {
+    if (rigor.passage === "simple") {
+      return "The student council sold snacks at field day. A combo pack cost $6. Single items cost $2 each. In hour 1, volunteers sold 38 combos and 24 single items. In hour 2, combo sales went down by 8, but single-item sales went up by 15. Students compared both hours to decide what to restock.";
+    }
+    if (rigor.passage === "complex") {
+      return "The student council analyzed field-day snack sales to decide whether future inventory should prioritize combo packs or individual items. A combo pack was priced at $6 and included one drink plus two snacks, while single items were sold for $2 each.\n\nIn the first hour, volunteers recorded 38 combo purchases and 24 single-item purchases. In the second hour, combo volume declined by 8 after families shifted buying behavior, while single-item purchases rose by 15 following an announcement near the gym entrance. Organizers compared the two-hour revenue structure, not just item counts, because price-per-transaction and demand movement could produce different conclusions about total earnings and restocking risk.";
+    }
     return "The student council planned a field-day snack sale with two pricing options for families. A combo pack cost $6 and included one drink and two snacks, while single items cost $2 each. In the first hour, volunteers sold 38 combo packs and 24 single items. In the second hour, combo sales dropped by 8, but single-item sales increased by 15 after an announcement. Organizers used these numbers to compare revenue patterns and decide whether to restock combo materials or individual items. Their final decision depended on how the quantities in both hours related to total earnings.";
   }
 
+  if (rigor.passage === "simple") {
+    return "A school newspaper team read interviews and survey notes. Some students liked short articles. Others liked longer stories with more examples. Editors checked details to make sure claims matched evidence. They revised headlines to fit what sources actually said.";
+  }
+  if (rigor.passage === "complex") {
+    return "A school newspaper team analyzed interviews, survey data, and meeting notes to explain why students preferred different reading formats. Some readers valued short articles for quick access to key points, while others favored long-form features that developed ideas through examples and context.\n\nAs editors compared quotations across sources, they noticed how wording choices could shift meaning and create apparent disagreement. They revised claims, reorganized evidence, and adjusted headlines to better reflect what the strongest sources supported. Their final publication argued that careful comparison of language and evidence leads to more reliable conclusions, especially when two reports seem to conflict at first glance.";
+  }
   return "A school newspaper team reviewed interviews, survey results, and meeting notes to understand why students preferred different reading formats. Some students said short articles helped them find key ideas quickly, while others preferred longer features with more examples and context. Editors compared quotations, checked which claims were supported by multiple sources, and revised headlines to match the evidence in each story. When two reports appeared to conflict, the team re-read the original statements and identified how word choice changed the meaning. Their final publication explained how careful reading and evidence-based reasoning led to clearer conclusions.";
 }
 
@@ -434,22 +527,63 @@ function normalizeChoices(choices: unknown): [string, string, string, string] {
   }) as [string, string, string, string];
 }
 
+function strengthenChoiceSet(
+  choices: [string, string, string, string],
+  questionText: string,
+  passage: PassageContent | string = "",
+): [string, string, string, string] {
+  const text = getPassageText(passage);
+  const keywords = passageKeywords(text).slice(0, 4);
+  const defaultKeywords = questionText
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 4)
+    .slice(0, 4);
+  const anchors = (keywords.length ? keywords : defaultKeywords).slice(0, 2);
+  const [anchorA, anchorB] = [anchors[0] || "evidence", anchors[1] || "results"];
+
+  const weakSignal = /(unrelated|not supported|random|impossible|always|never|no evidence|cannot be)/i;
+  const upgraded = choices.map((choice, index) => {
+    const clean = String(choice || "").trim();
+    if (!clean || weakSignal.test(clean)) {
+      const variants = [
+        `This option uses one true detail about ${anchorA} but misreads how it connects to ${anchorB}.`,
+        `This option is partly correct about ${anchorA}, but it ignores a later detail that changes the result.`,
+        `This option confuses the sequence of ${anchorA} and ${anchorB}, leading to a wrong conclusion.`,
+        `This option applies the passage details to the wrong cause-and-effect relationship involving ${anchorA}.`,
+      ];
+      return variants[index % variants.length];
+    }
+
+    if (clean.split(/\s+/).length < 8) {
+      return `${clean} This interpretation sounds possible, but it misses an important passage detail about ${anchorA}.`;
+    }
+
+    return clean;
+  });
+
+  return upgraded as [string, string, string, string];
+}
+
 function validateHybridCross(questions: Question[]): boolean {
   return questions.every((q) => {
     const text = q.question.toLowerCase();
-    const hasReading =
-      text.includes("explain") ||
-      text.includes("infer") ||
-      text.includes("evidence") ||
-      text.includes("relationship") ||
-      text.includes("impact");
+    const hasReading = text.includes("what caused") ||
+      text.includes("which event happened after") ||
+      text.includes("which detail shows") ||
+      text.includes("what can be inferred") ||
+      text.includes("what can be concluded") ||
+      text.includes("why did");
 
-    const hasSubject =
-      text.includes("experiment") ||
+    const hasSubject = text.includes("experiment") ||
       text.includes("event") ||
       text.includes("data") ||
       text.includes("result") ||
-      text.includes("pattern");
+      text.includes("temperature") ||
+      text.includes("bridge") ||
+      text.includes("sales") ||
+      text.includes("earnings");
 
     return hasReading && hasSubject;
   });
@@ -474,6 +608,14 @@ function normalizeMultiSelectAnswer(value: unknown): [ChoiceLetter, ChoiceLetter
   return ["A", "C"];
 }
 
+function normalizePartABAnswer(value: unknown): PartABAnswer {
+  const entry = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return {
+    partA: normalizeAnswer(entry.partA || "A"),
+    partB: normalizeAnswer(entry.partB || "B"),
+  };
+}
+
 function clampPassageWords(passage: string, min: number, max: number): string {
   const cleaned = String(passage || "").replace(/\s+/g, " ").trim();
   const words = cleaned.split(" ").filter(Boolean);
@@ -485,11 +627,11 @@ function clampPassageWords(passage: string, min: number, max: number): string {
   return words.slice(0, max).join(" ");
 }
 
-function fallbackPassage(subject: CanonicalSubject, mode: CanonicalMode, grade: number): string {
+function fallbackPassage(subject: CanonicalSubject, mode: CanonicalMode, grade: number, level: Level = "On Level"): string {
   const { min, max } = gradeWordRange(grade, mode === "Cross-Curricular" ? "Reading" : subject, mode);
 
   if (mode === "Cross-Curricular") {
-    return clampPassageWords(buildSubjectPassage(subject), min, max);
+    return clampPassageWords(buildSubjectPassage(subject, level), min, max);
   }
 
   if (subject === "Math") {
@@ -603,8 +745,9 @@ function fallbackPassageContent(
   mode: CanonicalMode,
   grade: number,
   skill: string,
+  level: Level = "On Level",
 ): PassageContent {
-  if (!isCompareSkill(skill)) return fallbackPassage(subject, mode, grade);
+  if (!isCompareSkill(skill)) return fallbackPassage(subject, mode, grade, level);
 
   return {
     text_1: clampPassageWords(
@@ -620,15 +763,40 @@ function fallbackPassageContent(
   };
 }
 
-function buildPracticeFallback(skill: string): Question[] {
+function buildPracticeFallback(skill: string, subject: CanonicalSubject, level: Level = "On Level"): Question[] {
   const effectiveSkill: string = skill ?? "Main Idea";
-  const stems = [
-    `What is the main idea of the passage about ${effectiveSkill.toLowerCase()}?`,
-    "Which detail supports the main idea best?",
-    "What can the reader infer from the passage details?",
-    "Which word meaning is best supported by context in the passage?",
-    "Which summary best matches the passage?",
-  ];
+  const rigor = applyRigor(level);
+  const stems = subject === "Math"
+    ? [
+      "A class sold 18 notebooks on Monday and 27 notebooks on Tuesday. Each notebook costs $3. How much money did they make in all?",
+      "A student read 14 pages on Friday, 18 pages on Saturday, and 9 pages on Sunday. She wants to read 50 pages total. How many more pages does she need?",
+      "A recipe needs 3 cups of flour for one batch. If a club makes 4 batches, how many cups of flour are needed?",
+      "A bus carries 42 students. Two buses are full, and 17 more students ride a third bus. How many students are riding in all?",
+      "A store sold 65 apples in the morning and 38 apples in the afternoon. If 24 apples were returned, how many apples were sold finally?",
+    ]
+    : subject === "Science"
+    ? [
+      "What caused the metal spoon to feel colder than the wooden spoon in the same room?",
+      "A plant near a window grew taller than a plant in a dark corner. Why did this happen?",
+      "In an experiment, students changed only the amount of water each plant received. What was the variable they tested?",
+      "A chart shows a toy car traveled farther on a smooth ramp than on a rough ramp. Which idea best explains the result?",
+      "Which observation is the best evidence that heating ice causes a change of state?",
+    ]
+    : subject === "Social Studies"
+    ? [
+      "Which event happened first in this timeline: town meeting, bridge construction, or market opening?",
+      "Why did early settlers build towns near rivers?",
+      "What was one result of building railroads across Texas communities?",
+      "A city council voted to add a public library. Which group was most likely helped right away?",
+      "Which statement best explains how a local election can change a community?",
+    ]
+    : [
+      `What is the main idea of the passage about ${effectiveSkill.toLowerCase()}?`,
+      "Which detail supports the main idea best?",
+      "What can the reader infer from the passage details?",
+      "Which word meaning is best supported by context in the passage?",
+      "Which summary best matches the passage?",
+    ];
   const singleAnswerSequence = [...shuffledLetters(), ...shuffledLetters()];
   let singleAnswerIndex = 0;
   const nextSingleAnswer = (): ChoiceLetter => {
@@ -637,17 +805,128 @@ function buildPracticeFallback(skill: string): Question[] {
     return letter;
   };
   return stems.map((stem, i) => {
-    const support = buildSupportContent("Reading", stem, "mc", i);
-    return {
-      type: "mc",
-      question: stem,
-      choices: [
-        "A choice directly supported by passage evidence",
-        "A partially supported detail that misses key evidence",
+    const type: QuestionType = i === 1 ? "part_a_b" : "mc";
+    const leveledStem = rigor.questionDepth === "high" && subject === "Reading"
+      ? `${stem} Which author choice best supports your reasoning?`
+      : rigor.questionDepth === "low" && subject !== "Reading"
+      ? stem.replace("Which statement best explains", "What is the best answer")
+      : stem;
+    const support = buildSupportContent(subject, stem, "mc", i);
+    const partAChoices: [string, string, string, string] = subject === "Math"
+      ? [
+        "She needs 9 more pages because 14 + 18 + 9 = 41 and 50 - 41 = 9.",
+        "She needs 23 more pages because 14 + 9 = 23.",
+        "She needs 5 more pages because 50 - 45 = 5.",
+        "She does not need more pages because she already read 50 pages.",
+      ]
+      : subject === "Science"
+      ? [
+        "The plant near the window received more light energy for photosynthesis.",
+        "The plant near the window had less water, so it always grows taller.",
+        "Plants in dark places grow fastest because they save energy.",
+        "Light does not affect growth when plants are in the same room.",
+      ]
+      : subject === "Social Studies"
+      ? [
+        "Rivers gave settlers water and transportation routes for trade.",
+        "Rivers were chosen mainly because they had fewer storms every year.",
+        "Settlers avoided rivers because travel was harder there.",
+        "Rivers were important only for recreation, not survival or trade.",
+      ]
+      : [
+        "A detail from the passage directly supports the main idea.",
+        "A detail from the passage is repeated but does not support the main idea.",
+        "A detail from outside the passage is introduced as evidence.",
+        "A detail contradicts the main idea presented in the passage.",
+      ];
+
+    const partBChoices: [string, string, string, string] = subject === "Math"
+      ? [
+        "The stem states she read 14 pages Friday, 18 Saturday, and 9 Sunday before comparing to 50.",
+        "The stem states she read only Friday and Saturday pages and skipped Sunday.",
+        "The stem states the goal changed from 50 pages to 41 pages.",
+        "The stem states page totals should be multiplied instead of added.",
+      ]
+      : subject === "Science"
+      ? [
+        "The scenario compares a plant near a window with one in a dark corner.",
+        "The scenario says both plants got the same amount of sunlight all day.",
+        "The scenario says growth was measured only by leaf color, not height.",
+        "The scenario says the dark-corner plant received stronger light.",
+      ]
+      : subject === "Social Studies"
+      ? [
+        "The question asks why settlers built near rivers, linking resources and movement.",
+        "The question says rivers were not used for crops, trade, or travel.",
+        "The question states towns were built far from water for safety.",
+        "The question says rivers mattered only after railroads were built.",
+      ]
+      : [
+        "The sentence includes a passage detail that proves the main idea.",
+        "The sentence repeats a side detail without proving the main idea.",
+        "The sentence gives background context but no supporting evidence.",
+        "The sentence conflicts with the main point of the passage.",
+      ];
+    const choices = subject === "Math"
+      ? [
+        "A value that correctly combines all quantities using the needed operations in the problem.",
+        "A value from using only one part of the information and missing another step.",
+        "A value found by using the wrong operation on one quantity.",
+        "A value unrelated to the totals described in the problem.",
+      ]
+      : subject === "Science"
+      ? [
+        rigor.distractorQuality === "obvious"
+          ? "The only answer that matches the cause/effect or data in the scenario."
+          : "An explanation that matches the cause/effect or data shown in the scenario.",
+        rigor.distractorQuality === "subtle"
+          ? "An explanation with accurate vocabulary but a slightly incorrect scientific link."
+          : "An explanation with one true detail but a wrong scientific connection.",
+        "An explanation that ignores the tested variable or observed result.",
+        "An explanation not supported by the scenario evidence.",
+      ]
+      : subject === "Social Studies"
+      ? [
+        "A response that matches the event, timeline, or consequence described.",
+        "A response that mixes the order of events in the scenario.",
+        "A response that confuses a cause with a later result.",
+        "A response not supported by the historical/civic details provided.",
+      ]
+      : [
+        rigor.distractorQuality === "obvious"
+          ? "The choice that directly matches the passage idea."
+          : "A choice directly supported by passage evidence",
+        rigor.distractorQuality === "subtle"
+          ? "A nearly correct idea that misses one key detail from later in the passage."
+          : "A partially supported detail that misses key evidence",
         "A statement not supported by the passage",
         "An unrelated claim from outside the passage",
-      ],
-      correct_answer: nextSingleAnswer(),
+      ];
+    const question: Question = {
+      type,
+      question: leveledStem,
+      choices: choices as [string, string, string, string],
+      correct_answer: type === "part_a_b"
+        ? { partA: nextSingleAnswer(), partB: nextSingleAnswer() }
+        : nextSingleAnswer(),
+      partA: type === "part_a_b"
+        ? {
+          question: `Part A: ${leveledStem}`,
+          choices: partAChoices,
+        }
+        : undefined,
+      partB: type === "part_a_b"
+        ? {
+          question: subject === "Math"
+            ? "Part B: Which step shows the correct reasoning for your Part A answer?"
+            : subject === "Science"
+            ? "Part B: Which evidence from the scenario supports your Part A answer?"
+            : subject === "Social Studies"
+            ? "Part B: Which detail from the event timeline best supports your Part A answer?"
+            : "Part B: Which sentence best supports your Part A answer?",
+          choices: partBChoices,
+        }
+        : undefined,
       explanation: support.explanation,
       hint: support.hint,
       think: support.think,
@@ -655,10 +934,12 @@ function buildPracticeFallback(skill: string): Question[] {
       common_mistake: support.common_mistake,
       parent_tip: support.parent_tip,
     };
+    return question;
   });
 }
 
-function buildCrossFallback(subject: CanonicalSubject): Question[] {
+function buildCrossFallback(subject: CanonicalSubject, level: Level = "On Level"): Question[] {
+  const rigor = applyRigor(level);
   const singleAnswerSequence = [...shuffledLetters(), ...shuffledLetters()];
   let singleAnswerIndex = 0;
   const nextSingleAnswer = (): ChoiceLetter => {
@@ -667,147 +948,200 @@ function buildCrossFallback(subject: CanonicalSubject): Question[] {
     return letter;
   };
 
-  const mathStemVariants = [
-    "What is the value of the total result when the quantities from both time periods in the passage are combined correctly?",
-    "Which relationship between the quantities best explains why the final total changed from one period to the next?",
-    "How does the data show that changing one quantity can affect the overall result in the passage scenario?",
-    "What is the value of the net change between periods, and which operation sequence supports that result?",
-    "Which quantitative reasoning best justifies the planning decision described in the passage?",
-  ];
-
   const stems = subject === "Science"
     ? [
-      "Which process explains the temperature differences observed across surfaces in the passage investigation?",
-      "What is the cause of the smaller temperature increase after watering, based on the evidence trend in the passage?",
-      "Which system interaction best explains how sunlight, moisture, and airflow worked together to influence the results?",
-      "Which evidence from the passage most strongly supports a cause-and-effect claim about the tested variable?",
-      "Which scientific reasoning best connects the observed data pattern to the final recommendation in the passage?",
+      "What caused the blacktop to heat faster than shaded grass in the investigation passage?",
+      "Which event happened after students watered one section during the experiment timeline?",
+      "Which detail shows evidence that moisture and airflow affected temperature results?",
+      "Why did students recommend shade trees and lighter playground materials?",
+      "What can be concluded about how surface type affects playground temperature?",
     ]
     : subject === "Social Studies"
     ? [
-      "Which factor most influenced the town council’s final transportation decision in the passage timeline?",
-      "What was the primary cause of the policy shift between the first decision and the later bond vote in the passage?",
-      "Which evidence best supports the claim that transportation choices changed migration and local business activity?",
-      "Which event in the passage most directly influenced how leaders balanced competing community priorities?",
-      "Which historical reasoning best explains the long-term civic impact of the decisions described in the passage?",
+      "What caused town leaders to change from rail-only expansion to supporting a bridge?",
+      "Which event happened after flooding delayed shipments and raised prices?",
+      "Which detail shows that transportation decisions affected people in the community?",
+      "Why did population growth across the opposite bank matter to voters?",
+      "What can be concluded about how transportation choices changed the town over time?",
     ]
-    : mathStemVariants;
+    : [
+      "What caused organizers to reconsider whether to restock combo packs or single items?",
+      "Which event happened after combo sales dropped by 8 in the second hour?",
+      "Which detail shows that single-item demand changed after the announcement?",
+      "Why did organizers need to compare both hours before making a restocking decision?",
+      "What can be concluded about which option had a stronger effect on total earnings?",
+    ];
 
   const choiceBanks: [string, string, string, string][] = subject === "Math"
     ? [
       [
-        "The relationship evidence indicates the total is driven by how multiple quantities move together across both time periods, not by one value in isolation.",
-        "A single quantity controls the final outcome completely, so the other values have no meaningful relationship to the result.",
-        "Any increase in one quantity guarantees a higher total even when another quantity decreases by a larger amount.",
-        "The pattern cannot be interpreted at all unless every final value is computed first, so no relationship claim is justified.",
+        "Because second-hour changes affected the number of paid items, organizers had to compare revenue from both hours before restocking.",
+        "Because combo packs always make the most money, first-hour numbers alone were enough for the final decision.",
+        "Because single items are cheaper, they never affect total earnings as much as combo packs.",
+        "Because sales changed, revenue could not be compared between the two hours.",
       ],
       [
-        "The pattern suggests the result shifted because the quantity relationship changed between periods, with one increase partially offsetting another decrease.",
-        "The data prove the second period must be better only because one quantity increased, regardless of all other relationships.",
-        "No meaningful pattern exists because the quantities are from different time periods and cannot be compared.",
-        "The shift happened randomly, so relationship-based inference is not possible from the quantities provided.",
+        "After combo sales dropped by 8, volunteers recorded that single-item sales increased by 15.",
+        "After combo sales dropped by 8, the sale ended before any other counts were recorded.",
+        "After combo sales dropped by 8, both combo and single-item sales dropped together.",
+        "After combo sales dropped by 8, prices changed from $6 and $2 to new values.",
       ],
       [
-        "The strongest explanation describes a stable relationship pattern in which combined quantities, not isolated arithmetic steps, drive the interpretation.",
-        "The best claim is that the largest number always determines the outcome, regardless of the relationship among the other quantities.",
-        "Because one quantity stayed close to its earlier value, the overall relationship pattern did not change in any relevant way.",
-        "The scenario is descriptive only, so no quantitative relationship can be inferred from the passage evidence.",
+        "The passage says single-item sales increased by 15 after an announcement in the second hour.",
+        "The passage says single-item prices were the same as combo pack prices.",
+        "The passage says combo sales increased by 15 after the announcement.",
+        "The passage says no counts were recorded for the second hour.",
       ],
       [
-        "The evidence shows that adjusting one quantity changes the overall relationship and therefore changes planning decisions tied to total results.",
-        "Changing one quantity has no meaningful effect on the aggregate result if at least one other quantity remains constant.",
-        "The passage implies every quantity contributes equally, so shifting one value cannot alter the relationship interpretation.",
-        "The impact is unknowable because relationship evidence does not apply to real planning decisions.",
+        "They needed totals from both hours because each hour had different quantities and prices that changed total revenue.",
+        "They only needed second-hour combo sales because combo packs are always the best indicator.",
+        "They only needed first-hour single-item sales because later changes are not useful.",
+        "They did not need any totals because the decision could be made without the data.",
       ],
       [
-        "The observed pattern supports choosing the option that accounts for quantity relationships across both periods before making the final plan.",
-        "The best plan is to focus only on the latest quantity and ignore earlier relationship patterns in the evidence.",
-        "Pattern evidence is less reliable than intuition, so planning should not depend on quantity relationships.",
-        "The data are too general to support any defensible pattern-based planning inference.",
+        "A change in single-item demand can shift total earnings even when combo sales decrease.",
+        "Combo sales determine all earnings, so single-item changes do not matter.",
+        "Single items and combo packs always contribute equal revenue per sale.",
+        "The passage gives no numbers, so no earnings conclusion can be made.",
       ],
     ]
     : subject === "Science"
     ? [
       [
-        "The experiment evidence supports a variable-result relationship in which changing the tested condition produced a consistent directional result.",
-        "The result appears random, indicating no meaningful relationship between the manipulated variable and the measured outcome.",
-        "The experiment shows that outside conditions alone caused the change, so the tested variable had no effect on the result.",
-        "Because the observations were limited, no variable-result explanation can be made from the experiment evidence.",
+        "Dark pavement in direct sunlight absorbed more heat than shaded grass with moisture and airflow.",
+        "Grass heated fastest because moisture always traps heat better than pavement.",
+        "Concrete stayed coolest because wind only affects hard surfaces.",
+        "All surfaces heated at the same rate according to the data.",
       ],
       [
-        "The procedure and results support an inference that the independent variable influenced the outcome through a repeatable experimental mechanism.",
-        "The results show the dependent variable changed on its own, so the experiment does not support variable-based causation.",
-        "The best inference is that measurement errors explain all result changes better than the tested variable does.",
-        "The experiment lacks enough structure to infer how any variable affected the final result.",
+        "After watering one section, students observed a smaller temperature increase there.",
+        "After watering one section, blacktop became hotter than in full sun.",
+        "After watering one section, students stopped recording hourly data.",
+        "After watering one section, all surfaces were removed from the test.",
       ],
       [
-        "The strongest causal explanation connects the reported experiment result to the interaction between the tested variable and observed conditions.",
-        "The best claim is that the result was unaffected by the tested variable because one data point did not follow the trend exactly.",
-        "The evidence supports rejecting all causal interpretations since experiments cannot show variable relationships reliably.",
-        "The passage provides descriptive notes but no result evidence relevant to variable-based explanation.",
+        "The report says shaded grass stayed cooler because moisture and airflow reduced heat buildup.",
+        "The report says grass stayed cooler because it received more direct sunlight than blacktop.",
+        "The report says wind speed was ignored, so airflow did not matter.",
+        "The report says all surfaces were kept dry during every test.",
       ],
       [
-        "The data relationship indicates that adjusting one variable changed downstream results in a way consistent with the experiment evidence.",
-        "The downstream result cannot be tied to the adjusted variable because all experimental changes are equally irrelevant.",
-        "Any impact in the results must come from uncontrolled factors, not from the variable intentionally adjusted in the experiment.",
-        "No defensible inference can be made because variable-result relationships require perfect data with zero uncertainty.",
+        "They used observed heat-transfer evidence to suggest changes that could keep playground areas cooler.",
+        "They preferred trees and light materials only because those options cost less in all cases.",
+        "They wanted to remove all grass surfaces from the playground immediately.",
+        "They based recommendations on opinions instead of experiment results.",
       ],
       [
-        "The passage supports inferring that the experiment results justify the recommendation because variable-driven evidence aligns with the final claim.",
-        "The recommendation is unsupported because experiment results cannot inform decisions beyond the exact trial conditions.",
-        "The results imply the opposite conclusion: the tested variable should be ignored in future explanations.",
-        "The final claim is unrelated to the experiment because no measurable variable-result pattern appears in the passage.",
+        "Surface type and conditions such as sunlight, moisture, and airflow can meaningfully change playground temperature.",
+        "Surface type has no effect when thermometers are used every hour.",
+        "Only cloud cover changes temperature, not surface material.",
+        "Heat transfer cannot be studied through repeated observations.",
       ],
     ]
     : [
       [
-        "The event evidence shows that leadership decisions responded to conditions and produced measurable social and economic impact over time.",
-        "The passage suggests outcomes happened independently of key decisions, so no event-impact relationship is supported.",
-        "Because one group influenced debate, broader events had no role in shaping final outcomes or impact.",
-        "The timeline is descriptive only and cannot support inference about decisions or civic impact.",
+        "Flooding delays and higher prices showed the limits of rail-only expansion and pushed support for a bridge.",
+        "Leaders changed plans because farmers stopped using markets entirely in 1908.",
+        "Leaders changed plans because flooding ended before any rail delays happened.",
+        "Leaders changed plans because a bridge was already completed before the debate.",
       ],
       [
-        "The strongest inference is that leaders made decisions based on immediate event pressures and expected long-term community impact.",
-        "The evidence shows decisions were symbolic only and had no meaningful relationship to later events or impact.",
-        "Motivations cannot be inferred because event records never help explain why decisions were made.",
-        "The passage proves all leaders shared identical goals, so decision analysis is unnecessary for impact claims.",
+        "After flooding delayed shipments, voters later passed a bond for the bridge.",
+        "After flooding delayed shipments, rail expansion was canceled before approval.",
+        "After flooding delayed shipments, population dropped on the opposite bank.",
+        "After flooding delayed shipments, merchants ended all outside trade.",
       ],
       [
-        "The causal chain is best supported by linking one documented event to a later decision and its measurable community impact.",
-        "The best interpretation is that events and decisions were unrelated, with impact determined only by outside forces.",
-        "Because the timeline includes multiple events, no single decision can be evaluated for impact.",
-        "The evidence supports only short-term description, not causal reasoning about event-driven impact.",
+        "Newspaper timelines and election results linked transportation choices to migration and business investment.",
+        "Meeting records showed that no transportation decision ever changed.",
+        "Election results proved citizens rejected all town transportation projects.",
+        "The passage says migration patterns stayed exactly the same after the bond.",
       ],
       [
-        "The passage supports analyzing how competing stakeholder decisions shaped policy outcomes and changed event impact across groups.",
-        "Stakeholder positions did not influence policy decisions, so impact differences must be ignored in interpretation.",
-        "Policy outcomes in the passage were accidental, making decision-based event analysis invalid.",
-        "The event sequence lacks enough information to reason about decision tradeoffs or impact.",
+        "Population growth across the river increased pressure to connect both sides of town more reliably.",
+        "Population growth across the river removed the need for transportation planning.",
+        "Population growth across the river made flooding less important to shipping decisions.",
+        "Population growth across the river caused leaders to close the rail depot immediately.",
       ],
       [
-        "Considering the full event timeline, the most defensible claim is that key decisions produced cumulative long-term civic impact.",
-        "Long-term impact cannot be inferred because earlier events are irrelevant once a final decision appears.",
-        "The timeline shows that impact was fixed from the start, so later decisions did not matter.",
-        "No conclusion about societal impact is possible because event evidence never supports long-range inference.",
+        "Transportation decisions over several years influenced trade, settlement patterns, and daily community life.",
+        "Transportation decisions changed only election dates, not community outcomes.",
+        "Transportation decisions affected farmers but never merchants or families.",
+        "Transportation decisions had no long-term effects because the town stayed the same.",
       ],
     ];
 
-  const shuffledChoiceBanks = [...choiceBanks];
-  for (let i = shuffledChoiceBanks.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffledChoiceBanks[i], shuffledChoiceBanks[j]] = [shuffledChoiceBanks[j], shuffledChoiceBanks[i]];
-  }
-
-  return stems.map((_, i) => {
-    const stem = subject === "Math" ? mathStemVariants[i] : stems[i];
-    const support = buildSupportContent(subject, stem, "mc", i);
-    const choices = shuffledChoiceBanks[i % shuffledChoiceBanks.length];
+  return stems.map((stem, i) => {
+    const type: QuestionType = i === 1 ? "part_a_b" : "mc";
+    const leveledStem = rigor.questionDepth === "high"
+      ? `${stem} Which passage detail best supports your analysis?`
+      : stem;
+    const support = buildSupportContent(subject, leveledStem, "mc", i);
+    const choices = choiceBanks[i % choiceBanks.length];
+    const partAChoices: [string, string, string, string] = subject === "Math"
+      ? [
+        "After combo sales dropped by 8, single-item sales rose by 15, changing which items drove total earnings.",
+        "After combo sales dropped by 8, both combo and single-item sales decreased in hour two.",
+        "After combo sales dropped by 8, prices changed, so the two hours cannot be compared.",
+        "After combo sales dropped by 8, organizers stopped tracking sales data entirely.",
+      ]
+      : subject === "Science"
+      ? [
+        "After watering one section, the temperature increased less there, supporting a moisture-related effect.",
+        "After watering one section, blacktop heated faster than before because water traps heat.",
+        "After watering one section, all surfaces showed identical temperatures every hour.",
+        "After watering one section, students removed wind and sunlight from the experiment.",
+      ]
+      : [
+        "After flooding delayed shipments and raised prices, voters later approved the bridge bond.",
+        "After flooding delayed shipments, leaders canceled all transportation projects permanently.",
+        "After flooding delayed shipments, population declined on both riverbanks.",
+        "After flooding delayed shipments, merchants ended local trade immediately.",
+      ];
+    const partBChoices: [string, string, string, string] = subject === "Math"
+      ? [
+        "The passage states hour-two single-item sales increased by 15 after the announcement.",
+        "The passage states single-item prices increased from $2 to $6 in hour two.",
+        "The passage states combo sales increased by 15 after the announcement.",
+        "The passage states no hour-two sales were recorded.",
+      ]
+      : subject === "Science"
+      ? [
+        "The report notes a smaller temperature increase after one section was watered.",
+        "The report notes watering caused blacktop to absorb more heat than direct sun.",
+        "The report notes airflow and moisture were unrelated to temperature changes.",
+        "The report notes students ignored surface type during data collection.",
+      ]
+      : [
+        "Meeting records and election results show a shift from rail-first planning to the bridge bond.",
+        "Records show flooding improved rail shipments, so no transportation change was needed.",
+        "Election results show voters rejected the bridge after flooding delays.",
+        "Records show the bridge was built before the first rail decision in 1908.",
+      ];
 
     return {
-      type: "mc",
-      question: stem,
+      type,
+      question: leveledStem,
       choices: choices as [string, string, string, string],
-      correct_answer: nextSingleAnswer(),
+      correct_answer: type === "part_a_b"
+        ? { partA: nextSingleAnswer(), partB: nextSingleAnswer() }
+        : nextSingleAnswer(),
+      partA: type === "part_a_b"
+        ? {
+          question: `Part A: ${leveledStem}`,
+          choices: partAChoices,
+        }
+        : undefined,
+      partB: type === "part_a_b"
+        ? {
+          question: subject === "Math"
+            ? "Part B: Which step from the passage data best proves the Part A solution?"
+            : subject === "Science"
+            ? "Part B: Which evidence from the investigation best supports Part A?"
+            : "Part B: Which historical detail best supports Part A?",
+          choices: partBChoices,
+        }
+        : undefined,
       explanation: support.explanation,
       hint: support.hint,
       think: support.think,
@@ -842,7 +1176,7 @@ function buildShortResponse(): string {
   return "What is the author’s purpose in organizing the passage this way, and which two details best support your response?";
 }
 
-function buildELARCrossQuestions(): Question[] {
+function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
   const stems = [
     buildMainIdeaQuestion(),
     buildEvidenceQuestion(),
@@ -859,8 +1193,48 @@ function buildELARCrossQuestions(): Question[] {
   };
 
   return stems.map((stem, i) => {
-    const type: QuestionType = i === 4 ? "scr" : "mc";
+    const type: QuestionType = i === 1 ? "part_a_b" : i === 4 ? "scr" : "mc";
     const support = buildSupportContent("Reading", stem, type, i);
+    const partAChoices: [string, string, string, string] = crossSubject === "Science"
+      ? [
+        "The passage shows temperature results changed when moisture and sunlight conditions changed.",
+        "The passage shows results stayed the same across all surfaces and conditions.",
+        "The passage shows students ignored data and used opinions only.",
+        "The passage shows watering increased temperature more than direct sunlight.",
+      ]
+      : crossSubject === "Math"
+      ? [
+        "The passage shows hour-two single-item demand changed after the announcement and affected earnings decisions.",
+        "The passage shows combo and single-item prices became identical in hour two.",
+        "The passage shows no sales data were collected in the second hour.",
+        "The passage shows only combo sales determine total revenue.",
+      ]
+      : [
+        "The passage shows transportation decisions shifted after flooding delays and later voter action.",
+        "The passage shows leaders never changed transportation plans over time.",
+        "The passage shows election results rejected all transportation projects.",
+        "The passage shows flooding had no effect on trade or prices.",
+      ];
+    const partBChoices: [string, string, string, string] = crossSubject === "Science"
+      ? [
+        "It states a watered section showed a smaller temperature increase in repeated testing.",
+        "It states blacktop cooled faster than shaded grass in direct sun.",
+        "It states wind and moisture were removed from the investigation.",
+        "It states thermometers were used only once before recommendations.",
+      ]
+      : crossSubject === "Math"
+      ? [
+        "It states combo sales dropped by 8 while single-item sales increased by 15 in hour two.",
+        "It states prices changed from $6 and $2 to higher values in hour two.",
+        "It states both combo and single-item sales dropped in hour two.",
+        "It states organizers ignored hour-one data during planning.",
+      ]
+      : [
+        "It states flooding delayed shipments and, years later, voters passed a bridge bond.",
+        "It states flooding improved rail shipping and lowered prices immediately.",
+        "It states population growth reduced the need for transportation changes.",
+        "It states bridge approval happened before any rail debate in 1908.",
+      ];
     return {
       type,
       question: stem,
@@ -870,7 +1244,23 @@ function buildELARCrossQuestions(): Question[] {
         "It focuses on a side detail mentioned once in the passage and treats it as the main point.",
         "It reverses the relationship between evidence and conclusion described across the passage sections.",
       ],
-      correct_answer: type === "scr" ? "A" : nextSingleAnswer(),
+      correct_answer: type === "scr"
+        ? "A"
+        : type === "part_a_b"
+        ? { partA: nextSingleAnswer(), partB: nextSingleAnswer() }
+        : nextSingleAnswer(),
+      partA: type === "part_a_b"
+        ? {
+          question: `Part A: ${stem}`,
+          choices: partAChoices,
+        }
+        : undefined,
+      partB: type === "part_a_b"
+        ? {
+          question: "Part B: Which sentence from the passage best supports your Part A answer?",
+          choices: partBChoices,
+        }
+        : undefined,
       explanation: support.explanation,
       sample_answer: type === "scr"
         ? "The author’s purpose is to inform readers about the topic using evidence and examples. Key details in the passage show how those examples support the central claim."
@@ -884,31 +1274,31 @@ function buildELARCrossQuestions(): Question[] {
   });
 }
 
-function buildELARCrossContent(): { passage: string; questions: Question[] } {
+function buildELARCrossContent(level: Level = "On Level"): { passage: string; questions: Question[] } {
   const crossSubject = randomChoice<CanonicalSubject>(["Science", "Social Studies", "Math"]);
   return {
-    passage: buildSubjectPassage(crossSubject),
-    questions: buildELARCrossQuestions(),
+    passage: buildSubjectPassage(crossSubject, level),
+    questions: buildELARCrossQuestions(crossSubject),
   };
 }
 
-function buildSubjectCrossContent(subject: CanonicalSubject): { passage: string; questions: Question[] } {
+function buildSubjectCrossContent(subject: CanonicalSubject, level: Level = "On Level"): { passage: string; questions: Question[] } {
   return {
-    passage: buildSubjectPassage(subject),
-    questions: buildCrossFallback(subject),
+    passage: buildSubjectPassage(subject, level),
+    questions: buildCrossFallback(subject, level),
   };
 }
 
-function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, skill: string): Question[] {
-  if (mode === "Practice") return buildPracticeFallback(skill);
+function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, skill: string, level: Level = "On Level"): Question[] {
+  if (mode === "Practice") return buildPracticeFallback(skill, subject, level);
 
   const effectiveSubject = subject;
   if (mode === "Cross-Curricular") {
     // Cross structure is subject-driven (or ELAR-over-content for Reading), not skill-driven.
     if (effectiveSubject === "Reading") {
-      return buildELARCrossContent().questions;
+      return buildELARCrossContent(level).questions;
     }
-    return buildSubjectCrossContent(effectiveSubject).questions;
+    return buildSubjectCrossContent(effectiveSubject, level).questions;
   }
 
   const effectiveSkill: string = skill ?? "Main Idea";
@@ -967,7 +1357,7 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
         : baseReading;
 
   return stems.map((stem, i) => {
-    const type: QuestionType = i === 3 ? "multi_select" : i === 4 ? "scr" : "mc";
+    const type: QuestionType = i === 1 ? "part_a_b" : i === 3 ? "multi_select" : i === 4 ? "scr" : "mc";
     const support = buildSupportContent(effectiveSubject, stem, type, i);
     const question: Question = {
       type,
@@ -978,7 +1368,33 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
         "Plants farther from the lamp appeared to grow faster because lower heat outweighed reduced light.",
         "Plant height changed randomly and was not related to the light conditions in the investigation.",
       ],
-      correct_answer: type === "multi_select" ? nextMultiAnswer() : nextSingleAnswer(),
+      correct_answer: type === "multi_select"
+        ? nextMultiAnswer()
+        : type === "part_a_b"
+        ? { partA: nextSingleAnswer(), partB: nextSingleAnswer() }
+        : nextSingleAnswer(),
+      partA: type === "part_a_b"
+        ? {
+          question: `Part A: ${stem}`,
+          choices: [
+            "The plants closest to the lamp grew taller because they received more direct light.",
+            "All plants grew at the same rate, so light intensity did not matter in this setup.",
+            "Plants farther from the lamp appeared to grow faster because lower heat outweighed reduced light.",
+            "Plant height changed randomly and was not related to the light conditions in the investigation.",
+          ],
+        }
+        : undefined,
+      partB: type === "part_a_b"
+        ? {
+          question: "Part B: Which evidence best supports your Part A answer?",
+          choices: [
+            "The investigation compared plant growth at different distances from the lamp over two weeks.",
+            "The passage says all plants were measured only once at the end of the week.",
+            "The class ignored light distance and focused only on soil color.",
+            "The scenario states that light intensity never changed during the test.",
+          ],
+        }
+        : undefined,
       explanation: support.explanation,
       sample_answer: type === "scr"
         ? "The author develops the central idea by introducing a problem and supporting the solution with clear evidence. One detail explains the challenge, and another shows why the response is effective. These details justify the best interpretation."
@@ -1044,9 +1460,11 @@ function sanitizeQuestions(
   subject: CanonicalSubject,
   mode: CanonicalMode,
   skill: string,
+  level: Level = "On Level",
+  passage: PassageContent | string = "",
 ): Question[] {
   const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
-  const fallback = fallbackQuestionSet(subject, mode, skill);
+  const fallback = fallbackQuestionSet(subject, mode, skill, level);
   const sanitized: Question[] = incoming.map((item, i) => {
     const q = item && typeof item === "object" ? item as Record<string, unknown> : {};
     const expectedType = fallback[i].type || "mc";
@@ -1056,7 +1474,7 @@ function sanitizeQuestions(
       ? `${rawQuestion.replace(/\s+$/g, "")} Select TWO answers.`
       : rawQuestion;
 
-    const normalizedChoices = normalizeChoices(q.choices);
+    const normalizedChoices = strengthenChoiceSet(normalizeChoices(q.choices), questionText, passage);
     const hasGenericChoices = normalizedChoices.some((choice) => {
       const text = String(choice || "").toLowerCase();
       return text.includes("correct interpretation") ||
@@ -1065,12 +1483,61 @@ function sanitizeQuestions(
         text.includes("misunderstanding of the information") ||
         text.includes("placeholder");
     });
+    const hasGenericPartChoices = (choices: [string, string, string, string]): boolean =>
+      choices.some((choice) => {
+        const text = String(choice || "").toLowerCase();
+        return text.includes("directly supports") ||
+          text.includes("main claim") ||
+          text.includes("side detail") ||
+          text.includes("unrelated") ||
+          text.includes("best answer") ||
+          text.includes("statement");
+      });
+
+    const fallbackPartA = fallback[i].partA || {
+      question: "Part A: What is the best answer?",
+      choices: normalizeChoices(fallback[i].choices),
+    };
+    const fallbackPartB = fallback[i].partB || {
+      question: "Part B: Which evidence best supports Part A?",
+      choices: normalizeChoices(fallback[i].choices),
+    };
 
     const base: Question = {
       type,
       question: questionText,
       choices: mode === "Cross-Curricular" && hasGenericChoices ? fallback[i].choices : normalizedChoices,
-      correct_answer: type === "multi_select" ? normalizeMultiSelectAnswer(q.correct_answer) : normalizeAnswer(q.correct_answer),
+      correct_answer: type === "multi_select"
+        ? normalizeMultiSelectAnswer(q.correct_answer)
+        : type === "part_a_b"
+        ? normalizePartABAnswer(q.correct_answer || fallback[i].correct_answer)
+        : normalizeAnswer(q.correct_answer),
+      partA: type === "part_a_b"
+        ? {
+          question: String((q.partA as Record<string, unknown> | undefined)?.question || fallbackPartA.question).trim() || fallbackPartA.question,
+          choices: (() => {
+            const normalized = strengthenChoiceSet(
+              normalizeChoices((q.partA as Record<string, unknown> | undefined)?.choices || fallbackPartA.choices),
+              String((q.partA as Record<string, unknown> | undefined)?.question || fallbackPartA.question),
+              passage,
+            );
+            return hasGenericPartChoices(normalized) ? fallbackPartA.choices : normalized;
+          })(),
+        }
+        : undefined,
+      partB: type === "part_a_b"
+        ? {
+          question: String((q.partB as Record<string, unknown> | undefined)?.question || fallbackPartB.question).trim() || fallbackPartB.question,
+          choices: (() => {
+            const normalized = strengthenChoiceSet(
+              normalizeChoices((q.partB as Record<string, unknown> | undefined)?.choices || fallbackPartB.choices),
+              String((q.partB as Record<string, unknown> | undefined)?.question || fallbackPartB.question),
+              passage,
+            );
+            return hasGenericPartChoices(normalized) ? fallbackPartB.choices : normalized;
+          })(),
+        }
+        : undefined,
       explanation: String(q.explanation || fallback[i].explanation).trim() || fallback[i].explanation,
       paired_with: typeof q.paired_with === "number" ? q.paired_with : fallback[i].paired_with,
       sample_answer: String(q.sample_answer || fallback[i].sample_answer || "").trim() || fallback[i].sample_answer,
@@ -1111,6 +1578,67 @@ function validateSkillAlignment(skill: string, questions: Question[]): boolean {
   return true;
 }
 
+function getPassageText(passage: PassageContent | string): string {
+  if (typeof passage === "string") return passage;
+  return `${passage?.text_1 || ""} ${passage?.text_2 || ""}`.trim();
+}
+
+function validatePassageComplexity(level: Level, passage: PassageContent | string): boolean {
+  const text = getPassageText(passage).trim();
+  if (!text) return level !== "Advanced";
+
+  const sentences = text.split(/[.!?]+/).map((s) => s.trim()).filter(Boolean);
+  const words = text.split(/\s+/).filter(Boolean);
+  const avgSentenceLength = sentences.length ? words.length / sentences.length : words.length;
+  const hasAbstractSignals = /(however|therefore|although|suggests|implies|interaction|evidence)/i.test(text);
+  const hasParagraphBreak = text.includes("\n\n");
+
+  if (level === "Below") {
+    return avgSentenceLength <= 16 && !hasParagraphBreak;
+  }
+  if (level === "Advanced") {
+    return avgSentenceLength >= 12 && (hasParagraphBreak || hasAbstractSignals);
+  }
+  return avgSentenceLength >= 8 && avgSentenceLength <= 22;
+}
+
+function validateQuestionDepth(level: Level, questions: Question[]): boolean {
+  const allText = questions.map((q) => String(q.question || "").toLowerCase()).join(" ");
+  const highSignals = ["infer", "concluded", "conclusion", "analyze", "author", "evidence", "supports", "reasoning"];
+  const lowSignals = ["what is", "which is", "how many", "first", "best answer"];
+  const highCount = highSignals.filter((s) => allText.includes(s)).length;
+  const lowCount = lowSignals.filter((s) => allText.includes(s)).length;
+
+  if (level === "Below") return lowCount >= 2 && highCount <= 3;
+  if (level === "Advanced") return highCount >= 3;
+  return highCount >= 1;
+}
+
+function validateRigorAlignment(level: Level, passage: PassageContent | string, questions: Question[]): boolean {
+  return validatePassageComplexity(level, passage) && validateQuestionDepth(level, questions);
+}
+
+function validateDistractorQuality(questions: Question[], passage: PassageContent | string): boolean {
+  const text = getPassageText(passage);
+  const keys = passageKeywords(text).slice(0, 6);
+  const weakPatterns = /(unrelated|not supported|random|impossible|always|never|all of the above|none of the above)/i;
+
+  const choiceSets: string[][] = questions.flatMap((q) => {
+    if (q.type === "part_a_b") {
+      return [q.partA?.choices || q.choices, q.partB?.choices || q.choices];
+    }
+    return [q.choices];
+  });
+
+  return choiceSets.every((set) => {
+    if (!Array.isArray(set) || set.length !== 4) return false;
+    const joined = set.join(" ").toLowerCase();
+    if (weakPatterns.test(joined)) return false;
+    const overlap = keys.length ? keys.filter((k) => joined.includes(k)).length : 2;
+    return overlap >= Math.min(2, keys.length || 2);
+  });
+}
+
 function validateCrossCurricular(data: { passage?: unknown; questions?: unknown[] }): boolean {
   const passage = String(data?.passage || "").toLowerCase();
   const questions = Array.isArray(data?.questions) ? data.questions : [];
@@ -1124,6 +1652,58 @@ function validateCrossCurricular(data: { passage?: unknown; questions?: unknown[
   ];
 
   return !badPhrases.some((phrase) => passage.includes(phrase));
+}
+
+function passageKeywords(passage: string): string[] {
+  const blacklist = new Set([
+    "the", "and", "with", "from", "that", "this", "they", "their", "were", "have", "after", "before", "because",
+    "into", "over", "under", "while", "where", "which", "what", "when", "why", "then", "than", "them", "also",
+    "for", "are", "was", "had", "has", "did", "not", "but", "all", "can", "could", "should", "would", "about",
+  ]);
+
+  const words = passage
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 4 && !blacklist.has(w));
+
+  const counts = new Map<string, number>();
+  words.forEach((w) => counts.set(w, (counts.get(w) || 0) + 1));
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 18)
+    .map(([w]) => w);
+}
+
+function validateCrossQuestionRequirements(subject: CanonicalSubject, passage: string, questions: Question[]): boolean {
+  if (!passage.trim() || questions.length !== 5) return false;
+  if (subject === "Math" && !/\d/.test(passage)) return false;
+
+  const expectedPrefixes = [
+    ["what caused", "why did"],
+    ["which event happened after"],
+    ["which detail shows"],
+    ["why did", "what can be inferred"],
+    ["what can be concluded"],
+  ];
+
+  const bannedFluff = ["most defensible claim", "civic impact", "event reasoning", "this supports the claim", "this shows reasoning"];
+  const keywords = passageKeywords(passage);
+
+  return questions.every((q, index) => {
+    const stem = String(q.question || "").toLowerCase().trim();
+    const matchesPrefix = expectedPrefixes[index].some((prefix) => stem.startsWith(prefix));
+    if (!matchesPrefix) return false;
+    if (bannedFluff.some((phrase) => stem.includes(phrase))) return false;
+    if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
+
+    const combined = `${q.question} ${q.choices.join(" ")}`.toLowerCase();
+    const overlap = keywords.filter((k) => combined.includes(k)).length;
+    if (overlap < 2) return false;
+
+    const choiceSet = new Set(q.choices.map((c) => c.toLowerCase().trim()));
+    return choiceSet.size === 4;
+  });
 }
 
 function validateUniqueChoices(questions: Question[]): boolean {
@@ -1163,6 +1743,10 @@ function validateCrossPassage(passage: string): boolean {
 }
 
 function normalizeAnswerKeyEntry(value: unknown): string {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const partAB = normalizePartABAnswer(value);
+    return `Part A: ${partAB.partA}, Part B: ${partAB.partB}`;
+  }
   if (Array.isArray(value)) {
     const letters = value.map((entry) => normalizeAnswer(entry));
     return letters.join(", ");
@@ -1263,15 +1847,16 @@ function buildFallbackResponse(
   grade: number,
   subject: CanonicalSubject,
   skill: string,
+  level: Level = "On Level",
 ): WorkerResponse {
   const effectiveSubject = subject;
   const crossContent = effectiveSubject === "Reading"
-    ? buildELARCrossContent()
-    : buildSubjectCrossContent(effectiveSubject);
+    ? buildELARCrossContent(level)
+    : buildSubjectCrossContent(effectiveSubject, level);
   console.log("🧠 CROSS SUBJECT:", effectiveSubject);
-  const practiceQuestions = buildPracticeFallback(skill);
+  const practiceQuestions = buildPracticeFallback(skill, effectiveSubject, level);
   return {
-    passage: fallbackPassageContent(effectiveSubject, "Practice", grade, skill),
+    passage: fallbackPassageContent(effectiveSubject, "Practice", grade, skill, level),
     crossPassage: crossContent.passage,
     practice: { questions: practiceQuestions },
     cross: { questions: crossContent.questions },
@@ -1312,7 +1897,7 @@ serve(async (req) => {
 
   const safeFallback = (reason: string, error?: string) => {
     console.log("🚨 FALLBACK TRIGGERED:", reason);
-    const payload = buildFallbackResponse(grade, effectiveSubject, effectiveSkill);
+    const payload = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, level);
     return jsonResponse(payload, { fallback: true, reason, usedFallbackCross: false, ...(error ? { error } : {}) });
   };
 
@@ -1443,7 +2028,7 @@ serve(async (req) => {
             typeof passage === "string"
               ? passage
               : (passage.text_1 && passage.text_2 ? passage : null)
-          ) || fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill);
+          ) || fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill, level);
 
           const practiceQuestions = sanitizeQuestions(
             parsed?.practice && typeof parsed.practice === "object"
@@ -1452,17 +2037,31 @@ serve(async (req) => {
             effectiveSubject,
             "Practice",
             effectiveSkill,
+            level,
+            safePassage,
           );
 
           const skillAligned = validateSkillAlignment(effectiveSkill, practiceQuestions);
           if (!skillAligned) {
             console.warn("⚠️ Skill mismatch detected; accepting sanitized questions to avoid retries.");
           }
+          const rigorAligned = validateRigorAlignment(level, safePassage, practiceQuestions);
+          if (!rigorAligned) {
+            retryFailureReason = "rigor_mismatch_core";
+            attempts++;
+            continue;
+          }
+          const distractorQualityOk = validateDistractorQuality(practiceQuestions, safePassage);
+          if (!distractorQualityOk) {
+            retryFailureReason = "distractor_quality_core";
+            attempts++;
+            continue;
+          }
 
           return jsonResponse(
             {
               passage: safePassage,
-              crossPassage: buildSubjectPassage(effectiveSubject),
+              crossPassage: buildSubjectPassage(effectiveSubject, level),
               practice: { questions: practiceQuestions },
               cross: { questions: [] },
               tutor: { explanations: [] },
@@ -1483,6 +2082,8 @@ serve(async (req) => {
           effectiveSubject,
           "Practice",
           effectiveSkill,
+          level,
+          priorPassage as PassageContent | string,
         );
         const normalizedPassage = typeof priorPassage === "object" && priorPassage !== null
           ? {
@@ -1494,11 +2095,11 @@ serve(async (req) => {
           typeof normalizedPassage === "string"
             ? clampPassageWords(normalizedPassage, range.min, range.max)
             : normalizedPassage
-        ) || fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill);
+        ) || fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill, level);
         console.log("🧠 CROSS SUBJECT:", effectiveSubject);
         const crossContent = effectiveSubject === "Reading"
-          ? buildELARCrossContent()
-          : buildSubjectCrossContent(effectiveSubject);
+          ? buildELARCrossContent(level)
+          : buildSubjectCrossContent(effectiveSubject, level);
         let subjectCrossPassage = crossContent.passage;
 
         console.time("OPENAI_CALL");
@@ -1514,6 +2115,7 @@ serve(async (req) => {
               subject: effectiveSubject,
               passage: safePassage,
               practiceQuestions: normalizedPractice,
+              level,
             }),
             max_output_tokens: 2200,
           }),
@@ -1542,7 +2144,7 @@ serve(async (req) => {
         if (candidateCrossPassage) subjectCrossPassage = candidateCrossPassage;
         if (!validateCrossPassage(subjectCrossPassage)) {
           console.warn("⚠️ Invalid cross passage, forcing subject passage");
-          subjectCrossPassage = buildSubjectPassage(effectiveSubject);
+            subjectCrossPassage = buildSubjectPassage(effectiveSubject, level);
         }
 
         let crossQuestions = sanitizeQuestions(
@@ -1552,6 +2154,8 @@ serve(async (req) => {
           effectiveSubject,
           "Cross-Curricular",
           "Main Idea",
+          level,
+          subjectCrossPassage,
         );
         const crossChoiceSubjectAligned = validateChoiceSubjectAlignment(effectiveSubject, crossQuestions);
         if (!crossChoiceSubjectAligned) {
@@ -1566,16 +2170,20 @@ serve(async (req) => {
           console.warn("⚠️ Cross question-set distinctness warning: accepting output without fallback.");
         }
 
-        const crossInvalid = !validateHybridCross(crossQuestions) ||
+        const crossInvalid = !validateCrossCurricular({ passage: subjectCrossPassage, questions: crossQuestions }) ||
+          !validateCrossQuestionRequirements(effectiveSubject, subjectCrossPassage, crossQuestions) ||
+          !validateRigorAlignment(level, subjectCrossPassage, crossQuestions) ||
+          !validateDistractorQuality(crossQuestions, subjectCrossPassage) ||
+          !validateHybridCross(crossQuestions) ||
           !validateUniqueChoices(crossQuestions);
         if (crossInvalid) {
           console.warn("⚠️ Cross output partially invalid; regenerating cross questions only.");
           if (effectiveSubject === "Reading") {
-            const elarFallback = buildELARCrossContent();
+            const elarFallback = buildELARCrossContent(level);
             subjectCrossPassage = elarFallback.passage;
             crossQuestions = elarFallback.questions;
           } else {
-            const subjectFallback = buildSubjectCrossContent(effectiveSubject);
+            const subjectFallback = buildSubjectCrossContent(effectiveSubject, level);
             subjectCrossPassage = subjectFallback.passage;
             crossQuestions = subjectFallback.questions;
           }
