@@ -1351,6 +1351,21 @@
     function renderAnswers(question) {
       if (!question) return "";
 
+      const renderChoiceList = (choices = []) => {
+        const labels = ["A", "B", "C", "D"];
+        return `<div class="choices">${(Array.isArray(choices) ? choices : []).map((choice, index) => {
+          const label = labels[index] || String.fromCharCode(65 + index);
+          const safeChoice = typeof choice === "string" ? choice : choice?.text || "";
+          const clean = cleanText(safeChoice).replace(/^[A-D]\.\s*/i, "");
+          return `
+      <div class="choice">
+        <span class="choice-label">${label}.</span>
+        <span class="choice-text">${clean}</span>
+      </div>
+    `;
+        }).join("")}</div>`;
+      };
+
       if (question.type === "scr") {
         return `
       <div class="scr-block">
@@ -1360,32 +1375,41 @@
     `;
       }
 
+      if (question.type === "part_a_b") {
+        const partA = question.partA || { question: "Part A", choices: question.choices || [] };
+        const partB = question.partB || { question: "Part B", choices: question.choices || [] };
+        return `
+      <div class="part-ab-block">
+        <p class="question-text">${cleanText(partA.question || "Part A")}</p>
+        ${renderChoiceList(partA.choices || [])}
+        <p class="question-text" style="margin-top: 10px;">${cleanText(partB.question || "Part B")}</p>
+        ${renderChoiceList(partB.choices || [])}
+        <p class="instruction">Scoring: full credit = Part A + Part B correct; partial = Part A only; no credit = Part A incorrect.</p>
+      </div>
+    `;
+      }
+
       const choices = Array.isArray(question.choices)
         ? question.choices
         : [];
-      const labels = ["A", "B", "C", "D"];
 
       const instruction = question.type === "multi_select"
         ? `<p class="instruction">Select TWO answers.</p>`
         : "";
 
-      const options = choices.map((choice, index) => {
-        const label = labels[index] || String.fromCharCode(65 + index);
-        const safeChoice =
-          typeof choice === "string"
-            ? choice
-            : choice?.text || "";
-        const clean = cleanText(safeChoice).replace(/^[A-D]\.\s*/i, "");
+      return `${instruction}${renderChoiceList(choices)}`;
+    }
 
-        return `
-      <div class="choice">
-        <span class="choice-label">${label}.</span>
-        <span class="choice-text">${clean}</span>
-      </div>
-    `;
-      }).join("");
+    function scorePartABResponse(question, selectedPartA, selectedPartB) {
+      const answer = question?.correct_answer || {};
+      const correctPartA = String(answer?.partA || "").toUpperCase();
+      const correctPartB = String(answer?.partB || "").toUpperCase();
+      const chosenPartA = String(selectedPartA || "").toUpperCase();
+      const chosenPartB = String(selectedPartB || "").toUpperCase();
 
-      return `${instruction}<div class="choices">${options}</div>`;
+      if (chosenPartA !== correctPartA) return "no_credit";
+      if (chosenPartA === correctPartA && chosenPartB === correctPartB) return "full_credit";
+      return "partial_credit";
     }
 
     function renderVisual(visual) {
@@ -1434,13 +1458,17 @@
       }
 
       const optionsObject = typeof options === "string" ? { mode: options } : (options || {});
-      const mode = String(optionsObject.mode || "practice").toLowerCase();
-      const crossCurricular = mode === "cross";
+      const mode = String(optionsObject.mode || "Practice");
+      const normalizedMode = mode.toLowerCase();
+      const crossCurricular = normalizedMode === "cross" || normalizedMode === "cross-curricular";
 
       return (Array.isArray(questions) ? questions : []).map((q, i) => {
-        console.log(`🧠 ${crossCurricular ? "CROSS" : "PRACTICE"} RENDER QUESTION:`, q);
+        const logLabel = crossCurricular
+          ? "🌍 CROSS RENDER QUESTION"
+          : "🧠 PRACTICE RENDER QUESTION";
+        console.log(logLabel, q);
         const visualMarkup = renderVisual(q?.visual);
-        const supportMarkup = renderQuestionSupport(q, mode === "cross" ? "Practice" : mode);
+        const supportMarkup = renderQuestionSupport(q, crossCurricular ? "Cross-Curricular" : mode);
         const crossMarkup = crossCurricular
           ? `<div class="mode-tag">🌍 Cross-Curricular (ELAR)</div>`
           : "";
@@ -1530,22 +1558,32 @@
       if (!questions.length) {
         return `<p class="muted-note">No cross-curricular questions generated yet. Try again.</p>`;
       }
+      return renderQuestions(questions, { mode: "Cross-Curricular" });
+    }
 
-      return questions.map((q, i) => {
-        const safeChoices = Array.isArray(q?.choices) ? q.choices : [];
-        const choiceMarkup = safeChoices.map((choice, idx) => `
-          <div class="choice">
-            ${String.fromCharCode(65 + idx)}. ${cleanText(choice)}
-          </div>
-        `).join("");
+    function resolveModeContent(data, mode) {
+      const isCross = mode === "Cross-Curricular";
+      const passageToUse = isCross
+        ? (data?.crossPassage || data?.passage || "")
+        : (data?.passage || "");
+      let questionsToUse = isCross
+        ? data?.cross?.questions
+        : data?.practice?.questions;
 
-        return `
-          <div class="question-block">
-            <h4>${i + 1}. ${cleanText(q?.question || "")}</h4>
-            ${choiceMarkup}
-          </div>
-        `;
-      }).join("");
+      if (!questionsToUse || !questionsToUse.length) {
+        console.warn("⚠️ Missing question set for mode:", mode);
+        questionsToUse = data?.practice?.questions || [];
+      }
+
+      console.log("🔥 MODE:", mode);
+      console.log("🔥 USING:", isCross ? "CROSS" : "PRACTICE");
+      console.log("🔥 QUESTIONS COUNT:", questionsToUse?.length || 0);
+
+      return {
+        isCross,
+        passageToUse,
+        questionsToUse
+      };
     }
 
     function showFallback(fallbackText, fallbackQuestions = []) {
@@ -2144,7 +2182,9 @@
             answers: Array.isArray(data?.answerKey?.answers) ? data.answerKey.answers.slice(0, 5) : []
           }
         };
-        activeTab = "practice";
+        const selectedMode = apiMode === "Cross-Curricular" ? "Cross-Curricular" : "Practice";
+        const selectedContent = resolveModeContent(currentData, selectedMode);
+        activeTab = selectedContent.isCross ? "cross" : "practice";
 
         lastGeneratedContentMode = "both";
         const progressCount = incrementDailyProgress();
@@ -2175,6 +2215,19 @@
         clearRenderedSections();
         renderPracticeSection(currentData.practice, currentData.passage);
         renderCrossSection(currentData.cross, currentData.crossPassage || currentData.passage, { loading: true });
+
+        if (selectedContent.isCross) {
+          renderCrossSection(
+            { questions: selectedContent.questionsToUse },
+            selectedContent.passageToUse,
+            { loading: false }
+          );
+        } else {
+          renderPracticeSection(
+            { questions: selectedContent.questionsToUse },
+            selectedContent.passageToUse
+          );
+        }
         renderTab(activeTab);
         await new Promise((resolve) => requestAnimationFrame(() => resolve()));
         console.log("STEP 6: render complete");
@@ -2231,7 +2284,11 @@
           };
 
           if (enrichedCross?.questions?.length) {
-            renderCrossSection(enrichedCross, currentData.crossPassage || currentData.passage);
+            const crossModeContent = resolveModeContent(currentData, "Cross-Curricular");
+            renderCrossSection(
+              { questions: crossModeContent.questionsToUse },
+              crossModeContent.passageToUse
+            );
           }
 
           if (enrichedTutor?.explanations?.length) {
