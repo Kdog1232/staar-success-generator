@@ -1179,7 +1179,14 @@ function buildReadingChoices(
   ];
 }
 
-function buildCrossFallback(subject: CanonicalSubject, level: Level = "On Level"): Question[] {
+function buildCrossFallback(
+  subject: CanonicalSubject,
+  skillOrLevel: string | Level = "On Level",
+  maybeLevel: Level = "On Level",
+): Question[] {
+  const level: Level = skillOrLevel === "Below" || skillOrLevel === "On Level" || skillOrLevel === "Advanced"
+    ? skillOrLevel
+    : maybeLevel;
   const rigor = applyRigor(level);
   const crossPassage = buildSubjectPassage(subject, level);
   const singleAnswerSequence = [...shuffledLetters(), ...shuffledLetters()];
@@ -1733,6 +1740,41 @@ function isGenericAnswerChoice(choice: string): boolean {
   return genericMeta.test(text);
 }
 
+function isBadQuestion(q: Question | null | undefined, mode: CanonicalMode): boolean {
+  if (!q) return true;
+
+  const text = String(q.question || "").toLowerCase();
+  const choices = Array.isArray(q.choices) ? q.choices : [];
+
+  const genericPatterns = [
+    "a response grounded",
+    "a nearly correct idea",
+    "not supported by the passage",
+    "unrelated claim",
+    "this interpretation sounds possible",
+  ];
+
+  const hasGenericChoice = choices.some((choice) =>
+    genericPatterns.some((pattern) => String(choice).toLowerCase().includes(pattern))
+  );
+
+  if (choices.some((choice) => isGenericAnswerChoice(String(choice)))) return true;
+  if (choices.length < 4) return true;
+  if (choices.some((choice) => !choice || String(choice).trim().length < 5)) return true;
+  if (choices.some((choice) => String(choice).split(/\s+/).length < 6)) return true;
+  if (text.length < 15) return true;
+  if (text.includes("the report adds key evidence")) return true;
+  if (mode === "Cross-Curricular") {
+    const textCombined = [q.question, ...(q.choices || [])].join(" ").toLowerCase();
+    const hasPassageReference =
+      /(according to the passage|based on the passage|in the passage|scenario|data|table|model|investigation|timeline)/i
+        .test(textCombined);
+    if (!hasPassageReference) return true;
+  }
+
+  return hasGenericChoice;
+}
+
 function hasConcreteDetail(choice: string, passage: PassageContent | string, subject: CanonicalSubject): boolean {
   const text = String(choice || "").toLowerCase();
   const source = getPassageText(passage).toLowerCase();
@@ -1859,8 +1901,6 @@ function sanitizeQuestions(
   const cleanChoiceText = (value: unknown): string =>
     String(value ?? "")
       .replace(/^[A-D]\.\s*/i, "")
-      .replace(/\s*(This interpretation sounds possible.*)$/i, "")
-      .replace(/\s*\b(because|since|so that)\b.*$/i, "")
       .trim();
   const hasForbiddenLanguage = (text: string) =>
     subject !== "Reading" && forbiddenNonReading.some((term) => text.includes(term));
@@ -1931,14 +1971,6 @@ function sanitizeQuestions(
         const match = cleaned.match(/-?\d+(\.\d+)?/);
         return match ? match[0] : cleaned;
       }) as [string, string, string, string];
-    }
-
-    const forbidden = /(interpretation|supports|claim|evidence|conclusion)/i;
-    if (subject !== "Reading") {
-      const fallbackChoices = [...fallback[i].choices];
-      normalizedChoices = normalizedChoices.map((choice) =>
-        forbidden.test(choice) ? (fallbackChoices.shift() || choice) : choice
-      ) as [string, string, string, string];
     }
 
     const fallbackPartA = fallback[i].partA || {
@@ -2021,7 +2053,25 @@ function sanitizeQuestions(
   });
 
   while (sanitized.length < 5) sanitized.push(replaceWithFallback(sanitized.length));
-  const finalSet = sanitized.slice(0, 5).map((q) => q);
+  const fallbackQuestions =
+    mode === "Cross-Curricular"
+      ? buildCrossFallback(subject, skill, level)
+      : buildPracticeFallback(skill, subject, level);
+
+  let questions = sanitized.slice(0, 5).map((q, i) => {
+    if (isBadQuestion(q, mode)) {
+      console.log("⚠️ Replacing bad question at index:", i);
+      return { ...(fallbackQuestions[i] || q) };
+    }
+    return q;
+  });
+
+  questions = questions.map((q) => ({
+    ...q,
+    choices: strengthenChoiceSet(q.choices, String(q.question || ""), passage, subject),
+  }));
+  console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", questions.length);
+  const finalSet = questions;
   const fullSetFailed = finalSet.some((q) =>
     !q?.question ||
     !Array.isArray(q?.choices) ||
