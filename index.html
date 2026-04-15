@@ -1670,10 +1670,9 @@
 
     function renderPassage(passageText) {
       const displayPassage = cleanText(passageText || "");
-      const hasPassage = Boolean(displayPassage.trim());
       return `
         <div class="passage">
-          ${hasPassage ? `<p>${displayPassage}</p>` : `<p class="muted-note">No passage is required for this skill set.</p>`}
+          <p>${displayPassage}</p>
         </div>
       `;
     }
@@ -1995,22 +1994,22 @@
       }
 
       try {
-        outputDiv.innerHTML = "🧠 Analyzing skill...";
+        outputDiv.innerHTML = "Step 1: Generating practice...";
 
         progressTimers.push(setTimeout(() => {
-          outputDiv.innerHTML = "📖 Generating passage...";
+          outputDiv.innerHTML = "Step 1: Generating practice...";
         }, 900));
 
         progressTimers.push(setTimeout(() => {
-          outputDiv.innerHTML = "❓ Creating STAAR questions...";
+          outputDiv.innerHTML = "Step 1: Generating practice...";
         }, 1800));
 
         progressTimers.push(setTimeout(() => {
-          outputDiv.innerHTML = "🧠 Adding explanations...";
+          outputDiv.innerHTML = "Step 1: Generating practice...";
         }, 2700));
 
         progressTimers.push(setTimeout(() => {
-          outputDiv.innerHTML = "✅ Finalizing your STAAR set...";
+          outputDiv.innerHTML = "Step 1: Generating practice...";
         }, 3200));
         viewToggle.style.display = "none";
         console.log("STEP 1: start");
@@ -2087,8 +2086,8 @@
           grade,
           skill,
           level,
-          mode: apiMode,
-          phase: "core"
+          mode: "core",
+          contentMode: apiMode
         };
         console.log("🚀 PAYLOAD SENT TO BACKEND:", payload);
         const res = await fetch(
@@ -2145,9 +2144,7 @@
           }
         }
 
-        generatedPassage = data.passage === "NO_PASSAGE_FOR_SCIENCE"
-          ? ""
-          : cleanText(data.passage || "");
+        generatedPassage = cleanText(data.passage || "");
         if (data.meta?.fallback) {
           console.log("⚠️ FALLBACK MODE:", data.meta.reason || "unknown");
           if (Array.isArray(data?.practice?.questions) && data.practice.questions.length > 0) {
@@ -2168,7 +2165,7 @@
 
         currentData = {
           passage: generatedPassage,
-          crossPassage: cleanText(data.crossPassage || ""),
+          crossPassage: cleanText(data.crossPassage || data.passage || ""),
           practice: {
             questions: Array.isArray(data?.practice?.questions) ? data.practice.questions.slice(0, 5) : structuredQuestions.slice(0, 5)
           },
@@ -2215,6 +2212,10 @@
         clearRenderedSections();
         renderPracticeSection(currentData.practice, currentData.passage);
         renderCrossSection(currentData.cross, currentData.crossPassage || currentData.passage, { loading: true });
+        const modeStatus = document.getElementById("mode-status");
+        if (modeStatus) {
+          modeStatus.textContent = "Step 2: Adding explanations...";
+        }
 
         if (selectedContent.isCross) {
           renderCrossSection(
@@ -2232,8 +2233,8 @@
           grade,
           skill,
           level,
-          mode: apiMode,
-          phase: "enrich",
+          mode: "enrichment",
+          contentMode: apiMode,
           passage: data.passage,
           practiceQuestions: Array.isArray(data?.practice?.questions) ? data.practice.questions.slice(0, 5) : []
         };
@@ -2296,9 +2297,9 @@
 
           await new Promise((resolve) => requestAnimationFrame(() => resolve()));
           renderTab(activeTab);
-          const modeStatus = document.getElementById("mode-status");
-          if (modeStatus) {
-            modeStatus.textContent += " • Cross/Tutor ready";
+          const modeStatusAfter = document.getElementById("mode-status");
+          if (modeStatusAfter) {
+            modeStatusAfter.textContent = "Mode: Practice Mode ON • Cross/Tutor ready";
           }
         } catch (enrichErr) {
           if (enrichErr?.name !== "AbortError") {

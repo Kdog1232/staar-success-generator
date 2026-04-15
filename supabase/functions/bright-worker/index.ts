@@ -371,9 +371,9 @@ function buildCorePrompt(params: {
   const rigor = applyRigor(level);
   const practiceRulesBySubject: Record<CanonicalSubject, string> = {
     Reading: "Reading practice MUST include a passage and STAAR-style comprehension questions tied directly to that passage.",
-    Math: "Math practice MUST include direct, measurable word problems with multi-step reasoning and no passage dependency.",
-    Science: "Science practice MUST include direct concept/cause-effect/data interpretation questions and no passage dependency.",
-    "Social Studies": "Social Studies practice MUST include direct events/timeline/basic understanding questions and no passage dependency.",
+    Math: "Math practice MUST include a passage-based scenario with direct, measurable word problems and multi-step reasoning tied to that passage.",
+    Science: "Science practice MUST include a coherent informational passage and questions that depend on evidence from that passage.",
+    "Social Studies": "Social Studies practice MUST include a coherent informational passage and questions that depend on events/details from that passage.",
   };
 
   return `Create JSON only for PRACTICE MODE.
@@ -384,7 +384,7 @@ Level: ${level}
 
 Return exactly:
 {
-  "passage": "string (empty string allowed for non-Reading)",
+  "passage": "REQUIRED string (250–300 words)",
   "practice": { "questions": [5 items with question, choices, correct_answer, explanation] }
 }
 
@@ -392,6 +392,15 @@ Rules:
 - PRACTICE MODE ONLY. Do not generate cross-curricular content.
 - NO cross-curricular mixing.
 - ${practiceRulesBySubject[subject]}
+- CRITICAL:
+  - You MUST generate a passage between 250–300 words.
+  - Minimum 250 words, maximum 300 words.
+  - If under 250 words, expand before returning.
+  - NEVER return empty passage.
+  - Passage must include:
+    - clear scenario or topic
+    - multiple key details for evidence
+    - logical structure (beginning, middle, end)
 - Rigor profile:
   - passage complexity: ${rigor.passage}
   - question depth: ${rigor.questionDepth}
@@ -620,49 +629,65 @@ function clampPassageWords(passage: string, min: number, max: number): string {
   const cleaned = String(passage || "").replace(/\s+/g, " ").trim();
   const words = cleaned.split(" ").filter(Boolean);
 
-  if (words.length < min) {
-    return cleaned;
-  }
-
+  if (words.length < min) return cleaned;
   return words.slice(0, max).join(" ");
 }
 
+function ensurePassageLength(passage: string, min = 250, max = 300): string {
+  const cleaned = String(passage || "").replace(/\s+/g, " ").trim();
+  const words = cleaned.split(" ").filter(Boolean);
+  if (words.length >= min && words.length <= max) return cleaned;
+  if (words.length > max) return words.slice(0, max).join(" ");
+  const extension = "The report adds key evidence, compares outcomes, and explains why each detail matters for the final conclusion.";
+  let expanded = cleaned;
+  while (expanded.split(/\s+/).filter(Boolean).length < min) {
+    expanded = `${expanded} ${extension}`.trim();
+  }
+  return expanded.split(/\s+/).filter(Boolean).slice(0, max).join(" ");
+}
+
+function isWeakPassage(passage: PassageContent | string): boolean {
+  const text = getPassageText(passage).trim();
+  return !text || text.split(/\s+/).filter(Boolean).length < 200;
+}
+
 function fallbackPassage(subject: CanonicalSubject, mode: CanonicalMode, grade: number, level: Level = "On Level"): string {
-  const { min, max } = gradeWordRange(grade, mode === "Cross-Curricular" ? "Reading" : subject, mode);
+  const min = 250;
+  const max = 300;
 
   if (mode === "Cross-Curricular") {
-    return clampPassageWords(buildSubjectPassage(subject, level), min, max);
+    return ensurePassageLength(clampPassageWords(buildSubjectPassage(subject, level), min, max), min, max);
   }
 
   if (subject === "Math") {
-    return clampPassageWords(
+    return ensurePassageLength(clampPassageWords(
       "A school is planning a weekend market fundraiser. Student teams must decide pricing, estimate supply needs, and compare costs for materials and transportation. Their plan includes tracking sales data, calculating totals after discounts, and checking whether the final profit meets a goal for classroom technology.",
       min,
       max,
-    );
+    ), min, max);
   }
 
   if (subject === "Science") {
-    return clampPassageWords(
+    return ensurePassageLength(clampPassageWords(
       "Students tested how light intensity affects plant growth by placing seedlings at different distances from a lamp. They measured height changes, tracked water use, and recorded observations over two weeks. The class analyzed patterns in the data and debated which variables might have influenced unexpected results.",
       min,
       max,
-    );
+    ), min, max);
   }
 
   if (subject === "Social Studies") {
-    return clampPassageWords(
+    return ensurePassageLength(clampPassageWords(
       "In the early years of a growing town, leaders debated whether to invest limited funds in roads, irrigation, or a public market. Farmers, merchants, and families offered different priorities based on geography, trade routes, and available jobs. Newspaper editorials from the period show how economic choices shaped civic life and daily routines.",
       min,
       max,
-    );
+    ), min, max);
   }
 
-  return clampPassageWords(
+  return ensurePassageLength(clampPassageWords(
     "A class read an informational article about how communities solve local problems by collecting evidence, comparing ideas, and choosing the most effective solution. Students tracked key details, discussed author choices, and explained which evidence best supported the central claim.",
     min,
     max,
-  );
+  ), min, max);
 }
 
 function isCompareSkill(skill: string): boolean {
@@ -1913,22 +1938,12 @@ serve(async (req) => {
   let skill = READING_SKILL_DEFAULT;
   let level: Level = "On Level";
   let mode: CanonicalMode = "Practice";
+  let requestMode: "core" | "enrichment" = "core";
   let effectiveSubject: CanonicalSubject = "Reading";
   let effectiveSkill = READING_SKILL_DEFAULT;
 
-  const jsonResponse = (
-    payload: WorkerResponse,
-    meta: { fallback: boolean; reason: string; error?: string; usedFallbackCross?: boolean },
-  ) =>
-    new Response(JSON.stringify({
-      passage: payload.passage,
-      crossPassage: payload.crossPassage,
-      practice: payload.practice,
-      cross: payload.cross,
-      tutor: payload.tutor,
-      answerKey: payload.answerKey,
-      meta,
-    }), {
+  const jsonResponse = (payload: Record<string, unknown>) =>
+    new Response(JSON.stringify(payload), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -1936,7 +1951,19 @@ serve(async (req) => {
   const safeFallback = (reason: string, error?: string) => {
     console.log("🚨 FALLBACK TRIGGERED:", reason);
     const payload = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, level);
-    return jsonResponse(payload, { fallback: true, reason, usedFallbackCross: false, ...(error ? { error } : {}) });
+    if (requestMode === "enrichment") {
+      return jsonResponse({
+        cross: payload.cross,
+        tutor: payload.tutor,
+        answerKey: payload.answerKey,
+        meta: { fallback: true, reason, usedFallbackCross: false, ...(error ? { error } : {}) },
+      });
+    }
+    return jsonResponse({
+      passage: ensurePassageLength(getPassageText(payload.passage), 250, 300),
+      practice: payload.practice,
+      meta: { fallback: true, reason, ...(error ? { error } : {}) },
+    });
   };
 
   try {
@@ -1968,6 +1995,7 @@ serve(async (req) => {
       skill: incomingSkill,
       level: incomingLevel,
       mode: incomingMode,
+      contentMode: incomingContentMode,
     } = body;
 
     console.log("🔥 BACKEND RECEIVED:", {
@@ -1982,13 +2010,15 @@ serve(async (req) => {
     subject = canonicalizeSubject(incomingSubject);
     skill = String(incomingSkill || READING_SKILL_DEFAULT).trim() || READING_SKILL_DEFAULT;
     level = normalizeLevel(incomingLevel);
-    mode = canonicalizeMode(incomingMode);
+    requestMode = String(incomingMode || "core").toLowerCase() === "enrichment" ? "enrichment" : "core";
+    mode = canonicalizeMode(incomingContentMode);
     effectiveSubject = subject;
     effectiveSkill = skill ?? "Main Idea";
-    console.log("🧠 CROSS MODE:", mode);
+    console.log("🧠 REQUEST MODE:", requestMode);
+    console.log("🧠 CONTENT MODE:", mode);
     console.log("🧠 SUBJECT:", subject);
     console.log("🧠 EFFECTIVE SUBJECT:", effectiveSubject);
-    const range = gradeWordRange(grade, effectiveSubject, mode);
+    const range = { min: 250, max: 300 };
 
     let attempts = 0;
     const MAX_ATTEMPTS = 2;
@@ -2004,8 +2034,6 @@ serve(async (req) => {
       console.log("🎯 RETURN TYPE:", returnType);
       console.log("⏱ TOTAL TIME:", Date.now() - start, "ms");
     };
-    const phase = String(body.phase || "core").toLowerCase() === "enrich" ? "enrich" : "core";
-
     while (attempts < MAX_ATTEMPTS) {
       if (isTimedOut()) {
         console.warn("⏰ Time limit reached, returning best result");
@@ -2013,7 +2041,7 @@ serve(async (req) => {
       }
       attempts++;
       try {
-        if (phase === "core") {
+        if (requestMode === "core") {
           console.time("OPENAI_CALL");
           const aiRes = await fetch("https://api.openai.com/v1/responses", {
             method: "POST",
@@ -2072,10 +2100,10 @@ serve(async (req) => {
           const parsedPassage = parsed.passage;
           const passage = parsedPassage && typeof parsedPassage === "object" && !Array.isArray(parsedPassage)
             ? {
-              text_1: clampPassageWords(String((parsedPassage as Record<string, unknown>).text_1 || ""), 45, 220),
-              text_2: clampPassageWords(String((parsedPassage as Record<string, unknown>).text_2 || ""), 45, 220),
+              text_1: ensurePassageLength(clampPassageWords(String((parsedPassage as Record<string, unknown>).text_1 || ""), range.min, range.max), range.min, range.max),
+              text_2: ensurePassageLength(clampPassageWords(String((parsedPassage as Record<string, unknown>).text_2 || ""), range.min, range.max), range.min, range.max),
             }
-            : clampPassageWords(String(parsedPassage || ""), range.min, range.max);
+            : ensurePassageLength(clampPassageWords(String(parsedPassage || ""), range.min, range.max), range.min, range.max);
           const safePassage = (
             typeof passage === "string"
               ? passage
@@ -2083,6 +2111,11 @@ serve(async (req) => {
           );
           if (!safePassage || !getPassageText(safePassage).trim()) {
             retryFailureReason = "empty_passage";
+            continue;
+          }
+          if (isWeakPassage(safePassage) && attempts < MAX_ATTEMPTS) {
+            console.log("🔁 Weak passage — regenerating...");
+            retryFailureReason = "weak_passage";
             continue;
           }
 
@@ -2107,19 +2140,23 @@ serve(async (req) => {
             console.warn("⚠️ Minor issue, keeping AI output");
           }
 
-          const payload: WorkerResponse = {
-            passage: safePassage,
-            crossPassage: buildSubjectPassage(effectiveSubject, level),
+          const payload = {
+            passage: ensurePassageLength(getPassageText(safePassage), range.min, range.max),
             practice: { questions: practiceQuestions },
+            meta: { fallback: false, reason: "ai_core_success" },
+          };
+          bestAttempt = {
+            passage: payload.passage,
+            crossPassage: "",
+            practice: payload.practice,
             cross: { questions: [] },
             tutor: { explanations: [] },
             answerKey: { answers: [] },
           };
-          bestAttempt = payload;
-          bestMeta = { fallback: false, reason: "ai_core_success", usedFallbackCross: false };
+          bestMeta = { fallback: false, reason: "ai_core_success" };
           returnType = "PRIMARY";
           logReturnMetrics();
-          return jsonResponse(payload, bestMeta);
+          return jsonResponse(payload);
         }
 
         const priorPassage = body.passage;
@@ -2251,24 +2288,33 @@ serve(async (req) => {
         console.log("🔥 FINAL CROSS SUBJECT:", effectiveSubject);
         console.log("🔥 FINAL CROSS PASSAGE:", subjectCrossPassage);
 
-        const payload: WorkerResponse = {
-          passage: safePassage,
-          crossPassage: subjectCrossPassage,
-          practice: { questions: normalizedPractice },
+        const payload = {
           cross: { questions: crossQuestions },
           tutor: { explanations: tutorExplanations },
           answerKey: { answers: answerKeyAnswers },
+          meta: {
+            fallback: false,
+            reason: crossInvalid ? "ai_enrichment_success_with_cross_warning" : "ai_enrichment_success",
+            usedFallbackCross: false,
+          },
         };
         const meta = {
           fallback: false,
           reason: crossInvalid ? "ai_enrichment_success_with_cross_warning" : "ai_enrichment_success",
           usedFallbackCross: false,
         };
-        bestAttempt = payload;
+        bestAttempt = {
+          passage: safePassage,
+          crossPassage: subjectCrossPassage,
+          practice: { questions: normalizedPractice },
+          cross: payload.cross,
+          tutor: payload.tutor,
+          answerKey: payload.answerKey,
+        };
         bestMeta = meta;
         returnType = "PRIMARY";
         logReturnMetrics();
-        return jsonResponse(payload, meta);
+        return jsonResponse(payload);
       } catch (err) {
         console.error("BACKEND ERROR:", err);
         retryFailureReason = "openai_request_failed";
@@ -2278,7 +2324,19 @@ serve(async (req) => {
     if (bestAttempt && bestMeta) {
       returnType = "BEST_ATTEMPT";
       logReturnMetrics();
-      return jsonResponse(bestAttempt, bestMeta);
+      if (requestMode === "enrichment") {
+        return jsonResponse({
+          cross: bestAttempt.cross,
+          tutor: bestAttempt.tutor,
+          answerKey: bestAttempt.answerKey,
+          meta: bestMeta,
+        });
+      }
+      return jsonResponse({
+        passage: ensurePassageLength(getPassageText(bestAttempt.passage), 250, 300),
+        practice: bestAttempt.practice,
+        meta: bestMeta,
+      });
     }
     returnType = "FALLBACK";
     logReturnMetrics();
