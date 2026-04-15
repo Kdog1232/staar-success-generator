@@ -4,14 +4,19 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 type ChoiceLetter = "A" | "B" | "C" | "D";
 type CanonicalSubject = "Reading" | "Math" | "Science" | "Social Studies";
 type Level = "Below" | "On Level" | "Advanced";
+type Mode = "Practice" | "Cross-Curricular";
+type QuestionType = "mc" | "multi_select" | "evidence_based" | "scr";
+type CorrectAnswer = ChoiceLetter | [ChoiceLetter, ChoiceLetter] | "See sample response";
 
 type Question = {
+  type: QuestionType;
   question: string;
   choices: [string, string, string, string];
-  correct_answer: ChoiceLetter;
+  correct_answer: CorrectAnswer;
   explanation: string;
   common_mistake: string;
   parent_tip: string;
+  sample_answer?: string;
 };
 
 type WorkerResponse = {
@@ -28,7 +33,7 @@ type WorkerResponse = {
       parent_tip: string;
     }>;
   };
-  answerKey: { answers: Array<{ answer: string }> };
+  answerKey: { answers: Array<{ answer: CorrectAnswer }> };
   meta: { fallback: boolean; reason: string; error?: string };
 };
 
@@ -54,12 +59,44 @@ function normalizeLevel(level: unknown): Level {
   return "On Level";
 }
 
+function normalizeMode(mode: unknown): Mode {
+  const value = String(mode || "").toLowerCase();
+  if (value.includes("cross")) return "Cross-Curricular";
+  return "Practice";
+}
+
 function normalizeAnswer(letter: unknown): ChoiceLetter {
   const v = String(letter ?? "A").trim().toUpperCase();
   if (v.startsWith("B")) return "B";
   if (v.startsWith("C")) return "C";
   if (v.startsWith("D")) return "D";
   return "A";
+}
+
+function normalizeQuestionType(value: unknown): QuestionType {
+  const v = String(value || "").trim().toLowerCase();
+  if (v === "multi_select" || v === "multiselect" || v === "select_two") return "multi_select";
+  if (v === "evidence_based" || v === "evidence") return "evidence_based";
+  if (v === "scr" || v === "short_constructed_response") return "scr";
+  return "mc";
+}
+
+function normalizeCorrectAnswer(type: QuestionType, value: unknown): CorrectAnswer {
+  if (type === "scr") return "See sample response";
+  if (type === "multi_select") {
+    const raw = Array.isArray(value)
+      ? value
+      : String(value || "")
+        .split(/[,&/|]/)
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+    const letters = raw.map((entry) => normalizeAnswer(entry));
+    const deduped = Array.from(new Set(letters));
+    const first = deduped[0] || "A";
+    const second = deduped[1] || (first === "A" ? "B" : "A");
+    return [first, second];
+  }
+  return normalizeAnswer(value);
 }
 
 function parseJsonPayload(text: string): Record<string, unknown> {
@@ -99,65 +136,260 @@ function normalizeQuestions(raw: unknown): Question[] {
   if (!Array.isArray(raw)) return [];
   return raw.slice(0, 5).map((item) => {
     const q = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    const type = normalizeQuestionType(q.type ?? q.question_type);
+    const sampleAnswer = String(q.sample_answer || "").trim();
     return {
+      type,
       question: String(q.question || "").trim(),
       choices: normalizeChoices(q.choices),
-      correct_answer: normalizeAnswer(q.correct_answer),
+      correct_answer: normalizeCorrectAnswer(type, q.correct_answer),
       explanation: String(q.explanation || "").trim(),
       common_mistake: String(q.common_mistake || "").trim(),
       parent_tip: String(q.parent_tip || "").trim(),
+      ...(sampleAnswer ? { sample_answer: sampleAnswer } : {}),
     };
   });
 }
 
-function isLightlyValid(passage: unknown, questions: Question[]): boolean {
-  const hasPassage = String(passage || "").trim().length > 0;
-  const hasQuestions = Array.isArray(questions) && questions.length > 0;
-  const hasFourChoicesEach = questions.every((q) => Array.isArray(q.choices) && q.choices.length === 4);
-  return hasPassage && hasQuestions && hasFourChoicesEach;
+function countWords(value: string): number {
+  return String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .length;
 }
 
-function buildPrompt(params: {
+function isLightlyValid(passage: unknown, questions: Question[], requirePassage: boolean): boolean {
+  const passageText = String(passage || "").trim();
+  const hasPassage = passageText.length > 0;
+  const passageWordCount = countWords(passageText);
+  const hasValidPassageLength = passageWordCount >= 200 && passageWordCount <= 250;
+  const hasQuestions = Array.isArray(questions) && questions.length > 0;
+  const hasValidChoiceStructure = questions.every((q) =>
+    q.type === "scr" || (Array.isArray(q.choices) && q.choices.length === 4)
+  );
+  const hasValidMultiSelect = questions
+    .filter((q) => q.type === "multi_select")
+    .every((q) => Array.isArray(q.correct_answer) && q.correct_answer.length === 2);
+  const hasValidScr = questions
+    .filter((q) => q.type === "scr")
+    .every((q) => String(q.sample_answer || "").trim().length > 0 && q.correct_answer === "See sample response");
+  const passageValid = requirePassage ? hasPassage && hasValidPassageLength : true;
+  return passageValid && hasQuestions && hasValidChoiceStructure && hasValidMultiSelect && hasValidScr;
+}
+
+function buildCorePrompt(params: {
   grade: number;
   subject: CanonicalSubject;
   skill: string;
   level: Level;
+  mode: Mode;
 }): string {
-  const { grade, subject, skill, level } = params;
+  const { grade, subject, skill, level, mode } = params;
 
-  return `Generate STAAR-style content. Return JSON only (no markdown).
+  return `You are a Texas STAAR assessment expert.
 
-Inputs:
-- grade: ${grade}
-- subject: ${subject}
-- skill: ${skill}
-- level: ${level}
+Generate realistic, high-quality STAAR-style practice that a teacher would trust.
 
-Return this exact structure:
+INPUTS
+Grade: ${grade}
+Subject: ${subject}
+Skill: ${skill}
+Level: ${level}
+Mode: ${mode}
+
+OUTPUT FORMAT (STRICT)
+Return JSON only:
 {
   "passage": "string",
   "questions": [
     {
+      "type": "mc|multi_select|evidence_based|scr",
       "question": "string",
       "choices": ["string", "string", "string", "string"],
-      "correct_answer": "A|B|C|D",
+      "correct_answer": "A|B|C|D OR [\"A\",\"C\"] for multi_select OR \"See sample response\" for scr",
       "explanation": "string",
       "common_mistake": "string",
-      "parent_tip": "string"
+      "parent_tip": "string",
+      "sample_answer": "string (required for scr)"
     }
   ]
 }
 
-Requirements:
-- passage must be non-empty
-- include 5 questions
-- each question must have exactly 4 answer choices
-- explanations, common_mistake, and parent_tip must be complete and specific`;
+MODE LOGIC
+
+PRACTICE MODE
+- Reading: MUST include a passage; questions must target main idea, inference, evidence, and vocabulary in context
+- Math: NO passage; all questions must be word problems with STAAR-style real-world, multi-step thinking
+- Science: NO passage; use scenario-based questions (experiments, systems, observations) requiring reasoning about cause/effect, variables, and outcomes
+- Social Studies: NO passage; use context-based questions (events, decisions, impact) requiring analysis of cause/effect and significance
+
+CROSS-CURRICULAR MODE
+- ALL subjects MUST include a passage
+- Passage must be based on the selected subject
+- Reading special rule: passage must be about Science OR Math OR Social Studies (not a generic reading story)
+- Questions for all subjects in this mode MUST be reading-based (ELAR) and answerable using the passage only
+- Include reading targets: main idea, inference, evidence, and reasoning or vocabulary
+- Do NOT ask math computation questions
+- Do NOT ask science fact-recall questions
+- Do NOT require outside knowledge
+
+PASSAGE REQUIREMENTS
+- Follow mode logic above for when passage is required vs omitted
+- When included, passage must be engaging, realistic, subject-aligned, and detailed enough to support all questions
+- Passage complexity must scale by grade and level
+- When a passage is included, it MUST be 200-250 words
+
+ENGAGEMENT RULES
+- Use relatable real-life situations students understand
+- Use a natural, conversational tone (not formal or robotic)
+- Occasionally include light, modern expressions students recognize
+- Keep language clear, grade-appropriate, and school-appropriate
+- Do NOT overuse slang or include distracting/confusing terms
+- Avoid meme-heavy wording or excessive slang (for example: skibidi, rizz)
+- Engagement must support comprehension and STAAR rigor, not distract from it
+
+QUESTION REQUIREMENTS
+- Include exactly 5 questions
+- Follow mode logic above for passage-based vs no-passage question design
+- In Cross-Curricular mode, all questions MUST depend on the passage
+- Include the required skill mix for the active mode
+- Include these question types across the set:
+  - 1+ multiple choice (mc)
+  - 1+ multi-select with "Select TWO answers"
+  - 1+ evidence-based question asking for the BEST supporting detail
+  - 1+ short constructed response (scr)
+- Questions should require thinking (not just recall)
+- Use STAAR-style wording where appropriate:
+  - "What can the reader conclude..."
+  - "Which detail best supports..."
+  - "Based on the passage..."
+
+ANSWER CHOICES
+- 1 correct answer
+- 1 strong distractor that seems correct but misinterprets the passage/context
+- 1 partial answer that includes some correct information but misses the full idea
+- 1 clearly incorrect answer
+- At least TWO answer choices must feel logical to a student
+- For multi_select, clearly state "Select TWO answers" and provide exactly TWO correct answers
+
+SUPPORT CONTENT
+Explanation:
+- 1–2 sentences
+- Clearly explain why the correct answer is best using passage/context evidence or reasoning
+
+Common Mistake:
+- Explain the student's thinking, not just the mistake
+- Explain why a student might choose the wrong answer
+- Use realistic confusion patterns such as:
+  - focusing on one detail instead of the whole passage/context
+  - misunderstanding a key word or phrase
+  - making a logical but incomplete conclusion
+
+Parent Tip:
+- Explain what skill the student is learning
+- Tell the parent how to help the child think through the problem
+- Include one simple action such as:
+  - asking the child to point to evidence in the passage/context
+  - having the child explain their thinking out loud
+  - guiding them to compare answer choices
+- Should feel like a teacher coaching a parent
+- Do NOT restate the answer
+- If question type is scr, parent_tip MUST coach RACE:
+  - R = Restate the question
+  - A = Answer the question
+  - C = Cite evidence from the passage/context
+  - E = Explain why the evidence supports the answer
+  - Include actions like asking the child to restate, point to evidence, and explain why it matters
+
+SCR RULES
+- scr prompts must require explaining thinking with evidence from passage/context only
+- For scr, set correct_answer to "See sample response"
+- For scr, include sample_answer that models RACE with a clear answer, evidence, and explanation
+
+SUBJECT-SPECIFIC RIGOR RULES
+
+READING (ELAR)
+- Passage must carry a clear central idea with supporting details
+- Questions must require:
+  - identifying main/central idea
+  - making inferences
+  - selecting text evidence
+  - vocabulary in context
+- Avoid simple recall questions
+- Require students to interpret meaning from multiple sentences
+
+READING LEVEL ADJUSTMENTS
+- Below: shorter passage; more direct wording
+- On Level: standard STAAR phrasing; some inference required
+- Advanced: deeper inference; subtle answer choices; multiple plausible distractors
+
+MATH
+- MUST use real-world scenarios
+- MUST require multi-step problem solving
+- Questions must include:
+  - interpreting numbers in context
+  - selecting correct operation(s)
+  - reasoning about steps (not just computing)
+- Avoid simple one-step problems
+- Avoid pure calculation without context
+
+MATH LEVEL ADJUSTMENTS
+- Below: simpler numbers; fewer steps
+- On Level: 2-step problems; clear setup
+- Advanced: multi-step reasoning; layered information; trap answers based on common mistakes
+
+SCIENCE
+- MUST include a scenario (experiment, observation, or system)
+- Questions must require:
+  - cause and effect reasoning
+  - identifying variables
+  - interpreting data or outcomes
+- Avoid memorization-only questions
+- Avoid vocabulary recall without context
+
+SCIENCE LEVEL ADJUSTMENTS
+- Below: simple cause/effect; obvious relationships
+- On Level: basic analysis of results
+- Advanced: multiple variables; deeper reasoning about systems and outcomes
+
+SOCIAL STUDIES
+- MUST include historical or civic context
+- Questions must require:
+  - interpreting events
+  - understanding cause/effect
+  - analyzing decisions or outcomes
+- Avoid fact recall only
+- Avoid simple definitions
+
+SOCIAL STUDIES LEVEL ADJUSTMENTS
+- Below: clearer cause/effect relationships
+- On Level: basic analysis of events
+- Advanced: multiple perspectives; long-term impact reasoning
+
+GLOBAL RIGOR RULES
+- Respect mode-specific passage requirements (passage required only where defined by mode)
+- Questions must require thinking, not recall
+- Answer choices must be plausible and reflect real mistakes
+- Answer choices must be grounded in passage/context content
+- explanation must justify the correct answer with passage/context evidence
+- common_mistake must describe the student misunderstanding
+- parent_tip must coach how to read/reason and think through the passage or context
+
+IMPORTANT RULES
+- Keep writing concise and clear
+- Do NOT include extra sections or headings
+- Do NOT include markdown
+- Do NOT explain outside JSON
+- Focus on clarity, realism, and STAAR alignment
+- Everything must be generated in ONE pass
+- Maintain fast generation with concise output (under 10 seconds target)`;
 }
 
 function buildFallbackResponse(reason: string): WorkerResponse {
   const questions: Question[] = [
     {
+      type: "mc",
       question: "What is the main idea of the passage?",
       choices: [
         "The passage explains a central idea and supports it with details.",
@@ -248,6 +480,8 @@ serve(async (req) => {
     const subject = canonicalizeSubject(body.subject);
     const skill = String(body.skill || READING_SKILL_DEFAULT).trim() || READING_SKILL_DEFAULT;
     const level = normalizeLevel(body.level);
+    const mode = normalizeMode(body.mode);
+    const requirePassage = mode === "Cross-Curricular" || subject === "Reading";
 
     const aiRes = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -257,7 +491,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        input: buildPrompt({ grade, subject, skill, level }),
+        input: buildCorePrompt({ grade, subject, skill, level, mode }),
         max_output_tokens: 2200,
       }),
       signal: AbortSignal.timeout(18000),
@@ -282,7 +516,7 @@ serve(async (req) => {
     const passage = String(parsed.passage || "").trim();
     const questions = normalizeQuestions(parsed.questions);
 
-    if (!isLightlyValid(passage, questions)) {
+    if (!isLightlyValid(passage, questions, requirePassage)) {
       return jsonResponse(buildFallbackResponse("light_validation_failed"));
     }
 
