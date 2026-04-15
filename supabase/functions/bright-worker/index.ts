@@ -93,6 +93,9 @@ type EnrichmentResponse = {
 };
 
 type WorkerAttempt = CoreResponse & EnrichmentResponse;
+type IncomingCrossQuestion = Partial<
+  Pick<Question, "question" | "type" | "correct_answer" | "explanation" | "common_mistake" | "parent_tip">
+>;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -146,6 +149,12 @@ function normalizeLevel(level: unknown): Level {
   const value = String(level || "");
   if (value === "Below" || value === "Advanced") return value;
   return "On Level";
+}
+
+function toCanonicalMode(value: CanonicalMode | "support" | "cross"): CanonicalMode {
+  if (value === "cross") return "Cross-Curricular";
+  if (value === "support") return "Practice";
+  return value;
 }
 
 function gradeWordRange(grade: number, subject: CanonicalSubject, mode: CanonicalMode): { min: number; max: number } {
@@ -2695,7 +2704,15 @@ serve(async (req) => {
   const returnCore = (data: CoreResponse) =>
     jsonResponse(subject === "Reading"
       ? {
-        passage: ensurePassageLength(getPassageText(data.passage || ""), 250, 300, subject, mode, grade, level),
+        passage: ensurePassageLength(
+          getPassageText(data.passage || ""),
+          250,
+          300,
+          subject,
+          toCanonicalMode(mode),
+          grade,
+          level,
+        ),
         practice: data.practice,
       }
       : {
@@ -2797,10 +2814,13 @@ serve(async (req) => {
     if (mode === "support") {
       const core = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, level);
       const practiceQuestions = core.practice?.questions || [];
-      const crossQuestions = Array.isArray(body?.cross?.questions)
-        ? body.cross.questions
+      const bodyCross = body?.cross && typeof body.cross === "object"
+        ? body.cross as Record<string, unknown>
+        : {};
+      const crossQuestions: IncomingCrossQuestion[] = Array.isArray(bodyCross.questions)
+        ? bodyCross.questions as IncomingCrossQuestion[]
         : [];
-      const crossPassage = String(body?.cross?.passage || "");
+      const crossPassage = String(bodyCross.passage || "");
 
       const tutor = practiceQuestions.map((q, i) => ({
         question_id: `practice_${i}`,
