@@ -387,6 +387,7 @@ GLOBAL RIGOR RULES
 - parent_tip must coach how to read/reason and think through the passage or context
 
 IMPORTANT RULES
+- Keep responses concise.
 - Keep writing concise and clear
 - Do NOT include extra sections or headings
 - Do NOT include markdown
@@ -504,7 +505,7 @@ serve(async (req) => {
         input: buildCorePrompt({ grade, subject, skill, level, mode }),
         max_output_tokens: 2200,
       }),
-      signal: AbortSignal.timeout(18000),
+      signal: AbortSignal.timeout(22000),
     });
 
     if (!aiRes.ok) {
