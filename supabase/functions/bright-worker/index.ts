@@ -25,6 +25,7 @@ type WorkerResponse = {
   practice: { questions: Question[] };
   crossPassage: string;
   cross: { questions: Question[] };
+  fallback: boolean;
   tutor: {
     explanations: Array<{
       question: string;
@@ -420,6 +421,7 @@ function buildFallbackResponse(reason: string): WorkerResponse {
     practice: { questions },
     crossPassage: "",
     cross: { questions: [] },
+    fallback: true,
     tutor: {
       explanations: questions.map((q) => ({
         question: q.question,
@@ -433,22 +435,27 @@ function buildFallbackResponse(reason: string): WorkerResponse {
   };
 }
 
-function buildWorkerResponse(passage: string, questions: Question[]): WorkerResponse {
+function buildWorkerResponse(mode: Mode, passage: string, questions: Question[]): WorkerResponse {
+  const practiceQuestions = mode === "Practice" ? questions : [];
+  const crossQuestions = mode === "Cross-Curricular" ? questions : [];
+  const finalQuestions = mode === "Cross-Curricular" ? crossQuestions : practiceQuestions;
+
   return {
     passage,
-    questions,
-    practice: { questions },
-    crossPassage: "",
-    cross: { questions: [] },
+    questions: finalQuestions,
+    practice: { questions: practiceQuestions },
+    crossPassage: mode === "Cross-Curricular" ? passage : "",
+    cross: { questions: crossQuestions },
+    fallback: false,
     tutor: {
-      explanations: questions.map((q) => ({
+      explanations: finalQuestions.map((q) => ({
         question: q.question,
         explanation: q.explanation,
         common_mistake: q.common_mistake,
         parent_tip: q.parent_tip,
       })),
     },
-    answerKey: { answers: questions.map((q) => ({ answer: q.correct_answer })) },
+    answerKey: { answers: finalQuestions.map((q) => ({ answer: q.correct_answer })) },
     meta: { fallback: false, reason: "ai_success" },
   };
 }
@@ -530,7 +537,7 @@ serve(async (req) => {
       return jsonResponse(buildFallbackResponse("light_validation_failed"));
     }
 
-    return jsonResponse(buildWorkerResponse(passage, questions));
+    return jsonResponse(buildWorkerResponse(mode, passage, questions));
   } catch (err) {
     return jsonResponse(buildFallbackResponse(`runtime_error:${err instanceof Error ? err.message : String(err)}`));
   }
