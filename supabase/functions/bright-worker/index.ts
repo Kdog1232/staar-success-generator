@@ -50,6 +50,7 @@ type Question = {
 };
 
 type TutorExplanation = {
+  question_id: string;
   question: string;
   explanation: string;
   common_mistake: string;
@@ -60,7 +61,11 @@ type TutorExplanation = {
 };
 
 type AnswerKeyEntry = {
-  answer: string;
+  question_id: string;
+  correct_answer: string;
+  explanation: string;
+  common_mistake: string;
+  parent_tip: string;
 };
 
 type CoreResponse = {
@@ -76,10 +81,12 @@ type EnrichmentResponse = {
     questions: Question[];
   };
   tutor: {
-    explanations: TutorExplanation[];
+    practice: TutorExplanation[];
+    cross: TutorExplanation[];
   };
   answerKey: {
-    answers: AnswerKeyEntry[];
+    practice: AnswerKeyEntry[];
+    cross: AnswerKeyEntry[];
   };
 };
 
@@ -427,10 +434,11 @@ Rules:
 
 function buildEnrichmentPrompt(params: {
   subject: CanonicalSubject;
+  skill: string;
   practiceQuestions: Question[];
   level: Level;
 }): string {
-  const { subject, practiceQuestions, level } = params;
+  const { subject, skill, practiceQuestions, level } = params;
   const rigor = applyRigor(level);
   const subjectFocus = subject === "Math"
     ? [
@@ -463,11 +471,18 @@ function buildEnrichmentPrompt(params: {
     "passage": "REQUIRED string (250–300 words)",
     "questions": [5 subject-aligned questions]
   },
-  "tutor": { "explanations": [5 entries with question, explanation, common_mistake, parent_tip, hint, think, step_by_step] },
-  "answerKey": { "answers": [5 entries with answer] }
+  "tutor": {
+    "practice": [5 entries],
+    "cross": [5 entries]
+  },
+  "answerKey": {
+    "practice": [5 entries],
+    "cross": [5 entries]
+  }
 }
 
 Subject: ${subject}
+Skill lock: ${skill}
 
 Practice questions:
 ${JSON.stringify(practiceQuestions.slice(0, 5))}
@@ -481,6 +496,8 @@ Rules:
 - Do NOT reuse or paraphrase the original practice passage.
 - If a question can be answered without reading the passage, rewrite it.
 - Cross questions must be different from practice questions.
+- ALL questions in BOTH practice and cross must assess the selected skill exactly: ${skill}.
+- NO skill drift, NO mixed topics in stem/Part A/Part B, NO ELAR language in non-Reading.
 - Cross questions MUST be subject-driven for ${subject}.
 - ${subjectFocus}
 - For Math/Science/Social Studies, forbidden wording: "main idea", "central idea", "author", "theme", "reader", "claim".
@@ -490,7 +507,10 @@ Rules:
   - distractor quality: ${rigor.distractorQuality}
 - Each question must include exactly 4 clear, distinct, passage-specific answer choices.
 - Choices must be clean answer options only (no explanations or commentary text).
-- answerKey should match cross question answers.
+- Validate answer correctness before returning.
+- Tutor entries (practice + cross) must include: question_id, question, explanation, common_mistake, parent_tip, hint, think, step_by_step.
+- Answer key entries (practice + cross) must include: question_id, correct_answer, explanation, common_mistake, parent_tip.
+- Cross tutor + answer key must reference cross passage evidence.
 - JSON only.`;
 }
 
@@ -1566,16 +1586,62 @@ function sanitizeQuestions(
 ): Question[] {
   const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
   const fallback = fallbackQuestionSet(subject, mode, skill, level);
+  const forbiddenNonReading = ["main idea", "central idea", "author", "theme", "claim", "reader", "best explains"];
+  const skillTokens = String(skill || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 3);
   const cleanChoiceText = (value: unknown): string =>
     String(value ?? "")
       .replace(/^[A-D]\.\s*/i, "")
       .replace(/\s*(This interpretation sounds possible.*)$/i, "")
       .replace(/\s*\b(because|since|so that)\b.*$/i, "")
       .trim();
+  const hasForbiddenLanguage = (text: string) =>
+    subject !== "Reading" && forbiddenNonReading.some((term) => text.includes(term));
+  const hasSkillSignal = (text: string) =>
+    skillTokens.length === 0 || skillTokens.some((token) => text.includes(token));
+  const isSelfContained = (q: Question) => {
+    const questionText = String(q.question || "").toLowerCase();
+    if (!questionText || questionText.length < 12) return false;
+    if (hasForbiddenLanguage(questionText)) return false;
+    const allChoiceText = (q.choices || []).map((choice) => String(choice || "").toLowerCase()).join(" ");
+    if (hasForbiddenLanguage(allChoiceText)) return false;
+    if (!hasSkillSignal(`${questionText} ${allChoiceText}`)) return false;
+    if (mode === "Cross-Curricular") {
+      const requiresPassageSignal =
+        /(according to the passage|based on the passage|from the passage|in the passage|scenario|data|table|model|investigation|timeline)/i
+          .test(questionText);
+      if (!requiresPassageSignal) return false;
+    }
+    if (q.type === "part_a_b") {
+      const partAText = String(q.partA?.question || "").toLowerCase();
+      const partBText = String(q.partB?.question || "").toLowerCase();
+      if (!partAText || !partBText) return false;
+      const sharedKeywords = questionText.split(/\s+/).filter((word) =>
+        word.length > 5 && partAText.includes(word) && partBText.includes(word)
+      );
+      if (sharedKeywords.length < 1) return false;
+    }
+    return true;
+  };
+  const answerFitsQuestion = (q: Question): boolean => {
+    if (q.type === "part_a_b") {
+      const partAnswer = normalizePartABAnswer(q.correct_answer);
+      return Boolean(
+        q.partA?.choices?.[LETTERS.indexOf(partAnswer.partA)] &&
+          q.partB?.choices?.[LETTERS.indexOf(partAnswer.partB)],
+      );
+    }
+    const single = normalizeAnswer(q.correct_answer);
+    return Boolean(q.choices?.[LETTERS.indexOf(single)]);
+  };
+  const replaceWithFallback = (index: number): Question => ({ ...fallback[index] });
   const sanitized: Question[] = incoming.map((item, i) => {
     const q = item && typeof item === "object" ? item as Record<string, unknown> : {};
     if (!q.question || !q.choices || !Array.isArray(q.choices) || q.choices.length < 4) {
-      return fallback[i];
+      return replaceWithFallback(i);
     }
     const expectedType = fallback[i].type || "mc";
     const type: QuestionType = expectedType;
@@ -1667,24 +1733,28 @@ function sanitizeQuestions(
       visual: sanitizeVisual(q.visual) || fallback[i].visual,
     };
 
+    if (!isSelfContained(base) || !answerFitsQuestion(base)) {
+      return replaceWithFallback(i);
+    }
     return base;
   });
 
-  while (sanitized.length < 5) sanitized.push(fallback[sanitized.length]);
+  while (sanitized.length < 5) sanitized.push(replaceWithFallback(sanitized.length));
 
   return sanitized.slice(0, 5).map((q) => q);
 }
 
 function validateSkillAlignment(skill: string, questions: Question[]): boolean {
   if (!skill || !Array.isArray(questions) || questions.length === 0) return false;
-  const skillLower = String(skill).toLowerCase();
-  if (skillLower.includes("vocabulary")) {
-    return questions.some((q) => {
-      const prompt = String(q?.question || "").toLowerCase();
-      return prompt.includes("meaning") || prompt.includes("word");
-    });
-  }
-  return true;
+  const tokens = String(skill)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 3);
+  return questions.every((q) => {
+    const text = `${q?.question || ""} ${(q?.choices || []).join(" ")}`.toLowerCase();
+    return tokens.length === 0 || tokens.some((token) => text.includes(token));
+  });
 }
 
 function getPassageText(passage: PassageContent | string): string {
@@ -1879,12 +1949,24 @@ function normalizeAnswerKeyEntry(value: unknown): string {
   return normalizeAnswer(value);
 }
 
-function sanitizeTutorExplanations(raw: unknown, practiceQuestions: Question[]): TutorExplanation[] {
+function ensureQuestionId(question: Question, index: number, mode: "practice" | "cross"): string {
+  return `${mode}_q${index + 1}`;
+}
+
+function sanitizeTutorExplanations(
+  raw: unknown,
+  sourceQuestions: Question[],
+  mode: "practice" | "cross",
+  crossPassage = "",
+): TutorExplanation[] {
   const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
-  const fallback = practiceQuestions.slice(0, 5).map((q, index) => ({
+  const fallback = sourceQuestions.slice(0, 5).map((q, index) => ({
+    question_id: ensureQuestionId(q, index, mode),
     question: q.question,
-    explanation: q.explanation || `Use evidence from the passage to answer Question ${index + 1}.`,
-    common_mistake: q.common_mistake || "Picking a choice that sounds right but is not proven by the passage.",
+    explanation: mode === "cross"
+      ? (q.explanation || `Use evidence from the cross passage to answer Question ${index + 1}.`)
+      : (q.explanation || `Use evidence from the question scenario to answer Question ${index + 1}.`),
+    common_mistake: q.common_mistake || "Picking a choice that sounds right but is not proven by evidence.",
     parent_tip: q.parent_tip || "Ask your child to cite one line of evidence before choosing.",
     hint: q.hint || "Underline the key words in the question.",
     think: q.think || "Eliminate choices that are only partially supported.",
@@ -1894,9 +1976,14 @@ function sanitizeTutorExplanations(raw: unknown, practiceQuestions: Question[]):
   const sanitized = incoming.map((item, index) => {
     const entry = item && typeof item === "object" ? item as Record<string, unknown> : {};
     const base = fallback[index] || fallback[fallback.length - 1];
+    const explanation = String(entry.explanation || base.explanation).trim() || base.explanation;
+    const resolvedExplanation = mode === "cross" && crossPassage
+      ? (/\bpassage\b/i.test(explanation) ? explanation : `${explanation} Use details from the cross passage.`)
+      : explanation;
     return {
+      question_id: String(entry.question_id || base.question_id),
       question: String(entry.question || base.question).trim() || base.question,
-      explanation: String(entry.explanation || base.explanation).trim() || base.explanation,
+      explanation: resolvedExplanation,
       common_mistake: String(entry.common_mistake || base.common_mistake).trim() || base.common_mistake,
       parent_tip: String(entry.parent_tip || base.parent_tip).trim() || base.parent_tip,
       hint: String(entry.hint || base.hint || "").trim() || base.hint,
@@ -1909,16 +1996,33 @@ function sanitizeTutorExplanations(raw: unknown, practiceQuestions: Question[]):
   return sanitized.slice(0, 5);
 }
 
-function sanitizeAnswerKey(raw: unknown, practiceQuestions: Question[]): AnswerKeyEntry[] {
+function sanitizeAnswerKey(
+  raw: unknown,
+  sourceQuestions: Question[],
+  tutor: TutorExplanation[],
+  mode: "practice" | "cross",
+  crossPassage = "",
+): AnswerKeyEntry[] {
   const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
-  const fallback = practiceQuestions.slice(0, 5).map((q) => ({
-    answer: normalizeAnswerKeyEntry(q.correct_answer),
+  const fallback = sourceQuestions.slice(0, 5).map((q, index) => ({
+    question_id: ensureQuestionId(q, index, mode),
+    correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
+    explanation: tutor[index]?.explanation || q.explanation || "Use evidence to justify the correct answer.",
+    common_mistake: tutor[index]?.common_mistake || q.common_mistake || "Choosing an answer without evidence.",
+    parent_tip: tutor[index]?.parent_tip || q.parent_tip || "Ask your child to cite evidence before deciding.",
   }));
   const sanitized = incoming.map((item, index) => {
     const entry = item && typeof item === "object" ? item as Record<string, unknown> : {};
     const base = fallback[index] || fallback[fallback.length - 1];
+    const explanation = String(entry.explanation || base.explanation).trim() || base.explanation;
     return {
-      answer: normalizeAnswerKeyEntry(entry.answer || base.answer),
+      question_id: String(entry.question_id || base.question_id),
+      correct_answer: normalizeAnswerKeyEntry(entry.correct_answer || entry.answer || base.correct_answer),
+      explanation: mode === "cross" && crossPassage && !/\bpassage\b/i.test(explanation)
+        ? `${explanation} Refer to evidence in the cross passage.`
+        : explanation,
+      common_mistake: String(entry.common_mistake || base.common_mistake).trim() || base.common_mistake,
+      parent_tip: String(entry.parent_tip || base.parent_tip).trim() || base.parent_tip,
     };
   });
 
@@ -1987,12 +2091,17 @@ function buildFallbackResponse(
   console.log("🧠 CROSS SUBJECT:", effectiveSubject);
   const practicePassage = fallbackPassageContent(effectiveSubject, "Practice", grade, skill, level);
   const practiceQuestions = buildPracticeFallback(skill, effectiveSubject, level, practicePassage);
+  const crossTutor = sanitizeTutorExplanations([], crossContent.questions, "cross", crossContent.passage);
+  const practiceTutor = sanitizeTutorExplanations([], practiceQuestions, "practice");
   return {
     passage: subject === "Reading" ? practicePassage : "",
     practice: { questions: practiceQuestions },
     cross: { passage: crossContent.passage, questions: crossContent.questions },
-    tutor: { explanations: sanitizeTutorExplanations([], practiceQuestions) },
-    answerKey: { answers: sanitizeAnswerKey([], practiceQuestions) },
+    tutor: { practice: practiceTutor, cross: crossTutor },
+    answerKey: {
+      practice: sanitizeAnswerKey([], practiceQuestions, practiceTutor, "practice"),
+      cross: sanitizeAnswerKey([], crossContent.questions, crossTutor, "cross", crossContent.passage),
+    },
   };
 }
 
@@ -2229,8 +2338,8 @@ serve(async (req) => {
             passage: payload.passage || "",
             practice: payload.practice,
             cross: { passage: "", questions: [] },
-            tutor: { explanations: [] },
-            answerKey: { answers: [] },
+            tutor: { practice: [], cross: [] },
+            answerKey: { practice: [], cross: [] },
           };
           returnType = "PRIMARY";
           logReturnMetrics();
@@ -2275,6 +2384,7 @@ serve(async (req) => {
             model: "gpt-4o-mini",
             input: buildEnrichmentPrompt({
               subject: effectiveSubject,
+              skill: effectiveSkill,
               practiceQuestions: normalizedPractice,
               level,
             }),
@@ -2308,12 +2418,13 @@ serve(async (req) => {
           console.warn("⚠️ Invalid or duplicated cross passage, forcing subject passage");
           subjectCrossPassage = baseCrossPassage;
         }
+        subjectCrossPassage = ensurePassageLength(subjectCrossPassage, 250, 300);
 
         let crossQuestions = sanitizeQuestions(
           parsedCross.questions || [],
           effectiveSubject,
           "Cross-Curricular",
-          "Main Idea",
+          effectiveSkill,
           level,
           subjectCrossPassage,
         );
@@ -2341,21 +2452,50 @@ serve(async (req) => {
           !validateHybridCross(crossQuestions) ||
           !validateUniqueChoices(crossQuestions);
         if (crossInvalid) {
-          console.warn("⚠️ Using best available cross output");
+          console.warn("⚠️ Invalid cross output detected; replacing full cross set.");
+          const forcedCross = buildSubjectCrossContent(effectiveSubject, level);
+          subjectCrossPassage = ensurePassageLength(forcedCross.passage, 250, 300);
+          crossQuestions = sanitizeQuestions(
+            forcedCross.questions,
+            effectiveSubject,
+            "Cross-Curricular",
+            effectiveSkill,
+            level,
+            subjectCrossPassage,
+          );
         }
 
-        const tutorExplanations = sanitizeTutorExplanations(
-          parsed?.tutor && typeof parsed.tutor === "object"
-            ? (parsed.tutor as Record<string, unknown>).explanations
-            : [],
+        const parsedTutor = parsed?.tutor && typeof parsed.tutor === "object"
+          ? parsed.tutor as Record<string, unknown>
+          : {};
+        const parsedAnswerKey = parsed?.answerKey && typeof parsed.answerKey === "object"
+          ? parsed.answerKey as Record<string, unknown>
+          : {};
+
+        const tutorPractice = sanitizeTutorExplanations(
+          parsedTutor.practice || parsedTutor.explanations || [],
           normalizedPractice,
+          "practice",
+        );
+        const tutorCross = sanitizeTutorExplanations(
+          parsedTutor.cross || [],
+          crossQuestions,
+          "cross",
+          subjectCrossPassage,
         );
 
-        const answerKeyAnswers = sanitizeAnswerKey(
-          parsed?.answerKey && typeof parsed.answerKey === "object"
-            ? (parsed.answerKey as Record<string, unknown>).answers
-            : [],
+        const answerKeyPractice = sanitizeAnswerKey(
+          parsedAnswerKey.practice || parsedAnswerKey.answers || [],
           normalizedPractice,
+          tutorPractice,
+          "practice",
+        );
+        const answerKeyCross = sanitizeAnswerKey(
+          parsedAnswerKey.cross || [],
+          crossQuestions,
+          tutorCross,
+          "cross",
+          subjectCrossPassage,
         );
 
         console.log("🔥 FINAL CROSS SUBJECT:", effectiveSubject);
@@ -2367,8 +2507,8 @@ serve(async (req) => {
 
         const payload = {
           cross: { passage: subjectCrossPassage, questions: crossQuestions },
-          tutor: { explanations: tutorExplanations },
-          answerKey: { answers: answerKeyAnswers },
+          tutor: { practice: tutorPractice, cross: tutorCross },
+          answerKey: { practice: answerKeyPractice, cross: answerKeyCross },
         };
         bestAttempt = {
           passage: corePassageForChecks,
