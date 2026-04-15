@@ -1164,7 +1164,6 @@
     const API_FETCH_TIMEOUT_MS = 30000;
     const API_PARSE_TIMEOUT_MS = 10000;
     const RENDER_TIMEOUT_MS = 10000;
-    const WATCHDOG_TIMEOUT_MS = 35000;
 
     function withTimeout(promise, ms = API_FETCH_TIMEOUT_MS) {
       return Promise.race([
@@ -1940,17 +1939,8 @@
         throw new Error("HALT_MISSING_DOM");
       }
       btn.disabled = true;
-      btn.innerText = "Generating...";
+      btn.textContent = "Generating...";
       const progressTimers = [];
-      const watchdog = setTimeout(() => {
-        console.error("⏰ FORCE RECOVERY — unlocking");
-        isGenerating = false;
-        const stuckBtn = document.getElementById("generate-btn");
-        if (stuckBtn) {
-          stuckBtn.disabled = false;
-          stuckBtn.innerText = "Generate STAAR Pack";
-        }
-      }, WATCHDOG_TIMEOUT_MS);
 
       function halt(message) {
         console.log("⛔ HALT:", message);
@@ -2291,13 +2281,12 @@
         console.error("❌ GENERATE ERROR:", err);
       } finally {
         console.log("🧹 FINAL CLEANUP");
-        clearTimeout(watchdog);
         progressTimers.forEach((timer) => clearTimeout(timer));
         isGenerating = false;
         const btn = document.getElementById("generate-btn");
         if (btn) {
           btn.disabled = false;
-          btn.innerText = "Generate STAAR Pack";
+          btn.textContent = "Generate STAAR Pack";
         }
         currentController = null;
         console.log("✅ GENERATE FULLY COMPLETE");
