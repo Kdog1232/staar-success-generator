@@ -2279,6 +2279,74 @@
           practiceQuestions: Array.isArray(data?.practice?.questions) ? data.practice.questions.slice(0, 5) : []
         };
 
+        const crossPromise = fetch("/functions/v1/cross-only", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            apikey: SUPABASE_ANON_KEY
+          },
+          body: JSON.stringify(enrichPayload),
+          signal: enrichController.signal
+        });
+        const supportPromise = fetch("/functions/v1/support-only", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            apikey: SUPABASE_ANON_KEY
+          },
+          body: JSON.stringify(enrichPayload),
+          signal: enrichController.signal
+        });
+
+        let crossData = null;
+        let supportData = null;
+
+        try {
+          crossData = await crossPromise.then((r) => r.json());
+        } catch (e) {
+          console.log("⚠️ Cross failed, will fallback");
+        }
+
+        try {
+          supportData = await supportPromise.then((r) => r.json());
+        } catch (e) {
+          console.log("⚠️ Support failed, will fallback");
+        }
+
+        console.log("🔥 CROSS LOADED:", crossData);
+        console.log("🔥 SUPPORT LOADED:", supportData);
+
+        if (crossData?.cross?.questions?.length) {
+          currentData = {
+            ...currentData,
+            cross: {
+              passage: cleanText(crossData?.cross?.passage || currentData?.cross?.passage || ""),
+              questions: Array.isArray(crossData?.cross?.questions) ? crossData.cross.questions.slice(0, 5) : []
+            }
+          };
+          renderCrossSection(currentData.cross, currentData.cross.passage);
+        }
+
+        if (supportData?.tutor && supportData?.answerKey) {
+          const isCrossActive = currentMode === "Cross-Curricular";
+
+          currentData = {
+            ...currentData,
+            tutor: {
+              practice: Array.isArray(supportData?.tutor?.practice) ? supportData.tutor.practice.slice(0, 5) : [],
+              cross: Array.isArray(supportData?.tutor?.cross) ? supportData.tutor.cross.slice(0, 5) : []
+            },
+            answerKey: {
+              practice: Array.isArray(supportData?.answerKey?.practice) ? supportData.answerKey.practice.slice(0, 5) : [],
+              cross: Array.isArray(supportData?.answerKey?.cross) ? supportData.answerKey.cross.slice(0, 5) : []
+            }
+          };
+          renderTutorSection(currentData.tutor, isCrossActive ? "cross" : "practice");
+          renderAnswerSection(currentData.answerKey, isCrossActive ? "cross" : "practice");
+        }
+
         try {
           const enrichRes = await fetch("https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker", {
             method: "POST",
