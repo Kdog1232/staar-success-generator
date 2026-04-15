@@ -1728,6 +1728,11 @@
     function renderTutorSection(tutorData, mode = activeTab) {
       const tutorSection = document.getElementById("tutor-section");
       if (!tutorSection) return;
+      const passage = mode === "cross" ? (currentData?.cross?.passage || "") : (currentData?.passage || "");
+      const enrichedTutor = tutorData;
+      console.log("🔥 TUTOR MODE USING:", mode);
+      console.log("🔥 PASSAGE USED:", passage);
+      console.log("🔥 TUTOR DATA:", enrichedTutor);
       const tutorEntries = mode === "cross"
         ? (Array.isArray(tutorData?.cross) ? tutorData.cross : [])
         : (Array.isArray(tutorData?.practice) ? tutorData.practice : []);

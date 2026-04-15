@@ -210,6 +210,25 @@ function getDifficultyInstructions(level: Level): string {
   return "";
 }
 
+function getRigorEngineRules(level: Level, subject: CanonicalSubject): string {
+  if (level === "Below") {
+    if (subject === "Math") return "Below: single-step basic computation with short, clear stems and obviously wrong distractors.";
+    if (subject === "Science") return "Below: simple cause/effect with one clear variable and obviously wrong distractors.";
+    if (subject === "Social Studies") return "Below: identify event/outcome directly with short stems and clearly wrong distractors.";
+    return "Below: explicit detail questions with direct text evidence and clearly wrong distractors.";
+  }
+  if (level === "Advanced") {
+    if (subject === "Math") return "Advanced: multi-step word problems with embedded reasoning and unnecessary info; distractors are plausible misconception traps.";
+    if (subject === "Science") return "Advanced: multi-variable system reasoning; distractors are close alternatives based on common misconceptions.";
+    if (subject === "Social Studies") return "Advanced: evaluate impacts or compare decisions across time/policy; distractors are plausible but flawed.";
+    return "Advanced: theme/author's purpose/multi-paragraph synthesis; distractors are very close with subtle evidence differences.";
+  }
+  if (subject === "Math") return "On Level: two-step word problems that apply computation to a context with moderately plausible distractors.";
+  if (subject === "Science") return "On Level: system relationships and applied cause/effect with moderately plausible distractors.";
+  if (subject === "Social Studies") return "On Level: cause/effect relationship questions with moderate distractor quality.";
+  return "On Level: inference plus evidence with moderate distractor quality.";
+}
+
 function getSubjectInstructions(subject: CanonicalSubject): string {
   if (subject === "Math") return "Generate math-based problems with clear computations.";
   if (subject === "Science") return "Generate science questions with real-world concepts.";
@@ -312,6 +331,7 @@ function buildPrompt(params: {
   const skillType = routeBySkill(effectiveSkill);
   const difficulty = getDifficultyInstructions(level);
   const subjectRules = getSubjectInstructions(effectiveSubject);
+  const rigorEngineRules = getRigorEngineRules(level, effectiveSubject);
 
   if (mode === "Cross-Curricular") {
     return `
@@ -377,6 +397,7 @@ REQUIREMENTS:
 
 ${difficulty}
 ${subjectRules}
+RIGOR ENGINE RULE: ${rigorEngineRules}
 
 Return strict JSON only with:
 - passage
@@ -392,6 +413,7 @@ function buildCorePrompt(params: {
 }): string {
   const { grade, subject, skill, level } = params;
   const rigor = applyRigor(level);
+  const rigorEngineRules = getRigorEngineRules(level, subject);
   if (subject === "Reading") {
     return `Create JSON only for PRACTICE MODE.
 Grade: ${grade}
@@ -413,6 +435,7 @@ Rules:
   - passage complexity: ${rigor.passage}
   - question depth: ${rigor.questionDepth}
   - distractor quality: ${rigor.distractorQuality}
+- RIGOR ENGINE: ${rigorEngineRules}
 - Use clear, student-friendly STAAR language.
 - Every question has 4 distinct, specific answer choices.
 - No markdown. JSON only.`;
@@ -439,6 +462,7 @@ Rules:
 - Rigor profile:
   - question depth: ${rigor.questionDepth}
   - distractor quality: ${rigor.distractorQuality}
+- RIGOR ENGINE: ${rigorEngineRules}
 - Every question has 4 distinct, specific answer choices.
 - No markdown. JSON only.`;
 }
@@ -451,6 +475,7 @@ function buildEnrichmentPrompt(params: {
 }): string {
   const { subject, skill, practiceQuestions, level } = params;
   const rigor = applyRigor(level);
+  const rigorEngineRules = getRigorEngineRules(level, subject);
   const subjectFocus = subject === "Math"
     ? [
       "Math passage must include numbers, quantities, rates, or comparisons.",
@@ -516,6 +541,7 @@ Rules:
   - passage complexity: ${rigor.passage}
   - question depth: ${rigor.questionDepth}
   - distractor quality: ${rigor.distractorQuality}
+- RIGOR ENGINE: ${rigorEngineRules}
 - Each question must include exactly 4 clear, distinct, passage-specific answer choices.
 - Choices must be clean answer options only (no explanations or commentary text).
 - Validate answer correctness before returning.
@@ -566,13 +592,56 @@ function buildSubjectPassage(subject: CanonicalSubject, level: Level = "On Level
   return "A school newspaper team reviewed interviews, survey results, and meeting notes to understand why students preferred different reading formats. Some students said short articles helped them find key ideas quickly, while others preferred longer features with more examples and context. Editors compared quotations, checked which claims were supported by multiple sources, and revised headlines to match the evidence in each story. When two reports appeared to conflict, the team re-read the original statements and identified how word choice changed the meaning. Their final publication explained how careful reading and evidence-based reasoning led to clearer conclusions.";
 }
 
-function normalizeChoices(choices: unknown): [string, string, string, string] {
-  const fallbackChoices = [
-    "The blacktop data point shows faster heat gain, which means direct sunlight increased surface temperature quickly.",
-    "The rail-depot decision appears first, which means leaders prioritized trade before flood delays changed public support.",
-    "The second-hour snack counts shifted after the gym announcement, indicating demand moved toward single-item purchases.",
-    "The watered test section warmed more slowly, showing moisture changed the heat-transfer pattern in the investigation.",
+function buildMathFallbackChoices(): [string, string, string, string] {
+  return [
+    "Compute both steps: (18 + 27) × 3 to find total notebook revenue.",
+    "Add all given quantities first, then subtract returns to get the final total sold.",
+    "Multiply batches by cups per batch, then compare with available inventory.",
+    "Use only one operation on one number, which misses a required computation step.",
   ];
+}
+
+function buildScienceFallbackChoices(): [string, string, string, string] {
+  return [
+    "Changing light intensity changed photosynthesis rate, causing different growth outcomes.",
+    "The independent variable was water amount, so observations compare response changes.",
+    "A controlled experiment isolates one variable to explain the observed relationship.",
+    "The conclusion should be based on repeated observations, not a single trial.",
+  ];
+}
+
+function buildSSFallbackChoices(): [string, string, string, string] {
+  return [
+    "Flood delays increased prices, so voters later supported a bridge policy change.",
+    "Council decisions in the early 1900s shifted trade routes and migration patterns.",
+    "Population growth changed public priorities, affecting election outcomes over time.",
+    "A transportation policy can reshape jobs, markets, and settlement across a town.",
+  ];
+}
+
+function buildReadingFallbackChoices(): [string, string, string, string] {
+  return [
+    "This choice cites a passage detail and explains how it supports the inference.",
+    "This choice mentions the topic but lacks text evidence that proves the claim.",
+    "This choice conflicts with details stated directly in the passage.",
+    "This choice introduces outside information not supported by the passage text.",
+  ];
+}
+
+function getFallbackChoices(subject: CanonicalSubject, skill: string): [string, string, string, string] {
+  void skill;
+  if (subject === "Math") return buildMathFallbackChoices();
+  if (subject === "Science") return buildScienceFallbackChoices();
+  if (subject === "Social Studies") return buildSSFallbackChoices();
+  return buildReadingFallbackChoices();
+}
+
+function normalizeChoices(
+  choices: unknown,
+  subject: CanonicalSubject = "Reading",
+  skill = "",
+): [string, string, string, string] {
+  const fallbackChoices = getFallbackChoices(subject, skill);
   const raw = Array.isArray(choices) ? choices.slice(0, 4) : [];
   while (raw.length < 4) raw.push(fallbackChoices[raw.length]);
 
@@ -594,7 +663,7 @@ function strengthenChoiceSet(
   passage: PassageContent | string = "",
   subject: CanonicalSubject = "Reading",
 ): [string, string, string, string] {
-  if (subject !== "Reading") return normalizeChoices(choices);
+  if (subject !== "Reading") return normalizeChoices(choices, subject);
 
   const text = getPassageText(passage);
   const keywords = passageKeywords(text).slice(0, 4);
@@ -761,9 +830,28 @@ function buildSupportContent(
   questionText: string,
   type: QuestionType,
   index: number,
+  level: Level = "On Level",
+  mode: CanonicalMode = "Practice",
+  passage: PassageContent | string = "",
 ): { explanation: string; common_mistake: string; parent_tip: string; hint: string; think: string; step_by_step: string } {
   const usesVisual = /(table|diagram|model|map|chart)/i.test(questionText);
-  const sourceRef = usesVisual ? "the visual and scenario details" : "the scenario details";
+  const isReading = subject === "Reading";
+  const isCross = mode === "Cross-Curricular";
+  const shouldUsePassage = isCross || isReading;
+  const passagePayload = passage && typeof passage === "object" ? passage as Record<string, string> : {};
+  const passageText = shouldUsePassage
+    ? (typeof passage === "string"
+      ? passage
+      : (passagePayload.text || passagePayload.text_1 || ""))
+    : "";
+  const passageSnippet = passageText
+    ? passageText.split(".").slice(0, 2).join(".").trim()
+    : "";
+  const sourceRef = shouldUsePassage
+    ? "the passage"
+    : usesVisual
+    ? "the visual and scenario details"
+    : "the scenario details";
   const subjectConcept = subject === "Math"
     ? "the mathematical relationship in the problem"
     : subject === "Science"
@@ -772,21 +860,28 @@ function buildSupportContent(
     ? "the historical or civic cause-and-effect relationship"
     : "the central idea and supporting evidence";
 
-  const explanation = type === "multi_select"
-    ? `Both correct answers are supported by ${sourceRef} and each captures a different part of ${subjectConcept}.`
-    : type === "scr"
-    ? `A strong response explains ${subjectConcept} and cites exact evidence from ${sourceRef}.`
-    : `The correct answer is supported by ${sourceRef} and correctly applies ${subjectConcept}.`;
+  let explanation;
+  if (shouldUsePassage) {
+    explanation = `The correct answer is supported by evidence from the passage. For example, "${passageSnippet}" shows how ${subjectConcept} is applied.`;
+  } else if (level === "Advanced") {
+    explanation = `The correct answer works because it applies ${subjectConcept} with precise reasoning; strong distractors fail due to subtle misconception traps.`;
+  } else if (level === "Below") {
+    explanation = `Use a clear step-by-step check: identify ${subjectConcept}, match one direct detail, then confirm the answer.`;
+  } else if (type === "multi_select") {
+    explanation = `Both correct answers are supported and each captures a different part of ${subjectConcept}.`;
+  } else if (type === "scr") {
+    explanation = `A strong response explains ${subjectConcept} and cites correct reasoning.`;
+  } else {
+    explanation = `The correct answer is supported and correctly applies ${subjectConcept}.`;
+  }
 
-  const common_mistake = type === "multi_select"
-    ? `Students may choose one true statement and one partial-truth distractor because both sound reasonable, but only two choices are fully supported by ${sourceRef}.`
-    : type === "scr"
-    ? `Students often retell the scenario without explaining ${subjectConcept}, which misses the required evidence-based reasoning.`
-    : `Students may pick a choice that uses familiar vocabulary but does not match what ${sourceRef} shows about ${subjectConcept}.`;
+  const common_mistake = shouldUsePassage
+    ? "A common mistake is choosing an answer that sounds correct but is not supported by the passage. Students must verify answers using evidence."
+    : "Students may choose an answer that looks familiar but does not match the concept being tested.";
 
-  const parent_tip = type === "scr"
-    ? `Ask your child, "Which exact detail from ${usesVisual ? "the visual or scenario" : "the scenario"} proves your explanation?" Then have them underline the evidence before writing.`
-    : `Ask your child, "What evidence in ${usesVisual ? "the visual and scenario" : "the scenario"} proves this answer?" Then compare that evidence to one wrong choice.`;
+  const parent_tip = shouldUsePassage
+    ? `Ask your child: "Where in the passage do you see this?" Have them point to a sentence like: "${passageSnippet}".`
+    : "Ask your child to explain how they solved the problem step by step.";
 
   const hintVariants = [
     `Find the detail in ${usesVisual ? "the visual and scenario" : "the scenario"} that directly supports the concept.`,
@@ -812,9 +907,17 @@ function buildSupportContent(
     "1) Decode the question focus. 2) Cross-check with data/model details. 3) Defend the answer with evidence.",
   ];
 
-  const hint = hintVariants[index % hintVariants.length];
+  const hint = shouldUsePassage
+    ? "Go back to the passage and find the sentence that supports the answer."
+    : `Think about the key concept needed to solve this problem using ${sourceRef}.`;
   const think = thinkVariants[index % thinkVariants.length];
-  const step_by_step = stepVariants[index % stepVariants.length];
+  const step_by_step = mode === "Cross-Curricular"
+    ? "1) Read the question. 2) Find the related part of the passage. 3) Match evidence to the best answer."
+    : level === "Below"
+    ? "1) Read the question. 2) Find one direct clue. 3) Do the needed step/calculation. 4) Check one wrong choice and explain why it is wrong."
+    : level === "Advanced"
+    ? "1) Identify the target concept. 2) Compare close options. 3) Eliminate misconception traps. 4) Justify why each wrong option fails."
+    : stepVariants[index % stepVariants.length];
 
   return {
     explanation,
@@ -895,14 +998,30 @@ function buildPracticeFallback(
     singleAnswerIndex += 1;
     return letter;
   };
-  const passageDrivenChoices = passage ? generateChoicesFromPassage(passage) : null;
+  const passageDrivenChoices = passage ? generateChoicesFromPassage(passage, level) : null;
+  const mathChoiceBanks: [string, string, string, string][] = [
+    ["$135", "$81", "$45", "$162"],
+    ["9 pages", "41 pages", "23 pages", "5 pages"],
+    ["12 cups", "7 cups", "9 cups", "1 cup"],
+    ["101 students", "84 students", "59 students", "125 students"],
+    ["79 apples", "103 apples", "41 apples", "127 apples"],
+  ];
 
   return stems.map((stem, i) => {
     const type: QuestionType = i === 1 ? "part_a_b" : "mc";
-    const leveledStem = rigor.questionDepth === "low" && subject !== "Reading"
+    let leveledStem = rigor.questionDepth === "low" && subject !== "Reading"
       ? stem.replace("Which statement best explains", "What is the best answer")
       : stem;
-    const support = buildSupportContent(subject, stem, "mc", i);
+    if (level === "Below") {
+      leveledStem = `${leveledStem.split("?")[0]}?`;
+    } else if (level === "On Level") {
+      if (subject !== "Reading") leveledStem = `${leveledStem} Use two steps to justify your choice.`;
+    } else {
+      leveledStem = subject === "Math"
+        ? `${leveledStem} Include only relevant numbers and ignore extra information to solve.`
+        : `${leveledStem} Compare at least two plausible interpretations before selecting the best answer.`;
+    }
+    const support = buildSupportContent(subject, stem, "mc", i, level, "Practice", passage || "");
     const partAChoices: [string, string, string, string] = subject === "Math"
       ? [
         "She needs 9 more pages because 14 + 18 + 9 = 41 and 50 - 41 = 9.",
@@ -959,29 +1078,40 @@ function buildPracticeFallback(
         "The sentence conflicts with the main point of the passage.",
       ];
     const choices = subject === "Math"
-      ? [
-        "A value that correctly combines all quantities using the needed operations in the problem.",
-        "A value from using only one part of the information and missing another step.",
-        "A value found by using the wrong operation on one quantity.",
-        "A value unrelated to the totals described in the problem.",
-      ]
+      ? mathChoiceBanks[i % mathChoiceBanks.length]
       : subject === "Science"
       ? [
-        rigor.distractorQuality === "obvious"
-          ? "The only answer that matches the cause/effect or data in the scenario."
+        level === "Below"
+          ? "The answer that directly matches the observed cause/effect in the scenario."
+          : level === "Advanced"
+          ? "An explanation that correctly compares interacting variables and matches the observed system behavior."
           : "An explanation that matches the cause/effect or data shown in the scenario.",
-        rigor.distractorQuality === "subtle"
-          ? "An explanation with accurate vocabulary but a slightly incorrect scientific link."
+        level === "Below"
+          ? "An answer that uses a science word but does not match what happened."
+          : level === "Advanced"
+          ? "A plausible explanation that uses correct terms but confuses correlation with causation."
           : "An explanation with one true detail but a wrong scientific connection.",
-        "An explanation that ignores the tested variable or observed result.",
-        "An explanation not supported by the scenario evidence.",
+        level === "Advanced"
+          ? "A trap answer that treats the dependent variable as if it were controlled by design."
+          : "An explanation that ignores the tested variable or observed result.",
+        level === "Advanced"
+          ? "A close answer that fits one data point but fails across the full set of observations."
+          : "An explanation not supported by the scenario evidence.",
       ]
       : subject === "Social Studies"
       ? [
-        "Flood-related shipment delays raised prices, which means residents questioned the rail-only plan.",
-        "Flooding ended before rail expansion began, so transportation costs dropped immediately.",
-        "Voters approved the bridge bond first, which means rail improvements happened later.",
-        "Population growth reduced travel demand, indicating no infrastructure decision was needed.",
+        level === "Below"
+          ? "The event led to a clear outcome shown in the timeline."
+          : "Flood-related shipment delays raised prices, which means residents questioned the rail-only plan.",
+        level === "Advanced"
+          ? "A plausible claim that matches one stakeholder view but ignores longer-term policy tradeoffs."
+          : "Flooding ended before rail expansion began, so transportation costs dropped immediately.",
+        level === "Advanced"
+          ? "A misconception trap that reverses timeline order while sounding historically reasonable."
+          : "Voters approved the bridge bond first, which means rail improvements happened later.",
+        level === "Below"
+          ? "An answer choice not supported by the event timeline."
+          : "Population growth reduced travel demand, indicating no infrastructure decision was needed.",
       ]
       : (passageDrivenChoices || [
         "The editor revised the headline after checking interview notes, which means evidence controlled the final claim.",
@@ -1025,13 +1155,30 @@ function buildPracticeFallback(
   });
 }
 
-function generateChoicesFromPassage(passage: PassageContent | string): [string, string, string, string] {
+function generateChoicesFromPassage(passage: PassageContent | string, level: Level = "On Level"): [string, string, string, string] {
   const text = getPassageText(passage).trim();
   const keywords = passageKeywords(text).slice(0, 4);
   const focus = keywords[0] || "the passage topic";
   const detail = keywords[1] || "key details";
   const context = keywords[2] || "supporting evidence";
   const outlier = keywords[3] || "an unrelated detail";
+
+  if (level === "Below") {
+    return [
+      `It states ${focus} and matches a direct detail from the passage.`,
+      `It mentions ${outlier}, which is not the main detail asked for.`,
+      "It gives an idea that does not appear in the passage.",
+      "It contradicts a clear sentence from the passage.",
+    ];
+  }
+  if (level === "Advanced") {
+    return [
+      `It synthesizes ${focus} with ${detail} and aligns with the strongest evidence.`,
+      `It sounds correct about ${focus} but misinterprets how ${context} changes the claim.`,
+      `It overextends ${detail} into a conclusion the passage does not fully support.`,
+      `It uses a common misconception by treating ${outlier} as the central argument.`,
+    ];
+  }
 
   return [
     `It focuses on ${focus} and is supported by ${detail} in the passage.`,
@@ -1043,6 +1190,7 @@ function generateChoicesFromPassage(passage: PassageContent | string): [string, 
 
 function buildCrossFallback(subject: CanonicalSubject, level: Level = "On Level"): Question[] {
   const rigor = applyRigor(level);
+  const crossPassage = buildSubjectPassage(subject, level);
   const singleAnswerSequence = [...shuffledLetters(), ...shuffledLetters()];
   let singleAnswerIndex = 0;
   const nextSingleAnswer = (): ChoiceLetter => {
@@ -1078,34 +1226,34 @@ function buildCrossFallback(subject: CanonicalSubject, level: Level = "On Level"
   const choiceBanks: [string, string, string, string][] = subject === "Math"
     ? [
       [
-        "Because second-hour changes affected the number of paid items, organizers had to compare revenue from both hours before restocking.",
-        "Because combo packs always make the most money, first-hour numbers alone were enough for the final decision.",
-        "Because single items are cheaper, they never affect total earnings as much as combo packs.",
-        "Because sales changed, revenue could not be compared between the two hours.",
+        "Hour 1 revenue is $276 and hour 2 is $258, so comparing totals is required before restocking.",
+        "Hour 1 revenue is $114, so first-hour combo count alone determines the decision.",
+        "Hour 2 revenue is $46, so single-item changes never affect totals.",
+        "Revenue cannot be computed from the given numbers in either hour.",
       ],
       [
-        "After combo sales dropped by 8, volunteers recorded that single-item sales increased by 15.",
-        "After combo sales dropped by 8, the sale ended before any other counts were recorded.",
-        "After combo sales dropped by 8, both combo and single-item sales dropped together.",
-        "After combo sales dropped by 8, prices changed from $6 and $2 to new values.",
+        "Combo count changed from 38 to 30 while single items changed from 24 to 39.",
+        "Combo count changed from 38 to 24 while single items stayed at 24.",
+        "Combo and single items both changed to 30 in hour 2.",
+        "Prices changed from $6 and $2 to $8 and $4 in hour 2.",
       ],
       [
-        "The passage says single-item sales increased by 15 after an announcement in the second hour.",
-        "The passage says single-item prices were the same as combo pack prices.",
-        "The passage says combo sales increased by 15 after the announcement.",
-        "The passage says no counts were recorded for the second hour.",
+        "Single items increased by 15, from 24 to 39, after the announcement.",
+        "Single-item price increased from $2 to $6 after the announcement.",
+        "Combo packs increased by 15, from 38 to 53, in hour 2.",
+        "No second-hour counts were recorded in the scenario.",
       ],
       [
-        "They needed totals from both hours because each hour had different quantities and prices that changed total revenue.",
-        "They only needed second-hour combo sales because combo packs are always the best indicator.",
-        "They only needed first-hour single-item sales because later changes are not useful.",
-        "They did not need any totals because the decision could be made without the data.",
+        "They needed both totals: hour 1 = $276 and hour 2 = $258 before deciding inventory.",
+        "They only needed second-hour combo revenue of $180 to finalize inventory.",
+        "They only needed first-hour single-item revenue of $48 to finalize inventory.",
+        "They needed no totals because item prices are irrelevant to inventory decisions.",
       ],
       [
-        "A change in single-item demand can shift total earnings even when combo sales decrease.",
-        "Combo sales determine all earnings, so single-item changes do not matter.",
-        "Single items and combo packs always contribute equal revenue per sale.",
-        "The passage gives no numbers, so no earnings conclusion can be made.",
+        "Even with 8 fewer combos, 15 more single items changed total revenue by $18.",
+        "Combo sales alone fixed earnings at $228 in both hours.",
+        "Single items and combos both add exactly $2 per sale, so they are equal.",
+        "No numbers were provided, so earnings cannot be compared.",
       ],
     ]
     : subject === "Science"
@@ -1176,10 +1324,14 @@ function buildCrossFallback(subject: CanonicalSubject, level: Level = "On Level"
 
   return stems.map((stem, i) => {
     const type: QuestionType = i === 1 ? "part_a_b" : "mc";
-    const leveledStem = rigor.questionDepth === "high"
+    const leveledStem = level === "Below"
+      ? `${stem.split("?")[0]}?`
+      : level === "Advanced"
+      ? `${stem} Compare close alternatives and identify why the strongest distractor is still wrong.`
+      : rigor.questionDepth === "high"
       ? `${stem} Which passage detail best supports your analysis?`
-      : stem;
-    const support = buildSupportContent(subject, leveledStem, "mc", i);
+      : `${stem} Use two linked details to support your reasoning.`;
+    const support = buildSupportContent(subject, leveledStem, "mc", i, level, "Cross-Curricular", crossPassage);
     const choices = choiceBanks[i % choiceBanks.length];
     const partAChoices: [string, string, string, string] = subject === "Math"
       ? [
@@ -1280,6 +1432,7 @@ function buildShortResponse(): string {
 }
 
 function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
+  const crossPassage = buildSubjectPassage(crossSubject, "On Level");
   const stems = [
     buildMainIdeaQuestion(),
     buildEvidenceQuestion(),
@@ -1297,7 +1450,7 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
 
   return stems.map((stem, i) => {
     const type: QuestionType = i === 1 ? "part_a_b" : i === 4 ? "scr" : "mc";
-    const support = buildSupportContent("Reading", stem, type, i);
+    const support = buildSupportContent("Reading", stem, type, i, "On Level", "Cross-Curricular", crossPassage);
     const partAChoices: [string, string, string, string] = crossSubject === "Science"
       ? [
         "The passage shows temperature results changed when moisture and sunlight conditions changed.",
@@ -1486,7 +1639,7 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
 
   return stems.map((stem, i) => {
     const type: QuestionType = i === 1 ? "part_a_b" : i === 3 ? "multi_select" : i === 4 ? "scr" : "mc";
-    const support = buildSupportContent(effectiveSubject, stem, type, i);
+    const support = buildSupportContent(effectiveSubject, stem, type, i, level, mode, "");
     const question: Question = {
       type,
       question: stem,
@@ -1606,6 +1759,99 @@ function hasConcreteDetail(choice: string, passage: PassageContent | string, sub
   return (concreteNouns || keywordOverlap >= 1) && hasInterpretationConnector;
 }
 
+function referencesPassage(text: string): boolean {
+  return /(passage|text evidence|according to the text|according to the passage|author|paragraph|line|excerpt)/i.test(
+    String(text || ""),
+  );
+}
+
+function requiresSubjectStrictSignals(
+  question: Question,
+  subject: CanonicalSubject,
+  mode: CanonicalMode,
+  passage: PassageContent | string,
+): boolean {
+  const stem = String(question.question || "");
+  const choices = (question.choices || []).join(" ");
+  const combined = `${stem} ${choices}`.toLowerCase();
+  const explanation = String(question.explanation || "").toLowerCase();
+  const hasGenericWording = /(analyze|reasoning|best answer|academic|conceptual understanding)/i.test(combined);
+
+  if (mode === "Practice" && subject !== "Reading" && referencesPassage(combined)) return false;
+  if (hasGenericWording) return false;
+
+  if (subject === "Math") {
+    const hasNumbers = /\d/.test(combined);
+    const hasComputationLanguage = /(solve|total|sum|difference|product|divide|multiply|subtract|add|equation|compute)/i
+      .test(combined);
+    return hasNumbers && hasComputationLanguage;
+  }
+
+  if (subject === "Science") {
+    const hasScienceReasoning = /(cause|effect|variable|experiment|observation|hypothesis|data|system|process|relationship)/i
+      .test(combined);
+    const explanationHasProcess = /(because|caused|led to|result|relationship|process|variable)/i.test(explanation);
+    return hasScienceReasoning && explanationHasProcess;
+  }
+
+  if (subject === "Social Studies") {
+    const hasHistoricalContext = /(history|historical|timeline|policy|law|government|election|war|century|year|voters|migration|trade|event)/i
+      .test(combined);
+    const explanationHasImpact = /(cause|effect|impact|result|led to|outcome|changed)/i.test(explanation);
+    return hasHistoricalContext && explanationHasImpact;
+  }
+
+  const passageText = getPassageText(passage).toLowerCase();
+  const overlap = passageKeywords(passageText).slice(0, 16).filter((token) => combined.includes(token)).length;
+  const hasEvidenceLanguage = /(evidence|inference|theme|supports|according to|from the passage)/i.test(combined) &&
+    /(evidence|supports|text|passage)/i.test(explanation);
+  return overlap >= 1 && hasEvidenceLanguage;
+}
+
+function correctAnswerLooksNumeric(question: Question): boolean {
+  const answer = normalizeAnswer(question.correct_answer);
+  const choice = String(question.choices?.[LETTERS.indexOf(answer)] || "");
+  return /\d/.test(choice) || /(\+|\-|\*|\/|=)/.test(choice);
+}
+
+function isMultiStepMathQuestion(question: Question): boolean {
+  const combined = `${question.question} ${(question.choices || []).join(" ")}`.toLowerCase();
+  const opCount = ["add", "subtract", "multiply", "divide", "total", "then", "after", "difference", "sum", "product", "each", "in all", "more", "less"]
+    .filter((token) => combined.includes(token)).length;
+  const numberCount = (combined.match(/\d+/g) || []).length;
+  return numberCount >= 2 && opCount >= 1;
+}
+
+function validateDistractorRigor(question: Question, level: Level): boolean {
+  const wrongChoices = (question.choices || []).filter((_, index) => LETTERS[index] !== normalizeAnswer(question.correct_answer));
+  if (wrongChoices.length < 2) return false;
+  const obviousPatterns = /(always|never|impossible|not supported|unrelated|no evidence)/i;
+  const misconceptionPatterns = /(misconception|confuses|reverses|correlation|causation|trap)/i;
+  const avgLength = wrongChoices.reduce((sum, choice) => sum + String(choice || "").split(/\s+/).length, 0) / wrongChoices.length;
+
+  if (level === "Below") return wrongChoices.some((choice) => obviousPatterns.test(String(choice || "")));
+  if (level === "Advanced") {
+    const plausibleCount = wrongChoices.filter((choice) => !obviousPatterns.test(String(choice || "")) && String(choice || "").split(/\s+/).length >= 8).length;
+    return plausibleCount >= 2 && (misconceptionPatterns.test(wrongChoices.join(" ")) || avgLength >= 10);
+  }
+  return avgLength >= 6 && wrongChoices.some((choice) => /(partly|partial|one true detail|incomplete|ignores)/i.test(String(choice || "")));
+}
+
+function validateLevelComplexity(subject: CanonicalSubject, level: Level, questions: Question[]): boolean {
+  const text = questions.map((q) => `${q.question} ${q.explanation}`).join(" ").toLowerCase();
+  if (level === "Below") {
+    return !/(synthesize|compare|evaluate|multi-paragraph|abstract)/i.test(text);
+  }
+  if (level === "On Level") {
+    const twoStepSignals = /(two steps|because.*then|first.*then|apply|relationship|inference)/i.test(text);
+    return twoStepSignals;
+  }
+  const advancedSignals = /(multi-step|compare|synthesis|evaluate|misconception|trap|infer|author's purpose|multi-variable)/i.test(text);
+  if (!advancedSignals) return false;
+  if (subject === "Math") return questions.some((q) => /(extra|unnecessary|ignore extra information)/i.test(q.question));
+  return true;
+}
+
 function sanitizeQuestions(
   raw: unknown,
   subject: CanonicalSubject,
@@ -1671,6 +1917,7 @@ function sanitizeQuestions(
     return Boolean(q.choices?.[LETTERS.indexOf(single)]);
   };
   const replaceWithFallback = (index: number): Question => ({ ...fallback[index] });
+  let anyQuestionFailed = false;
   const sanitized: Question[] = incoming.map((item, i) => {
     const q = item && typeof item === "object" ? item as Record<string, unknown> : {};
     if (!q.question || !q.choices || !Array.isArray(q.choices) || q.choices.length < 4) {
@@ -1685,8 +1932,8 @@ function sanitizeQuestions(
 
     let normalizedChoices = (
       subject === "Reading"
-        ? strengthenChoiceSet(normalizeChoices(q.choices), questionText, passage, subject)
-        : normalizeChoices(q.choices).map((choice) => cleanChoiceText(choice))
+        ? strengthenChoiceSet(normalizeChoices(q.choices, subject, skill), questionText, passage, subject)
+        : normalizeChoices(q.choices, subject, skill).map((choice) => cleanChoiceText(choice))
     ) as [string, string, string, string];
 
     if (subject === "Math") {
@@ -1708,11 +1955,11 @@ function sanitizeQuestions(
 
     const fallbackPartA = fallback[i].partA || {
       question: "Part A: What is the best answer?",
-      choices: normalizeChoices(fallback[i].choices),
+      choices: normalizeChoices(fallback[i].choices, subject, skill),
     };
     const fallbackPartB = fallback[i].partB || {
       question: "Part B: Which evidence best supports Part A?",
-      choices: normalizeChoices(fallback[i].choices),
+      choices: normalizeChoices(fallback[i].choices, subject, skill),
     };
 
     const base: Question = {
@@ -1728,7 +1975,7 @@ function sanitizeQuestions(
         ? {
           question: String((q.partA as Record<string, unknown> | undefined)?.question || fallbackPartA.question).trim() || fallbackPartA.question,
           choices: strengthenChoiceSet(
-            normalizeChoices((q.partA as Record<string, unknown> | undefined)?.choices || fallbackPartA.choices),
+            normalizeChoices((q.partA as Record<string, unknown> | undefined)?.choices || fallbackPartA.choices, subject, skill),
             String((q.partA as Record<string, unknown> | undefined)?.question || fallbackPartA.question),
             passage,
             subject,
@@ -1739,7 +1986,7 @@ function sanitizeQuestions(
         ? {
           question: String((q.partB as Record<string, unknown> | undefined)?.question || fallbackPartB.question).trim() || fallbackPartB.question,
           choices: strengthenChoiceSet(
-            normalizeChoices((q.partB as Record<string, unknown> | undefined)?.choices || fallbackPartB.choices),
+            normalizeChoices((q.partB as Record<string, unknown> | undefined)?.choices || fallbackPartB.choices, subject, skill),
             String((q.partB as Record<string, unknown> | undefined)?.question || fallbackPartB.question),
             passage,
             subject,
@@ -1753,7 +2000,7 @@ function sanitizeQuestions(
         ? (String(q.part_b_question || fallback[i].part_b_question || "").trim() || fallback[i].part_b_question)
         : undefined,
       part_b_choices: type === "part_a" || type === "part_b"
-        ? normalizeChoices(q.part_b_choices || fallback[i].part_b_choices)
+        ? normalizeChoices(q.part_b_choices || fallback[i].part_b_choices, subject, skill)
         : undefined,
       part_b_correct_answer: type === "part_a" || type === "part_b"
         ? normalizeAnswer(q.part_b_correct_answer || fallback[i].part_b_correct_answer)
@@ -1774,7 +2021,12 @@ function sanitizeQuestions(
       return false;
     });
 
-    if (!isSelfContained(base) || !answerFitsQuestion(base) || choiceFailures) {
+    const subjectStrictFailure = !requiresSubjectStrictSignals(base, subject, mode, passage);
+    const practicePassageBleed = mode === "Practice" && subject !== "Reading" &&
+      ([base.question, ...base.choices].some((entry) => referencesPassage(entry)));
+
+    if (!isSelfContained(base) || !answerFitsQuestion(base) || choiceFailures || subjectStrictFailure || practicePassageBleed) {
+      anyQuestionFailed = true;
       return replaceWithFallback(i);
     }
     return base;
@@ -1789,7 +2041,44 @@ function sanitizeQuestions(
     q.choices.some((choice) => isGenericAnswerChoice(choice))
   );
 
-  if (fullSetFailed) {
+  const setLevelSubjectValidationFailed = (() => {
+    if (subject === "Math") {
+      const hasMultiStep = finalSet.some((q) => isMultiStepMathQuestion(q));
+      const numericCorrectAnswers = finalSet.every((q) => correctAnswerLooksNumeric(q));
+      return !hasMultiStep || !numericCorrectAnswers;
+    }
+    if (subject === "Science") {
+      return finalSet.some((q) => !/(process|relationship|cause|effect|variable|result|observation)/i.test(String(q.explanation || "")));
+    }
+    if (subject === "Social Studies") {
+      return finalSet.some((q) => !/(cause|effect|impact|result|outcome|led to|changed)/i.test(String(q.explanation || "")));
+    }
+    return finalSet.some((q) =>
+      !referencesPassage(q.question) ||
+      !/(evidence|inference|theme|supports|passage)/i.test(String(q.explanation || ""))
+    );
+  })();
+
+  const practiceCrossBleedFailed = mode === "Practice" && subject !== "Reading" &&
+    finalSet.some((q) => [q.question, ...q.choices].some((entry) => referencesPassage(entry)));
+  const levelComplexityFailed = !validateLevelComplexity(subject, level, finalSet);
+  const distractorRigorFailed = finalSet.some((q) => !validateDistractorRigor(q, level));
+  const allTooEasy = finalSet.every((q) => (q.choices || []).every((choice) => String(choice || "").split(/\s+/).length <= 4));
+  const allObviouslyWrong = finalSet.every((q) =>
+    (q.choices || []).filter((_, index) => LETTERS[index] !== normalizeAnswer(q.correct_answer))
+      .every((choice) => /(always|never|impossible|unrelated|not supported)/i.test(String(choice || "")))
+  );
+
+  if (
+    anyQuestionFailed ||
+    fullSetFailed ||
+    setLevelSubjectValidationFailed ||
+    practiceCrossBleedFailed ||
+    levelComplexityFailed ||
+    distractorRigorFailed ||
+    allTooEasy ||
+    allObviouslyWrong
+  ) {
     return fallback.slice(0, 5).map((q) => ({ ...q }));
   }
 
@@ -2009,33 +2298,180 @@ function ensureQuestionId(question: Question, index: number, mode: "practice" | 
   return `${mode}_q${index + 1}`;
 }
 
+function extractKeyTopic(passage: string): string {
+  const keys = passageKeywords(String(passage || ""));
+  return keys[0] || "the passage topic";
+}
+
+function buildPracticeTutorFallback(subject: CanonicalSubject, question: Question): TutorExplanation {
+  const promptFocus = String(question.question || "").trim();
+  if (subject === "Math") {
+    return {
+      question_id: "",
+      question: promptFocus,
+      explanation: "The correct answer comes from solving the math problem step by step using the quantities shown.",
+      common_mistake: "Students may miscalculate, use the wrong operation, or skip a step in the computation.",
+      parent_tip: "Ask your child to show each step and explain why each operation is used.",
+      hint: "Break the problem into smaller parts before combining results.",
+      think: "Check whether each number in the question was used correctly.",
+      step_by_step: "Identify numbers → choose operations → solve each step → check reasonableness.",
+    };
+  }
+  if (subject === "Science") {
+    return {
+      question_id: "",
+      question: promptFocus,
+      explanation: "The correct answer follows the scientific relationship shown in the scenario or data.",
+      common_mistake: "Students may confuse cause and effect or mix up which variable changed.",
+      parent_tip: "Ask your child which variable changed and what result was observed.",
+      hint: "Focus on how one factor affects another in the system.",
+      think: "Match the claim to the observed result, not just science vocabulary.",
+      step_by_step: "Identify variables → find cause/effect relationship → apply the concept to the choices.",
+    };
+  }
+  if (subject === "Social Studies") {
+    return {
+      question_id: "",
+      question: promptFocus,
+      explanation: "The correct answer reflects the historical cause, decision, or outcome in the event context.",
+      common_mistake: "Students may choose a statement that sounds true but is not tied to the event or policy outcome.",
+      parent_tip: "Ask your child what changed as a result of the event or decision in the question.",
+      hint: "Track the cause, then connect it to the most direct impact.",
+      think: "Check timeline order and who was affected by the decision.",
+      step_by_step: "Identify event/context → determine cause or decision → determine impact/outcome.",
+    };
+  }
+  return {
+    question_id: "",
+    question: promptFocus,
+    explanation: "The correct answer is supported by text evidence connected to the question.",
+    common_mistake: "Students may choose an answer that sounds plausible but is not supported by the text evidence.",
+    parent_tip: "Ask your child to point to the exact sentence that supports the answer choice.",
+    hint: "Look back at the text and find the best supporting detail.",
+    think: "Eliminate choices that are not directly supported.",
+    step_by_step: "Read question → locate evidence in text → match evidence to the best choice.",
+  };
+}
+
+function buildCrossTutorFallback(subject: CanonicalSubject, question: Question, passage: string): TutorExplanation {
+  const topic = extractKeyTopic(passage);
+  const subjectFocus = subject === "Math"
+    ? "quantitative relationships in the scenario"
+    : subject === "Science"
+    ? "the scientific system and variable relationships"
+    : subject === "Social Studies"
+    ? "historical decisions and outcomes"
+    : "text evidence and interpretation";
+  return {
+    question_id: "",
+    question: String(question.question || "").trim(),
+    explanation: `The correct answer is supported by passage details about ${topic} and aligns with ${subjectFocus}.`,
+    common_mistake: "A common mistake is choosing an option that sounds correct but is not supported by passage evidence.",
+    parent_tip: "Ask your child to cite one specific sentence from the passage that proves the answer.",
+    hint: "Look back at the passage section connected to this question.",
+    think: "Compare close choices and keep only the option directly supported by the passage.",
+    step_by_step: "Read question carefully → find related part of passage → match evidence to the best choice.",
+  };
+}
+
+function getTutorFallback(
+  mode: "practice" | "cross",
+  subject: CanonicalSubject,
+  question: Question,
+  passage: string,
+): TutorExplanation {
+  if (mode === "cross") return buildCrossTutorFallback(subject, question, passage);
+  return buildPracticeTutorFallback(subject, question);
+}
+
+function buildPracticeAnswerFallback(subject: CanonicalSubject, question: Question): Pick<AnswerKeyEntry, "explanation" | "common_mistake" | "parent_tip"> {
+  if (subject === "Math") {
+    return {
+      explanation: "This answer is correct because the required math operations were applied in the correct order.",
+      common_mistake: "Students may choose an answer from a partial calculation that skips one step.",
+      parent_tip: "Have your child explain each computation step before checking the final answer.",
+    };
+  }
+  if (subject === "Science") {
+    return {
+      explanation: "This answer is correct because it matches the scientific relationship shown by the variables and observations.",
+      common_mistake: "Students may select a choice with science terms that does not match the observed relationship.",
+      parent_tip: "Ask your child to explain which variable changed and what effect it produced.",
+    };
+  }
+  if (subject === "Social Studies") {
+    return {
+      explanation: "This answer is correct because it reflects the historical cause/effect or policy impact in context.",
+      common_mistake: "Students may pick an option that is historically plausible but not supported by the event details.",
+      parent_tip: "Ask your child to connect the event, decision, and outcome in one sentence.",
+    };
+  }
+  return {
+    explanation: "This answer is correct because it is directly supported by relevant text evidence.",
+    common_mistake: "Students may choose an answer that is related to the topic but not supported by the text.",
+    parent_tip: "Ask your child to cite the exact evidence that proves the answer.",
+  };
+}
+
+function buildCrossAnswerFallback(
+  subject: CanonicalSubject,
+  question: Question,
+  passage: string,
+): Pick<AnswerKeyEntry, "explanation" | "common_mistake" | "parent_tip"> {
+  const topic = extractKeyTopic(passage);
+  void question;
+  const subjectPhrase = subject === "Math"
+    ? "the passage's numerical relationships"
+    : subject === "Science"
+    ? "the passage's scientific process"
+    : subject === "Social Studies"
+    ? "the passage's historical context"
+    : "the passage's key details";
+  return {
+    explanation: `This answer is correct based on passage evidence about ${topic} and ${subjectPhrase}.`,
+    common_mistake: "Choosing an answer that sounds reasonable but is not supported by passage evidence.",
+    parent_tip: "Have your child explain which passage detail proves the answer is correct.",
+  };
+}
+
+function getAnswerFallback(
+  mode: "practice" | "cross",
+  subject: CanonicalSubject,
+  question: Question,
+  passage: string,
+): Pick<AnswerKeyEntry, "explanation" | "common_mistake" | "parent_tip"> {
+  if (mode === "cross") return buildCrossAnswerFallback(subject, question, passage);
+  return buildPracticeAnswerFallback(subject, question);
+}
+
 function sanitizeTutorExplanations(
   raw: unknown,
   sourceQuestions: Question[],
+  subject: CanonicalSubject,
   mode: "practice" | "cross",
   crossPassage = "",
 ): TutorExplanation[] {
   const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
-  const fallbackSeed = sourceQuestions.length ? sourceQuestions : buildCrossFallback("Science");
-  const fallback = fallbackSeed.slice(0, 5).map((q, index) => ({
-    question_id: ensureQuestionId(q, index, mode),
-    question: q.question,
-    explanation: mode === "cross"
-      ? (q.explanation || `Use evidence from the cross passage to answer Question ${index + 1}.`)
-      : (q.explanation || `Use evidence from the question scenario to answer Question ${index + 1}.`),
-    common_mistake: q.common_mistake || "Picking a choice that sounds right but is not proven by evidence.",
-    parent_tip: q.parent_tip || "Ask your child to cite one line of evidence before choosing.",
-    hint: q.hint || "Underline the key words in the question.",
-    think: q.think || "Eliminate choices that are only partially supported.",
-    step_by_step: q.step_by_step || "1) Read question 2) Check evidence 3) Confirm answer.",
-  }));
-
-  const sanitized = incoming.map((item, index) => {
+  const defaultQuestions = mode === "cross" ? buildCrossFallback(subject) : buildPracticeFallback("Main Idea", subject);
+  const baseQuestions = sourceQuestions.slice(0, 5);
+  while (baseQuestions.length < 5) baseQuestions.push(defaultQuestions[baseQuestions.length]);
+  const sanitized = baseQuestions.slice(0, 5).map((q, index) => {
+    const item = incoming[index];
     const entry = item && typeof item === "object" ? item as Record<string, unknown> : {};
-    const base = fallback[index] || fallback[fallback.length - 1];
+    const fallback = getTutorFallback(mode, subject, q, crossPassage);
+    const base = {
+      question_id: ensureQuestionId(q, index, mode),
+      question: String(q.question || "").trim(),
+      explanation: String(q.explanation || fallback.explanation).trim() || fallback.explanation,
+      common_mistake: String(q.common_mistake || fallback.common_mistake).trim() || fallback.common_mistake,
+      parent_tip: String(q.parent_tip || fallback.parent_tip).trim() || fallback.parent_tip,
+      hint: String(q.hint || fallback.hint || "").trim() || (fallback.hint || "Use evidence linked to the question."),
+      think: String(q.think || fallback.think || "").trim() || (fallback.think || "Eliminate unsupported options."),
+      step_by_step: String(q.step_by_step || fallback.step_by_step || "").trim() || (fallback.step_by_step || "Read, find evidence, and confirm."),
+    };
     const explanation = String(entry.explanation || base.explanation).trim() || base.explanation;
-    const resolvedExplanation = mode === "cross" && crossPassage
-      ? (/\bpassage\b/i.test(explanation) ? explanation : `${explanation} Use details from the cross passage.`)
+    const resolvedExplanation = mode === "cross" && crossPassage && !/\bpassage\b/i.test(explanation)
+      ? `${explanation} Use details from the cross passage.`
       : explanation;
     return {
       question_id: base.question_id,
@@ -2048,32 +2484,32 @@ function sanitizeTutorExplanations(
       step_by_step: String(entry.step_by_step || base.step_by_step || "").trim() || base.step_by_step,
     };
   });
-
-  while (sanitized.length < 5) sanitized.push(fallback[sanitized.length]);
   return sanitized.slice(0, 5);
 }
 
 function sanitizeAnswerKey(
   raw: unknown,
   sourceQuestions: Question[],
+  subject: CanonicalSubject,
   tutor: TutorExplanation[],
   mode: "practice" | "cross",
   crossPassage = "",
 ): AnswerKeyEntry[] {
   const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
-  const fallbackSeed = sourceQuestions.length ? sourceQuestions : buildCrossFallback("Science");
-  const fallback = fallbackSeed.slice(0, 5).map((q, index) => ({
-    question_id: ensureQuestionId(q, index, mode),
-    correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
-    explanation: tutor[index]?.explanation || q.explanation || "Use evidence to justify the correct answer.",
-    common_mistake: tutor[index]?.common_mistake || q.common_mistake || "Choosing an answer without evidence.",
-    parent_tip: tutor[index]?.parent_tip || q.parent_tip || "Ask your child to cite evidence before deciding.",
-    hint: tutor[index]?.hint || q.hint || "Underline the key words in the question.",
-    step_by_step: tutor[index]?.step_by_step || q.step_by_step || "1) Read question 2) Check evidence 3) Confirm answer.",
-  }));
-  const sanitized = incoming.map((item, index) => {
+  const defaultQuestions = mode === "cross" ? buildCrossFallback(subject) : buildPracticeFallback("Main Idea", subject);
+  const baseQuestions = sourceQuestions.slice(0, 5);
+  while (baseQuestions.length < 5) baseQuestions.push(defaultQuestions[baseQuestions.length]);
+  const sanitized = baseQuestions.slice(0, 5).map((q, index) => {
+    const item = incoming[index];
     const entry = item && typeof item === "object" ? item as Record<string, unknown> : {};
-    const base = fallback[index] || fallback[fallback.length - 1];
+    const fallback = getAnswerFallback(mode, subject, q, crossPassage);
+    const base = {
+      question_id: ensureQuestionId(q, index, mode),
+      correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
+      explanation: tutor[index]?.explanation || q.explanation || fallback.explanation,
+      common_mistake: tutor[index]?.common_mistake || q.common_mistake || fallback.common_mistake,
+      parent_tip: tutor[index]?.parent_tip || q.parent_tip || fallback.parent_tip,
+    };
     const explanation = String(entry.explanation || base.explanation).trim() || base.explanation;
     return {
       question_id: base.question_id,
@@ -2083,12 +2519,8 @@ function sanitizeAnswerKey(
         : explanation,
       common_mistake: String(entry.common_mistake || base.common_mistake).trim() || base.common_mistake,
       parent_tip: String(entry.parent_tip || base.parent_tip).trim() || base.parent_tip,
-      hint: String(entry.hint || base.hint || "").trim() || base.hint,
-      step_by_step: String(entry.step_by_step || base.step_by_step || "").trim() || base.step_by_step,
     };
   });
-
-  while (sanitized.length < 5) sanitized.push(fallback[sanitized.length]);
   return sanitized.slice(0, 5);
 }
 
@@ -2184,16 +2616,16 @@ function buildFallbackResponse(
   console.log("🧠 CROSS SUBJECT:", effectiveSubject);
   const practicePassage = fallbackPassageContent(effectiveSubject, "Practice", grade, skill, level);
   const practiceQuestions = buildPracticeFallback(skill, effectiveSubject, level, practicePassage);
-  const crossTutor = sanitizeTutorExplanations([], crossContent.questions, "cross", crossContent.passage);
-  const practiceTutor = sanitizeTutorExplanations([], practiceQuestions, "practice");
+  const crossTutor = sanitizeTutorExplanations([], crossContent.questions, effectiveSubject, "cross", crossContent.passage);
+  const practiceTutor = sanitizeTutorExplanations([], practiceQuestions, effectiveSubject, "practice");
   return {
     passage: subject === "Reading" ? practicePassage : "",
     practice: { questions: practiceQuestions },
     cross: { passage: crossContent.passage, questions: crossContent.questions },
     tutor: { practice: practiceTutor, cross: crossTutor },
     answerKey: {
-      practice: sanitizeAnswerKey([], practiceQuestions, practiceTutor, "practice"),
-      cross: sanitizeAnswerKey([], crossContent.questions, crossTutor, "cross", crossContent.passage),
+      practice: sanitizeAnswerKey([], practiceQuestions, effectiveSubject, practiceTutor, "practice"),
+      cross: sanitizeAnswerKey([], crossContent.questions, effectiveSubject, crossTutor, "cross", crossContent.passage),
     },
   };
 }
@@ -2567,11 +2999,13 @@ serve(async (req) => {
         const tutorPractice = sanitizeTutorExplanations(
           parsedTutor.practice || parsedTutor.explanations || [],
           normalizedPractice,
+          effectiveSubject,
           "practice",
         );
         let tutorCross = sanitizeTutorExplanations(
           parsedTutor.cross || [],
           crossQuestions,
+          effectiveSubject,
           "cross",
           subjectCrossPassage,
         );
@@ -2579,12 +3013,14 @@ serve(async (req) => {
         const answerKeyPractice = sanitizeAnswerKey(
           parsedAnswerKey.practice || parsedAnswerKey.answers || [],
           normalizedPractice,
+          effectiveSubject,
           tutorPractice,
           "practice",
         );
         let answerKeyCross = sanitizeAnswerKey(
           parsedAnswerKey.cross || [],
           crossQuestions,
+          effectiveSubject,
           tutorCross,
           "cross",
           subjectCrossPassage,
@@ -2600,6 +3036,7 @@ serve(async (req) => {
           tutorCross = sanitizeTutorExplanations(
             [],
             crossQuestions,
+            effectiveSubject,
             "cross",
             subjectCrossPassage,
           );
@@ -2607,6 +3044,7 @@ serve(async (req) => {
           answerKeyCross = sanitizeAnswerKey(
             [],
             crossQuestions,
+            effectiveSubject,
             tutorCross,
             "cross",
             subjectCrossPassage,
