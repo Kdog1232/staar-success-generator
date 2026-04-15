@@ -2222,11 +2222,6 @@
             selectedContent.passageToUse,
             { loading: false }
           );
-        } else {
-          renderPracticeSection(
-            { questions: selectedContent.questionsToUse },
-            selectedContent.passageToUse
-          );
         }
         renderTab(activeTab);
         await new Promise((resolve) => requestAnimationFrame(() => resolve()));

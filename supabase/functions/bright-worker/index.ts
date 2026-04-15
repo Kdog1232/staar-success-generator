@@ -763,7 +763,12 @@ function fallbackPassageContent(
   };
 }
 
-function buildPracticeFallback(skill: string, subject: CanonicalSubject, level: Level = "On Level"): Question[] {
+function buildPracticeFallback(
+  skill: string,
+  subject: CanonicalSubject,
+  level: Level = "On Level",
+  passage?: PassageContent | string,
+): Question[] {
   const effectiveSkill: string = skill ?? "Main Idea";
   const rigor = applyRigor(level);
   const stems = subject === "Math"
@@ -804,11 +809,11 @@ function buildPracticeFallback(skill: string, subject: CanonicalSubject, level: 
     singleAnswerIndex += 1;
     return letter;
   };
+  const passageDrivenChoices = passage ? generateChoicesFromPassage(passage) : null;
+
   return stems.map((stem, i) => {
     const type: QuestionType = i === 1 ? "part_a_b" : "mc";
-    const leveledStem = rigor.questionDepth === "high" && subject === "Reading"
-      ? `${stem} Which author choice best supports your reasoning?`
-      : rigor.questionDepth === "low" && subject !== "Reading"
+    const leveledStem = rigor.questionDepth === "low" && subject !== "Reading"
       ? stem.replace("Which statement best explains", "What is the best answer")
       : stem;
     const support = buildSupportContent(subject, stem, "mc", i);
@@ -892,16 +897,16 @@ function buildPracticeFallback(skill: string, subject: CanonicalSubject, level: 
         "A response that confuses a cause with a later result.",
         "A response not supported by the historical/civic details provided.",
       ]
-      : [
+      : (passageDrivenChoices || [
         rigor.distractorQuality === "obvious"
           ? "The choice that directly matches the passage idea."
-          : "A choice directly supported by passage evidence",
+          : "A response grounded in passage evidence",
         rigor.distractorQuality === "subtle"
           ? "A nearly correct idea that misses one key detail from later in the passage."
           : "A partially supported detail that misses key evidence",
         "A statement not supported by the passage",
         "An unrelated claim from outside the passage",
-      ];
+      ]);
     const question: Question = {
       type,
       question: leveledStem,
@@ -936,6 +941,22 @@ function buildPracticeFallback(skill: string, subject: CanonicalSubject, level: 
     };
     return question;
   });
+}
+
+function generateChoicesFromPassage(passage: PassageContent | string): [string, string, string, string] {
+  const text = getPassageText(passage).trim();
+  const keywords = passageKeywords(text).slice(0, 4);
+  const focus = keywords[0] || "the passage topic";
+  const detail = keywords[1] || "key details";
+  const context = keywords[2] || "supporting evidence";
+  const outlier = keywords[3] || "an unrelated detail";
+
+  return [
+    `It focuses on ${focus} and is supported by ${detail} in the passage.`,
+    `It mentions ${detail} but ignores how ${context} shapes the main point.`,
+    `It overemphasizes ${outlier} even though it is not central to the passage.`,
+    "It introduces outside information that is not stated in the passage.",
+  ];
 }
 
 function buildCrossFallback(subject: CanonicalSubject, level: Level = "On Level"): Question[] {
@@ -1618,6 +1639,22 @@ function validateRigorAlignment(level: Level, passage: PassageContent | string, 
   return validatePassageComplexity(level, passage) && validateQuestionDepth(level, questions);
 }
 
+function isValidOutput(questions: Question[], passage: PassageContent | string): boolean {
+  const passageText = getPassageText(passage).trim();
+  if (!passageText || passageText.length <= 50) return false;
+  if (!Array.isArray(questions) || questions.length === 0) return false;
+
+  return questions.every((question) => {
+    const stem = String(question?.question || "").toLowerCase();
+    const choices = Array.isArray(question?.choices) ? question.choices : [];
+    return (
+      choices.length === 4 &&
+      !stem.includes("which author choice best supports your reasoning") &&
+      !choices.some((choice) => String(choice || "").toLowerCase().includes("choice directly supported"))
+    );
+  });
+}
+
 function validateDistractorQuality(questions: Question[], passage: PassageContent | string): boolean {
   const text = getPassageText(passage);
   const keys = passageKeywords(text).slice(0, 6);
@@ -1854,9 +1891,10 @@ function buildFallbackResponse(
     ? buildELARCrossContent(level)
     : buildSubjectCrossContent(effectiveSubject, level);
   console.log("🧠 CROSS SUBJECT:", effectiveSubject);
-  const practiceQuestions = buildPracticeFallback(skill, effectiveSubject, level);
+  const practicePassage = fallbackPassageContent(effectiveSubject, "Practice", grade, skill, level);
+  const practiceQuestions = buildPracticeFallback(skill, effectiveSubject, level, practicePassage);
   return {
-    passage: fallbackPassageContent(effectiveSubject, "Practice", grade, skill, level),
+    passage: practicePassage,
     crossPassage: crossContent.passage,
     practice: { questions: practiceQuestions },
     cross: { questions: crossContent.questions },
@@ -1953,10 +1991,21 @@ serve(async (req) => {
     const range = gradeWordRange(grade, effectiveSubject, mode);
 
     let attempts = 0;
+    const MAX_ATTEMPTS = 2;
+    const start = Date.now();
+    const MAX_TIME = 15000;
+    const isTimedOut = () => Date.now() - start > MAX_TIME;
     let retryFailureReason = "bad_output_after_retry";
+    let bestAttempt: WorkerResponse | null = null;
+    let bestMeta: { fallback: boolean; reason: string; error?: string; usedFallbackCross?: boolean } | null = null;
     const phase = String(body.phase || "core").toLowerCase() === "enrich" ? "enrich" : "core";
 
-    while (attempts < 2) {
+    while (attempts < MAX_ATTEMPTS) {
+      if (isTimedOut()) {
+        console.warn("⏰ Time limit reached, returning best result");
+        break;
+      }
+      attempts++;
       try {
         if (phase === "core") {
           console.time("OPENAI_CALL");
@@ -1976,13 +2025,12 @@ serve(async (req) => {
               }),
               max_output_tokens: 1800,
             }),
-            signal: AbortSignal.timeout(45000),
+            signal: AbortSignal.timeout(12000),
           });
           console.timeEnd("OPENAI_CALL");
 
           if (!aiRes.ok) {
             retryFailureReason = `openai_status_${aiRes.status}`;
-            attempts++;
             continue;
           }
 
@@ -1999,7 +2047,6 @@ serve(async (req) => {
 
           if (!text || isBadOutput(text)) {
             retryFailureReason = "bad_output_after_retry";
-            attempts++;
             continue;
           }
 
@@ -2013,7 +2060,6 @@ serve(async (req) => {
 
           if (!parsed || !Object.keys(parsed).length) {
             retryFailureReason = "json_parse_failed";
-            attempts++;
             continue;
           }
 
@@ -2028,7 +2074,11 @@ serve(async (req) => {
             typeof passage === "string"
               ? passage
               : (passage.text_1 && passage.text_2 ? passage : null)
-          ) || fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill, level);
+          );
+          if (!safePassage || !getPassageText(safePassage).trim()) {
+            retryFailureReason = "empty_passage";
+            continue;
+          }
 
           const practiceQuestions = sanitizeQuestions(
             parsed?.practice && typeof parsed.practice === "object"
@@ -2045,30 +2095,23 @@ serve(async (req) => {
           if (!skillAligned) {
             console.warn("⚠️ Skill mismatch detected; accepting sanitized questions to avoid retries.");
           }
-          const rigorAligned = validateRigorAlignment(level, safePassage, practiceQuestions);
-          if (!rigorAligned) {
-            retryFailureReason = "rigor_mismatch_core";
-            attempts++;
-            continue;
-          }
-          const distractorQualityOk = validateDistractorQuality(practiceQuestions, safePassage);
-          if (!distractorQualityOk) {
-            retryFailureReason = "distractor_quality_core";
-            attempts++;
-            continue;
+
+          const outputValid = isValidOutput(practiceQuestions, safePassage);
+          if (!outputValid) {
+            console.warn("⚠️ Minor issue, keeping AI output");
           }
 
-          return jsonResponse(
-            {
-              passage: safePassage,
-              crossPassage: buildSubjectPassage(effectiveSubject, level),
-              practice: { questions: practiceQuestions },
-              cross: { questions: [] },
-              tutor: { explanations: [] },
-              answerKey: { answers: [] },
-            },
-            { fallback: false, reason: "ai_core_success", usedFallbackCross: false },
-          );
+          const payload: WorkerResponse = {
+            passage: safePassage,
+            crossPassage: buildSubjectPassage(effectiveSubject, level),
+            practice: { questions: practiceQuestions },
+            cross: { questions: [] },
+            tutor: { explanations: [] },
+            answerKey: { answers: [] },
+          };
+          bestAttempt = payload;
+          bestMeta = { fallback: false, reason: "ai_core_success", usedFallbackCross: false };
+          return jsonResponse(payload, bestMeta);
         }
 
         const priorPassage = body.passage;
@@ -2119,13 +2162,12 @@ serve(async (req) => {
             }),
             max_output_tokens: 2200,
           }),
-          signal: AbortSignal.timeout(45000),
+          signal: AbortSignal.timeout(12000),
         });
         console.timeEnd("OPENAI_CALL");
 
         if (!enrichRes.ok) {
           retryFailureReason = `openai_status_${enrichRes.status}`;
-          attempts++;
           continue;
         }
 
@@ -2170,23 +2212,18 @@ serve(async (req) => {
           console.warn("⚠️ Cross question-set distinctness warning: accepting output without fallback.");
         }
 
+        const distractorQualityOk = validateDistractorQuality(crossQuestions, subjectCrossPassage);
+        if (!distractorQualityOk) {
+          console.warn("⚠️ Weak distractors, continuing anyway");
+        }
+
         const crossInvalid = !validateCrossCurricular({ passage: subjectCrossPassage, questions: crossQuestions }) ||
           !validateCrossQuestionRequirements(effectiveSubject, subjectCrossPassage, crossQuestions) ||
           !validateRigorAlignment(level, subjectCrossPassage, crossQuestions) ||
-          !validateDistractorQuality(crossQuestions, subjectCrossPassage) ||
           !validateHybridCross(crossQuestions) ||
           !validateUniqueChoices(crossQuestions);
         if (crossInvalid) {
-          console.warn("⚠️ Cross output partially invalid; regenerating cross questions only.");
-          if (effectiveSubject === "Reading") {
-            const elarFallback = buildELARCrossContent(level);
-            subjectCrossPassage = elarFallback.passage;
-            crossQuestions = elarFallback.questions;
-          } else {
-            const subjectFallback = buildSubjectCrossContent(effectiveSubject, level);
-            subjectCrossPassage = subjectFallback.passage;
-            crossQuestions = subjectFallback.questions;
-          }
+          console.warn("⚠️ Using best available cross output");
         }
 
         const tutorExplanations = sanitizeTutorExplanations(
@@ -2206,28 +2243,31 @@ serve(async (req) => {
         console.log("🔥 FINAL CROSS SUBJECT:", effectiveSubject);
         console.log("🔥 FINAL CROSS PASSAGE:", subjectCrossPassage);
 
-        return jsonResponse(
-          {
-            passage: safePassage,
-            crossPassage: subjectCrossPassage,
-            practice: { questions: normalizedPractice },
-            cross: { questions: crossQuestions },
-            tutor: { explanations: tutorExplanations },
-            answerKey: { answers: answerKeyAnswers },
-          },
-          {
-            fallback: false,
-            reason: crossInvalid ? "ai_enrichment_success_with_cross_fallback" : "ai_enrichment_success",
-            usedFallbackCross: crossInvalid,
-          },
-        );
+        const payload: WorkerResponse = {
+          passage: safePassage,
+          crossPassage: subjectCrossPassage,
+          practice: { questions: normalizedPractice },
+          cross: { questions: crossQuestions },
+          tutor: { explanations: tutorExplanations },
+          answerKey: { answers: answerKeyAnswers },
+        };
+        const meta = {
+          fallback: false,
+          reason: crossInvalid ? "ai_enrichment_success_with_cross_warning" : "ai_enrichment_success",
+          usedFallbackCross: false,
+        };
+        bestAttempt = payload;
+        bestMeta = meta;
+        return jsonResponse(payload, meta);
       } catch (err) {
         console.error("BACKEND ERROR:", err);
         retryFailureReason = "openai_request_failed";
-        attempts++;
       }
     }
 
+    if (bestAttempt && bestMeta) {
+      return jsonResponse(bestAttempt, bestMeta);
+    }
     return safeFallback(retryFailureReason);
   } catch (err) {
     console.error("BACKEND ERROR:", err);
