@@ -134,7 +134,7 @@ function normalizeChoices(choices: unknown): [string, string, string, string] {
 
 function normalizeQuestions(raw: unknown): Question[] {
   if (!Array.isArray(raw)) return [];
-  return raw.slice(0, 5).map((item) => {
+  return raw.map((item) => {
     const q = item && typeof item === "object" ? item as Record<string, unknown> : {};
     const type = normalizeQuestionType(q.type ?? q.question_type);
     const sampleAnswer = String(q.sample_answer || "").trim();
@@ -164,10 +164,15 @@ function isLightlyValid(passage: unknown, questions: Question[], requirePassage:
   const hasPassage = passageText.length > 0;
   const passageWordCount = countWords(passageText);
   const hasValidPassageLength = passageWordCount >= 200 && passageWordCount <= 250;
-  const hasQuestions = Array.isArray(questions) && questions.length > 0;
+  const hasExactQuestionCount = Array.isArray(questions) && questions.length === 5;
   const hasValidChoiceStructure = questions.every((q) =>
     q.type === "scr" || (Array.isArray(q.choices) && q.choices.length === 4)
   );
+  const hasRequiredTypes =
+    questions.some((q) => q.type === "mc") &&
+    questions.some((q) => q.type === "multi_select") &&
+    questions.some((q) => q.type === "evidence_based") &&
+    questions.some((q) => q.type === "scr");
   const hasValidMultiSelect = questions
     .filter((q) => q.type === "multi_select")
     .every((q) => Array.isArray(q.correct_answer) && q.correct_answer.length === 2);
@@ -175,7 +180,7 @@ function isLightlyValid(passage: unknown, questions: Question[], requirePassage:
     .filter((q) => q.type === "scr")
     .every((q) => String(q.sample_answer || "").trim().length > 0 && q.correct_answer === "See sample response");
   const passageValid = requirePassage ? hasPassage && hasValidPassageLength : true;
-  return passageValid && hasQuestions && hasValidChoiceStructure && hasValidMultiSelect && hasValidScr;
+  return passageValid && hasExactQuestionCount && hasValidChoiceStructure && hasValidMultiSelect && hasValidScr && hasRequiredTypes;
 }
 
 function buildCorePrompt(params: {
@@ -250,6 +255,11 @@ ENGAGEMENT RULES
 - Engagement must support comprehension and STAAR rigor, not distract from it
 
 QUESTION REQUIREMENTS
+- PRIORITY RULE: You MUST generate all required questions.
+- If needed, make explanations shorter.
+- If needed, make parent tips shorter.
+- If needed, keep sample answers brief.
+- Do NOT reduce the number of questions.
 - Include exactly 5 questions
 - Follow mode logic above for passage-based vs no-passage question design
 - In Cross-Curricular mode, all questions MUST depend on the passage
