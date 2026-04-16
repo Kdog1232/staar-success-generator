@@ -227,6 +227,42 @@ function getRelevantSnippet(passage: string, question: string): string {
   return best;
 }
 
+function teacherExplain(question: string, answer: string, subject: string): string {
+  void question;
+  void subject;
+  return `Let's walk through this step by step. ${answer} This makes sense because we carefully use the information from the problem to reach the correct conclusion.`;
+}
+
+function buildMathSteps(question: string, correctAnswer: string): string {
+  void question;
+  return `Step 1: Identify what the question is asking.
+Step 2: Pull out the important numbers or relationships.
+Step 3: Perform the necessary operations carefully.
+Step 4: Check that your answer makes sense.
+
+Final Answer: ${correctAnswer}`;
+}
+
+function buildCrossExplanation(passage: string, question: string): string {
+  const snippet = getRelevantSnippet(passage, question);
+  return `Go back to the passage. Notice this part: "${snippet}". This detail directly supports the correct answer.`;
+}
+
+function buildParentTip(subject: string): string {
+  if (subject === "Math") {
+    return "Ask your child to explain each step out loud. This helps catch mistakes and build confidence.";
+  }
+  if (subject === "Reading") {
+    return "Ask your child to point to the exact sentence that supports their answer.";
+  }
+  return "Ask your child to explain their thinking and justify their answer with evidence.";
+}
+
+function ensureUsableExplanation(explanation: string): string {
+  const trimmed = String(explanation || "").trim();
+  return trimmed || "Work through the problem carefully and check each step.";
+}
+
 function rigorInstruction(level: Level): string {
   if (level === "Below") return "Use simpler language while keeping the same thinking depth and rigor.";
   if (level === "Advanced") return "Increase reasoning depth, abstraction, and evidence precision.";
@@ -2763,28 +2799,29 @@ function sanitizeTutorExplanations(
   const sanitized = baseQuestions.slice(0, 5).map((q, index) => {
     const item = incoming[index];
     const entry = item && typeof item === "object" ? item as Record<string, unknown> : {};
-    const fallback = getTutorFallback(mode, subject, q, crossPassage);
+    const practiceExplanation = subject === "Math"
+      ? buildMathSteps(q.question, normalizeAnswerKeyEntry(q.correct_answer))
+      : teacherExplain(q.question, q.explanation || "", subject);
+    const resolvedBaseExplanation = mode === "cross"
+      ? buildCrossExplanation(crossPassage, q.question)
+      : practiceExplanation;
     const base = {
       question_id: ensureQuestionId(q, index, mode),
       question: String(q.question || "").trim(),
-      explanation: String(q.explanation || fallback.explanation).trim() || fallback.explanation,
-      common_mistake: String(q.common_mistake || fallback.common_mistake).trim() || fallback.common_mistake,
-      parent_tip: String(q.parent_tip || fallback.parent_tip).trim() || fallback.parent_tip,
-      hint: String(q.hint || fallback.hint || "").trim() || (fallback.hint || "Use evidence linked to the question."),
-      think: String(q.think || fallback.think || "").trim() || (fallback.think || "Eliminate unsupported options."),
-      step_by_step: String(q.step_by_step || fallback.step_by_step || "").trim() || (fallback.step_by_step || "Read, find evidence, and confirm."),
+      explanation: ensureUsableExplanation(resolvedBaseExplanation),
+      common_mistake: "Choosing an answer without checking all parts of the problem carefully.",
+      parent_tip: buildParentTip(subject),
+      hint: "Break the problem into smaller steps and focus on one part at a time.",
+      think: String(q.think || "").trim() || "Eliminate unsupported options.",
+      step_by_step: String(q.step_by_step || "").trim() || "Read, find evidence, and confirm.",
     };
-    const explanation = String(entry.explanation || base.explanation).trim() || base.explanation;
-    const resolvedExplanation = mode === "cross" && crossPassage && !/\bpassage\b/i.test(explanation)
-      ? `${explanation} Use details from the cross passage.`
-      : explanation;
     return {
       question_id: base.question_id,
       question: String(entry.question || base.question).trim() || base.question,
-      explanation: resolvedExplanation,
-      common_mistake: String(entry.common_mistake || base.common_mistake).trim() || base.common_mistake,
-      parent_tip: String(entry.parent_tip || base.parent_tip).trim() || base.parent_tip,
-      hint: String(entry.hint || base.hint || "").trim() || base.hint,
+      explanation: ensureUsableExplanation(base.explanation),
+      common_mistake: base.common_mistake,
+      parent_tip: base.parent_tip,
+      hint: base.hint,
       think: String(entry.think || base.think || "").trim() || base.think,
       step_by_step: String(entry.step_by_step || base.step_by_step || "").trim() || base.step_by_step,
     };
@@ -2807,23 +2844,25 @@ function sanitizeAnswerKey(
   const sanitized = baseQuestions.slice(0, 5).map((q, index) => {
     const item = incoming[index];
     const entry = item && typeof item === "object" ? item as Record<string, unknown> : {};
-    const fallback = getAnswerFallback(mode, subject, q, crossPassage);
+    const practiceExplanation = subject === "Math"
+      ? buildMathSteps(q.question, normalizeAnswerKeyEntry(q.correct_answer))
+      : teacherExplain(q.question, q.explanation || "", subject);
+    const resolvedBaseExplanation = mode === "cross"
+      ? buildCrossExplanation(crossPassage, q.question)
+      : practiceExplanation;
     const base = {
       question_id: ensureQuestionId(q, index, mode),
       correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
-      explanation: tutor[index]?.explanation || q.explanation || fallback.explanation,
-      common_mistake: tutor[index]?.common_mistake || q.common_mistake || fallback.common_mistake,
-      parent_tip: tutor[index]?.parent_tip || q.parent_tip || fallback.parent_tip,
+      explanation: ensureUsableExplanation(resolvedBaseExplanation),
+      common_mistake: "Choosing an answer without checking all parts of the problem carefully.",
+      parent_tip: buildParentTip(subject),
     };
-    const explanation = String(entry.explanation || base.explanation).trim() || base.explanation;
     return {
       question_id: base.question_id,
       correct_answer: normalizeAnswerKeyEntry(entry.correct_answer || entry.answer || base.correct_answer),
-      explanation: mode === "cross" && crossPassage && !/\bpassage\b/i.test(explanation)
-        ? `${explanation} Refer to evidence in the cross passage.`
-        : explanation,
-      common_mistake: String(entry.common_mistake || base.common_mistake).trim() || base.common_mistake,
-      parent_tip: String(entry.parent_tip || base.parent_tip).trim() || base.parent_tip,
+      explanation: ensureUsableExplanation(base.explanation),
+      common_mistake: base.common_mistake,
+      parent_tip: base.parent_tip,
     };
   });
   return sanitized.slice(0, 5);
@@ -3257,6 +3296,14 @@ serve(async (req) => {
         question_id: `practice_${i}`,
         question: q.question,
         ...buildSupportContent(subject, q.question, q.type || "mc", i, level, "Practice", core.passage || ""),
+        explanation: ensureUsableExplanation(
+          subject === "Math"
+            ? buildMathSteps(q.question, normalizeAnswerKeyEntry(q.correct_answer))
+            : teacherExplain(q.question, q.explanation || "", subject),
+        ),
+        hint: "Break the problem into smaller steps and focus on one part at a time.",
+        common_mistake: "Choosing an answer without checking all parts of the problem carefully.",
+        parent_tip: buildParentTip(subject),
       }));
 
       const crossTutor = crossQuestions.map((q, i) => ({
@@ -3271,22 +3318,30 @@ serve(async (req) => {
           "Cross-Curricular",
           crossPassage,
         ),
+        explanation: ensureUsableExplanation(buildCrossExplanation(crossPassage, q.question || "")),
+        hint: "Break the problem into smaller steps and focus on one part at a time.",
+        common_mistake: "Choosing an answer without checking all parts of the problem carefully.",
+        parent_tip: buildParentTip(subject),
       }));
 
       const answerKey = practiceQuestions.map((q, i) => ({
         question_id: `practice_${i}`,
         correct_answer: String(q.correct_answer),
-        explanation: q.explanation || "",
-        common_mistake: q.common_mistake || "",
-        parent_tip: q.parent_tip || "",
+        explanation: ensureUsableExplanation(
+          subject === "Math"
+            ? buildMathSteps(q.question, normalizeAnswerKeyEntry(q.correct_answer))
+            : teacherExplain(q.question, q.explanation || "", subject),
+        ),
+        common_mistake: "Choosing an answer without checking all parts of the problem carefully.",
+        parent_tip: buildParentTip(subject),
       }));
 
       const crossAnswerKey = crossQuestions.map((q, i) => ({
         question_id: `cross_${i}`,
         correct_answer: String(q.correct_answer),
-        explanation: q.explanation || "",
-        common_mistake: q.common_mistake || "",
-        parent_tip: q.parent_tip || "",
+        explanation: ensureUsableExplanation(buildCrossExplanation(crossPassage, q.question || "")),
+        common_mistake: "Choosing an answer without checking all parts of the problem carefully.",
+        parent_tip: buildParentTip(subject),
       }));
 
       return jsonResponse({
