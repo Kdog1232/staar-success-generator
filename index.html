@@ -1760,12 +1760,12 @@
     }
 
     function renderCross(crossData) {
-      const questions = Array.isArray(crossData?.questions) ? crossData.questions : [];
-      console.log("🔥 CROSS QUESTIONS RECEIVED:", questions);
-
-      if (!questions.length) {
-        return `<p class="muted-note">No cross-curricular questions generated yet. Try again.</p>`;
+      if (!crossData || !Array.isArray(crossData.questions) || crossData.questions.length === 0) {
+        console.warn("⚠️ No cross data — skipping render");
+        return `<p class="muted-note">Cross-curricular questions not available yet.</p>`;
       }
+      const questions = crossData.questions;
+      console.log("🔥 CROSS QUESTIONS RECEIVED:", questions);
       return renderQuestions(questions, { mode: "Cross-Curricular" });
     }
 
@@ -1923,13 +1923,14 @@
       `;
     }
 
-    function renderCrossSection(crossData, crossText, options = {}) {
+    function renderCrossSection(crossData, crossText) {
       const crossSection = document.getElementById("cross-section");
       if (!crossSection) return;
-      const isLoading = Boolean(options.loading);
-      const crossQuestionMarkup = isLoading
-        ? `<p class="muted-note">⏳ Loading Cross-Curricular Questions...</p>`
-        : renderCross(crossData);
+      if (!crossData || !crossText) {
+        console.warn("⚠️ Cross section skipped due to missing data");
+        return;
+      }
+      const crossQuestionMarkup = renderCross(crossData);
       crossSection.innerHTML = `
         <div class="mode-label">Cross-Curricular Mode</div>
         <section class="worksheet-section">
@@ -2422,12 +2423,12 @@
         }
 
         currentData = {
-          passage: generatedPassage,
+          passage: data?.passage || "",
           practice: {
-            questions: Array.isArray(data?.practice?.questions) ? data.practice.questions.slice(0, 5) : structuredQuestions.slice(0, 5)
+            questions: Array.isArray(data?.practice?.questions) ? data.practice.questions.slice(0, 5) : []
           },
           cross: {
-            passage: cleanText(data?.cross?.passage || ""),
+            passage: data?.cross?.passage || "",
             questions: Array.isArray(data?.cross?.questions) ? data.cross.questions.slice(0, 5) : []
           },
           tutor: {
@@ -2473,19 +2474,19 @@
         }
         clearRenderedSections();
         renderPracticeSection(currentData.practice, currentData.passage);
-        renderCrossSection(currentData.cross, currentData.cross?.passage || "", { loading: true });
+        if (currentData?.cross?.questions?.length) {
+          renderCrossSection(currentData.cross, currentData.cross.passage);
+        } else {
+          document.getElementById("cross-section").innerHTML = `
+            <div class="mode-label">Cross-Curricular Mode</div>
+            <p class="muted-note">⏳ Loading Cross-Curricular Questions...</p>
+          `;
+        }
         const modeStatus = document.getElementById("mode-status");
         if (modeStatus) {
           modeStatus.textContent = "Step 2: Adding explanations...";
         }
 
-        if (Array.isArray(currentData?.cross?.questions) && currentData.cross.questions.length) {
-          renderCrossSection(
-            currentData.cross,
-            currentData.cross.passage,
-            { loading: false }
-          );
-        }
         renderActivePanels();
         renderTab("practice", { fromGenerate: true });
         await new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -2544,8 +2545,8 @@
           currentData = {
             ...currentData,
             cross: {
-              passage: cleanText(crossData?.cross?.passage || currentData?.cross?.passage || ""),
-              questions: Array.isArray(crossData?.cross?.questions) ? crossData.cross.questions.slice(0, 5) : []
+              passage: crossData?.cross?.passage || currentData.cross.passage,
+              questions: Array.isArray(crossData?.cross?.questions) ? crossData.cross.questions.slice(0, 5) : currentData.cross.questions
             }
           };
           renderCrossSection(currentData.cross, currentData.cross.passage);
@@ -2622,19 +2623,15 @@
           currentData = {
             ...currentData,
             cross: {
-              passage: cleanText(enrichData?.cross?.passage || currentData?.cross?.passage || ""),
-              questions: enrichedCross.questions
+              passage: enrichData?.cross?.passage || currentData.cross.passage,
+              questions: Array.isArray(enrichData?.cross?.questions) ? enrichData.cross.questions.slice(0, 5) : currentData.cross.questions
             },
             tutor: enrichedTutor,
             answerKey: enrichedAnswerKey
           };
 
           if (enrichedCross?.questions?.length) {
-            const crossModeContent = resolveModeContent(currentData, "Cross-Curricular");
-            renderCrossSection(
-              { questions: crossModeContent.questionsToUse },
-              crossModeContent.passageToUse
-            );
+            renderCrossSection(currentData.cross, currentData.cross.passage);
           }
 
           renderActivePanels();
