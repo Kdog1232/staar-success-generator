@@ -780,59 +780,16 @@ function getFallbackChoices(subject: CanonicalSubject, skill: string): [string, 
   return buildReadingChoices(safePassage, safeQuestion, "On Level");
 }
 
-function containsMetaLanguage(choice: string): boolean {
-  return /(central claim|supported by|main idea|best explains|this shows|this suggests)/i.test(choice);
-}
+function normalizeChoices(choices: unknown): [string, string, string, string] {
+  const clean = Array.isArray(choices) ? choices.slice(0, 4) : [];
 
-function repairChoices(choices: [string, string, string, string], passage: PassageContent | string): [string, string, string, string] {
-  void passage;
-  return choices.map((choice) => {
-    if (!choice || choice.length < 30) {
-      return `According to the passage, ${choice}`;
-    }
+  while (clean.length < 4) clean.push("");
 
-    // inject passage grounding if missing
-    if (!choice.toLowerCase().includes("passage")) {
-      return `The passage shows that ${choice}`;
-    }
-
-    return choice;
-  }) as [string, string, string, string];
-}
-
-function normalizeChoices(
-  choices: unknown,
-  subject: CanonicalSubject = "Reading",
-  skill = "",
-): [string, string, string, string] {
-  const raw = Array.isArray(choices) ? choices.slice(0, 4) : [];
-  void subject;
-  void skill;
-
-  // Only ensure length — DO NOT inject content logic
-  while (raw.length < 4) raw.push(" ");
-
-  const cleaned = raw.map((entry) => {
-    return String(entry ?? "")
+  return clean.map((c) =>
+    String(c || "")
+      .replace(/^[A-D]\.\s*/i, "")
       .trim()
-      .replace(/^[A-D]\.\s*/i, "");
-  }) as [string, string, string, string];
-
-  if (cleaned.some(containsMetaLanguage)) {
-    return cleaned.map((choice) => {
-      if (!containsMetaLanguage(choice)) return choice;
-      const stripped = choice
-        .replace(/central claim/gi, "claim")
-        .replace(/supported by/gi, "grounded in")
-        .replace(/main idea/gi, "idea")
-        .replace(/best explains/gi, "most clearly explains")
-        .replace(/this shows/gi, "the passage indicates")
-        .replace(/this suggests/gi, "the passage indicates");
-      return stripped.trim();
-    }) as [string, string, string, string];
-  }
-
-  return cleaned;
+  ) as [string, string, string, string];
 }
 
 function cleanChoiceText(value: unknown): string {
@@ -840,40 +797,6 @@ function cleanChoiceText(value: unknown): string {
     .replace(/^[A-D]\.\s*/i, "")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function strengthenChoiceSet(
-  choices: [string, string, string, string],
-  questionText: string,
-  passage: PassageContent | string = "",
-  subject: CanonicalSubject = "Reading",
-): [string, string, string, string] {
-  void questionText;
-  void passage;
-  return normalizeChoices(choices, subject).map((choice) => cleanChoiceText(choice)) as [string, string, string, string];
-}
-
-function validateHybridCross(questions: Question[]): boolean {
-  return questions.every((q) => {
-    const text = q.question.toLowerCase();
-    const hasReading = text.includes("what caused") ||
-      text.includes("which event happened after") ||
-      text.includes("which detail shows") ||
-      text.includes("what can be inferred") ||
-      text.includes("what can be concluded") ||
-      text.includes("why did");
-
-    const hasSubject = text.includes("experiment") ||
-      text.includes("event") ||
-      text.includes("data") ||
-      text.includes("result") ||
-      text.includes("temperature") ||
-      text.includes("bridge") ||
-      text.includes("sales") ||
-      text.includes("earnings");
-
-    return hasReading && hasSubject;
-  });
 }
 
 function normalizeAnswer(letter: unknown): ChoiceLetter {
@@ -1257,15 +1180,9 @@ function buildPracticeFallback(
     if (subject === "Reading") {
       choices = buildReadingChoices(safePassage, leveledStem, level);
     }
-    choices = strengthenChoiceSet(
-      choices as [string, string, string, string],
-      leveledStem,
-      passage || "",
-      subject,
-    );
-    const safeChoices = normalizeChoices(choices as [string, string, string, string], subject, "");
-    const safePartAChoices = normalizeChoices(partAChoices, subject, "");
-    const safePartBChoices = normalizeChoices(partBChoices, subject, "");
+    const safeChoices = normalizeChoices(choices as [string, string, string, string]);
+    const safePartAChoices = normalizeChoices(partAChoices);
+    const safePartBChoices = normalizeChoices(partBChoices);
     const question: Question = {
       type,
       question: leveledStem,
@@ -1911,29 +1828,7 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
     let choices = (crossChoiceBanks[crossSubject]?.[i] ||
       crossChoiceBanks[crossSubject]?.[0] ||
       crossChoiceBanks["Social Studies"][0]) as [string, string, string, string];
-    if (choices.some(containsMetaLanguage)) {
-      console.warn("Repairing META_LANGUAGE issue");
-      choices = repairChoices(choices, crossPassage);
-    }
-    if (choices.some(containsMetaLanguage)) {
-      console.warn("Still weak after repair → dropping question");
-      return null;
-    }
-    if (partAChoices.some(containsMetaLanguage) || partBChoices.some(containsMetaLanguage)) {
-      console.warn("Repairing PART A/B meta language");
-    }
-    if (subject === "Reading" && !ensureCrossReadingChoiceQuality(choices)) {
-      console.warn("Repairing weak cross choices");
-      choices = repairChoices(choices, crossPassage);
-      if (choices.some(containsMetaLanguage)) {
-        console.warn("Still weak after repair → dropping question");
-        return null;
-      }
-      if (!ensureCrossReadingChoiceQuality(choices)) {
-        console.warn("Still weak after repair → dropping question");
-        return null;
-      }
-    }
+    choices = normalizeChoices(choices);
     return {
       type,
       question: stem,
@@ -2445,44 +2340,20 @@ function sanitizeQuestions(
       ? `${rawQuestion.replace(/\s+$/g, "")} Select TWO answers.`
       : rawQuestion;
 
-    let normalizedChoices = normalizeChoices(q.choices, subject, skill).map((choice) => cleanChoiceText(choice)) as [
+    let normalizedChoices = normalizeChoices(q.choices).map((choice) => cleanChoiceText(choice)) as [
       string,
       string,
       string,
       string,
     ];
 
-    if (subject === "Reading" && !validateChoices(normalizedChoices, getPassageText(passage))) {
-      normalizedChoices = buildReadingChoices(
-        passage || fallbackPassage(subject, mode, 5, level),
-        questionText,
-        level,
-      );
-    }
-    if (normalizedChoices.some(containsMetaLanguage)) {
-      normalizedChoices = normalizeChoices(normalizedChoices.map((choice) =>
-        containsMetaLanguage(choice)
-          ? `The passage indicates ${choice.replace(/this shows|this suggests|main idea|best explains/gi, "").trim()}`
-          : choice
-      ), subject, skill);
-    }
-
-    if (subject === "Math") {
-      normalizedChoices = normalizedChoices.map((choice) => {
-        const cleaned = String(choice).trim();
-        if (/[+\-*/=]/.test(cleaned)) return cleaned;
-        const match = cleaned.match(/-?\d+(\.\d+)?/);
-        return match ? match[0] : cleaned;
-      }) as [string, string, string, string];
-    }
-
     const fallbackPartA = fallback[i].partA || {
       question: "Part A: What is the best answer?",
-      choices: normalizeChoices(fallback[i].choices, subject, skill),
+      choices: normalizeChoices(fallback[i].choices),
     };
     const fallbackPartB = fallback[i].partB || {
       question: "Part B: Which evidence best supports Part A?",
-      choices: normalizeChoices(fallback[i].choices, subject, skill),
+      choices: normalizeChoices(fallback[i].choices),
     };
 
     const base: Question = {
@@ -2497,23 +2368,15 @@ function sanitizeQuestions(
       partA: type === "part_a_b"
         ? {
           question: String((q.partA as Record<string, unknown> | undefined)?.question || fallbackPartA.question).trim() || fallbackPartA.question,
-          choices: strengthenChoiceSet(
-            normalizeChoices((q.partA as Record<string, unknown> | undefined)?.choices || fallbackPartA.choices, subject, skill),
-            String((q.partA as Record<string, unknown> | undefined)?.question || fallbackPartA.question),
-            passage,
-            subject,
-          ).map((choice) => cleanChoiceText(choice)) as [string, string, string, string],
+          choices: normalizeChoices((q.partA as Record<string, unknown> | undefined)?.choices || fallbackPartA.choices)
+            .map((choice) => cleanChoiceText(choice)) as [string, string, string, string],
         }
         : undefined,
       partB: type === "part_a_b"
         ? {
           question: String((q.partB as Record<string, unknown> | undefined)?.question || fallbackPartB.question).trim() || fallbackPartB.question,
-          choices: strengthenChoiceSet(
-            normalizeChoices((q.partB as Record<string, unknown> | undefined)?.choices || fallbackPartB.choices, subject, skill),
-            String((q.partB as Record<string, unknown> | undefined)?.question || fallbackPartB.question),
-            passage,
-            subject,
-          ).map((choice) => cleanChoiceText(choice)) as [string, string, string, string],
+          choices: normalizeChoices((q.partB as Record<string, unknown> | undefined)?.choices || fallbackPartB.choices)
+            .map((choice) => cleanChoiceText(choice)) as [string, string, string, string],
         }
         : undefined,
       explanation: String(q.explanation || fallback[i].explanation).trim() || fallback[i].explanation,
@@ -2523,7 +2386,7 @@ function sanitizeQuestions(
         ? (String(q.part_b_question || fallback[i].part_b_question || "").trim() || fallback[i].part_b_question)
         : undefined,
       part_b_choices: type === "part_a" || type === "part_b"
-        ? normalizeChoices(q.part_b_choices || fallback[i].part_b_choices, subject, skill)
+        ? normalizeChoices(q.part_b_choices || fallback[i].part_b_choices)
         : undefined,
       part_b_correct_answer: type === "part_a" || type === "part_b"
         ? normalizeAnswer(q.part_b_correct_answer || fallback[i].part_b_correct_answer)
@@ -2535,37 +2398,6 @@ function sanitizeQuestions(
       parent_tip: String(q.parent_tip || fallback[i].parent_tip || "").trim(),
       visual: sanitizeVisual(q.visual) || fallback[i].visual,
     };
-    if (base.partA?.choices?.some(containsMetaLanguage) || base.partB?.choices?.some(containsMetaLanguage)) {
-      const fallbackQuestion = replaceWithFallback(i);
-      base.partA = fallbackQuestion.partA;
-      base.partB = fallbackQuestion.partB;
-    }
-
-    const choiceFailures = base.choices.some((choice) => {
-      if (isGenericAnswerChoice(choice)) return true;
-      if (mode === "Cross-Curricular" || subject === "Reading") {
-        return !hasConcreteDetail(choice, passage, subject);
-      }
-      return false;
-    });
-
-    const subjectStrictFailure = !requiresSubjectStrictSignals(base, subject, mode, passage);
-    const practicePassageBleed = mode === "Practice" && subject !== "Reading" &&
-      ([base.question, ...base.choices].some((entry) => referencesPassage(entry)));
-
-    if (!isSelfContained(base) || !answerFitsQuestion(base) || choiceFailures || subjectStrictFailure || practicePassageBleed) {
-      if (subject === "Reading") {
-        return {
-          ...base,
-          choices: buildReadingChoices(
-            passage || fallbackPassage(subject, mode, 5, level),
-            questionText,
-            level,
-          ),
-        };
-      }
-      return base;
-    }
     return base;
   });
 
@@ -2574,7 +2406,7 @@ function sanitizeQuestions(
 
   questions = questions.map((q) => ({
     ...q,
-    choices: strengthenChoiceSet(q.choices, String(q.question || ""), passage, subject),
+    choices: normalizeChoices(q.choices),
   }));
   console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", questions.length);
   const finalSet = questions;
@@ -3159,56 +2991,11 @@ function normalizeOutput(result: PipelineResult): PipelineResult {
   const questions = (result?.questions || []).map((q) => ({
     ...q,
     question: String(q.question || ""),
-    choices: Array.isArray(q.choices) ? q.choices.slice(0, 4).map((c) => String(c ?? "")) : [],
+    choices: normalizeChoices(q.choices),
     correct_answer: q.correct_answer || "A",
   }));
 
   return { ...result, questions };
-}
-
-function repairOutput(result: PipelineResult, passage: PassageContent | string): PipelineResult {
-  void passage;
-  const repaired = result.questions.map((q) => {
-    const baseChoices = Array.isArray(q.choices) ? q.choices : [];
-    const choices = baseChoices.map((c) => {
-      if (!c || c.length < 30) {
-        return `According to the passage, ${c}`;
-      }
-
-      if (!c.toLowerCase().includes("passage")) {
-        return `The passage shows that ${c}`;
-      }
-
-      return c;
-    });
-
-    return { ...q, choices };
-  });
-
-  return { ...result, questions: repaired };
-}
-
-function validateAndImprove(result: PipelineResult, passage: PassageContent | string): PipelineResult {
-  void passage;
-  const improved = result.questions.map((q) => {
-    let score = 0;
-    const baseChoices = Array.isArray(q.choices) ? q.choices : [];
-    const hasPassage = baseChoices.some((c) => c.toLowerCase().includes("passage"));
-    const hasReasoning = baseChoices.some((c) => c.includes("because") || c.includes("shows"));
-
-    if (hasPassage) score++;
-    if (hasReasoning) score++;
-
-    if (score < 2) {
-      console.warn("Improving weak question");
-      const fixedChoices = baseChoices.map((c) => `Based on the passage, ${c}`);
-      return { ...q, choices: fixedChoices };
-    }
-
-    return q;
-  });
-
-  return { ...result, questions: improved };
 }
 
 function guaranteeOutput(result: PipelineResult): PipelineResult {
@@ -3231,8 +3018,6 @@ function enrichOutput(result: PipelineResult): PipelineResult {
 async function runPipeline(input: PipelineInput): Promise<PipelineResult> {
   let result = generateQuestions(input); // existing logic
   result = normalizeOutput(result);
-  result = repairOutput(result, input.crossPassage || "");
-  result = validateAndImprove(result, input.crossPassage || "");
   result = guaranteeOutput(result);
   result = enrichOutput(result);
   return result;
@@ -3949,7 +3734,6 @@ serve(async (req) => {
         const crossInvalid = !validateCrossCurricular({ passage: subjectCrossPassage, questions: crossQuestions }) ||
           !validateCrossQuestionRequirements(effectiveSubject, subjectCrossPassage, crossQuestions) ||
           !validateRigorAlignment(level, subjectCrossPassage, crossQuestions) ||
-          !validateHybridCross(crossQuestions) ||
           !validateUniqueChoices(crossQuestions);
         if (crossInvalid) {
           retryFailureReason = "cross_validation_failed";
