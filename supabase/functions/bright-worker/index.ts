@@ -872,9 +872,6 @@ function ensurePassageLength(
   allowFallback = true,
 ): string {
   const cleaned = String(passage || "").replace(/\s+/g, " ").trim();
-  if (cleaned.includes("The report adds key evidence")) {
-    console.log("⚠️ BAD PASSAGE DETECTED — USING FALLBACK");
-    return fallbackPassage(subject, mode, grade, level);
   }
   const words = cleaned.split(" ").filter(Boolean);
   if (words.length >= min && words.length <= max) return cleaned;
