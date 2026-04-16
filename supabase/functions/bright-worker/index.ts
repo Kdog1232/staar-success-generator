@@ -502,12 +502,21 @@ Rules:
 - TEKS alignment: skill "${skill}" at grade ${grade} must be assessed through application (analyze/infer/compare/explain), not definition recall.
 - Subject is Reading, so include a new 250–300 word passage.
 - Generate exactly 5 STAAR-style reading questions tied directly to that passage.
-- All 4 answer choices must explicitly reference passage details (events/actions/outcomes).
+- All 4 answer choices must be grounded in passage details (events/actions/outcomes) without quoting full passage sentences.
+- Paraphrase details using concise, natural wording focused on meaning.
 - Keep all 4 choices similar in structure and length to avoid obvious answer patterns.
 - Never use: "best explains", "main idea", "this shows", "the answer is supported", "it can be inferred".
-- Correct answers must include a specific event plus cause/effect OR decision/result reasoning.
-- Distractors must use one of: misinterpretation, partial-truth wrong conclusion, overgeneralization, or cause/effect confusion.
+- Correct answers must connect at least TWO details from the passage and include clear reasoning (cause/effect, comparison, or inference).
+- Distractors must use exactly one of: misinterpretation, partial truth with wrong conclusion, overgeneralization, or cause/effect confusion.
+- Avoid distractors that are obviously wrong, repetitive, or built from the same sentence pattern.
+- Avoid filler phrasing like "this detail is accurate but..." or "uses a valid idea but...".
+- Grade 3–5 language: shorter sentences, direct wording, and no unnecessary clauses.
 - If any choice feels generic or easy, rewrite it with more specific passage evidence.
+- Self-check before returning each question:
+  - No choice copies a full sentence from the passage.
+  - Distractors are plausible and distinct.
+  - Choice wording is not repetitive.
+  - Each choice sounds like something a real student might choose.
 - Rigor profile:
   - passage complexity: ${rigor.passage}
   - question depth: ${rigor.questionDepth}
@@ -610,29 +619,38 @@ GRADE-LEVEL ADAPTATION
 - Grades 7-8: abstract thinking, subtle choice differences, multi-layer reasoning.
 
 ANSWER CHOICE RULES
-- ALL 4 choices must reference the passage explicitly.
+- ALL 4 choices must be grounded in passage details, but MUST NOT copy full sentences from the passage.
+- Use paraphrased, precise wording that focuses on meaning.
 - Include real details, events, or outcomes in each choice.
 - Keep choices similar in structure and length.
 - Avoid obvious wrong answers.
 - Avoid meta-language: "main idea", "this shows", "best explains".
+- Avoid repeated wording and avoid identical sentence frames across all choices.
 
 DISTRACTOR DESIGN (TEKS-ALIGNED)
 - Each wrong answer must model a realistic student mistake:
   - misinterpretation of evidence
-  - partial understanding of the skill
-  - incorrect inference
+  - partial truth with incorrect conclusion
   - cause/effect confusion
+  - overgeneralization
 
 CORRECT ANSWER RULE
-- The correct answer must use specific passage evidence.
+- The correct answer must connect at least two details from the passage.
 - The correct answer must demonstrate the targeted skill correctly.
 - The correct answer must include reasoning (cause/effect, inference, comparison, etc.).
+- The correct answer should sound natural and student-facing, not robotic.
+
+GRADE-ALIGNED CLARITY
+- Grade 3–5 responses should use short, clear, direct wording.
+- Avoid unnecessary clauses and filler language.
 
 SELF-CHECK (MANDATORY)
 - Does the question require the intended TEKS skill?
 - Would a student need to APPLY the skill, not define it?
 - Are distractors based on realistic student mistakes?
 - Is the answer supported by passage evidence?
+- Do any choices copy passage sentences directly? If yes, rewrite.
+- Are all distractors plausible and non-repetitive?
 - If not, revise before returning.
 
 OUTPUT FORMAT FOR EACH cross.questions ITEM:
@@ -785,18 +803,20 @@ function containsMetaLanguage(choice: string): boolean {
 }
 
 function repairChoices(choices: [string, string, string, string], passage: PassageContent | string): [string, string, string, string] {
-  void passage;
+  const passageText = getPassageText(passage).toLowerCase();
   return choices.map((choice) => {
-    if (!choice || choice.length < 30) {
-      return `According to the passage, ${choice}`;
-    }
+    const cleaned = cleanChoiceText(choice);
+    if (!cleaned) return "The events in the text support this conclusion.";
 
-    // inject passage grounding if missing
-    if (!choice.toLowerCase().includes("passage")) {
-      return `The passage shows that ${choice}`;
+    const normalized = cleaned.replace(/\s+/g, " ").trim();
+    const lower = normalized.toLowerCase();
+    if (passageText && lower.length > 24 && passageText.includes(lower)) {
+      return normalized
+        .replace(/\bthe passage (shows|states|indicates) that\b/gi, "")
+        .replace(/^according to the passage,\s*/i, "")
+        .trim();
     }
-
-    return choice;
+    return normalized;
   }) as [string, string, string, string];
 }
 
@@ -3167,19 +3187,20 @@ function normalizeOutput(result: PipelineResult): PipelineResult {
 }
 
 function repairOutput(result: PipelineResult, passage: PassageContent | string): PipelineResult {
-  void passage;
+  const passageText = getPassageText(passage).toLowerCase();
   const repaired = result.questions.map((q) => {
     const baseChoices = Array.isArray(q.choices) ? q.choices : [];
     const choices = baseChoices.map((c) => {
-      if (!c || c.length < 30) {
-        return `According to the passage, ${c}`;
+      const normalized = cleanChoiceText(c);
+      if (!normalized) return "The text details support this outcome.";
+      const lower = normalized.toLowerCase();
+      if (passageText && lower.length > 24 && passageText.includes(lower)) {
+        return normalized
+          .replace(/\bthe passage (shows|states|indicates) that\b/gi, "")
+          .replace(/^according to the passage,\s*/i, "")
+          .trim();
       }
-
-      if (!c.toLowerCase().includes("passage")) {
-        return `The passage shows that ${c}`;
-      }
-
-      return c;
+      return normalized;
     });
 
     return { ...q, choices };
@@ -3189,19 +3210,24 @@ function repairOutput(result: PipelineResult, passage: PassageContent | string):
 }
 
 function validateAndImprove(result: PipelineResult, passage: PassageContent | string): PipelineResult {
-  void passage;
+  const passageText = getPassageText(passage).toLowerCase();
   const improved = result.questions.map((q) => {
-    let score = 0;
     const baseChoices = Array.isArray(q.choices) ? q.choices : [];
-    const hasPassage = baseChoices.some((c) => c.toLowerCase().includes("passage"));
-    const hasReasoning = baseChoices.some((c) => c.includes("because") || c.includes("shows"));
+    const uniqueChoices = new Set(baseChoices.map((c) => cleanChoiceText(c).toLowerCase())).size;
+    const hasCopying = baseChoices.some((choice) => {
+      const normalized = cleanChoiceText(choice).toLowerCase();
+      return normalized.length > 24 && passageText.includes(normalized);
+    });
+    const hasBalancedLength = (() => {
+      const lengths = baseChoices.map((choice) => cleanChoiceText(choice).split(/\s+/).filter(Boolean).length);
+      const max = Math.max(...lengths, 0);
+      const min = Math.min(...lengths.filter((len) => len > 0), max);
+      return max - min <= 8;
+    })();
 
-    if (hasPassage) score++;
-    if (hasReasoning) score++;
-
-    if (score < 2) {
-      console.warn("Improving weak question");
-      const fixedChoices = baseChoices.map((c) => `Based on the passage, ${c}`);
+    if (uniqueChoices < 4 || hasCopying || !hasBalancedLength) {
+      console.warn("Improving weak question choices");
+      const fixedChoices = repairChoices(normalizeChoices(baseChoices), passage);
       return { ...q, choices: fixedChoices };
     }
 
