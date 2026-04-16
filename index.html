@@ -1761,7 +1761,8 @@
 
     function renderCross(crossData) {
       if (!crossData || !Array.isArray(crossData.questions) || crossData.questions.length === 0) {
-        throw new Error("CROSS DATA MISSING OR INVALID");
+        console.warn("⚠️ No cross data — skipping render");
+        return `<p class="muted-note">Cross-curricular questions not available yet.</p>`;
       }
       const questions = crossData.questions;
       console.log("🔥 CROSS QUESTIONS RECEIVED:", questions);
@@ -1925,6 +1926,10 @@
     function renderCrossSection(crossData, crossText) {
       const crossSection = document.getElementById("cross-section");
       if (!crossSection) return;
+      if (!crossData || !crossText) {
+        console.warn("⚠️ Cross section skipped due to missing data");
+        return;
+      }
       const crossQuestionMarkup = renderCross(crossData);
       crossSection.innerHTML = `
         <div class="mode-label">Cross-Curricular Mode</div>
@@ -2417,7 +2422,24 @@
           halt("No questions returned from server.");
         }
 
-        currentData = data;
+        currentData = {
+          passage: data?.passage || "",
+          practice: {
+            questions: Array.isArray(data?.practice?.questions) ? data.practice.questions.slice(0, 5) : []
+          },
+          cross: {
+            passage: data?.cross?.passage || "",
+            questions: Array.isArray(data?.cross?.questions) ? data.cross.questions.slice(0, 5) : []
+          },
+          tutor: {
+            practice: Array.isArray(data?.tutor?.practice) ? data.tutor.practice.slice(0, 5) : [],
+            cross: Array.isArray(data?.tutor?.cross) ? data.tutor.cross.slice(0, 5) : []
+          },
+          answerKey: {
+            practice: Array.isArray(data?.answerKey?.practice) ? data.answerKey.practice.slice(0, 5) : [],
+            cross: Array.isArray(data?.answerKey?.cross) ? data.answerKey.cross.slice(0, 5) : []
+          }
+        };
         const selectedMode = apiMode === "Cross-Curricular" ? "Cross-Curricular" : "Practice";
         const selectedContent = resolveModeContent(currentData, selectedMode);
         activeTab = selectedContent.isCross ? "cross" : "practice";
@@ -2452,7 +2474,14 @@
         }
         clearRenderedSections();
         renderPracticeSection(currentData.practice, currentData.passage);
-        renderCrossSection(currentData.cross, currentData.cross.passage);
+        if (currentData?.cross?.questions?.length) {
+          renderCrossSection(currentData.cross, currentData.cross.passage);
+        } else {
+          document.getElementById("cross-section").innerHTML = `
+            <div class="mode-label">Cross-Curricular Mode</div>
+            <p class="muted-note">⏳ Loading Cross-Curricular Questions...</p>
+          `;
+        }
         const modeStatus = document.getElementById("mode-status");
         if (modeStatus) {
           modeStatus.textContent = "Step 2: Adding explanations...";
@@ -2515,7 +2544,10 @@
         if (crossData?.cross?.questions?.length) {
           currentData = {
             ...currentData,
-            cross: crossData.cross
+            cross: {
+              passage: crossData?.cross?.passage || currentData.cross.passage,
+              questions: Array.isArray(crossData?.cross?.questions) ? crossData.cross.questions.slice(0, 5) : currentData.cross.questions
+            }
           };
           renderCrossSection(currentData.cross, currentData.cross.passage);
         }
@@ -2591,7 +2623,8 @@
           currentData = {
             ...currentData,
             cross: {
-              ...enrichData.cross
+              passage: enrichData?.cross?.passage || currentData.cross.passage,
+              questions: Array.isArray(enrichData?.cross?.questions) ? enrichData.cross.questions.slice(0, 5) : currentData.cross.questions
             },
             tutor: enrichedTutor,
             answerKey: enrichedAnswerKey
