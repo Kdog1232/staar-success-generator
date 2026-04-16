@@ -647,7 +647,13 @@ function getFallbackChoices(subject: CanonicalSubject, skill: string): [string, 
   if (subject === "Math") return buildMathFallbackChoices();
   if (subject === "Science") return buildScienceFallbackChoices();
   if (subject === "Social Studies") return buildSSFallbackChoices();
-  return buildReadingChoices("", "", "On Level");
+  const safePassage = fallbackPassage("Reading", "Practice", 5, "On Level");
+  const safeQuestion = "Which event in the passage led to a later decision or outcome?";
+  return buildReadingChoices(safePassage, safeQuestion, "On Level");
+}
+
+function containsMetaLanguage(choice: string): boolean {
+  return /(central claim|supported by|main idea|best explains|this shows|this suggests)/i.test(choice);
 }
 
 function normalizeChoices(
@@ -1448,6 +1454,7 @@ function buildShortResponse(): string {
 }
 
 function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
+  const subject: CanonicalSubject = "Reading";
   const crossPassage = buildSubjectPassage(crossSubject, "On Level");
   const stems = [
     buildMainIdeaQuestion(),
@@ -1462,6 +1469,122 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
     const letter = singleAnswerSequence[singleAnswerIndex % singleAnswerSequence.length];
     singleAnswerIndex += 1;
     return letter;
+  };
+
+  const crossChoiceBanks: Record<CanonicalSubject, [string, string, string, string][]> = {
+    Math: [
+      [
+        "Organizers compared first-hour and second-hour sales totals, then shifted restocking toward singles after combo demand fell.",
+        "Organizers used only first-hour combo sales, so they ignored how second-hour singles changed total revenue.",
+        "Organizers raised both prices in hour two, which made the sales counts unnecessary for inventory decisions.",
+        "Organizers canceled all tracking after hour one, so no evidence guided the restocking plan.",
+      ],
+      [
+        "Combo packs dropped by eight while single items rose by fifteen, so the team adjusted inventory to protect earnings.",
+        "Combo packs and single items both dropped in hour two, so the team reduced all inventory equally.",
+        "Single-item prices doubled in hour two, which explains why organizers sold fewer singles.",
+        "Hour-two sales were missing, so organizers guessed which items to reorder.",
+      ],
+      [
+        "When organizers compared both hours, they saw singles offset part of the combo decline and changed the final restock mix.",
+        "When organizers compared both hours, they found combo sales increased and removed singles from the order.",
+        "When organizers compared both hours, they ignored revenue and decided only by package color.",
+        "When organizers compared both hours, they found no sales change and kept inventory identical.",
+      ],
+      [
+        "After the announcement, buyers chose more single items, so organizers revised ordering to match the new pattern.",
+        "After the announcement, buyers stopped purchasing, so organizers closed sales for the event.",
+        "After the announcement, buyers purchased only combos, so singles were removed immediately.",
+        "After the announcement, buyers paid new prices, so earlier totals could not be compared.",
+      ],
+      [
+        "Comparing both hours helped organizers connect changing purchase patterns to earnings, leading to a data-based restocking decision.",
+        "Comparing both hours showed every item performed equally, so no restocking choice was required.",
+        "Comparing both hours proved revenue cannot be computed from item counts and prices.",
+        "Comparing both hours forced organizers to rely on guesses instead of recorded totals.",
+      ],
+    ],
+    Science: [
+      [
+        "Students measured blacktop, shaded grass, and watered areas, then recommended cooler materials after seeing different heat outcomes.",
+        "Students measured only blacktop, so they concluded every playground surface heats at exactly the same rate.",
+        "Students skipped repeated measurements, so recommendations were based on a single opinion.",
+        "Students removed moisture and airflow from testing, so surface conditions could not affect temperatures.",
+      ],
+      [
+        "After one section was watered, that area warmed more slowly, which showed moisture changed heat buildup.",
+        "After one section was watered, blacktop became the coolest surface in direct sunlight.",
+        "After one section was watered, students ended the investigation before collecting results.",
+        "After one section was watered, all thermometer readings rose by the same amount.",
+      ],
+      [
+        "The class linked sunlight, airflow, and moisture to temperature differences, then used that evidence to justify shade-tree recommendations.",
+        "The class linked only thermometer brand differences to results, so environmental conditions were irrelevant.",
+        "The class linked rising temperature to reduced sunlight, so they removed shaded areas from the plan.",
+        "The class linked no measured variables to outcomes, so they guessed at improvements.",
+      ],
+      [
+        "When shaded and watered sections stayed cooler, students inferred that surface conditions can change how quickly heat accumulates.",
+        "When shaded and watered sections stayed cooler, students inferred hard surfaces always stay cooler than grass.",
+        "When shaded and watered sections stayed cooler, students inferred airflow has no role in heat transfer.",
+        "When shaded and watered sections stayed cooler, students inferred measurement timing does not matter.",
+      ],
+      [
+        "The investigation connected measured temperature changes to specific playground conditions, leading students to choose practical cooling strategies.",
+        "The investigation connected no observations to recommendations, so the final plan did not use data.",
+        "The investigation connected cooler readings to darker pavement, so students replaced grass with blacktop.",
+        "The investigation connected one reading to all conclusions, so repeated testing was unnecessary.",
+      ],
+    ],
+    "Social Studies": [
+      [
+        "Flood delays raised shipping costs, so leaders and voters later supported a bridge to improve trade reliability.",
+        "Flood delays reduced prices, so leaders canceled all transportation planning for the town.",
+        "Flood delays ended trade, so voters rejected every future infrastructure proposal.",
+        "Flood delays occurred after the bridge opened, so the election did not affect transportation policy.",
+      ],
+      [
+        "As prices rose after flooding, residents backed a bridge bond that changed long-term transportation decisions.",
+        "As prices rose after flooding, residents demanded rail removal with no replacement project.",
+        "As prices rose after flooding, residents moved away and ended market activity.",
+        "As prices rose after flooding, residents voted before any transportation debate occurred.",
+      ],
+      [
+        "Timelines and election records show leaders shifted from rail-first plans to a bridge after community pressure increased.",
+        "Timelines and election records show transportation policy never changed across the period.",
+        "Timelines and election records show the bridge was built before shipping disruptions began.",
+        "Timelines and election records show population decline removed demand for river crossings.",
+      ],
+      [
+        "Population growth across the river increased daily travel needs, so decision-makers pursued stronger cross-river connections.",
+        "Population growth across the river lowered travel demand, so officials closed key routes.",
+        "Population growth across the river eliminated flood risk, so shipping concerns disappeared.",
+        "Population growth across the river made elections unnecessary for transportation policy.",
+      ],
+      [
+        "The passage shows how transportation decisions, voter choices, and economic pressures interacted to reshape town development over time.",
+        "The passage shows transportation decisions changed only meeting schedules, not community outcomes.",
+        "The passage shows economic pressures stayed constant, so no infrastructure choices mattered.",
+        "The passage shows leaders ignored voter decisions and kept identical plans every year.",
+      ],
+    ],
+    Reading: [[
+      "Community reviewers compared interview notes and survey data, then revised the proposal after evidence changed what decision-makers prioritized.",
+      "Community reviewers examined one quote, so they finalized the proposal without checking later outcomes in the passage events.",
+      "Community reviewers ignored the timeline and treated an early detail as the final decision for every group.",
+      "Community reviewers reversed the event order and claimed outcomes happened before any evidence was collected.",
+    ]],
+  };
+
+  const ensureCrossReadingChoiceQuality = (choices: [string, string, string, string]): void => {
+    const referencesPassageEvents = choices.every((choice) => /(after|when|later|timeline|records|passage|investigation|election|hour)/i.test(choice));
+    const hasCauseEffect = choices.every((choice) => /(because|so|led to|result|changed|therefore)/i.test(choice));
+    const hasDecisionSignal = choices.every((choice) =>
+      /(decided|decision|approved|supported|recommended|revised|shifted|adjusted|planned|finalized|ignored|canceled|changed)/i.test(choice)
+    );
+    if (!referencesPassageEvents || !hasCauseEffect || !hasDecisionSignal) {
+      throw new Error("GENERIC_CROSS_CHOICES_DETECTED");
+    }
   };
 
   return stems.map((stem, i) => {
@@ -1507,15 +1630,17 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
         "It states population growth reduced the need for transportation changes.",
         "It states bridge approval happened before any rail debate in 1908.",
       ];
+    const choices = (crossChoiceBanks[crossSubject]?.[i] ||
+      crossChoiceBanks[crossSubject]?.[0] ||
+      crossChoiceBanks["Social Studies"][0]) as [string, string, string, string];
+    if (choices.some(containsMetaLanguage) || partAChoices.some(containsMetaLanguage) || partBChoices.some(containsMetaLanguage)) {
+      throw new Error("META_LANGUAGE_DETECTED");
+    }
+    if (subject === "Reading") ensureCrossReadingChoiceQuality(choices);
     return {
       type,
       question: stem,
-      choices: [
-        "It matches the central claim and is supported by details from both the earlier explanation and the final section of the passage.",
-        "It uses one accurate detail from the opening paragraph but ignores later evidence that changes the author’s conclusion.",
-        "It focuses on a side detail mentioned once in the passage and treats it as the main point.",
-        "It reverses the relationship between evidence and conclusion described across the passage sections.",
-      ],
+      choices,
       correct_answer: type === "scr"
         ? "A"
         : type === "part_a_b"
@@ -2007,7 +2132,14 @@ function sanitizeQuestions(
     ];
 
     if (subject === "Reading" && !validateChoices(normalizedChoices, getPassageText(passage))) {
-      normalizedChoices = buildReadingChoices(passage || "", questionText, level);
+      normalizedChoices = buildReadingChoices(
+        passage || fallbackPassage(subject, mode, 5, level),
+        questionText,
+        level,
+      );
+    }
+    if (normalizedChoices.some(containsMetaLanguage)) {
+      throw new Error("META_LANGUAGE_DETECTED");
     }
 
     if (subject === "Math") {
@@ -2078,6 +2210,9 @@ function sanitizeQuestions(
       parent_tip: String(q.parent_tip || fallback[i].parent_tip || "").trim(),
       visual: sanitizeVisual(q.visual) || fallback[i].visual,
     };
+    if (base.partA?.choices?.some(containsMetaLanguage) || base.partB?.choices?.some(containsMetaLanguage)) {
+      throw new Error("META_LANGUAGE_DETECTED");
+    }
 
     const choiceFailures = base.choices.some((choice) => {
       if (isGenericAnswerChoice(choice)) return true;
@@ -2095,7 +2230,11 @@ function sanitizeQuestions(
       if (subject === "Reading") {
         return {
           ...base,
-          choices: buildReadingChoices(passage || "", questionText, level),
+          choices: buildReadingChoices(
+            passage || fallbackPassage(subject, mode, 5, level),
+            questionText,
+            level,
+          ),
         };
       }
       return base;
