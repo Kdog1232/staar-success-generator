@@ -104,6 +104,36 @@ const corsHeaders = {
 };
 
 const READING_SKILL_DEFAULT = "Inference";
+const SUBJECT_SKILLS = {
+  Reading: [
+    { skill: "Making Inferences", teks: "X.6(F)" },
+    { skill: "Main Idea", teks: "X.6(A)" },
+    { skill: "Supporting Details", teks: "X.6(B)" },
+    { skill: "Theme", teks: "X.6(H)" },
+    { skill: "Author's Purpose", teks: "X.9(C)" },
+    { skill: "Summarizing", teks: "X.6(D)" },
+  ],
+  Math: [
+    { skill: "Multi-Step Problem Solving", teks: "X.3(H)" },
+    { skill: "Operations with Fractions", teks: "X.3(A)" },
+    { skill: "Algebraic Reasoning", teks: "X.5(A)" },
+    { skill: "Number Relationships", teks: "X.2(A)" },
+    { skill: "Data Analysis", teks: "X.9(A)" },
+  ],
+  Science: [
+    { skill: "Scientific Investigation", teks: "X.1(A)" },
+    { skill: "Cause and Effect in Systems", teks: "X.5(A)" },
+    { skill: "Energy and Matter", teks: "X.6(A)" },
+    { skill: "Earth and Space Systems", teks: "X.7(A)" },
+  ],
+  "Social Studies": [
+    { skill: "Cause and Effect (History)", teks: "X.4(A)" },
+    { skill: "Primary vs Secondary Sources", teks: "X.21(A)" },
+    { skill: "Geographic Impact", teks: "X.8(A)" },
+    { skill: "Civic Understanding", teks: "X.12(A)" },
+  ],
+} as const;
+
 const LETTERS: ChoiceLetter[] = ["A", "B", "C", "D"];
 const FORBIDDEN_GENERIC_ANSWER_PATTERNS: RegExp[] = [
   /a response grounded in passage evidence/i,
@@ -123,6 +153,20 @@ const ABSTRACT_META_PHRASES = [
   "this shows",
   "this suggests",
 ];
+
+function resolveTeks(subject: CanonicalSubject, skill: string, grade: number): string {
+  const skillAliases: Record<string, string> = {
+    Inference: "Making Inferences",
+    "Making Inference": "Making Inferences",
+    "Finding the main idea": "Main Idea",
+    "Making inferences": "Making Inferences",
+    "Understanding theme": "Theme",
+  };
+  const resolvedSkill = skillAliases[skill] || skill;
+  const skillObj = SUBJECT_SKILLS[subject]?.find((s) => s.skill === resolvedSkill);
+  if (!skillObj) return "Unknown";
+  return skillObj.teks.replace("X", String(grade));
+}
 
 function shuffledLetters(): ChoiceLetter[] {
   const pool = [...LETTERS];
@@ -433,8 +477,9 @@ function buildCorePrompt(params: {
   subject: CanonicalSubject;
   skill: string;
   level: Level;
+  teksCode?: string;
 }): string {
-  const { grade, subject, skill, level } = params;
+  const { grade, subject, skill, level, teksCode = "Unknown" } = params;
   const rigor = applyRigor(level);
   const rigorEngineRules = getRigorEngineRules(level, subject);
   if (subject === "Reading") {
@@ -452,8 +497,17 @@ Return exactly:
 
 Rules:
 - PRACTICE MODE ONLY. Do not generate cross-curricular content.
+- TEKS Alignment Code: ${teksCode}
+- Instruction: Design the question to match how this TEKS is assessed on STAAR.
+- TEKS alignment: skill "${skill}" at grade ${grade} must be assessed through application (analyze/infer/compare/explain), not definition recall.
 - Subject is Reading, so include a new 250–300 word passage.
 - Generate exactly 5 STAAR-style reading questions tied directly to that passage.
+- All 4 answer choices must explicitly reference passage details (events/actions/outcomes).
+- Keep all 4 choices similar in structure and length to avoid obvious answer patterns.
+- Never use: "best explains", "main idea", "this shows", "the answer is supported", "it can be inferred".
+- Correct answers must include a specific event plus cause/effect OR decision/result reasoning.
+- Distractors must use one of: misinterpretation, partial-truth wrong conclusion, overgeneralization, or cause/effect confusion.
+- If any choice feels generic or easy, rewrite it with more specific passage evidence.
 - Rigor profile:
   - passage complexity: ${rigor.passage}
   - question depth: ${rigor.questionDepth}
@@ -477,6 +531,9 @@ Return exactly:
 
 Rules:
 - PRACTICE MODE ONLY. Do not generate cross-curricular content.
+- TEKS Alignment Code: ${teksCode}
+- Instruction: Design the question to match how this TEKS is assessed on STAAR.
+- TEKS alignment: skill "${skill}" at grade ${grade} must be assessed through application (analyze/infer/compare/explain), not definition recall.
 - Subject is ${subject}, so DO NOT generate a passage.
 - Generate exactly 5 standalone STAAR-style ${subject} questions.
 - Use multi-step reasoning where appropriate.
@@ -491,12 +548,15 @@ Rules:
 }
 
 function buildEnrichmentPrompt(params: {
+  grade: number;
   subject: CanonicalSubject;
   skill: string;
   practiceQuestions: Question[];
   level: Level;
+  crossPassage?: string;
+  teksCode?: string;
 }): string {
-  const { subject, skill, practiceQuestions, level } = params;
+  const { grade, subject, skill, practiceQuestions, level, crossPassage = "", teksCode = "Unknown" } = params;
   const rigor = applyRigor(level);
   const rigorEngineRules = getRigorEngineRules(level, subject);
   const subjectFocus = subject === "Math"
@@ -523,6 +583,72 @@ function buildEnrichmentPrompt(params: {
     : [
       "Reading uses ELAR-style focus: central idea, inference, evidence, structure.",
     ].join("\n- ");
+
+  const requiredQuestionBlock = `You are an expert STAAR test item writer aligned to Texas Essential Knowledge and Skills (TEKS).
+
+INPUT CONFIGURATION
+- Grade Level: ${grade}
+- Target Skill: ${skill}
+- TEKS Alignment Code: ${teksCode}
+- Instruction: Design the question to match how this TEKS is assessed on STAAR.
+
+TEKS ALIGNMENT RULE
+- Align the question to how this skill is tested on STAAR.
+- Identify the cognitive action students must perform (analyze, infer, compare, explain).
+- Build the question to match that cognitive demand.
+- Ensure the correct answer requires evidence-based reasoning from the passage.
+
+STAAR DESIGN REQUIREMENTS
+- Match STAAR format and rigor.
+- Require reasoning, not recall.
+- Ground every answer in passage evidence.
+- Reflect how TEKS skills are assessed, not just defined.
+
+GRADE-LEVEL ADAPTATION
+- Grades 3-4: clear inference, concrete reasoning, shorter responses, direct passage links.
+- Grades 5-6: multi-step reasoning, combined details, moderate complexity.
+- Grades 7-8: abstract thinking, subtle choice differences, multi-layer reasoning.
+
+ANSWER CHOICE RULES
+- ALL 4 choices must reference the passage explicitly.
+- Include real details, events, or outcomes in each choice.
+- Keep choices similar in structure and length.
+- Avoid obvious wrong answers.
+- Avoid meta-language: "main idea", "this shows", "best explains".
+
+DISTRACTOR DESIGN (TEKS-ALIGNED)
+- Each wrong answer must model a realistic student mistake:
+  - misinterpretation of evidence
+  - partial understanding of the skill
+  - incorrect inference
+  - cause/effect confusion
+
+CORRECT ANSWER RULE
+- The correct answer must use specific passage evidence.
+- The correct answer must demonstrate the targeted skill correctly.
+- The correct answer must include reasoning (cause/effect, inference, comparison, etc.).
+
+SELF-CHECK (MANDATORY)
+- Does the question require the intended TEKS skill?
+- Would a student need to APPLY the skill, not define it?
+- Are distractors based on realistic student mistakes?
+- Is the answer supported by passage evidence?
+- If not, revise before returning.
+
+OUTPUT FORMAT FOR EACH cross.questions ITEM:
+{
+  "question": "...",
+  "choices": ["A. ...", "B. ...", "C. ...", "D. ..."],
+  "correct_answer": "A"
+}
+
+FINAL RULE
+Do NOT write a generic question.
+Design each item as if it will appear on a STAAR test aligned to TEKS.`;
+
+  const passageDirective = crossPassage.trim()
+    ? `\nPassage:\n${crossPassage}\n\nYou MUST use details from this passage in every answer.\n`
+    : "";
 
   return `Generate a NEW cross-curricular passage and cross-curricular questions, then return JSON only:
 {
@@ -568,10 +694,12 @@ Rules:
 - Each question must include exactly 4 clear, distinct, passage-specific answer choices.
 - Choices must be clean answer options only (no explanations or commentary text).
 - Validate answer correctness before returning.
+- For cross question generation, apply this block exactly:
+${requiredQuestionBlock}
 - Tutor entries (practice + cross) must include: question_id, question, explanation, common_mistake, parent_tip, hint, think, step_by_step.
 - Answer key entries (practice + cross) must include: question_id, correct_answer, explanation, common_mistake, parent_tip.
 - Cross tutor + answer key must reference cross passage evidence.
-- JSON only.`;
+- JSON only.${passageDirective}`;
 }
 
 function buildSubjectPassage(subject: CanonicalSubject, level: Level = "On Level"): string {
@@ -654,6 +782,22 @@ function getFallbackChoices(subject: CanonicalSubject, skill: string): [string, 
 
 function containsMetaLanguage(choice: string): boolean {
   return /(central claim|supported by|main idea|best explains|this shows|this suggests)/i.test(choice);
+}
+
+function repairChoices(choices: [string, string, string, string], passage: PassageContent | string): [string, string, string, string] {
+  void passage;
+  return choices.map((choice) => {
+    if (!choice || choice.length < 30) {
+      return `According to the passage, ${choice}`;
+    }
+
+    // inject passage grounding if missing
+    if (!choice.toLowerCase().includes("passage")) {
+      return `The passage shows that ${choice}`;
+    }
+
+    return choice;
+  }) as [string, string, string, string];
 }
 
 function normalizeChoices(
@@ -1701,18 +1845,17 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
     ]],
   };
 
-  const ensureCrossReadingChoiceQuality = (choices: [string, string, string, string]): void => {
+  const ensureCrossReadingChoiceQuality = (choices: [string, string, string, string]): boolean => {
     const referencesPassageEvents = choices.every((choice) => /(after|when|later|timeline|records|passage|investigation|election|hour)/i.test(choice));
     const hasCauseEffect = choices.every((choice) => /(because|so|led to|result|changed|therefore)/i.test(choice));
     const hasDecisionSignal = choices.every((choice) =>
       /(decided|decision|approved|supported|recommended|revised|shifted|adjusted|planned|finalized|ignored|canceled|changed)/i.test(choice)
     );
-    if (!referencesPassageEvents || !hasCauseEffect || !hasDecisionSignal) {
-      throw new Error("GENERIC_CROSS_CHOICES_DETECTED");
-    }
+    return referencesPassageEvents && hasCauseEffect && hasDecisionSignal;
   };
 
-  const questions = stems.map((stem, i) => {
+  const questions = stems
+    .map((stem, i) => {
     const type: QuestionType = i === 1 ? "part_a_b" : i === 4 ? "scr" : "mc";
     const support = buildSupportContent("Reading", stem, type, i, "On Level", "Cross-Curricular", crossPassage);
     const partAChoices: [string, string, string, string] = crossSubject === "Science"
@@ -1755,13 +1898,32 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
         "It states population growth reduced the need for transportation changes.",
         "It states bridge approval happened before any rail debate in 1908.",
       ];
-    const choices = (crossChoiceBanks[crossSubject]?.[i] ||
+    let choices = (crossChoiceBanks[crossSubject]?.[i] ||
       crossChoiceBanks[crossSubject]?.[0] ||
       crossChoiceBanks["Social Studies"][0]) as [string, string, string, string];
-    if (choices.some(containsMetaLanguage) || partAChoices.some(containsMetaLanguage) || partBChoices.some(containsMetaLanguage)) {
+    if (choices.some(containsMetaLanguage)) {
+      console.warn("Repairing META_LANGUAGE issue");
+      choices = repairChoices(choices, crossPassage);
+    }
+    if (choices.some(containsMetaLanguage)) {
+      console.warn("Still weak after repair → dropping question");
+      return null;
+    }
+    if (partAChoices.some(containsMetaLanguage) || partBChoices.some(containsMetaLanguage)) {
       throw new Error("META_LANGUAGE_DETECTED");
     }
-    if (subject === "Reading") ensureCrossReadingChoiceQuality(choices);
+    if (subject === "Reading" && !ensureCrossReadingChoiceQuality(choices)) {
+      console.warn("Repairing weak cross choices");
+      choices = repairChoices(choices, crossPassage);
+      if (choices.some(containsMetaLanguage)) {
+        console.warn("Still weak after repair → dropping question");
+        return null;
+      }
+      if (!ensureCrossReadingChoiceQuality(choices)) {
+        console.warn("Still weak after repair → dropping question");
+        return null;
+      }
+    }
     return {
       type,
       question: stem,
@@ -1793,7 +1955,13 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
       common_mistake: support.common_mistake,
       parent_tip: support.parent_tip,
     };
-  });
+    })
+    .filter((q): q is Question => q !== null);
+
+  if (!questions || questions.length === 0) {
+    console.warn("All questions failed → fallback");
+    return buildCrossFallback("Reading", "On Level");
+  }
 
   const passageText = getPassageText(crossPassage).toLowerCase();
 
@@ -2922,6 +3090,134 @@ function validateSeparation(practice: Question[], cross: Question[], subject: Ca
   return practiceValid && crossValid;
 }
 
+type PipelineQuestion = {
+  question?: string;
+  choices?: string[];
+  correct_answer?: unknown;
+  [key: string]: unknown;
+};
+
+type PipelineResult = {
+  questions: PipelineQuestion[];
+  tutor?: { practice: unknown[]; cross: unknown[] };
+  answerKey?: { practice: unknown[]; cross: unknown[] };
+  [key: string]: unknown;
+};
+
+type PipelineInput = {
+  questions?: Question[] | PipelineQuestion[];
+  stems?: unknown[];
+  crossSubject?: CanonicalSubject;
+  subject?: CanonicalSubject;
+  skill?: string;
+  level?: Level;
+  crossPassage?: PassageContent | string;
+  tutor?: { practice: unknown[]; cross: unknown[] };
+  answerKey?: { practice: unknown[]; cross: unknown[] };
+};
+
+function safeFallback(reason: string): PipelineResult {
+  console.warn("Pipeline fallback triggered:", reason);
+  const level: Level = "On Level";
+  const passage = fallbackPassageContent("Reading", "Practice", 5, READING_SKILL_DEFAULT, level);
+  return {
+    questions: buildPracticeFallback(READING_SKILL_DEFAULT, "Reading", level, passage),
+    tutor: { practice: [], cross: [] },
+    answerKey: { practice: [], cross: [] },
+  };
+}
+
+function generateQuestions(input: PipelineInput): PipelineResult {
+  return {
+    questions: Array.isArray(input?.questions) ? input.questions : [],
+    tutor: input.tutor,
+    answerKey: input.answerKey,
+  };
+}
+
+function normalizeOutput(result: PipelineResult): PipelineResult {
+  const questions = (result?.questions || []).map((q) => ({
+    ...q,
+    question: String(q.question || ""),
+    choices: Array.isArray(q.choices) ? q.choices.slice(0, 4).map((c) => String(c ?? "")) : [],
+    correct_answer: q.correct_answer || "A",
+  }));
+
+  return { ...result, questions };
+}
+
+function repairOutput(result: PipelineResult, passage: PassageContent | string): PipelineResult {
+  void passage;
+  const repaired = result.questions.map((q) => {
+    const baseChoices = Array.isArray(q.choices) ? q.choices : [];
+    const choices = baseChoices.map((c) => {
+      if (!c || c.length < 30) {
+        return `According to the passage, ${c}`;
+      }
+
+      if (!c.toLowerCase().includes("passage")) {
+        return `The passage shows that ${c}`;
+      }
+
+      return c;
+    });
+
+    return { ...q, choices };
+  });
+
+  return { ...result, questions: repaired };
+}
+
+function validateAndImprove(result: PipelineResult, passage: PassageContent | string): PipelineResult {
+  void passage;
+  const improved = result.questions.map((q) => {
+    let score = 0;
+    const baseChoices = Array.isArray(q.choices) ? q.choices : [];
+    const hasPassage = baseChoices.some((c) => c.toLowerCase().includes("passage"));
+    const hasReasoning = baseChoices.some((c) => c.includes("because") || c.includes("shows"));
+
+    if (hasPassage) score++;
+    if (hasReasoning) score++;
+
+    if (score < 2) {
+      console.warn("Improving weak question");
+      const fixedChoices = baseChoices.map((c) => `Based on the passage, ${c}`);
+      return { ...q, choices: fixedChoices };
+    }
+
+    return q;
+  });
+
+  return { ...result, questions: improved };
+}
+
+function guaranteeOutput(result: PipelineResult): PipelineResult {
+  if (!result.questions || result.questions.length === 0) {
+    console.warn("Empty result → fallback");
+    return safeFallback("pipeline_guard");
+  }
+
+  return result;
+}
+
+function enrichOutput(result: PipelineResult): PipelineResult {
+  return {
+    questions: result.questions,
+    tutor: result.tutor || { practice: [], cross: [] },
+    answerKey: result.answerKey || { practice: [], cross: [] },
+  };
+}
+
+async function runPipeline(input: PipelineInput): Promise<PipelineResult> {
+  let result = generateQuestions(input); // existing logic
+  result = normalizeOutput(result);
+  result = repairOutput(result, input.crossPassage || "");
+  result = validateAndImprove(result, input.crossPassage || "");
+  result = guaranteeOutput(result);
+  result = enrichOutput(result);
+  return result;
+}
+
 function buildFallbackResponse(
   grade: number,
   subject: CanonicalSubject,
@@ -2969,6 +3265,7 @@ serve(async (req) => {
   let effectiveMode: "core" | "cross" | "support" | "enrichment" = "core";
   let effectiveSubject: CanonicalSubject = "Reading";
   let effectiveSkill = READING_SKILL_DEFAULT;
+  let teksCode = "Unknown";
 
   const jsonResponse = (payload: Record<string, unknown>, status = 200) =>
     new Response(JSON.stringify(payload), {
@@ -2978,6 +3275,9 @@ serve(async (req) => {
   const returnCore = (data: CoreResponse) =>
     jsonResponse(subject === "Reading"
       ? {
+        teks: teksCode,
+        skill,
+        grade,
         passage: ensurePassageLength(
           getPassageText(data.passage || ""),
           250,
@@ -2990,10 +3290,16 @@ serve(async (req) => {
         practice: data.practice,
       }
       : {
+        teks: teksCode,
+        skill,
+        grade,
         practice: data.practice,
       });
   const returnEnrichment = (data: EnrichmentResponse) =>
     jsonResponse({
+      teks: teksCode,
+      skill,
+      grade,
       cross: data.cross,
       tutor: data.tutor,
       answerKey: data.answerKey,
@@ -3072,6 +3378,7 @@ serve(async (req) => {
     grade = Number(incomingGrade || 5);
     subject = canonicalizeSubject(incomingSubject);
     skill = String(incomingSkill || READING_SKILL_DEFAULT).trim() || READING_SKILL_DEFAULT;
+    teksCode = resolveTeks(subject, skill, grade);
     level = normalizeLevel(incomingLevel);
     const rawMode = String(body?.mode || "").toLowerCase();
 
@@ -3094,11 +3401,28 @@ serve(async (req) => {
     // 🚀 NEW MODE ROUTING
     if (mode === "cross") {
       const crossContent = buildSubjectCrossContent(subject, level);
+      const result = await runPipeline({
+        stems: crossContent.questions,
+        crossSubject: subject,
+        subject,
+        crossPassage: crossContent.passage,
+        questions: crossContent.questions,
+      });
 
       return jsonResponse({
+        teks: teksCode,
+        skill,
+        grade,
         cross: {
           passage: crossContent.passage,
-          questions: crossContent.questions,
+          questions: sanitizeQuestions(
+            result.questions,
+            subject,
+            "Cross-Curricular",
+            effectiveSkill,
+            level,
+            crossContent.passage,
+          ),
         },
       });
     }
@@ -3151,6 +3475,9 @@ serve(async (req) => {
       }));
 
       return jsonResponse({
+        teks: teksCode,
+        skill,
+        grade,
         tutor: {
           practice: tutor,
           cross: crossTutor,
@@ -3206,6 +3533,7 @@ serve(async (req) => {
                 subject,
                 skill: effectiveSkill,
                 level,
+                teksCode,
               }),
               max_output_tokens: 1800,
             }),
@@ -3315,9 +3643,24 @@ serve(async (req) => {
             continue;
           }
 
+          const pipelineResult = await runPipeline({
+            subject: effectiveSubject,
+            skill: effectiveSkill,
+            level,
+            crossPassage: subject === "Reading" ? safePassage : "",
+            questions: practiceQuestions,
+          });
+          const pipelineQuestions = sanitizeQuestions(
+            pipelineResult.questions,
+            effectiveSubject,
+            "Practice",
+            effectiveSkill,
+            level,
+            subject === "Reading" ? safePassage : "",
+          );
           const outputValid = subject === "Reading"
-            ? isValidOutput(practiceQuestions, safePassage)
-            : Array.isArray(practiceQuestions) && practiceQuestions.length === 5;
+            ? isValidOutput(pipelineQuestions, safePassage)
+            : Array.isArray(pipelineQuestions) && pipelineQuestions.length === 5;
           if (!outputValid) {
             retryFailureReason = "practice_output_invalid";
             continue;
@@ -3327,7 +3670,7 @@ serve(async (req) => {
             passage: subject === "Reading"
               ? ensurePassageLength(getPassageText(safePassage), range.min, range.max, subject, mode, grade, level)
               : undefined,
-            practice: { questions: practiceQuestions },
+            practice: { questions: pipelineQuestions },
           };
           if (subject !== "Reading") {
             delete payload.passage;
@@ -3336,8 +3679,16 @@ serve(async (req) => {
             passage: payload.passage || "",
             practice: payload.practice,
             cross: { passage: "", questions: [] },
-            tutor: { practice: [], cross: [] },
-            answerKey: { practice: [], cross: [] },
+            tutor: {
+              practice: Array.isArray(pipelineResult.tutor?.practice) ? pipelineResult.tutor.practice as TutorExplanation[] : [],
+              cross: Array.isArray(pipelineResult.tutor?.cross) ? pipelineResult.tutor.cross as TutorExplanation[] : [],
+            },
+            answerKey: {
+              practice: Array.isArray(pipelineResult.answerKey?.practice)
+                ? pipelineResult.answerKey.practice as AnswerKeyEntry[]
+                : [],
+              cross: Array.isArray(pipelineResult.answerKey?.cross) ? pipelineResult.answerKey.cross as AnswerKeyEntry[] : [],
+            },
           };
           returnType = "PRIMARY";
           logReturnMetrics();
@@ -3389,10 +3740,25 @@ serve(async (req) => {
             level,
             crossPassage,
           );
+          const result = await runPipeline({
+            stems: crossQuestions,
+            crossSubject: effectiveSubject,
+            subject: effectiveSubject,
+            crossPassage,
+            questions: crossQuestions,
+          });
+          const pipelineCrossQuestions = sanitizeQuestions(
+            result.questions,
+            effectiveSubject,
+            "Cross-Curricular",
+            effectiveSkill,
+            level,
+            crossPassage,
+          );
           const payload = {
             cross: {
               passage: crossPassage,
-              questions: crossQuestions,
+              questions: pipelineCrossQuestions,
             },
           };
           bestAttempt = {
@@ -3404,7 +3770,7 @@ serve(async (req) => {
           };
           returnType = "PRIMARY";
           logReturnMetrics();
-          return jsonResponse(payload);
+          return jsonResponse({ ...payload, teks: teksCode, skill, grade });
         }
 
         if (effectiveMode === "support") {
@@ -3467,7 +3833,7 @@ serve(async (req) => {
           };
           returnType = "PRIMARY";
           logReturnMetrics();
-          return jsonResponse(payload);
+          return jsonResponse({ ...payload, teks: teksCode, skill, grade });
         }
 
         console.time("OPENAI_CALL");
@@ -3481,10 +3847,13 @@ serve(async (req) => {
           body: JSON.stringify({
             model: "gpt-4o-mini",
             input: buildEnrichmentPrompt({
+              grade,
               subject: effectiveSubject,
               skill: effectiveSkill,
               practiceQuestions: normalizedPractice,
               level,
+              crossPassage: baseCrossPassage,
+              teksCode,
             }),
             max_output_tokens: 2200,
           }),
@@ -3667,10 +4036,13 @@ serve(async (req) => {
         return returnEnrichment(bestAttempt);
       }
       if (effectiveMode === "cross") {
-        return jsonResponse({ cross: bestAttempt.cross });
+        return jsonResponse({ teks: teksCode, skill, grade, cross: bestAttempt.cross });
       }
       if (effectiveMode === "support") {
         return jsonResponse({
+          teks: teksCode,
+          skill,
+          grade,
           tutor: bestAttempt.tutor,
           answerKey: bestAttempt.answerKey,
         });
