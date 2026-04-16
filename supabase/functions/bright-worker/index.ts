@@ -1115,17 +1115,13 @@ function ensurePassageLength(
   level: Level = "On Level",
   allowFallback = true,
 ): string {
-  let workingPassage = String(passage || "").replace(/\s+/g, " ").trim();
-  if (isWeakPassage(workingPassage)) {
-    workingPassage = buildSubjectPassage(subject, level);
-  }
-  const cleaned = String(workingPassage || "").replace(/\s+/g, " ").trim();
+  const cleaned = String(passage || "").replace(/\s+/g, " ").trim();
   const words = cleaned.split(" ").filter(Boolean);
   if (words.length >= min && words.length <= max) return trimExpansionTail(cleaned);
   if (words.length > max) return trimExpansionTail(words.slice(0, max).join(" "));
   if (words.length < min) {
-    console.warn("⚠️ Weak passage — regenerating");
-    return buildSubjectPassage(subject, level);
+    console.warn("⚠️ Weak passage detected in ensurePassageLength; preserving original for top-level regeneration");
+    return trimExpansionTail(cleaned);
   }
   // NEVER fallback here — just return cleaned
   return trimExpansionTail(cleaned);
@@ -3534,10 +3530,18 @@ serve(async (req) => {
             safePassage = enforceSentenceLength(safePassage, constraints.maxWordsPerSentence);
             if (violatesGradeLevel(safePassage, grade)) {
               console.warn("⚠️ Passage too advanced for grade:", grade);
-              const fallback = buildPracticeFallback(effectiveSkill, effectiveSubject, level);
-              safePassage = getPassageText(fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill, level));
-              parsed.practice = { questions: fallback };
+              const regeneratedPassage = fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill, level);
+              const regeneratedQuestions = buildPracticeFallback(effectiveSkill, effectiveSubject, level, regeneratedPassage);
+              safePassage = getPassageText(regeneratedPassage);
+              parsed.practice = { questions: regeneratedQuestions };
             }
+          }
+          if (subject === "Reading" && isWeakPassage(safePassage)) {
+            console.warn("⚠️ Weak generation — regenerating full practice set");
+            const regeneratedPassage = fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill, level);
+            const regeneratedQuestions = buildPracticeFallback(effectiveSkill, effectiveSubject, level, regeneratedPassage);
+            safePassage = getPassageText(regeneratedPassage);
+            parsed.practice = { questions: regeneratedQuestions };
           }
           if (subject === "Reading" && (!safePassage || !getPassageText(safePassage).trim())) {
             retryFailureReason = "no_questions_returned";
