@@ -1211,39 +1211,82 @@ function buildDistractors(
   keywords: string[],
 ): [string, string, string, string] {
   const clean = (value: string): string => String(value || "").replace(/\s+/g, " ").replace(/\.$/, "").trim();
-  const safeCorrect = clean(correct);
-  const normalizedKeywords = keywords.map((token) => clean(token).toLowerCase()).filter((token) => token.length >= 4);
+  const base = clean(correct);
   const sourceSentences = sentences.map((sentence) => clean(sentence)).filter((sentence) => sentence.split(/\s+/).length >= 8);
-  const lowerCorrect = safeCorrect.toLowerCase();
+  const normalizedKeywords = keywords.map((token) => clean(token).toLowerCase()).filter((token) => token.length >= 4);
+  const fallbackKeyword = normalizedKeywords[0] || "";
+  const baseWords = base.split(/\s+/).filter(Boolean);
 
-  const wrongRealSentence = sourceSentences.find((sentence) => sentence.toLowerCase() !== lowerCorrect) ||
-    sourceSentences[0] ||
-    safeCorrect;
+  const isWeakChoice = (choice: string): boolean => choice.split(/\s+/).length < 6;
+  const hasSubjectActionOutcome = (choice: string): boolean => choice.split(/\s+/).length >= 9;
+  const hasPassageGrounding = (choice: string): boolean => {
+    const text = choice.toLowerCase();
+    const sentenceOverlap = sourceSentences.some((sentence) =>
+      sentence.toLowerCase().split(/\s+/).filter((token) => token.length >= 4).some((token) => text.includes(token))
+    );
+    const keywordOverlap = normalizedKeywords.some((keyword) => text.includes(keyword));
+    return sentenceOverlap || keywordOverlap || (!!fallbackKeyword && text.includes(fallbackKeyword));
+  };
 
-  const misconceptionSeed = sourceSentences.find((sentence) =>
-    sentence.toLowerCase() !== lowerCorrect &&
-    normalizedKeywords.some((token) => sentence.toLowerCase().includes(token))
-  ) || wrongRealSentence;
-  const misconceptionWords = misconceptionSeed.split(/\s+/).filter(Boolean);
-  const misconceptionLead = misconceptionWords.slice(0, 5).join(" ") || "People in the passage";
-  const misconception =
-    `${misconceptionLead} only changed because ${normalizedKeywords[0] || "events"} stayed identical, which kept ${normalizedKeywords[1] || "results"} from shaping later ${normalizedKeywords[2] || "decisions"}`.replace(/\s+/g, " ").trim();
+  const buildCandidates = (attempt: number): [string, string, string, string] => {
+    const claim1 = base;
 
-  const correctWords = safeCorrect.split(/\s+/).filter(Boolean);
-  const incomplete = `${correctWords.slice(0, Math.max(6, Math.ceil(correctWords.length * 0.55))).join(" ")} after early ${normalizedKeywords[0] || "events"}, without the later ${normalizedKeywords[1] || "details"}`.replace(/\s+/g, " ").trim();
+    const claim2 = clean(
+      `${baseWords.slice(0, 6).join(" ") || base} but does not fully explain the outcome described in the passage`,
+    );
 
-  const pool = [safeCorrect, misconception, wrongRealSentence, incomplete]
-    .map((choice) => clean(choice))
-    .filter((choice) => choice.split(/\s+/).length >= 6);
+    const claim3Seed = /because|after|when/i.test(base)
+      ? base.replace(/because|after|when/gi, "even though")
+      : `${base} even though the timing and causes are interpreted differently`;
+    const claim3 = clean(claim3Seed);
 
-  while (pool.length < 4) pool.push(safeCorrect);
+    const alt = sourceSentences.find((sentence, index) =>
+      !base.toLowerCase().includes(sentence.toLowerCase()) && index >= attempt % Math.max(1, sourceSentences.length)
+    ) ||
+      sourceSentences.find((sentence) => !base.toLowerCase().includes(sentence.toLowerCase())) ||
+      base;
 
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
+    const claim4 = clean(`${alt} but this detail does not fully support the main idea`);
+    const rawChoices = [claim1, claim2, claim3, claim4];
+    const uniqueChoices = Array.from(new Set(rawChoices.map((choice) => clean(choice))));
+
+    if (uniqueChoices.length !== 4) {
+      return [
+        claim1,
+        clean(`${claim2} in this context`),
+        clean(`${claim3} in this context`),
+        clean(`${claim4} in this context`),
+      ];
+    }
+    return uniqueChoices as [string, string, string, string];
+  };
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const choices = buildCandidates(attempt);
+    const shuffled = [...choices];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    const uniqueCount = new Set(shuffled.map((choice) => choice.toLowerCase())).size;
+    const allGrounded = shuffled.every((choice) => hasPassageGrounding(choice) && hasSubjectActionOutcome(choice));
+    if (uniqueCount === 4 && !shuffled.some(isWeakChoice) && allGrounded) {
+      return shuffled as [string, string, string, string];
+    }
   }
 
-  return pool.slice(0, 4) as [string, string, string, string];
+  const fallbackAlt = sourceSentences.find((sentence) => sentence.toLowerCase() !== base.toLowerCase()) || base;
+  return [
+    base,
+    clean(`${baseWords.slice(0, 6).join(" ") || base} but does not fully explain the outcome described in the passage`),
+    clean(
+      (/because|after|when/i.test(base)
+        ? base.replace(/because|after|when/gi, "even though")
+        : `${base} even though the timing and causes are interpreted differently`),
+    ),
+    clean(`${fallbackAlt} but this detail does not fully support the main idea`),
+  ];
 }
 
 function buildCrossFallback(
