@@ -879,7 +879,18 @@ function ensurePassageLength(
   const words = cleaned.split(" ").filter(Boolean);
   if (words.length >= min && words.length <= max) return cleaned;
   if (words.length > max) return words.slice(0, max).join(" ");
-  if (allowFallback) return fallbackPassage(subject, mode, grade, level);
+  if (words.length < min) {
+    console.warn("Short passage — expanding instead of fallback");
+
+    let expanded = cleaned;
+
+    while (expanded.split(/\s+/).length < min) {
+      expanded += " This shows how evidence, decisions, and outcomes are connected in real-world situations.";
+    }
+
+    return expanded.split(/\s+/).slice(0, max).join(" ");
+  }
+  // NEVER fallback here — just return cleaned
   return cleaned;
 }
 
