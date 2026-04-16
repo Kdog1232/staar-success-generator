@@ -248,13 +248,13 @@ function routeBySkill(skill: string): "vocab" | "main_idea" | "inference" | "the
 
 function getDifficultyInstructions(level: Level): string {
   if (level === "Below") {
-    return "Use simpler vocabulary, shorter passages, and direct questions.";
+    return "Use a shorter informational passage, explicit main ideas, direct identification questions, and clearly incorrect but plausible distractors.";
   }
   if (level === "On Level") {
-    return "Use grade-appropriate vocabulary and standard STAAR rigor.";
+    return "Use a moderate-length informational passage, require some inference, and include realistic distractors.";
   }
   if (level === "Advanced") {
-    return "Use complex vocabulary, layered inference, and higher DOK questions.";
+    return "Use a complex informational passage with multiple ideas or shifts, deeper reasoning, and subtle distractors close to correct.";
   }
   return "";
 }
@@ -264,18 +264,53 @@ function getRigorEngineRules(level: Level, subject: CanonicalSubject): string {
     if (subject === "Math") return "Below: single-step basic computation with short, clear stems and obviously wrong distractors.";
     if (subject === "Science") return "Below: simple cause/effect with one clear variable and obviously wrong distractors.";
     if (subject === "Social Studies") return "Below: identify event/outcome directly with short stems and clearly wrong distractors.";
-    return "Below: explicit detail questions with direct text evidence and clearly wrong distractors.";
+    return "Below: informational passage with explicit main idea and direct identification questions; distractors are clearly incorrect but plausible.";
   }
   if (level === "Advanced") {
     if (subject === "Math") return "Advanced: multi-step word problems with embedded reasoning and unnecessary info; distractors are plausible misconception traps.";
     if (subject === "Science") return "Advanced: multi-variable system reasoning; distractors are close alternatives based on common misconceptions.";
     if (subject === "Social Studies") return "Advanced: evaluate impacts or compare decisions across time/policy; distractors are plausible but flawed.";
-    return "Advanced: theme/author's purpose/multi-paragraph synthesis; distractors are very close with subtle evidence differences.";
+    return "Advanced: informational passage with multiple ideas/shifts, higher-order synthesis, and subtle distractors with close evidence differences.";
   }
   if (subject === "Math") return "On Level: two-step word problems that apply computation to a context with moderately plausible distractors.";
   if (subject === "Science") return "On Level: system relationships and applied cause/effect with moderately plausible distractors.";
   if (subject === "Social Studies") return "On Level: cause/effect relationship questions with moderate distractor quality.";
-  return "On Level: inference plus evidence with moderate distractor quality.";
+  return "On Level: informational passage with moderate inference demand and realistic distractors.";
+}
+
+function readingPracticeWordRange(level: Level): { min: number; max: number } {
+  if (level === "Below") return { min: 170, max: 220 };
+  if (level === "Advanced") return { min: 280, max: 340 };
+  return { min: 230, max: 280 };
+}
+
+function hasNarrativeReadingSignals(passage: PassageContent | string): boolean {
+  const text = getPassageText(passage);
+  const lower = text.toLowerCase();
+  const nameSignals =
+    /\b(lily|jake|emma|noah|olivia|liam|mia|ava|ethan|sophia|isabella|jack|lucas|amelia|harper)\b/i.test(text) ||
+    /\b(mr|mrs|ms)\.\s+[A-Z][a-z]+\b/.test(text);
+  const narrativeSignals = [
+    /\bonce upon a time\b/i,
+    /\bone day\b/i,
+    /\bsuddenly\b/i,
+    /\bthe next day\b/i,
+    /\bafter school\b/i,
+    /\bcharacter\b/i,
+    /\bsaid\b/i,
+    /\basked\b/i,
+    /\bwalked\b/i,
+    /\bran\b/i,
+    /\bfelt\b/i,
+  ].some((pattern) => pattern.test(text));
+  const storytellingStructure = /(beginning|middle|ending|plot|lesson learned|moral of the story)/i.test(text);
+  const narrativePronounDensity = (lower.match(/\b(he|she|they)\b/g) || []).length >= 4;
+
+  return nameSignals || narrativeSignals || storytellingStructure || narrativePronounDensity;
+}
+
+function isMainIdeaSkill(skill: string): boolean {
+  return String(skill || "").toLowerCase().includes("main idea");
 }
 
 function getSubjectInstructions(subject: CanonicalSubject): string {
@@ -465,6 +500,16 @@ function buildCorePrompt(params: {
   const rigor = applyRigor(level);
   const rigorEngineRules = getRigorEngineRules(level, subject);
   if (subject === "Reading") {
+    const readingRange = readingPracticeWordRange(level);
+    const mainIdeaStemRule = isMainIdeaSkill(skill)
+      ? `- Main Idea question-type lock (5.6A style):
+  - Allowed stems only:
+    - "What is the main idea of the passage?"
+    - "Which statement best describes the main idea?"
+  - Not allowed:
+    - "What did the character do?"
+    - "What lesson did they learn?"`
+      : "";
     return `Create JSON only for PRACTICE MODE.
 Grade: ${grade}
 Subject: ${subject}
@@ -473,7 +518,7 @@ Level: ${level}
 
 Return exactly:
 {
-  "passage": "REQUIRED string (250–300 words)",
+  "passage": "REQUIRED informational string (${readingRange.min}–${readingRange.max} words)",
   "practice": { "questions": [5 items with question, choices, correct_answer, explanation] }
 }
 
@@ -482,14 +527,20 @@ Rules:
 - TEKS Alignment Code: ${teksCode}
 - Instruction: Design the question to match how this TEKS is assessed on STAAR.
 - TEKS alignment: skill "${skill}" at grade ${grade} must be assessed through application (analyze/infer/compare/explain), not definition recall.
-- Subject is Reading, so include a new 250–300 word passage.
+- Subject is Reading, so include a new informational passage only (${readingRange.min}–${readingRange.max} words).
+- Passage genre lock: informational text ONLY. No stories, no characters, no narrative events, no character names.
 - Generate exactly 5 STAAR-style reading questions tied directly to that passage.
 - All 4 answer choices must explicitly reference passage details (events/actions/outcomes).
 - Keep all 4 choices similar in structure and length to avoid obvious answer patterns.
-- Never use: "best explains", "main idea", "this shows", "the answer is supported", "it can be inferred".
+- Never use: "best explains", "this shows", "the answer is supported", "it can be inferred".
 - Correct answers must include a specific event plus cause/effect OR decision/result reasoning.
 - Distractors must use one of: misinterpretation, partial-truth wrong conclusion, overgeneralization, or cause/effect confusion.
 - If any choice feels generic or easy, rewrite it with more specific passage evidence.
+- Difficulty behavior lock:
+  - Below: shorter passage, explicit main idea, direct identification questions, clearly incorrect but plausible distractors.
+  - On Level: moderate passage length, some inference required, realistic distractors.
+  - Advanced: complex passage with multiple ideas/shifts, subtle distractors close to correct.
+${mainIdeaStemRule}
 - Rigor profile:
   - passage complexity: ${rigor.passage}
   - question depth: ${rigor.questionDepth}
@@ -2180,6 +2231,12 @@ function validateLevelComplexity(subject: CanonicalSubject, level: Level, questi
   return true;
 }
 
+function isAllowedMainIdeaStem(stem: string): boolean {
+  const normalized = String(stem || "").trim().toLowerCase();
+  return normalized === "what is the main idea of the passage?" ||
+    normalized === "which statement best describes the main idea?";
+}
+
 function sanitizeQuestions(
   raw: unknown,
   subject: CanonicalSubject,
@@ -2219,9 +2276,17 @@ function sanitizeQuestions(
       choices: normalizeChoices(fallback[i].choices),
     };
 
+    const isReadingMainIdea = subject === "Reading" && isMainIdeaSkill(skill);
+    let normalizedQuestionText = questionText;
+    if (isReadingMainIdea && !isAllowedMainIdeaStem(normalizedQuestionText)) {
+      normalizedQuestionText = i % 2 === 0
+        ? "What is the main idea of the passage?"
+        : "Which statement best describes the main idea?";
+    }
+
     const base: Question = {
       type,
-      question: questionText,
+      question: normalizedQuestionText,
       choices: normalizedChoices,
       correct_answer: type === "multi_select"
         ? normalizeMultiSelectAnswer(q.correct_answer || fallback[i].correct_answer)
@@ -3156,7 +3221,8 @@ serve(async (req) => {
     console.log("🧠 CONTENT MODE:", mode);
     console.log("🧠 SUBJECT:", subject);
     console.log("🧠 EFFECTIVE SUBJECT:", effectiveSubject);
-    const range = { min: 250, max: 300 };
+    const readingRange = readingPracticeWordRange(level);
+    const range = subject === "Reading" ? readingRange : { min: 250, max: 300 };
 
     let attempts = 0;
     const MAX_ATTEMPTS = 2;
@@ -3278,6 +3344,11 @@ serve(async (req) => {
             : "";
           if (subject === "Reading" && (!safePassage || !getPassageText(safePassage).trim())) {
             retryFailureReason = "no_questions_returned";
+            continue;
+          }
+          if (subject === "Reading" && hasNarrativeReadingSignals(safePassage)) {
+            console.warn("⚠️ Narrative reading passage detected; regenerating once with informational lock.");
+            retryFailureReason = "narrative_output_filtered";
             continue;
           }
 
