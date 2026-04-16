@@ -1256,7 +1256,7 @@ function buildPracticeFallback(
       passage && String(passage).trim().length > 0
         ? passage
         : fallbackPassage("Reading", "Practice", 5, "On Level");
-    let choices = subject === "Math"
+    const sourceChoices = subject === "Math"
       ? mathChoiceBanks[i % mathChoiceBanks.length]
       : subject === "Science"
       ? [
@@ -1273,10 +1273,23 @@ function buildPracticeFallback(
         "Population growth reduced cross-river travel demand, so no major transportation decision was necessary.",
       ]
       : buildReadingChoices(safePassage, leveledStem, level);
-    if (subject === "Reading") {
-      choices = buildReadingChoices(safePassage, leveledStem, level);
+    const correctAnswer = String(sourceChoices[0] || "").trim();
+    const numericCorrectAnswer = Number(correctAnswer.replace(/[^0-9.-]/g, ""));
+    const distractorSeed = subject === "Math" && Number.isFinite(numericCorrectAnswer)
+      ? numericCorrectAnswer
+      : correctAnswer;
+    const distractors = buildDistractors(distractorSeed, leveledStem, subject);
+    const choices = [correctAnswer, ...distractors];
+    const finalChoices = shuffleArray(choices.map((choice) => String(choice || "").trim()).filter(Boolean));
+    while (finalChoices.length < 4) {
+      finalChoices.push(`Option ${finalChoices.length + 1}`);
     }
-    const safeChoices = normalizeChoices(choices as [string, string, string, string]);
+    const correctIndex = finalChoices.findIndex((c) => String(c) === String(correctAnswer));
+    if (correctIndex === -1) {
+      finalChoices[0] = correctAnswer;
+    }
+    const safeChoices = normalizeChoices(finalChoices as [string, string, string, string]);
+    const resolvedCorrectAnswer = LETTERS[Math.max(0, finalChoices.findIndex((c) => String(c) === String(correctAnswer)))] || "A";
     const safePartAChoices = normalizeChoices(partAChoices);
     const safePartBChoices = normalizeChoices(partBChoices);
     const question: Question = {
@@ -1285,7 +1298,7 @@ function buildPracticeFallback(
       choices: safeChoices,
       correct_answer: type === "part_a_b"
         ? { partA: nextSingleAnswer(), partB: nextSingleAnswer() }
-        : nextSingleAnswer(),
+        : resolvedCorrectAnswer,
       partA: type === "part_a_b"
         ? {
           question: `Part A: ${leveledStem}`,
@@ -1354,143 +1367,50 @@ function buildReadingChoices(
   const subject = baseWords.slice(0, 3).join(" ") || "Community leaders";
   const action = baseWords.slice(3, 8).join(" ") || "reviewed records and changed plans";
   const outcome = baseWords.slice(8, 15).join(" ") || "after new results changed local priorities";
-  const keywordA = keywords[0] || "community";
-  const keywordB = keywords[1] || "results";
-  const keywordC = keywords[2] || "decisions";
 
   const correct = `${subject} ${action} ${outcome}`.replace(/\s+/g, " ").trim();
-  const candidateSet = buildDistractors(correct, sentences, [keywordA, keywordB, keywordC]);
-  if (validateChoices(candidateSet, text)) return candidateSet;
+  const distractors = buildDistractors(correct, questionText, "Reading");
+  const choices = [correct, ...distractors];
+  const finalChoices = shuffleArray(choices.map((choice) => String(choice).trim()).filter(Boolean));
 
-  const fallbackSentences = sentences.length ? sentences : [baseSentence];
-  const regenerated = buildDistractors(
-    `${fallbackSentences[0] || baseSentence}`.replace(/\s+/g, " ").trim(),
-    fallbackSentences,
-    [keywordA, keywordB, keywordC],
-  );
-
-  return validateChoices(regenerated, text) ? regenerated : buildSSFallbackChoices();
-}
-
-function buildDistractors(
-  correct: string,
-  sentences: string[],
-  keywords: string[],
-): [string, string, string, string] {
-  const clean = (value: string): string => String(value || "").replace(/\s+/g, " ").replace(/\.$/, "").trim();
-  const splitWords = (value: string): string[] => clean(value).toLowerCase().split(/\s+/).filter(Boolean);
-
-  const base = clean(correct);
-  const sourceSentences = sentences.map((sentence) => clean(sentence)).filter((sentence) => sentence.split(/\s+/).length >= 8);
-  const normalizedKeywords = keywords.map((token) => clean(token).toLowerCase()).filter((token) => token.length >= 4);
-  const fallbackKeyword = normalizedKeywords[0] || "";
-
-  const connectorParts = base.split(/\b(because|so|therefore|as a result|after|before|when|while|since)\b/i).map((part) => clean(part)).filter(Boolean);
-  const connectors = ["because", "so", "therefore", "as a result", "after", "before", "when", "while", "since"];
-  const tokenizedBase = splitWords(base);
-
-  const hasPassageGrounding = (choice: string): boolean => {
-    const text = choice.toLowerCase();
-    const sentenceOverlap = sourceSentences.some((sentence) => {
-      const tokens = splitWords(sentence).filter((token) => token.length >= 4);
-      let overlap = 0;
-      for (const token of tokens) {
-        if (text.includes(token)) overlap += 1;
-      }
-      return overlap >= 2;
-    });
-    const keywordOverlap = normalizedKeywords.some((keyword) => text.includes(keyword));
-    return sentenceOverlap || keywordOverlap || (!!fallbackKeyword && text.includes(fallbackKeyword));
-  };
-
-  const hasSubjectActionOutcome = (choice: string): boolean => {
-    const words = splitWords(choice);
-    const hasAction = /\b(is|are|was|were|led|caused|made|showed|changed|increased|decreased|supported|delayed|improved|reduced|allowed|prevented|helped|pushed|kept|moved|shifted|grew)\b/i.test(choice);
-    const hasOutcomeSignal = /\b(so|therefore|result|outcome|eventually|later|then|which|leading|causing|meant|left|created)\b/i.test(choice) || words.length >= 12;
-    return words.length >= 8 && hasAction && hasOutcomeSignal;
-  };
-
-  const sharesRepeatedStructure = (choice: string): boolean => {
-    const tokens = splitWords(choice);
-    if (tokens.length < 6 || tokenizedBase.length < 6) return false;
-    const baseBigrams = new Set(tokenizedBase.slice(0, -1).map((w, i) => `${w} ${tokenizedBase[i + 1]}`));
-    const choiceBigrams = tokens.slice(0, -1).map((w, i) => `${w} ${tokens[i + 1]}`);
-    const overlap = choiceBigrams.filter((pair) => baseBigrams.has(pair)).length;
-    const ratio = overlap / Math.max(1, choiceBigrams.length);
-    return ratio >= 0.65;
-  };
-
-  const isWeakChoice = (choice: string): boolean => {
-    return splitWords(choice).length < 8 || sharesRepeatedStructure(choice) || !hasSubjectActionOutcome(choice);
-  };
-
-  const sampleSentencePool = sourceSentences.length ? sourceSentences : [base];
-
-  const buildCompetingClaims = (): [string, string, string, string] => {
-    const baseSentence = pickRandom(sampleSentencePool);
-    const altSentence = pickRandom(sampleSentencePool);
-    const detailSentence = pickRandom(sampleSentencePool);
-
-    const baseDetail = connectorParts[0] || baseSentence;
-    const baseOutcome = connectorParts.slice(1).join(" ") || base;
-
-    const detailTokens = splitWords(detailSentence);
-    const emphasizedDetail = clean(detailTokens.slice(0, Math.min(10, detailTokens.length)).join(" ")) || baseDetail;
-
-    const contextA = clean(baseSentence.split(/[,;:]/)[0]);
-    const contextB = clean(altSentence.split(/[,;:]/)[0]);
-
-    const missedOutcomeTemplates = [
-      `${emphasizedDetail} and this explains part of the situation, yet the larger result in the passage comes from another step`,
-      `${emphasizedDetail}, which is accurate, though it leaves out what ultimately changed in the passage`,
-      `${emphasizedDetail}, but that point alone cannot account for the final development described by the author`,
-    ];
-
-    const reversedLogicTemplates = [
-      `The later outcome happened first, and only afterward did ${clean(baseDetail).toLowerCase()} shape events`,
-      `${clean(baseOutcome)} happened before ${clean(baseDetail).toLowerCase()}, so the sequence in the passage is reversed`,
-      `${clean(baseDetail)} appears after the final result, which flips the cause-and-effect relationship described in the text`,
-    ];
-
-    const contextShiftTemplates = [
-      `${contextA} supports a similar idea, but it applies to ${contextB.toLowerCase()} rather than the decision described in the question`,
-      `${contextB} reflects the same theme, yet it is tied to a different part of the passage than the one being asked about`,
-      `${contextA} fits the passage details, but it transfers that reasoning to ${contextB.toLowerCase()} instead of the original context`,
-    ];
-
-    const distractorB = clean(pickRandom(missedOutcomeTemplates));
-    const distractorC = clean(pickRandom(reversedLogicTemplates));
-    const distractorD = clean(pickRandom(contextShiftTemplates));
-
-    return [base, distractorB, distractorC, distractorD];
-  };
-
-  for (let attempt = 0; attempt < 10; attempt++) {
-    const candidateChoices = buildCompetingClaims();
-    const shuffled = [...candidateChoices];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-
-    const uniqueCount = new Set(shuffled.map((choice) => choice.toLowerCase())).size;
-    const allGrounded = shuffled.every((choice) => hasPassageGrounding(choice));
-    const allStrong = shuffled.every((choice) => !isWeakChoice(choice));
-    const nonBaseWithConnectorShift = shuffled.filter((choice) => choice !== base).some((choice) => connectors.some((connector) => choice.toLowerCase().includes(connector)));
-
-    if (uniqueCount === 4 && allGrounded && allStrong && nonBaseWithConnectorShift) {
-      return shuffled as [string, string, string, string];
-    }
+  while (finalChoices.length < 4) {
+    finalChoices.push(`Option ${finalChoices.length + 1}`);
   }
 
-  const fallbackSentence = pickRandom(sampleSentencePool);
-  const fallbackAlt = pickRandom(sampleSentencePool);
-  return [
-    base,
-    clean(`${fallbackSentence} and this detail is accurate, yet it does not include the full chain of events in the passage`),
-    clean(`The passage sequence is reversed here: ${base} is treated as happening after the final result`),
-    clean(`${fallbackAlt} uses a valid idea from the text but applies it to a different situation than the question asks about`),
-  ];
+  const correctIndex = finalChoices.findIndex((c) => String(c) === String(correct));
+  if (correctIndex === -1) {
+    finalChoices[0] = correct;
+  }
+
+  return normalizeChoices(finalChoices as [string, string, string, string]);
+}
+
+function buildDistractors(correctAnswer: string | number, question: string, subject: string): string[] {
+  void question;
+  const distractors: string[] = [];
+
+  if (subject === "Math" && typeof correctAnswer === "number") {
+    const val = correctAnswer;
+    distractors.push(String(val + 2));
+    distractors.push(String(val - 2));
+    distractors.push(String(Math.round(val * 1.2)));
+    distractors.push(String(Math.round(val * 0.8)));
+  } else {
+    distractors.push("A detail from the passage that is true but does not answer the question.");
+    distractors.push("A statement that reverses the cause and effect relationship.");
+    distractors.push("An idea that is related to the topic but not supported by the passage.");
+  }
+
+  const unique = Array.from(new Set(distractors));
+
+  return unique.slice(0, 3);
+}
+
+function shuffleArray<T>(arr: T[]): T[] {
+  return arr
+    .map((value) => ({ value, sort: Math.random() }))
+    .sort((a, b) => a.sort - b.sort)
+    .map(({ value }) => value);
 }
 
 
@@ -1645,7 +1565,22 @@ function buildCrossFallback(
       ? `${stem} Which passage detail best supports your analysis?`
       : `${stem} Use two linked details to support your reasoning.`;
     const support = buildSupportContent(subject, leveledStem, "mc", i, level, "Cross-Curricular", crossPassage);
-    const choices = choiceBanks[i % choiceBanks.length];
+    const sourceChoices = choiceBanks[i % choiceBanks.length];
+    const correctAnswer = String(sourceChoices[0] || "").trim();
+    const numericCorrectAnswer = Number(correctAnswer.replace(/[^0-9.-]/g, ""));
+    const distractorSeed = subject === "Math" && Number.isFinite(numericCorrectAnswer)
+      ? numericCorrectAnswer
+      : correctAnswer;
+    const distractors = buildDistractors(distractorSeed, leveledStem, subject);
+    const choices = shuffleArray([correctAnswer, ...distractors].map((choice) => String(choice || "").trim()).filter(Boolean));
+    while (choices.length < 4) {
+      choices.push(`Option ${choices.length + 1}`);
+    }
+    const correctIndex = choices.findIndex((c) => String(c) === String(correctAnswer));
+    if (correctIndex === -1) {
+      choices[0] = correctAnswer;
+    }
+    const resolvedCorrectAnswer = LETTERS[Math.max(0, choices.findIndex((c) => String(c) === String(correctAnswer)))] || "A";
     const partAChoices: [string, string, string, string] = subject === "Math"
       ? [
         "After combo sales dropped by 8, single-item sales rose by 15, changing which items drove total earnings.",
@@ -1693,7 +1628,7 @@ function buildCrossFallback(
       choices: choices as [string, string, string, string],
       correct_answer: type === "part_a_b"
         ? { partA: nextSingleAnswer(), partB: nextSingleAnswer() }
-        : nextSingleAnswer(),
+        : resolvedCorrectAnswer,
       partA: type === "part_a_b"
         ? {
           question: `Part A: ${leveledStem}`,
