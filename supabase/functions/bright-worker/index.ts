@@ -2951,7 +2951,13 @@ function buildFallbackResponse(
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json",
+      },
+    });
   }
 
   let grade = 5;
@@ -2964,9 +2970,9 @@ serve(async (req) => {
   let effectiveSubject: CanonicalSubject = "Reading";
   let effectiveSkill = READING_SKILL_DEFAULT;
 
-  const jsonResponse = (payload: Record<string, unknown>) =>
+  const jsonResponse = (payload: Record<string, unknown>, status = 200) =>
     new Response(JSON.stringify(payload), {
-      status: 200,
+      status,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   const returnCore = (data: CoreResponse) =>
@@ -3016,14 +3022,34 @@ serve(async (req) => {
 
     const authResult = await supabase.auth.getUser();
     const user = authResult?.data?.user;
-    if (!user) return safeFallback("unauthorized");
+    if (!user) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        {
+          status: 401,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    }
 
-    let body: Record<string, unknown> = {};
+    let body: Record<string, unknown>;
     try {
       body = await req.json();
     } catch (err) {
-      console.error("BACKEND ERROR:", err);
-      return safeFallback("invalid_request_json", err instanceof Error ? err.message : String(err));
+      console.error("Invalid JSON body:", err);
+      return new Response(
+        JSON.stringify({ error: "Invalid JSON body" }),
+        {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        },
+      );
     }
 
     const {
@@ -3069,13 +3095,11 @@ serve(async (req) => {
     if (mode === "cross") {
       const crossContent = buildSubjectCrossContent(subject, level);
 
-      return new Response(JSON.stringify({
+      return jsonResponse({
         cross: {
           passage: crossContent.passage,
           questions: crossContent.questions,
         },
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -3126,7 +3150,7 @@ serve(async (req) => {
         parent_tip: q.parent_tip || "",
       }));
 
-      return new Response(JSON.stringify({
+      return jsonResponse({
         tutor: {
           practice: tutor,
           cross: crossTutor,
@@ -3135,8 +3159,6 @@ serve(async (req) => {
           practice: answerKey,
           cross: crossAnswerKey,
         },
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
     console.log("🔥 RAW MODE:", rawMode);
@@ -3659,7 +3681,18 @@ serve(async (req) => {
     logReturnMetrics();
     return safeFallback(retryFailureReason);
   } catch (err) {
-    console.error("BACKEND ERROR:", err);
-    return safeFallback("ai_failure_catch", err instanceof Error ? err.message : String(err));
+    console.error("🔥 EDGE FUNCTION ERROR:", err);
+    return new Response(
+      JSON.stringify({
+        error: err instanceof Error ? err.message : "Unknown error",
+      }),
+      {
+        status: 500,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+      },
+    );
   }
 });
