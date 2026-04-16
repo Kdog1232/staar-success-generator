@@ -811,6 +811,97 @@
       margin-bottom: 6px;
     }
 
+    .testimonial-section {
+      padding: 60px 20px;
+      background: linear-gradient(to bottom, #f8fafc, #ffffff);
+      text-align: center;
+    }
+
+    .testimonial-header h2 {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .testimonial-sub {
+      color: #6b7280;
+      margin-bottom: 10px;
+    }
+
+    .testimonial-rating {
+      font-size: 18px;
+      color: #fbbf24;
+      margin-bottom: 30px;
+    }
+
+    .testimonial-rating span {
+      color: #374151;
+      font-size: 14px;
+      margin-left: 6px;
+    }
+
+    .testimonial-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .testimonial-card {
+      background: white;
+      padding: 20px;
+      border-radius: 14px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+      text-align: left;
+      transition: transform 0.2s ease;
+      opacity: 0;
+      transform: translateY(10px);
+      animation: fadeInUp 0.6s ease forwards;
+    }
+
+    .testimonial-card:hover {
+      transform: translateY(-4px);
+    }
+
+    .stars {
+      color: #fbbf24;
+      margin-bottom: 8px;
+      font-size: 18px;
+    }
+
+    .testimonial-card p {
+      font-size: 15px;
+      line-height: 1.5;
+      margin-bottom: 10px;
+    }
+
+    .testimonial-card span {
+      font-size: 13px;
+      color: #6b7280;
+    }
+
+    .testimonial-trust {
+      margin-top: 30px;
+      font-size: 14px;
+      color: #9ca3af;
+    }
+
+    .testimonial-card:nth-child(2) {
+      animation-delay: 0.1s;
+    }
+
+    .testimonial-card:nth-child(3) {
+      animation-delay: 0.2s;
+    }
+
+    @keyframes fadeInUp {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
     @media (max-width: 760px) {
       body {
         padding: 20px 12px 40px;
@@ -954,6 +1045,48 @@
     </div>
     </div>
   </div>
+
+  <section class="testimonial-section">
+    <div class="testimonial-header">
+      <h2>Trusted by Parents & Teachers</h2>
+      <p class="testimonial-sub">
+        Helping students build confidence and improve STAAR performance
+      </p>
+      <div class="testimonial-rating">
+        ⭐⭐⭐⭐⭐ <span>4.9 average rating</span>
+      </div>
+    </div>
+
+    <div class="testimonial-grid">
+      <div class="testimonial-card">
+        <div class="stars">★★★★★</div>
+        <p>
+          This feels like having a tutor at home. My child finally understands WHY answers are correct.
+        </p>
+        <span>— Parent, 5th Grade</span>
+      </div>
+
+      <div class="testimonial-card">
+        <div class="stars">★★★★★</div>
+        <p>
+          I use this for intervention groups. The explanations are clearer than most curriculum resources.
+        </p>
+        <span>— Teacher, 6th Grade</span>
+      </div>
+
+      <div class="testimonial-card">
+        <div class="stars">★★★★★</div>
+        <p>
+          My child went from guessing to actually explaining answers. That’s the difference.
+        </p>
+        <span>— Parent, 4th Grade</span>
+      </div>
+    </div>
+
+    <div class="testimonial-trust">
+      Trusted by 300+ parents and teachers
+    </div>
+  </section>
 
   <script type="module">
     import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
