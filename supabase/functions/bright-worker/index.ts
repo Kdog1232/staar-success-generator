@@ -1059,13 +1059,14 @@ function isCompareSkill(skill: string): boolean {
 
 function buildSupportContent(
   subject: CanonicalSubject,
-  questionText: string,
-  type: QuestionType,
+  q: Question,
   index: number,
   level: Level = "On Level",
   mode: CanonicalMode = "Practice",
   passage: PassageContent | string = "",
 ): { explanation: string; common_mistake: string; parent_tip: string; hint: string; think: string; step_by_step: string } {
+  const questionText = String(q.question || "").trim();
+  const type = q.type || "mc";
   const usesVisual = /(table|diagram|model|map|chart)/i.test(questionText);
   const isReading = subject === "Reading";
   const isCross = mode === "Cross-Curricular";
@@ -1092,16 +1093,17 @@ function buildSupportContent(
     ? "the historical or civic cause-and-effect relationship"
     : "the central idea and supporting evidence";
 
-  let explanation;
-  if (shouldUsePassage) {
-    explanation = `The answer is correct because the passage shows that ${passageSnippet}.`;
-  } else {
-    explanation = "The answer is correct because it applies the concept accurately.";
-  }
-
-  const common_mistake = shouldUsePassage
-    ? "A common mistake is choosing an answer that sounds correct but is not supported by the passage. Students must verify answers using evidence."
-    : "Students may choose an answer that looks familiar but does not match the concept being tested.";
+  const aligned = buildAlignedExplanation({
+    question: questionText,
+    choices: q.choices,
+    correct_answer: q.correct_answer,
+    explanation: q.explanation || passageSnippet || subjectConcept,
+    type: q.type,
+    partA: q.partA,
+    partB: q.partB,
+  }, passageText);
+  const explanation = aligned.why;
+  const common_mistake = aligned.mistake;
 
   const parent_tip = shouldUsePassage
     ? `Ask your child: "Where in the passage do you see this?" Have them point to a sentence like: "${passageSnippet}".`
@@ -1115,14 +1117,6 @@ function buildSupportContent(
     `Focus on what changed in the scenario and which option explains that change best.`,
   ];
 
-  const thinkVariants = [
-    "Eliminate answers that are partly true but do not fully match the evidence.",
-    "Check whether each option explains the concept, not just a related vocabulary word.",
-    "Compare two close options and ask which one has direct evidence in the prompt.",
-    "Look for cause-and-effect language to confirm the strongest answer.",
-    "Test every option against the data/model before selecting.",
-  ];
-
   const stepVariants = [
     "1) Identify the concept being tested. 2) Match evidence from the prompt. 3) Confirm why other options are weaker.",
     "1) Read the stem carefully. 2) Mark the strongest clue. 3) Choose the option with direct support.",
@@ -1134,7 +1128,7 @@ function buildSupportContent(
   const hint = shouldUsePassage
     ? "Go back to the passage and find the sentence that supports the answer."
     : `Think about the key concept needed to solve this problem using ${sourceRef}.`;
-  const think = thinkVariants[index % thinkVariants.length];
+  const think = buildThinkPrompt(q);
   const step_by_step = mode === "Cross-Curricular"
     ? "1) Read the question. 2) Find the related part of the passage. 3) Match evidence to the best answer."
     : level === "Below"
@@ -1241,7 +1235,6 @@ function buildPracticeFallback(
         ? `${leveledStem} Include only relevant numbers and ignore extra information to solve.`
         : `${leveledStem} Compare at least two plausible interpretations before selecting the best answer.`;
     }
-    const support = buildSupportContent(subject, stem, "mc", i, level, "Practice", passage || "");
     const partAChoices: [string, string, string, string] = subject === "Math"
       ? [
         "She needs 9 more pages because 14 + 18 + 9 = 41 and 50 - 41 = 9.",
@@ -1358,13 +1351,20 @@ function buildPracticeFallback(
           choices: safePartBChoices,
         }
         : undefined,
-      explanation: support.explanation,
-      hint: support.hint,
-      think: support.think,
-      step_by_step: support.step_by_step,
-      common_mistake: support.common_mistake,
-      parent_tip: support.parent_tip,
+      explanation: "",
+      hint: "",
+      think: "",
+      step_by_step: "",
+      common_mistake: "",
+      parent_tip: "",
     };
+    const support = buildSupportContent(subject, question, i, level, "Practice", passage || "");
+    question.explanation = support.explanation;
+    question.hint = support.hint;
+    question.think = support.think;
+    question.step_by_step = support.step_by_step;
+    question.common_mistake = support.common_mistake;
+    question.parent_tip = support.parent_tip;
     return question;
   });
 }
@@ -1478,6 +1478,77 @@ function buildStudentMistakeDistractors(
   return Array.from(new Set(distractors))
     .filter((d) => d && d.length > 20 && d.toLowerCase() !== correctLower)
     .slice(0, 3);
+}
+
+function buildThinkPrompt(q: Question): string {
+  if (q.type === "part_a_b") {
+    return "First determine the best answer for Part A, then find the evidence that directly supports it for Part B.";
+  }
+  if (q.type === "mc") {
+    return "What is the question really asking, and which answer choice is best supported by the passage or problem details?";
+  }
+  return "How should you think about this question? Focus on what the question is asking and compare each answer choice carefully before selecting the best answer.";
+}
+
+function resolveCorrectChoiceText(q: Question): string {
+  const normalized = normalizeAnswerKeyEntry(q.correct_answer);
+  const singleLetter = normalizeAnswer(normalized);
+  const letterIndex = LETTERS.indexOf(singleLetter);
+  if (q.type === "part_a_b") {
+    const partAB = normalizePartABAnswer(q.correct_answer);
+    const partAText = q.partA?.choices?.[LETTERS.indexOf(partAB.partA)] || "";
+    const partBText = q.partB?.choices?.[LETTERS.indexOf(partAB.partB)] || "";
+    return `Part A ${partAB.partA}: ${partAText}; Part B ${partAB.partB}: ${partBText}`.trim();
+  }
+  return letterIndex >= 0 ? String(q.choices?.[letterIndex] || "").trim() : "";
+}
+
+function buildDistractorFeedback(q: Question): string {
+  if (!Array.isArray(q.choices)) return "";
+  const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
+  const wrongReasons = q.choices
+    .map((choice, idx) => ({ choice: String(choice || "").trim(), letter: LETTERS[idx] }))
+    .filter((entry) => entry.choice && entry.letter !== correctLetter)
+    .map((entry) =>
+      `${entry.letter} is incorrect because "${entry.choice}" does not fully answer "${q.question}" or is not directly supported by the passage/problem details.`
+    );
+  if (!wrongReasons.length) return "";
+  return `${wrongReasons.join(" ")} Other choices are incorrect because they either include incomplete information or are not supported by the passage/problem details.`;
+}
+
+function buildAlignedExplanation(q: Question, passage: PassageContent | string = ""): { why: string; mistake: string; tip: string } {
+  const passageText = getPassageText(passage);
+  const rawSnippet = getRelevantSnippet(
+    passageText && passageText.length > 50
+      ? passageText
+      : (q.explanation || q.question),
+    q.question,
+  );
+  const cleanedSnippet = String(rawSnippet || "")
+    .replace(/\s+/g, " ")
+    .replace(/^(This shows how evidence|These examples make it easier|Each detail builds)\b.*$/i, "")
+    .trim();
+  const backupSnippet = String(q.explanation || q.question)
+    .split(/[.!?]+/)
+    .map((sentence) => sentence.trim())
+    .find((sentence) => sentence.split(/\s+/).filter(Boolean).length >= 8) || String(q.question || "");
+  const snippet = cleanedSnippet.split(/\s+/).filter(Boolean).length >= 8
+    ? cleanedSnippet
+    : backupSnippet;
+  const correctLabel = normalizeAnswerKeyEntry(q.correct_answer);
+  const correctChoiceText = resolveCorrectChoiceText(q);
+  const answerReference = correctChoiceText
+    ? `${correctLabel} (${correctChoiceText})`
+    : correctLabel;
+  return {
+    why:
+      `For "${q.question}", the correct answer is ${answerReference} because "${snippet}" directly answers what the question is asking. ` +
+      "Choices that are only partially correct or not supported by the passage should be eliminated.",
+    mistake:
+      `A common mistake on "${q.question}" is choosing an option that sounds related but does not match the evidence for ${answerReference}.`,
+    tip:
+      `Focus on matching each part of "${q.question}" to exact evidence, then remove options that do not directly prove ${answerReference}.`,
+  };
 }
 
 function shuffleArray<T>(arr: T[]): T[] {
@@ -1638,7 +1709,6 @@ function buildCrossFallback(
       : rigor.questionDepth === "high"
       ? `${stem} Which passage detail best supports your analysis?`
       : `${stem} Use two linked details to support your reasoning.`;
-    const support = buildSupportContent(subject, leveledStem, "mc", i, level, "Cross-Curricular", crossPassage);
     const sourceChoices = choiceBanks[i % choiceBanks.length];
     const correctAnswer = String(sourceChoices[0] || "").trim();
     const distractors = buildStudentMistakeDistractors(crossPassage, correctAnswer, leveledStem);
@@ -1692,7 +1762,7 @@ function buildCrossFallback(
         "Records show the bridge was built before the first rail decision in 1908.",
       ];
 
-    return {
+    const question: Question = {
       type,
       question: leveledStem,
       choices: choices as [string, string, string, string],
@@ -1715,13 +1785,21 @@ function buildCrossFallback(
           choices: partBChoices,
         }
         : undefined,
-      explanation: support.explanation,
-      hint: support.hint,
-      think: support.think,
-      step_by_step: support.step_by_step,
-      common_mistake: support.common_mistake,
-      parent_tip: support.parent_tip,
+      explanation: "",
+      hint: "",
+      think: "",
+      step_by_step: "",
+      common_mistake: "",
+      parent_tip: "",
     };
+    const support = buildSupportContent(subject, question, i, level, "Cross-Curricular", crossPassage);
+    question.explanation = support.explanation;
+    question.hint = support.hint;
+    question.think = support.think;
+    question.step_by_step = support.step_by_step;
+    question.common_mistake = support.common_mistake;
+    question.parent_tip = support.parent_tip;
+    return question;
   });
 }
 
@@ -1884,7 +1962,6 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
   const questions = stems
     .map((stem, i) => {
     const type: QuestionType = i === 1 ? "part_a_b" : i === 4 ? "scr" : "mc";
-    const support = buildSupportContent("Reading", stem, type, i, "On Level", "Cross-Curricular", crossPassage);
     const partAChoices: [string, string, string, string] = crossSubject === "Science"
       ? [
         "The passage shows temperature results changed when moisture and sunlight conditions changed.",
@@ -1929,7 +2006,7 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
       crossChoiceBanks[crossSubject]?.[0] ||
       crossChoiceBanks["Social Studies"][0]) as [string, string, string, string];
     choices = normalizeChoices(choices);
-    return {
+    const question: Question = {
       type,
       question: stem,
       choices,
@@ -1950,16 +2027,24 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
           choices: partBChoices,
         }
         : undefined,
-      explanation: support.explanation,
+      explanation: "",
       sample_answer: type === "scr"
         ? "The author’s purpose is to inform readers about the topic using evidence and examples. Key details in the passage show how those examples support the central claim."
         : undefined,
-      hint: support.hint,
-      think: support.think,
-      step_by_step: support.step_by_step,
-      common_mistake: support.common_mistake,
-      parent_tip: support.parent_tip,
+      hint: "",
+      think: "",
+      step_by_step: "",
+      common_mistake: "",
+      parent_tip: "",
     };
+    const support = buildSupportContent("Reading", question, i, "On Level", "Cross-Curricular", crossPassage);
+    question.explanation = support.explanation;
+    question.hint = support.hint;
+    question.think = support.think;
+    question.step_by_step = support.step_by_step;
+    question.common_mistake = support.common_mistake;
+    question.parent_tip = support.parent_tip;
+    return question;
     })
     .filter((q): q is Question => q !== null);
 
@@ -2092,7 +2177,6 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
 
   return stems.map((stem, i) => {
     const type: QuestionType = i === 1 ? "part_a_b" : i === 3 ? "multi_select" : i === 4 ? "scr" : "mc";
-    const support = buildSupportContent(effectiveSubject, stem, type, i, level, mode, "");
     const baseChoices = normalizeChoices([
       "The plants closest to the lamp grew taller because they received more direct light.",
       "All plants grew at the same rate, so light intensity did not matter in this setup.",
@@ -2126,16 +2210,23 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
           choices: partBChoices,
         }
         : undefined,
-      explanation: support.explanation,
+      explanation: "",
       sample_answer: type === "scr"
         ? "The author develops the central idea by introducing a problem and supporting the solution with clear evidence. One detail explains the challenge, and another shows why the response is effective. These details justify the best interpretation."
         : undefined,
-      hint: support.hint,
-      think: support.think,
-      step_by_step: support.step_by_step,
-      common_mistake: support.common_mistake,
-      parent_tip: support.parent_tip,
+      hint: "",
+      think: "",
+      step_by_step: "",
+      common_mistake: "",
+      parent_tip: "",
     };
+    const support = buildSupportContent(effectiveSubject, question, i, level, mode, "");
+    question.explanation = support.explanation;
+    question.hint = support.hint;
+    question.think = support.think;
+    question.step_by_step = support.step_by_step;
+    question.common_mistake = support.common_mistake;
+    question.parent_tip = support.parent_tip;
 
     return question;
   });
@@ -2651,15 +2742,18 @@ function extractKeyTopic(passage: string): string {
 
 function buildPracticeTutorFallback(subject: CanonicalSubject, question: Question): TutorExplanation {
   const promptFocus = String(question.question || "").trim();
+  const aligned = buildAlignedExplanation(question);
+  const distractorFeedback = buildDistractorFeedback(question);
+  const think = buildThinkPrompt(question);
   if (subject === "Math") {
     return {
       question_id: "",
       question: promptFocus,
-      explanation: "The correct answer comes from solving the math problem step by step using the quantities shown.",
-      common_mistake: "Students may miscalculate, use the wrong operation, or skip a step in the computation.",
+      explanation: `${aligned.why} ${distractorFeedback}`.trim(),
+      common_mistake: aligned.mistake,
       parent_tip: "Ask your child to show each step and explain why each operation is used.",
       hint: "Break the problem into smaller parts before combining results.",
-      think: "Check whether each number in the question was used correctly.",
+      think,
       step_by_step: "Identify numbers → choose operations → solve each step → check reasonableness.",
     };
   }
@@ -2667,11 +2761,11 @@ function buildPracticeTutorFallback(subject: CanonicalSubject, question: Questio
     return {
       question_id: "",
       question: promptFocus,
-      explanation: "The correct answer follows the scientific relationship shown in the scenario or data.",
-      common_mistake: "Students may confuse cause and effect or mix up which variable changed.",
+      explanation: `${aligned.why} ${distractorFeedback}`.trim(),
+      common_mistake: aligned.mistake,
       parent_tip: "Ask your child which variable changed and what result was observed.",
       hint: "Focus on how one factor affects another in the system.",
-      think: "Match the claim to the observed result, not just science vocabulary.",
+      think,
       step_by_step: "Identify variables → find cause/effect relationship → apply the concept to the choices.",
     };
   }
@@ -2679,43 +2773,37 @@ function buildPracticeTutorFallback(subject: CanonicalSubject, question: Questio
     return {
       question_id: "",
       question: promptFocus,
-      explanation: "The correct answer reflects the historical cause, decision, or outcome in the event context.",
-      common_mistake: "Students may choose a statement that sounds true but is not tied to the event or policy outcome.",
+      explanation: `${aligned.why} ${distractorFeedback}`.trim(),
+      common_mistake: aligned.mistake,
       parent_tip: "Ask your child what changed as a result of the event or decision in the question.",
       hint: "Track the cause, then connect it to the most direct impact.",
-      think: "Check timeline order and who was affected by the decision.",
+      think,
       step_by_step: "Identify event/context → determine cause or decision → determine impact/outcome.",
     };
   }
   return {
     question_id: "",
     question: promptFocus,
-    explanation: "The correct answer is supported by text evidence connected to the question.",
-    common_mistake: "Students may choose an answer that sounds plausible but is not supported by the text evidence.",
+    explanation: `${aligned.why} ${distractorFeedback}`.trim(),
+    common_mistake: aligned.mistake,
     parent_tip: "Ask your child to point to the exact sentence that supports the answer choice.",
     hint: "Look back at the text and find the best supporting detail.",
-    think: "Eliminate choices that are not directly supported.",
+    think,
     step_by_step: "Read question → locate evidence in text → match evidence to the best choice.",
   };
 }
 
 function buildCrossTutorFallback(subject: CanonicalSubject, question: Question, passage: string): TutorExplanation {
-  const topic = extractKeyTopic(passage);
-  const subjectFocus = subject === "Math"
-    ? "quantitative relationships in the scenario"
-    : subject === "Science"
-    ? "the scientific system and variable relationships"
-    : subject === "Social Studies"
-    ? "historical decisions and outcomes"
-    : "text evidence and interpretation";
+  const aligned = buildAlignedExplanation(question, passage);
+  const distractorFeedback = buildDistractorFeedback(question);
   return {
     question_id: "",
     question: String(question.question || "").trim(),
-    explanation: `The correct answer is supported by passage details about ${topic} and aligns with ${subjectFocus}.`,
-    common_mistake: "A common mistake is choosing an option that sounds correct but is not supported by passage evidence.",
+    explanation: `${aligned.why} ${distractorFeedback}`.trim(),
+    common_mistake: aligned.mistake,
     parent_tip: "Ask your child to cite one specific sentence from the passage that proves the answer.",
-    hint: "Look back at the passage section connected to this question.",
-    think: "Compare close choices and keep only the option directly supported by the passage.",
+    hint: aligned.tip,
+    think: buildThinkPrompt(question),
     step_by_step: "Read question carefully → find related part of passage → match evidence to the best choice.",
   };
 }
@@ -2731,30 +2819,32 @@ function getTutorFallback(
 }
 
 function buildPracticeAnswerFallback(subject: CanonicalSubject, question: Question): Pick<AnswerKeyEntry, "explanation" | "common_mistake" | "parent_tip"> {
+  const aligned = buildAlignedExplanation(question);
+  const distractorFeedback = buildDistractorFeedback(question);
   if (subject === "Math") {
     return {
-      explanation: "This answer is correct because the required math operations were applied in the correct order.",
-      common_mistake: "Students may choose an answer from a partial calculation that skips one step.",
+      explanation: `${aligned.why} ${distractorFeedback}`.trim(),
+      common_mistake: aligned.mistake,
       parent_tip: "Have your child explain each computation step before checking the final answer.",
     };
   }
   if (subject === "Science") {
     return {
-      explanation: "This answer is correct because it matches the scientific relationship shown by the variables and observations.",
-      common_mistake: "Students may select a choice with science terms that does not match the observed relationship.",
+      explanation: `${aligned.why} ${distractorFeedback}`.trim(),
+      common_mistake: aligned.mistake,
       parent_tip: "Ask your child to explain which variable changed and what effect it produced.",
     };
   }
   if (subject === "Social Studies") {
     return {
-      explanation: "This answer is correct because it reflects the historical cause/effect or policy impact in context.",
-      common_mistake: "Students may pick an option that is historically plausible but not supported by the event details.",
+      explanation: `${aligned.why} ${distractorFeedback}`.trim(),
+      common_mistake: aligned.mistake,
       parent_tip: "Ask your child to connect the event, decision, and outcome in one sentence.",
     };
   }
   return {
-    explanation: "This answer is correct because it is directly supported by relevant text evidence.",
-    common_mistake: "Students may choose an answer that is related to the topic but not supported by the text.",
+    explanation: `${aligned.why} ${distractorFeedback}`.trim(),
+    common_mistake: aligned.mistake,
     parent_tip: "Ask your child to cite the exact evidence that proves the answer.",
   };
 }
@@ -2764,18 +2854,12 @@ function buildCrossAnswerFallback(
   question: Question,
   passage: string,
 ): Pick<AnswerKeyEntry, "explanation" | "common_mistake" | "parent_tip"> {
-  const topic = extractKeyTopic(passage);
-  void question;
-  const subjectPhrase = subject === "Math"
-    ? "the passage's numerical relationships"
-    : subject === "Science"
-    ? "the passage's scientific process"
-    : subject === "Social Studies"
-    ? "the passage's historical context"
-    : "the passage's key details";
+  void subject;
+  const aligned = buildAlignedExplanation(question, passage);
+  const distractorFeedback = buildDistractorFeedback(question);
   return {
-    explanation: `This answer is correct based on passage evidence about ${topic} and ${subjectPhrase}.`,
-    common_mistake: "Choosing an answer that sounds reasonable but is not supported by passage evidence.",
+    explanation: `${aligned.why} ${distractorFeedback}`.trim(),
+    common_mistake: aligned.mistake,
     parent_tip: "Have your child explain which passage detail proves the answer is correct.",
   };
 }
@@ -2804,20 +2888,16 @@ function sanitizeTutorExplanations(
   const sanitized = baseQuestions.slice(0, 5).map((q, index) => {
     const item = incoming[index];
     const entry = item && typeof item === "object" ? item as Record<string, unknown> : {};
-    const practiceExplanation = subject === "Math"
-      ? buildMathSteps(q.question, normalizeAnswerKeyEntry(q.correct_answer))
-      : teacherExplain(q.question, q.explanation || "", subject);
-    const resolvedBaseExplanation = mode === "cross"
-      ? buildCrossExplanation(crossPassage, q.question)
-      : practiceExplanation;
+    const aligned = buildAlignedExplanation(q, mode === "cross" ? crossPassage : "");
+    const distractorFeedback = buildDistractorFeedback(q);
     const base = {
       question_id: ensureQuestionId(q, index, mode),
       question: String(q.question || "").trim(),
-      explanation: ensureUsableExplanation(resolvedBaseExplanation),
-      common_mistake: "Choosing an answer without checking all parts of the problem carefully.",
+      explanation: ensureUsableExplanation(`${aligned.why} ${distractorFeedback}`.trim()),
+      common_mistake: aligned.mistake,
       parent_tip: buildParentTip(subject),
-      hint: "Break the problem into smaller steps and focus on one part at a time.",
-      think: String(q.think || "").trim() || "Eliminate unsupported options.",
+      hint: aligned.tip,
+      think: buildThinkPrompt(q),
       step_by_step: String(q.step_by_step || "").trim() || "Read, find evidence, and confirm.",
     };
     return {
@@ -2827,7 +2907,7 @@ function sanitizeTutorExplanations(
       common_mistake: base.common_mistake,
       parent_tip: base.parent_tip,
       hint: base.hint,
-      think: String(entry.think || base.think || "").trim() || base.think,
+      think: String(entry.think || "").trim() || base.think,
       step_by_step: String(entry.step_by_step || base.step_by_step || "").trim() || base.step_by_step,
     };
   });
@@ -2849,17 +2929,13 @@ function sanitizeAnswerKey(
   const sanitized = baseQuestions.slice(0, 5).map((q, index) => {
     const item = incoming[index];
     const entry = item && typeof item === "object" ? item as Record<string, unknown> : {};
-    const practiceExplanation = subject === "Math"
-      ? buildMathSteps(q.question, normalizeAnswerKeyEntry(q.correct_answer))
-      : teacherExplain(q.question, q.explanation || "", subject);
-    const resolvedBaseExplanation = mode === "cross"
-      ? buildCrossExplanation(crossPassage, q.question)
-      : practiceExplanation;
+    const aligned = buildAlignedExplanation(q, mode === "cross" ? crossPassage : "");
+    const distractorFeedback = buildDistractorFeedback(q);
     const base = {
       question_id: ensureQuestionId(q, index, mode),
       correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
-      explanation: ensureUsableExplanation(resolvedBaseExplanation),
-      common_mistake: "Choosing an answer without checking all parts of the problem carefully.",
+      explanation: ensureUsableExplanation(`${aligned.why} ${distractorFeedback}`.trim()),
+      common_mistake: aligned.mistake,
       parent_tip: buildParentTip(subject),
     };
     return {
@@ -3297,57 +3373,76 @@ serve(async (req) => {
         : [];
       const crossPassage = String(bodyCross.passage || "");
 
-      const tutor = practiceQuestions.map((q, i) => ({
-        question_id: `practice_${i}`,
-        question: q.question,
-        ...buildSupportContent(subject, q.question, q.type || "mc", i, level, "Practice", core.passage || ""),
-        explanation: ensureUsableExplanation(
-          subject === "Math"
-            ? buildMathSteps(q.question, normalizeAnswerKeyEntry(q.correct_answer))
-            : teacherExplain(q.question, q.explanation || "", subject),
-        ),
-        hint: "Break the problem into smaller steps and focus on one part at a time.",
-        common_mistake: "Choosing an answer without checking all parts of the problem carefully.",
-        parent_tip: buildParentTip(subject),
-      }));
+      const tutor = practiceQuestions.map((q, i) => {
+        const aligned = buildAlignedExplanation(q, core.passage || "");
+        const distractorFeedback = buildDistractorFeedback(q);
+        const support = buildSupportContent(subject, q, i, level, "Practice", core.passage || "");
+        return {
+          question_id: `practice_${i}`,
+          question: q.question,
+          ...support,
+          explanation: ensureUsableExplanation(
+            `${aligned.why} ${distractorFeedback}`.trim(),
+          ),
+          hint: support.hint,
+          common_mistake: aligned.mistake,
+          parent_tip: support.parent_tip,
+        };
+      });
 
-      const crossTutor = crossQuestions.map((q, i) => ({
-        question_id: `cross_${i}`,
-        question: q.question,
-        ...buildSupportContent(
+      const crossTutor = crossQuestions.map((q, i) => {
+        const question = q as Question;
+        const aligned = buildAlignedExplanation(question, crossPassage);
+        const distractorFeedback = buildDistractorFeedback(question);
+        const support = buildSupportContent(
           subject,
-          q.question,
-          q.type || "mc",
+          question,
           i,
           level,
           "Cross-Curricular",
           crossPassage,
-        ),
-        explanation: ensureUsableExplanation(buildCrossExplanation(crossPassage, q.question || "")),
-        hint: "Break the problem into smaller steps and focus on one part at a time.",
-        common_mistake: "Choosing an answer without checking all parts of the problem carefully.",
-        parent_tip: buildParentTip(subject),
-      }));
+        );
+        return {
+          question_id: `cross_${i}`,
+          question: q.question,
+          ...support,
+          explanation: ensureUsableExplanation(
+            `${aligned.why} ${distractorFeedback}`.trim(),
+          ),
+          hint: support.hint,
+          common_mistake: aligned.mistake,
+          parent_tip: support.parent_tip,
+        };
+      });
 
-      const answerKey = practiceQuestions.map((q, i) => ({
-        question_id: `practice_${i}`,
-        correct_answer: String(q.correct_answer),
-        explanation: ensureUsableExplanation(
-          subject === "Math"
-            ? buildMathSteps(q.question, normalizeAnswerKeyEntry(q.correct_answer))
-            : teacherExplain(q.question, q.explanation || "", subject),
-        ),
-        common_mistake: "Choosing an answer without checking all parts of the problem carefully.",
-        parent_tip: buildParentTip(subject),
-      }));
+      const answerKey = practiceQuestions.map((q, i) => {
+        const aligned = buildAlignedExplanation(q, core.passage || "");
+        const distractorFeedback = buildDistractorFeedback(q);
+        return {
+          question_id: `practice_${i}`,
+          correct_answer: String(q.correct_answer),
+          explanation: ensureUsableExplanation(
+            `${aligned.why} ${distractorFeedback}`.trim(),
+          ),
+          common_mistake: aligned.mistake,
+          parent_tip: buildParentTip(subject),
+        };
+      });
 
-      const crossAnswerKey = crossQuestions.map((q, i) => ({
-        question_id: `cross_${i}`,
-        correct_answer: String(q.correct_answer),
-        explanation: ensureUsableExplanation(buildCrossExplanation(crossPassage, q.question || "")),
-        common_mistake: "Choosing an answer without checking all parts of the problem carefully.",
-        parent_tip: buildParentTip(subject),
-      }));
+      const crossAnswerKey = crossQuestions.map((q, i) => {
+        const question = q as Question;
+        const aligned = buildAlignedExplanation(question, crossPassage);
+        const distractorFeedback = buildDistractorFeedback(question);
+        return {
+          question_id: `cross_${i}`,
+          correct_answer: String(q.correct_answer),
+          explanation: ensureUsableExplanation(
+            `${aligned.why} ${distractorFeedback}`.trim(),
+          ),
+          common_mistake: aligned.mistake,
+          parent_tip: buildParentTip(subject),
+        };
+      });
 
       return jsonResponse({
         teks: teksCode,
