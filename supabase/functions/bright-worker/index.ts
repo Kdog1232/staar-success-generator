@@ -668,11 +668,17 @@ function normalizeChoices(
   // Only ensure length — DO NOT inject content logic
   while (raw.length < 4) raw.push(" ");
 
-  return raw.map((entry) => {
+  const cleaned = raw.map((entry) => {
     return String(entry ?? "")
       .trim()
       .replace(/^[A-D]\.\s*/i, "");
   }) as [string, string, string, string];
+
+  if (cleaned.some(containsMetaLanguage)) {
+    throw new Error("META_LANGUAGE_DETECTED");
+  }
+
+  return cleaned;
 }
 
 function cleanChoiceText(value: unknown): string {
@@ -1073,6 +1079,10 @@ function buildPracticeFallback(
         "The final publication says interview quotes were optional because survey totals alone answer every question.",
         "The final publication says conflicting reports should be combined without checking the original statements.",
       ];
+    const safePassage =
+      passage && String(passage).trim().length > 0
+        ? passage
+        : fallbackPassage("Reading", "Practice", 5, "On Level");
     let choices = subject === "Math"
       ? mathChoiceBanks[i % mathChoiceBanks.length]
       : subject === "Science"
@@ -1089,9 +1099,9 @@ function buildPracticeFallback(
         "Voters approved the bridge bond first, and rail improvements were added only after that success.",
         "Population growth reduced cross-river travel demand, so no major transportation decision was necessary.",
       ]
-      : buildReadingChoices(passage || "", leveledStem, level);
+      : buildReadingChoices(safePassage, leveledStem, level);
     if (subject === "Reading") {
-      choices = buildReadingChoices(passage || "", leveledStem, level);
+      choices = buildReadingChoices(safePassage, leveledStem, level);
     }
     choices = strengthenChoiceSet(
       choices as [string, string, string, string],
@@ -1587,7 +1597,7 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
     }
   };
 
-  return stems.map((stem, i) => {
+  const questions = stems.map((stem, i) => {
     const type: QuestionType = i === 1 ? "part_a_b" : i === 4 ? "scr" : "mc";
     const support = buildSupportContent("Reading", stem, type, i, "On Level", "Cross-Curricular", crossPassage);
     const partAChoices: [string, string, string, string] = crossSubject === "Science"
@@ -1669,6 +1679,20 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
       parent_tip: support.parent_tip,
     };
   });
+
+  const passageText = getPassageText(crossPassage).toLowerCase();
+
+  questions.forEach((q) => {
+    const hasConnection = q.choices.some((choice) =>
+      passageText.includes(choice.split(" ")[0].toLowerCase())
+    );
+
+    if (!hasConnection) {
+      throw new Error("CROSS_NOT_PASSAGE_ALIGNED");
+    }
+  });
+
+  return questions;
 }
 
 function buildELARFallback(level: Level = "On Level"): { passage: string; questions: Question[] } {
