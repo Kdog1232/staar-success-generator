@@ -2882,8 +2882,8 @@ serve(async (req) => {
     let attempts = 0;
     const MAX_ATTEMPTS = 2;
     const start = Date.now();
-    const MAX_TIME = 15000;
-    const isTimedOut = () => Date.now() - start > MAX_TIME;
+    const MAX_TIMEOUT_MS = 30000;
+    const isTimedOut = () => Date.now() - start > MAX_TIMEOUT_MS;
     let retryFailureReason = "bad_output_after_retry";
     let bestAttempt: WorkerAttempt | null = null;
     let returnType = "UNKNOWN";
@@ -2894,13 +2894,15 @@ serve(async (req) => {
     };
     while (attempts < MAX_ATTEMPTS) {
       if (isTimedOut()) {
-        console.warn("⏰ Time limit reached, returning best result");
+        retryFailureReason = "max_timeout_exceeded";
+        console.warn("⚠️ FALLBACK TRIGGERED: exceeded max time");
         break;
       }
       attempts++;
       try {
         if (effectiveMode === "core") {
           console.time("OPENAI_CALL");
+          const aiStartTime = Date.now();
           const aiRes = await fetch("https://api.openai.com/v1/responses", {
             method: "POST",
             headers: {
@@ -2917,9 +2919,10 @@ serve(async (req) => {
               }),
               max_output_tokens: 1800,
             }),
-            signal: AbortSignal.timeout(18000),
+            signal: AbortSignal.timeout(MAX_TIMEOUT_MS),
           });
           console.timeEnd("OPENAI_CALL");
+          console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
 
           if (!aiRes.ok) {
             retryFailureReason = `openai_status_${aiRes.status}`;
@@ -3178,6 +3181,7 @@ serve(async (req) => {
         }
 
         console.time("OPENAI_CALL");
+        const enrichStartTime = Date.now();
         const enrichRes = await fetch("https://api.openai.com/v1/responses", {
           method: "POST",
           headers: {
@@ -3194,9 +3198,10 @@ serve(async (req) => {
             }),
             max_output_tokens: 2200,
           }),
-          signal: AbortSignal.timeout(18000),
+          signal: AbortSignal.timeout(MAX_TIMEOUT_MS),
         });
         console.timeEnd("OPENAI_CALL");
+        console.log("⏱️ AI Duration:", Date.now() - enrichStartTime);
 
         if (!enrichRes.ok) {
           retryFailureReason = `openai_status_${enrichRes.status}`;
@@ -3358,7 +3363,10 @@ serve(async (req) => {
         return returnEnrichment(payload);
       } catch (err) {
         console.error("BACKEND ERROR:", err);
-        retryFailureReason = "openai_request_failed";
+        retryFailureReason = isTimedOut() ? "max_timeout_exceeded" : "openai_request_failed";
+        if (retryFailureReason === "max_timeout_exceeded") {
+          console.warn("⚠️ FALLBACK TRIGGERED: exceeded max time");
+        }
       }
     }
 

@@ -1990,11 +1990,6 @@
 
       hasRenderedThisRun = false;
       isGenerating = true;
-      setTimeout(() => {
-        if (isGenerating) {
-          console.warn("⏳ Still generating (slow request)");
-        }
-      }, 15000);
       const runId = ++generateRunId;
       console.log("🚀 GENERATE START");
       // 🔥 FORCE NEW CONTROLLERS EVERY TIME
@@ -2054,6 +2049,12 @@
         progressTimers.push(setTimeout(() => {
           outputDiv.innerHTML = "Step 1: Generating practice...";
         }, 3200));
+        progressTimers.push(setTimeout(() => {
+          if (isGenerating && !hasRendered) {
+            outputDiv.innerHTML = "Still generating...";
+            console.warn("⏳ Still generating... keeping request running in background");
+          }
+        }, 15000));
         viewToggle.style.display = "none";
         console.log("STEP 1: start");
         const user = await requireAuth();
