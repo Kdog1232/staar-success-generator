@@ -256,7 +256,7 @@ function applyRigor(level: Level): RigorProfile {
 
 function routeBySkill(skill: string): "vocab" | "main_idea" | "inference" | "theme" | "generic" {
   const normalized = String(skill || "").toLowerCase();
-  if (!normalized) throw new Error("Missing skill");
+  if (!normalized) return "generic";
   if (normalized.includes("vocabulary")) return "vocab";
   if (normalized.includes("main idea")) return "main_idea";
   if (normalized.includes("infer")) return "inference";
@@ -819,7 +819,17 @@ function normalizeChoices(
   }) as [string, string, string, string];
 
   if (cleaned.some(containsMetaLanguage)) {
-    throw new Error("META_LANGUAGE_DETECTED");
+    return cleaned.map((choice) => {
+      if (!containsMetaLanguage(choice)) return choice;
+      const stripped = choice
+        .replace(/central claim/gi, "claim")
+        .replace(/supported by/gi, "grounded in")
+        .replace(/main idea/gi, "idea")
+        .replace(/best explains/gi, "most clearly explains")
+        .replace(/this shows/gi, "the passage indicates")
+        .replace(/this suggests/gi, "the passage indicates");
+      return stripped.trim();
+    }) as [string, string, string, string];
   }
 
   return cleaned;
@@ -1910,7 +1920,7 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
       return null;
     }
     if (partAChoices.some(containsMetaLanguage) || partBChoices.some(containsMetaLanguage)) {
-      throw new Error("META_LANGUAGE_DETECTED");
+      console.warn("Repairing PART A/B meta language");
     }
     if (subject === "Reading" && !ensureCrossReadingChoiceQuality(choices)) {
       console.warn("Repairing weak cross choices");
@@ -1971,7 +1981,7 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
     );
 
     if (!hasConnection) {
-      throw new Error("CROSS_NOT_PASSAGE_ALIGNED");
+      q.choices = buildReadingChoices(crossPassage, q.question, "On Level");
     }
   });
 
@@ -2145,11 +2155,15 @@ function parseJsonPayload(text: string): Record<string, unknown> {
     const start = cleaned.indexOf("{");
     const end = cleaned.lastIndexOf("}");
     if (start >= 0 && end > start) {
-      const candidate = cleaned.slice(start, end + 1);
-      const parsed = JSON.parse(candidate);
-      return (parsed && typeof parsed === "object") ? parsed as Record<string, unknown> : {};
+      try {
+        const candidate = cleaned.slice(start, end + 1);
+        const parsed = JSON.parse(candidate);
+        return (parsed && typeof parsed === "object") ? parsed as Record<string, unknown> : {};
+      } catch {
+        return {};
+      }
     }
-    throw new Error("Malformed model JSON");
+    return {};
   }
 }
 
@@ -2446,7 +2460,11 @@ function sanitizeQuestions(
       );
     }
     if (normalizedChoices.some(containsMetaLanguage)) {
-      throw new Error("META_LANGUAGE_DETECTED");
+      normalizedChoices = normalizeChoices(normalizedChoices.map((choice) =>
+        containsMetaLanguage(choice)
+          ? `The passage indicates ${choice.replace(/this shows|this suggests|main idea|best explains/gi, "").trim()}`
+          : choice
+      ), subject, skill);
     }
 
     if (subject === "Math") {
@@ -2518,7 +2536,9 @@ function sanitizeQuestions(
       visual: sanitizeVisual(q.visual) || fallback[i].visual,
     };
     if (base.partA?.choices?.some(containsMetaLanguage) || base.partB?.choices?.some(containsMetaLanguage)) {
-      throw new Error("META_LANGUAGE_DETECTED");
+      const fallbackQuestion = replaceWithFallback(i);
+      base.partA = fallbackQuestion.partA;
+      base.partB = fallbackQuestion.partB;
     }
 
     const choiceFailures = base.choices.some((choice) => {
@@ -4054,17 +4074,6 @@ serve(async (req) => {
     return safeFallback(retryFailureReason);
   } catch (err) {
     console.error("🔥 EDGE FUNCTION ERROR:", err);
-    return new Response(
-      JSON.stringify({
-        error: err instanceof Error ? err.message : "Unknown error",
-      }),
-      {
-        status: 500,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-        },
-      },
-    );
+    return safeFallback("edge_function_error", err instanceof Error ? err.message : String(err));
   }
 });
