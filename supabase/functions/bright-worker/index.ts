@@ -950,6 +950,7 @@ function ensurePassageLength(
     console.warn("Short passage — expanding instead of fallback");
 
     let expanded = cleaned;
+    const used = new Set<string>();
     const expansionPool = [
       "This shows how evidence, decisions, and outcomes are connected in real-world situations.",
       "Each detail builds on the one before it, helping the reader track cause and effect.",
@@ -958,7 +959,14 @@ function ensurePassageLength(
     ];
 
     while (expanded.split(/\s+/).length < min) {
-      expanded += ` ${pickRandom(expansionPool)}`;
+      const options = expansionPool.filter((s) => !used.has(s));
+
+      const next = options.length > 0
+        ? pickRandom(options)
+        : pickRandom(expansionPool);
+
+      used.add(next);
+      expanded += ` ${next}`;
     }
 
     return expanded.split(/\s+/).slice(0, max).join(" ");

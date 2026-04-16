@@ -37,11 +37,23 @@
       min-height: 100vh;
     }
 
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
     .app-container {
       width: 100%;
       max-width: 900px;
       margin: 80px auto;
       padding: 24px;
+    }
+
+    p {
+      line-height: 1.5;
+      margin-bottom: 8px;
+      max-width: 700px;
     }
 
     .section {
@@ -534,12 +546,34 @@
       white-space: normal;
     }
 
+    .card {
+      padding: 16px;
+      margin-bottom: 16px;
+      border-radius: 12px;
+    }
+
+    .practice-section {
+      background: #ffffff;
+    }
+
+    .cross-section {
+      background: #f0f9ff;
+    }
+
+    .think-section {
+      background: #f9fafb;
+    }
+
+    .answer-section {
+      background: #f0fdf4;
+    }
+
     .question-block {
-      margin-bottom: 24px;
+      margin-bottom: 16px;
       white-space: normal;
-      padding: 14px;
+      padding: 16px;
       border: 1px solid #e5e7eb;
-      border-radius: 10px;
+      border-radius: 12px;
       background: #ffffff;
     }
 
@@ -556,8 +590,8 @@
     }
 
     .question-text {
-      font-weight: 600;
-      font-size: 16px;
+      font-weight: 700;
+      font-size: 19px;
       line-height: 1.45;
       margin: 0 0 10px;
     }
@@ -571,12 +605,15 @@
       margin-top: 10px;
     }
 
-    .choice {
+    .choice,
+    .answer-choice {
       display: flex;
       gap: 8px;
-      margin-bottom: 6px;
+      margin: 6px 0;
+      padding-left: 4px;
       font-size: 14px;
       line-height: 1.45;
+      font-weight: 400;
     }
 
     .choice-label {
@@ -590,9 +627,30 @@
     }
 
     .label {
-      font-size: 13px;
-      font-weight: 600;
+      font-size: 12px;
+      font-weight: 700;
       color: #374151;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .explanation-why {
+      margin-bottom: 8px;
+    }
+
+    .explanation-mistake {
+      margin: 8px 0;
+      color: #b45309;
+    }
+
+    .explanation-tip {
+      margin-top: 8px;
+      color: #2563eb;
+    }
+
+    .correct-answer {
+      font-weight: 600;
+      color: #15803d;
     }
 
     .helper-text {
@@ -691,7 +749,7 @@
     }
 
     .answer-card .question-text {
-      font-size: 15px;
+      font-size: 18px;
       font-weight: 600;
     }
 
@@ -768,7 +826,7 @@
   </style>
 </head>
 <body>
-  <div class="app-container">
+  <div class="container app-container">
     <div id="upgrade-banner" class="upgrade-banner">🎉 You now have unlimited access!</div>
     <header class="header section">
       <h1>10-Minute Daily Practice That Feels Like Tutoring</h1>
@@ -1293,7 +1351,7 @@
       const cleanedText = cleanText(text);
       const items = cleanedText.split(/\n\s*\d+[\.\)\-]/).filter(Boolean);
       if (!items.length) {
-        return `<div class="question-block">${formatSectionContent(cleanedText)}</div>`;
+        return `<div class="question-block card">${formatSectionContent(cleanedText)}</div>`;
       }
 
       return items.map((item, i) => `
@@ -1328,11 +1386,11 @@
         .filter(Boolean);
 
       if (!blocks.length) {
-        return `<div class="question-block">${formatSectionContent(cleanedQuestions)}</div>`;
+        return `<div class="question-block card">${formatSectionContent(cleanedQuestions)}</div>`;
       }
 
       return blocks
-        .map((block) => `<div class="question-block">${formatSectionContent(block)}</div>`)
+        .map((block) => `<div class="question-block card">${formatSectionContent(block)}</div>`)
         .join("");
     }
 
@@ -1346,7 +1404,7 @@
           const safeChoice = typeof choice === "string" ? choice : choice?.text || "";
           const clean = cleanText(safeChoice).replace(/^[A-D]\.\s*/i, "");
           return `
-      <div class="choice">
+      <div class="choice answer-choice">
         <span class="choice-label">${label}.</span>
         <span class="choice-text">${clean}</span>
       </div>
@@ -1463,11 +1521,11 @@
           : "";
 
         if (q?.type === "scr") {
-          return `<div class="question-block">${crossMarkup}${visualMarkup}${renderAnswers(q)}${supportMarkup}</div>`;
+          return `<div class="question-block card">${crossMarkup}${visualMarkup}${renderAnswers(q)}${supportMarkup}</div>`;
         }
 
         return `
-          <div class="question-block">
+          <div class="question-block card">
             ${crossMarkup}
             <p class="question-text">${i + 1}. ${cleanText(q?.question || "")}</p>
             ${visualMarkup}
@@ -1493,17 +1551,17 @@
         const commonMistake = cleanText(q.common_mistake || "Choosing an answer that sounds right but is not proven by the text.");
         const parentTip = cleanText(q.parent_tip || "Ask your child to point to one detail that proves the best answer.");
         return `
-          <div class="tutor-item">
-            <p class="question-text">${i + 1}. ${cleanText(q.question || "")}</p>
+          <div class="tutor-item card">
+            <p class="question-text">Question ${i + 1} Strategy</p>
             <p class="helper-text"><span class="label">Hint:</span> ${hint}</p>
             <details class="think-details">
               <summary>Think + Step-by-step</summary>
               <p class="helper-text"><span class="label">Think:</span> ${think}</p>
               <p class="helper-text"><span class="label">Step-by-step:</span> ${steps}</p>
             </details>
-            <p class="helper-text"><span class="label">Why:</span> ${explanation}</p>
-            <p class="helper-text"><span class="label">Common Mistake:</span> ${commonMistake}</p>
-            <p class="helper-text"><span class="label">Parent Tip:</span> ${parentTip}</p>
+            <p class="helper-text explanation-why"><span class="label">✔ Why:</span> ${explanation}</p>
+            <p class="helper-text explanation-mistake"><span class="label">⚠️ Mistake:</span> ${commonMistake}</p>
+            <p class="helper-text explanation-tip"><span class="label">💡 Tip:</span> ${parentTip}</p>
           </div>
         `;
       }).join("");
@@ -1522,14 +1580,14 @@
         const safeCommonMistake = cleanText(entry?.common_mistake || "Choosing an answer that sounds right but is not supported by the passage.");
         const safeParentTip = cleanText(entry?.parent_tip || "Ask your child to point to one line in the passage that proves the correct answer.");
         return `
-          <div class="answer-card answer-block">
-            <div class="question-text"><strong>${i + 1}. ${safeCorrect}</strong></div>
-            <div class="explanation">${safeExplanation}</div>
-            <div class="common-mistake">
-              <strong>Common Mistake:</strong> ${safeCommonMistake}
+          <div class="answer-card answer-block card">
+            <div class="question-text correct-answer"><strong>${i + 1}. ${safeCorrect}</strong></div>
+            <div class="explanation explanation-why"><span class="label">✔ Why:</span> ${safeExplanation}</div>
+            <div class="common-mistake explanation-mistake">
+              <span class="label">⚠️ Mistake:</span> ${safeCommonMistake}
             </div>
-            <div class="parent-tip">
-              <strong>Parent Tip:</strong> ${safeParentTip}
+            <div class="parent-tip explanation-tip">
+              <span class="label">💡 Tip:</span> ${safeParentTip}
             </div>
           </div>
         `;
@@ -2241,10 +2299,10 @@
               <strong>Progress:</strong> ${progressCount} Skill${progressCount === 1 ? "" : "s"} Completed Today ✔
             </div>
 
-            <div id="practice-section"></div>
-            <div id="cross-section" style="display: none;"></div>
-            <div id="tutor-section" style="display: none;"></div>
-            <div id="answer-section" style="display: none;"></div>
+            <div id="practice-section" class="practice-section"></div>
+            <div id="cross-section" class="cross-section" style="display: none;"></div>
+            <div id="tutor-section" class="think-section" style="display: none;"></div>
+            <div id="answer-section" class="answer-section" style="display: none;"></div>
           </div>
         `;
 
