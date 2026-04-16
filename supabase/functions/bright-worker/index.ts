@@ -289,7 +289,10 @@ function enforceSentenceLength(text: string, maxWords: number): string {
     .split(".")
     .map((sentence) => {
       const words = sentence.trim().split(/\s+/).filter(Boolean);
-      return words.slice(0, maxWords).join(" ");
+      if (words.length > maxWords + 5) {
+        return words.slice(0, maxWords).join(" ");
+      }
+      return sentence.trim();
     })
     .filter(Boolean)
     .join(". ");
@@ -298,9 +301,10 @@ function enforceSentenceLength(text: string, maxWords: number): string {
 function simplifyQuestionByGrade(text: string, grade: number): string {
   if (grade <= 3) {
     return text
-      .replace(/compare.*interpretations/gi, "What does the passage show?")
+      .replace(/compare two (ideas|texts)/gi, "What is the same or different?")
       .replace(/which detail best supports/gi, "Which detail helps the most?")
-      .replace(/evaluate|analyze/gi, "choose");
+      .replace(/evaluate/gi, "decide")
+      .replace(/analyze/gi, "look at");
   }
 
   if (grade <= 5) {
@@ -316,7 +320,7 @@ function isQuestionAligned(q: Question, passage: PassageContent | string): boole
   const passageText = getPassageText(passage);
   if (!passageText.trim()) return true;
   const combined = `${q.question} ${(q.choices || []).join(" ")}`.toLowerCase();
-  const keywords = passageText.toLowerCase().split(/\s+/).slice(0, 12);
+  const keywords = passageText.toLowerCase().split(/\s+/);
   return keywords.some((word) => word.length > 2 && combined.includes(word));
 }
 
@@ -1013,7 +1017,7 @@ function getFallbackChoices(subject: CanonicalSubject, skill: string): [string, 
   if (subject === "Math") return buildMathFallbackChoices();
   if (subject === "Science") return buildScienceFallbackChoices();
   if (subject === "Social Studies") return buildSSFallbackChoices();
-  const safePassage = fallbackPassage("Reading", "Practice", 5, "On Level");
+  const safePassage = buildSubjectPassage("Reading", "On Level");
   const safeQuestion = "Which event in the passage led to a later decision or outcome?";
   return buildReadingChoices(safePassage, safeQuestion, "On Level");
 }
@@ -1111,35 +1115,17 @@ function ensurePassageLength(
   level: Level = "On Level",
   allowFallback = true,
 ): string {
-  const cleaned = String(passage || "").replace(/\s+/g, " ").trim();
+  let workingPassage = String(passage || "").replace(/\s+/g, " ").trim();
+  if (isWeakPassage(workingPassage)) {
+    workingPassage = buildSubjectPassage(subject, level);
+  }
+  const cleaned = String(workingPassage || "").replace(/\s+/g, " ").trim();
   const words = cleaned.split(" ").filter(Boolean);
   if (words.length >= min && words.length <= max) return trimExpansionTail(cleaned);
   if (words.length > max) return trimExpansionTail(words.slice(0, max).join(" "));
   if (words.length < min) {
-    console.warn("Short passage — expanding instead of fallback");
-
-    let expanded = cleaned;
-    const used = new Set<string>();
-    const expansionPool = [
-      "This shows how evidence, decisions, and outcomes are connected in real-world situations.",
-      "Each detail builds on the one before it, helping the reader track cause and effect.",
-      "By comparing observations, students can explain why some results are stronger than others.",
-      "These examples make it easier to connect the passage ideas to everyday problem-solving.",
-    ];
-
-    while (expanded.split(/\s+/).length < min) {
-      const options = expansionPool.filter((s) => !used.has(s));
-
-      const next = options.length > 0
-        ? pickRandom(options)
-        : pickRandom(expansionPool);
-
-      used.add(next);
-      expanded += ` ${next}`;
-    }
-
-    const finalPassage = expanded.split(/\s+/).slice(0, max).join(" ");
-    return trimExpansionTail(finalPassage);
+    console.warn("⚠️ Weak passage — regenerating");
+    return buildSubjectPassage(subject, level);
   }
   // NEVER fallback here — just return cleaned
   return trimExpansionTail(cleaned);
@@ -1370,12 +1356,12 @@ function buildPracticeFallback(
     } else {
       leveledStem = subject === "Math"
         ? `${leveledStem} Include only relevant numbers and ignore extra information to solve.`
-        : "What does the passage show?";
+        : leveledStem;
     }
     const safePassage =
       passage && String(passage).trim().length > 0
         ? passage
-        : fallbackPassage("Reading", "Practice", 5, "On Level");
+        : buildSubjectPassage("Reading", level);
     const sourceChoices = subject === "Math"
       ? mathChoiceBanks[i % mathChoiceBanks.length]
       : subject === "Science"
