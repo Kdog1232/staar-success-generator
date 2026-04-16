@@ -590,7 +590,7 @@
     }
 
     .question-text {
-      font-weight: 700;
+      font-weight: 600;
       font-size: 19px;
       line-height: 1.45;
       margin: 0 0 10px;
@@ -609,11 +609,14 @@
     .answer-choice {
       display: flex;
       gap: 8px;
-      margin: 6px 0;
       padding-left: 4px;
       font-size: 14px;
       line-height: 1.45;
       font-weight: 400;
+    }
+
+    .answer-choice {
+      margin: 6px 0;
     }
 
     .choice-label {
@@ -635,17 +638,30 @@
     }
 
     .explanation-why {
-      margin-bottom: 8px;
+      margin-bottom: 6px;
+      line-height: 1.45;
     }
 
     .explanation-mistake {
-      margin: 8px 0;
+      margin: 8px 0 6px;
+      line-height: 1.45;
       color: #b45309;
     }
 
     .explanation-tip {
-      margin-top: 8px;
+      margin-top: 0;
+      margin-bottom: 6px;
+      line-height: 1.45;
       color: #2563eb;
+    }
+
+    .hint {
+      font-style: italic;
+      color: #6b7280;
+      background: #f9fafb;
+      padding: 8px 10px;
+      border-radius: 6px;
+      display: inline-block;
     }
 
     .correct-answer {
@@ -733,12 +749,24 @@
       font-weight: 700;
     }
 
+    .practice-card {
+      border: 1px solid #e5e7eb;
+    }
+
+    .cross-card {
+      background: #f0f9ff;
+    }
+
+    .think-card {
+      background: #f9fafb;
+    }
+
     .answer-card {
       padding: 12px 14px;
       margin-bottom: 16px;
       border-radius: 10px;
-      border: 1px solid #e5e7eb;
-      background: #f9fafb;
+      border: 1px solid #bbf7d0;
+      background: #f0fdf4;
     }
 
     .answer-card .section {
@@ -1488,7 +1516,7 @@
       const steps = cleanText(question?.step_by_step || question?.explanation || "1) Read the prompt. 2) Compare all choices. 3) Prove your answer with evidence.");
       return `
         <div class="question-support">
-          <p class="helper-text"><span class="label">Hint:</span> ${hint}</p>
+          <p class="helper-text hint"><span class="label">Hint:</span> ${hint}</p>
           <details class="think-details">
             <summary>Thinking support</summary>
             <p class="helper-text"><span class="label">Think:</span> ${think}</p>
@@ -1521,11 +1549,11 @@
           : "";
 
         if (q?.type === "scr") {
-          return `<div class="question-block card">${crossMarkup}${visualMarkup}${renderAnswers(q)}${supportMarkup}</div>`;
+          return `<div class="question-block card ${crossCurricular ? "cross-card" : "practice-card"}">${crossMarkup}${visualMarkup}${renderAnswers(q)}${supportMarkup}</div>`;
         }
 
         return `
-          <div class="question-block card">
+          <div class="question-block card ${crossCurricular ? "cross-card" : "practice-card"}">
             ${crossMarkup}
             <p class="question-text">${i + 1}. ${cleanText(q?.question || "")}</p>
             ${visualMarkup}
@@ -1551,9 +1579,9 @@
         const commonMistake = cleanText(q.common_mistake || "Choosing an answer that sounds right but is not proven by the text.");
         const parentTip = cleanText(q.parent_tip || "Ask your child to point to one detail that proves the best answer.");
         return `
-          <div class="tutor-item card">
+          <div class="tutor-item card think-card">
             <p class="question-text">Question ${i + 1} Strategy</p>
-            <p class="helper-text"><span class="label">Hint:</span> ${hint}</p>
+            <p class="helper-text hint"><span class="label">Hint:</span> ${hint}</p>
             <details class="think-details">
               <summary>Think + Step-by-step</summary>
               <p class="helper-text"><span class="label">Think:</span> ${think}</p>
