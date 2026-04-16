@@ -1192,25 +1192,58 @@ function buildReadingChoices(
   const keywordC = keywords[2] || "decisions";
 
   const correct = `${subject} ${action} ${outcome}`.replace(/\s+/g, " ").trim();
-  const partialTruth =
-    `${subject} ${action}, but it leaves out how ${keywordB} later changed what people chose.`.replace(/\s+/g, " ").trim();
-  const overgeneralization =
-    `${keywordA} affected every group in exactly the same way, no matter the timing or the ${keywordB} reported.`.replace(/\s+/g, " ").trim();
-  const contradiction =
-    `${subject} did not change any plans, so ${keywordA} had no effect on later ${keywordC} in the passage events.`.replace(/\s+/g, " ").trim();
-
-  const candidateSet = [correct, partialTruth, overgeneralization, contradiction] as [string, string, string, string];
+  const candidateSet = buildDistractors(correct, sentences, [keywordA, keywordB, keywordC]);
   if (validateChoices(candidateSet, text)) return candidateSet;
 
   const fallbackSentences = sentences.length ? sentences : [baseSentence];
-  const regenerated = [
+  const regenerated = buildDistractors(
     `${fallbackSentences[0] || baseSentence}`.replace(/\s+/g, " ").trim(),
-    `${fallbackSentences[0] || baseSentence}, but the later ${keywordB} detail is omitted.`.replace(/\s+/g, " ").trim(),
-    `${keywordA} alone explains every result in the passage, regardless of context or timing.`.replace(/\s+/g, " ").trim(),
-    `${subject} ignored ${keywordA}, which means none of the later ${keywordC} were affected.`.replace(/\s+/g, " ").trim(),
-  ] as [string, string, string, string];
+    fallbackSentences,
+    [keywordA, keywordB, keywordC],
+  );
 
   return validateChoices(regenerated, text) ? regenerated : buildSSFallbackChoices();
+}
+
+function buildDistractors(
+  correct: string,
+  sentences: string[],
+  keywords: string[],
+): [string, string, string, string] {
+  const clean = (value: string): string => String(value || "").replace(/\s+/g, " ").replace(/\.$/, "").trim();
+  const safeCorrect = clean(correct);
+  const normalizedKeywords = keywords.map((token) => clean(token).toLowerCase()).filter((token) => token.length >= 4);
+  const sourceSentences = sentences.map((sentence) => clean(sentence)).filter((sentence) => sentence.split(/\s+/).length >= 8);
+  const lowerCorrect = safeCorrect.toLowerCase();
+
+  const wrongRealSentence = sourceSentences.find((sentence) => sentence.toLowerCase() !== lowerCorrect) ||
+    sourceSentences[0] ||
+    safeCorrect;
+
+  const misconceptionSeed = sourceSentences.find((sentence) =>
+    sentence.toLowerCase() !== lowerCorrect &&
+    normalizedKeywords.some((token) => sentence.toLowerCase().includes(token))
+  ) || wrongRealSentence;
+  const misconceptionWords = misconceptionSeed.split(/\s+/).filter(Boolean);
+  const misconceptionLead = misconceptionWords.slice(0, 5).join(" ") || "People in the passage";
+  const misconception =
+    `${misconceptionLead} only changed because ${normalizedKeywords[0] || "events"} stayed identical, which kept ${normalizedKeywords[1] || "results"} from shaping later ${normalizedKeywords[2] || "decisions"}`.replace(/\s+/g, " ").trim();
+
+  const correctWords = safeCorrect.split(/\s+/).filter(Boolean);
+  const incomplete = `${correctWords.slice(0, Math.max(6, Math.ceil(correctWords.length * 0.55))).join(" ")} after early ${normalizedKeywords[0] || "events"}, without the later ${normalizedKeywords[1] || "details"}`.replace(/\s+/g, " ").trim();
+
+  const pool = [safeCorrect, misconception, wrongRealSentence, incomplete]
+    .map((choice) => clean(choice))
+    .filter((choice) => choice.split(/\s+/).length >= 6);
+
+  while (pool.length < 4) pool.push(safeCorrect);
+
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+
+  return pool.slice(0, 4) as [string, string, string, string];
 }
 
 function buildCrossFallback(
