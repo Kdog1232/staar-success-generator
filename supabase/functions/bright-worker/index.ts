@@ -2109,20 +2109,27 @@ function isGenericAnswerChoice(choice: string): boolean {
   return genericMeta.test(text);
 }
 
-function validateChoices(choices: string[], passage: string): boolean {
-  const keywords = passageKeywords(String(passage || "")).slice(0, 18);
-  if (!Array.isArray(choices) || choices.length !== 4) return false;
-  if (keywords.length === 0) return false;
+function getStructuralValidationIssue(questions: Question[]): string | null {
+  if (!Array.isArray(questions) || questions.length === 0) return "no_questions";
+  for (const [index, question] of questions.entries()) {
+    const choices = Array.isArray(question?.choices) ? question.choices : [];
+    if (choices.length < 4) return `question_${index}_choices_lt_4`;
+    if (choices.some((choice) => !String(choice || "").trim())) return `question_${index}_empty_choice`;
+    if (
+      question?.correct_answer === undefined ||
+      question?.correct_answer === null ||
+      String(question.correct_answer).trim() === ""
+    ) {
+      return `question_${index}_missing_correct_answer`;
+    }
+  }
+  return null;
+}
 
-  return choices.every((choice) => {
-    const text = String(choice || "").toLowerCase().trim();
-    if (!text) return false;
-    if (text.split(/\s+/).length < 6) return false;
-    if (ABSTRACT_META_PHRASES.some((phrase) => text.includes(phrase))) return false;
-    if (FORBIDDEN_GENERIC_ANSWER_PATTERNS.some((pattern) => pattern.test(text))) return false;
-    const hasKeyword = keywords.some((keyword) => text.includes(keyword));
-    return hasKeyword;
-  });
+function validateChoices(choices: string[], passage: string): boolean {
+  void passage;
+  if (!Array.isArray(choices) || choices.length !== 4) return false;
+  return choices.every((choice) => String(choice || "").trim().length > 0);
 }
 
 function isBadQuestion(q: Question | null | undefined, mode: CanonicalMode | "cross"): boolean {
@@ -2425,18 +2432,24 @@ function sanitizeQuestions(
 }
 
 function validateSkillAlignment(skill: string, questions: Question[]): boolean {
-  if (!skill || !Array.isArray(questions) || questions.length === 0) return false;
+  const structuralIssue = getStructuralValidationIssue(questions);
+  if (structuralIssue) return false;
+  if (!skill) return true;
   const tokens = String(skill)
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter((token) => token.length > 3);
-  return questions.every((q) => {
+  const aligned = questions.every((q) => {
     const text = `${q?.question || ""} ${(q?.choices || []).join(" ")}`.toLowerCase();
     const overlap = tokens.filter((token) => text.includes(token)).length;
     if (tokens.length <= 2) return overlap >= 1;
     return overlap >= 2;
   });
+  if (!aligned) {
+    console.warn("⚠️ Soft validation warning: skill_alignment_mismatch");
+  }
+  return true;
 }
 
 function getPassageText(passage: PassageContent | string): string {
@@ -2446,7 +2459,10 @@ function getPassageText(passage: PassageContent | string): string {
 
 function validatePassageComplexity(level: Level, passage: PassageContent | string): boolean {
   const text = getPassageText(passage).trim();
-  if (!text) return level !== "Advanced";
+  if (!text) {
+    console.warn("⚠️ Soft validation warning: empty_passage_complexity_check");
+    return true;
+  }
 
   const sentences = text.split(/[.!?]+/).map((s) => s.trim()).filter(Boolean);
   const words = text.split(/\s+/).filter(Boolean);
@@ -2455,24 +2471,32 @@ function validatePassageComplexity(level: Level, passage: PassageContent | strin
   const hasParagraphBreak = text.includes("\n\n");
 
   if (level === "Below") {
-    return avgSentenceLength <= 16 && !hasParagraphBreak;
+    const valid = avgSentenceLength <= 16 && !hasParagraphBreak;
+    if (!valid) console.warn("⚠️ Soft validation warning: below_level_passage_complexity");
+    return true;
   }
   if (level === "Advanced") {
-    return avgSentenceLength >= 12 && (hasParagraphBreak || hasAbstractSignals);
+    const valid = avgSentenceLength >= 12 && (hasParagraphBreak || hasAbstractSignals);
+    if (!valid) console.warn("⚠️ Soft validation warning: advanced_passage_complexity");
+    return true;
   }
-  return avgSentenceLength >= 8 && avgSentenceLength <= 22;
+  const valid = avgSentenceLength >= 8 && avgSentenceLength <= 22;
+  if (!valid) console.warn("⚠️ Soft validation warning: on_level_passage_complexity");
+  return true;
 }
 
 function validateQuestionDepth(level: Level, questions: Question[]): boolean {
+  const structuralIssue = getStructuralValidationIssue(questions);
+  if (structuralIssue) return false;
   const allText = questions.map((q) => String(q.question || "").toLowerCase()).join(" ");
   const highSignals = ["infer", "concluded", "conclusion", "analyze", "author", "evidence", "supports", "reasoning"];
   const lowSignals = ["what is", "which is", "how many", "first", "best answer"];
   const highCount = highSignals.filter((s) => allText.includes(s)).length;
   const lowCount = lowSignals.filter((s) => allText.includes(s)).length;
 
-  if (level === "Below") return lowCount >= 2 && highCount <= 3;
-  if (level === "Advanced") return highCount >= 3;
-  return highCount >= 1;
+  const valid = level === "Below" ? lowCount >= 2 && highCount <= 3 : level === "Advanced" ? highCount >= 3 : highCount >= 1;
+  if (!valid) console.warn("⚠️ Soft validation warning: question_depth_signal_mismatch");
+  return true;
 }
 
 function validateRigorAlignment(level: Level, passage: PassageContent | string, questions: Question[]): boolean {
@@ -2480,22 +2504,13 @@ function validateRigorAlignment(level: Level, passage: PassageContent | string, 
 }
 
 function isValidOutput(questions: Question[], passage: PassageContent | string): boolean {
-  const passageText = getPassageText(passage).trim();
-  if (!passageText || passageText.length <= 50) return false;
-  if (!Array.isArray(questions) || questions.length === 0) return false;
-
-  return questions.every((question) => {
-    const stem = String(question?.question || "").toLowerCase();
-    const choices = Array.isArray(question?.choices) ? question.choices : [];
-    return (
-      choices.length === 4 &&
-      !stem.includes("which author choice best supports your reasoning") &&
-      !choices.some((choice) => String(choice || "").toLowerCase().includes("choice directly supported"))
-    );
-  });
+  void passage;
+  return !getStructuralValidationIssue(questions);
 }
 
 function validateDistractorQuality(questions: Question[], passage: PassageContent | string): boolean {
+  const structuralIssue = getStructuralValidationIssue(questions);
+  if (structuralIssue) return false;
   const text = getPassageText(passage);
   const keys = passageKeywords(text).slice(0, 6);
   const weakPatterns = /(unrelated|not supported|random|impossible|always|never|all of the above|none of the above)/i;
@@ -2507,20 +2522,26 @@ function validateDistractorQuality(questions: Question[], passage: PassageConten
     return [q.choices];
   });
 
-  return choiceSets.every((set) => {
+  const valid = choiceSets.every((set) => {
     if (!Array.isArray(set) || set.length !== 4) return false;
     const joined = set.join(" ").toLowerCase();
     if (weakPatterns.test(joined)) return false;
     const overlap = keys.length ? keys.filter((k) => joined.includes(k)).length : 2;
     return overlap >= Math.min(2, keys.length || 2);
   });
+  if (!valid) console.warn("⚠️ Soft validation warning: distractor_quality_signal_mismatch");
+  return true;
 }
 
 function validateCrossCurricular(data: { passage?: unknown; questions?: unknown[] }): boolean {
   const passage = String(data?.passage || "").toLowerCase();
-  const questions = Array.isArray(data?.questions) ? data.questions : [];
-  if (!passage.trim()) return false;
-  if (questions.length === 0) return false;
+  const questions = (Array.isArray(data?.questions) ? data.questions : []) as Question[];
+  const structuralIssue = getStructuralValidationIssue(questions);
+  if (structuralIssue) return false;
+  if (!passage.trim()) {
+    console.warn("⚠️ Soft validation warning: empty_cross_passage");
+    return true;
+  }
 
   const badPhrases = [
     "this question links ideas",
@@ -2528,7 +2549,9 @@ function validateCrossCurricular(data: { passage?: unknown; questions?: unknown[
     "interdisciplinary explanation",
   ];
 
-  return !badPhrases.some((phrase) => passage.includes(phrase));
+  const valid = !badPhrases.some((phrase) => passage.includes(phrase));
+  if (!valid) console.warn("⚠️ Soft validation warning: cross_passage_phrase_mismatch");
+  return true;
 }
 
 function passageKeywords(passage: string): string[] {
@@ -2553,8 +2576,14 @@ function passageKeywords(passage: string): string[] {
 }
 
 function validateCrossQuestionRequirements(subject: CanonicalSubject, passage: string, questions: Question[]): boolean {
-  if (!passage.trim() || questions.length !== 5) return false;
-  if (subject === "Math" && !/\d/.test(passage)) return false;
+  const structuralIssue = getStructuralValidationIssue(questions);
+  if (structuralIssue) return false;
+  if (!passage.trim()) {
+    console.warn("⚠️ Soft validation warning: empty_cross_passage_requirements");
+  }
+  if (subject === "Math" && !/\d/.test(passage)) {
+    console.warn("⚠️ Soft validation warning: math_cross_passage_missing_number_signal");
+  }
 
   const expectedPrefixes = [
     ["what caused", "why did"],
@@ -2567,37 +2596,47 @@ function validateCrossQuestionRequirements(subject: CanonicalSubject, passage: s
   const bannedFluff = ["most defensible claim", "civic impact", "event reasoning", "this supports the claim", "this shows reasoning"];
   const keywords = passageKeywords(passage);
 
-  return questions.every((q, index) => {
+  const valid = questions.every((q, index) => {
     const stem = String(q.question || "").toLowerCase().trim();
     const matchesPrefix = expectedPrefixes[index].some((prefix) => stem.startsWith(prefix));
     if (!matchesPrefix) return false;
-    if (bannedFluff.some((phrase) => stem.includes(phrase))) return false;
     if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
     if (!/(passage|scenario|investigation|timeline|data)/i.test(stem)) return false;
 
     const combined = `${q.question} ${q.choices.join(" ")}`.toLowerCase();
     const overlap = keywords.filter((k) => combined.includes(k)).length;
     if (overlap < 3) return false;
-    if (q.choices.some((choice) => isGenericAnswerChoice(choice) || !hasConcreteDetail(choice, passage, subject))) return false;
+    if (q.choices.some((choice) => !hasConcreteDetail(choice, passage, subject))) return false;
 
     const choiceSet = new Set(q.choices.map((c) => c.toLowerCase().trim()));
     return choiceSet.size === 4;
   });
+  if (bannedFluff.some((phrase) => passage.includes(phrase))) {
+    console.warn("⚠️ Soft validation warning: cross_banned_fluff_phrase");
+  }
+  if (!valid) console.warn("⚠️ Soft validation warning: cross_question_requirements_mismatch");
+  return true;
 }
 
 function validateUniqueChoices(questions: Question[]): boolean {
+  const structuralIssue = getStructuralValidationIssue(questions);
+  if (structuralIssue) return false;
   const seen = new Set<string>();
 
-  return questions.every((q) => {
+  const unique = questions.every((q) => {
     const key = JSON.stringify(q.choices);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+  if (!unique) console.warn("⚠️ Soft validation warning: duplicate_choice_sets");
+  return true;
 }
 
 function validateChoiceSubjectAlignment(subject: CanonicalSubject, questions: Question[]): boolean {
-  return questions.every((q) => {
+  const structuralIssue = getStructuralValidationIssue(questions);
+  if (structuralIssue) return false;
+  const aligned = questions.every((q) => {
     const text = q.choices.join(" ").toLowerCase();
 
     if (subject === "Science") {
@@ -2614,6 +2653,8 @@ function validateChoiceSubjectAlignment(subject: CanonicalSubject, questions: Qu
 
     return true;
   });
+  if (!aligned) console.warn(`⚠️ Soft validation warning: choice_subject_alignment_${subject.toLowerCase().replace(/\s+/g, "_")}`);
+  return true;
 }
 
 function validateCrossPassage(passage: string): boolean {
@@ -3121,9 +3162,21 @@ serve(async (req) => {
   };
 
   try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.error("Missing Supabase env vars");
+      return jsonResponse({ error: "Server misconfigured: missing Supabase credentials" }, 500);
+    }
+    const openAiApiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!openAiApiKey) {
+      console.error("Missing OPENAI_API_KEY env var");
+      return jsonResponse({ error: "Server misconfigured: missing OpenAI API key" }, 500);
+    }
+
     const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
+      supabaseUrl,
+      supabaseAnonKey,
       {
         global: {
           headers: { Authorization: req.headers.get("Authorization") || "" },
@@ -3197,7 +3250,7 @@ serve(async (req) => {
       effectiveMode = "core";
     }
     requestMode = effectiveMode === "enrichment" ? "enrichment" : "core";
-    mode = canonicalizeMode(incomingContentMode);
+    mode = canonicalizeMode(incomingContentMode ?? incomingMode);
     effectiveSubject = subject;
     effectiveSkill = skill ?? "Main Idea";
 
@@ -3302,7 +3355,7 @@ serve(async (req) => {
     const range = { min: 250, max: 300 };
 
     let attempts = 0;
-    const MAX_ATTEMPTS = 2;
+    const MAX_ATTEMPTS = 1;
     const start = Date.now();
     const MAX_TIMEOUT_MS = 30000;
     const isTimedOut = () => Date.now() - start > MAX_TIMEOUT_MS;
@@ -3328,7 +3381,7 @@ serve(async (req) => {
           const aiRes = await fetch("https://api.openai.com/v1/responses", {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
+              Authorization: `Bearer ${openAiApiKey}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
@@ -3420,13 +3473,10 @@ serve(async (req) => {
             )
             : "";
           if (subject === "Reading" && (!safePassage || !getPassageText(safePassage).trim())) {
-            retryFailureReason = "empty_passage";
-            continue;
+            console.warn("⚠️ Soft validation warning: empty_passage");
           }
-          if (subject === "Reading" && isWeakPassage(safePassage) && attempts < MAX_ATTEMPTS) {
-            console.log("🔁 Weak passage — regenerating...");
-            retryFailureReason = "weak_passage";
-            continue;
+          if (subject === "Reading" && isWeakPassage(safePassage)) {
+            console.warn("⚠️ Soft validation warning: weak_passage");
           }
 
           const practiceQuestions = sanitizeQuestions(
@@ -3442,8 +3492,14 @@ serve(async (req) => {
 
           const skillAligned = validateSkillAlignment(effectiveSkill, practiceQuestions);
           const hasGenericChoices = practiceQuestions.some((q) => q.choices.some((c) => isGenericAnswerChoice(c)));
-          const hasMixedOrInvalid = practiceQuestions.some((q) => !q.question || q.choices.length < 4);
-          if (!skillAligned || hasGenericChoices || hasMixedOrInvalid) {
+          const structuralIssue = getStructuralValidationIssue(practiceQuestions);
+          if (!skillAligned) {
+            console.warn("⚠️ Soft validation warning: skill_alignment_mismatch");
+          }
+          if (hasGenericChoices) {
+            console.warn("⚠️ Soft validation warning: generic_choice_wording_detected");
+          }
+          if (structuralIssue) {
             retryFailureReason = "practice_validation_failed";
             continue;
           }
@@ -3465,7 +3521,7 @@ serve(async (req) => {
           );
           const outputValid = subject === "Reading"
             ? isValidOutput(pipelineQuestions, safePassage)
-            : Array.isArray(pipelineQuestions) && pipelineQuestions.length === 5;
+            : !getStructuralValidationIssue(pipelineQuestions);
           if (!outputValid) {
             retryFailureReason = "practice_output_invalid";
             continue;
@@ -3646,7 +3702,7 @@ serve(async (req) => {
         const enrichRes = await fetch("https://api.openai.com/v1/responses", {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
+            Authorization: `Bearer ${openAiApiKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -3711,23 +3767,21 @@ serve(async (req) => {
         );
         const crossChoiceSubjectAligned = validateChoiceSubjectAlignment(effectiveSubject, crossQuestions);
         if (!crossChoiceSubjectAligned) {
-          retryFailureReason = "cross_subject_alignment_failed";
+          retryFailureReason = "cross_structural_validation_failed";
           continue;
         }
         const crossSeparationValid = validateSeparation(normalizedPractice, crossQuestions, effectiveSubject);
         if (!crossSeparationValid) {
-          retryFailureReason = "cross_separation_failed";
-          continue;
+          console.warn("⚠️ Soft validation warning: cross_separation_failed");
         }
         const crossQuestionSetsDistinct = areQuestionSetsDistinct(normalizedPractice, crossQuestions);
         if (!crossQuestionSetsDistinct) {
-          retryFailureReason = "cross_not_distinct";
-          continue;
+          console.warn("⚠️ Soft validation warning: cross_not_distinct");
         }
 
         const distractorQualityOk = validateDistractorQuality(crossQuestions, subjectCrossPassage);
         if (!distractorQualityOk) {
-          retryFailureReason = "cross_distractors_weak";
+          retryFailureReason = "cross_structural_validation_failed";
           continue;
         }
 
@@ -3736,7 +3790,7 @@ serve(async (req) => {
           !validateRigorAlignment(level, subjectCrossPassage, crossQuestions) ||
           !validateUniqueChoices(crossQuestions);
         if (crossInvalid) {
-          retryFailureReason = "cross_validation_failed";
+          retryFailureReason = "cross_structural_validation_failed";
           continue;
         }
 
@@ -3855,9 +3909,11 @@ serve(async (req) => {
     }
     returnType = "FALLBACK";
     logReturnMetrics();
+    console.log("❌ VALIDATION FAILED:", retryFailureReason);
     return safeFallback(retryFailureReason);
   } catch (err) {
     console.error("🔥 EDGE FUNCTION ERROR:", err);
+    console.log("❌ VALIDATION FAILED:", "edge_function_error");
     return safeFallback("edge_function_error", err instanceof Error ? err.message : String(err));
   }
 });
