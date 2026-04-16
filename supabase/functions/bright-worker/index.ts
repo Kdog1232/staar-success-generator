@@ -3051,15 +3051,10 @@ function buildFallbackResponse(
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json",
-      },
-    });
-  }
+  try {
+    if (req.method === "OPTIONS") {
+      return new Response("ok", { headers: corsHeaders });
+    }
 
   let grade = 5;
   let subject: CanonicalSubject = "Reading";
@@ -3120,7 +3115,7 @@ serve(async (req) => {
     return returnCore(payload);
   };
 
-  try {
+    try {
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_ANON_KEY")!,
@@ -3856,8 +3851,25 @@ serve(async (req) => {
     returnType = "FALLBACK";
     logReturnMetrics();
     return safeFallback(retryFailureReason);
+    } catch (err) {
+      console.error("🔥 EDGE FUNCTION ERROR:", err);
+      return safeFallback("edge_function_error", err instanceof Error ? err.message : String(err));
+    }
   } catch (err) {
-    console.error("🔥 EDGE FUNCTION ERROR:", err);
-    return safeFallback("edge_function_error", err instanceof Error ? err.message : String(err));
+    console.error("❌ EDGE FUNCTION CRASH:", err);
+
+    return new Response(
+      JSON.stringify({
+        error: "Internal Server Error",
+        details: String(err instanceof Error ? err.message : err),
+      }),
+      {
+        status: 500,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Content-Type": "application/json",
+        },
+      },
+    );
   }
 });
