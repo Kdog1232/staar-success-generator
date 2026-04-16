@@ -200,6 +200,33 @@ function gradeWordRange(grade: number, subject: CanonicalSubject, mode: Canonica
   return { min: grade <= 4 ? 120 : 140, max: grade <= 4 ? 220 : 260 };
 }
 
+function getRelevantSnippet(passage: string, question: string): string {
+  const sentences = passage
+    .split(/[.!?]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const keywords = question.toLowerCase().split(" ").filter((w) => w.length > 4);
+
+  let best = sentences[0] || "";
+  let bestScore = 0;
+
+  for (const sentence of sentences) {
+    const lower = sentence.toLowerCase();
+    let score = 0;
+
+    for (const word of keywords) {
+      if (lower.includes(word)) score++;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = sentence;
+    }
+  }
+
+  return best;
+}
+
 function rigorInstruction(level: Level): string {
   if (level === "Below") return "Use simpler language while keeping the same thinking depth and rigor.";
   if (level === "Advanced") return "Increase reasoning depth, abstraction, and evidence precision.";
@@ -3017,37 +3044,81 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   const returnCore = (data: CoreResponse) =>
-    jsonResponse(subject === "Reading"
-      ? {
-        teks: teksCode,
-        skill,
-        grade,
-        passage: ensurePassageLength(
-          getPassageText(data.passage || ""),
-          readingPracticeWordRange(level).min,
-          readingPracticeWordRange(level).max,
-          subject,
-          toCanonicalMode(mode),
-          grade,
-          level,
-        ),
-        practice: data.practice,
-      }
-      : {
-        teks: teksCode,
-        skill,
-        grade,
-        practice: data.practice,
-      });
-  const returnEnrichment = (data: EnrichmentResponse) =>
     jsonResponse({
       teks: teksCode,
       skill,
       grade,
-      cross: data.cross,
-      tutor: data.tutor,
-      answerKey: data.answerKey,
+      ...(subject === "Reading"
+        ? {
+          passage: ensurePassageLength(
+            getPassageText(data.passage || ""),
+            readingPracticeWordRange(level).min,
+            readingPracticeWordRange(level).max,
+            subject,
+            toCanonicalMode(mode),
+            grade,
+            level,
+          ),
+        }
+        : {}),
+      practice: {
+        questions: data?.practice?.questions || [],
+      },
+      cross: {
+        passage: "",
+        questions: [],
+      },
+      tutor: {
+        practice: (data?.practice?.questions || []).map((q) => ({
+          question: q.question,
+          explanation: q.explanation || "Step-by-step thinking: break the problem into parts and solve carefully.",
+          hint: q.hint || "Look back at the key numbers or details in the problem.",
+          common_mistake: q.common_mistake || "Choosing an answer without checking all steps.",
+        })),
+        cross: [],
+      },
+      answerKey: {
+        practice: (data?.practice?.questions || []).map((q) => ({
+          answer: q.correct_answer,
+          explanation: q.explanation || "Check each step and verify your work.",
+        })),
+        cross: [],
+      },
     });
+  const returnEnrichment = (data: EnrichmentResponse) =>
+    {
+      const crossQuestions = data?.cross?.questions || [];
+      const fallbackTutorCross = crossQuestions.map((q) => ({
+        question: q.question,
+        explanation: `The passage shows that ${getRelevantSnippet(data?.cross?.passage || "", q.question)}`,
+        hint: "Find the sentence in the passage that supports your answer.",
+        common_mistake: "Picking an answer not supported by the passage.",
+      }));
+      const fallbackAnswerCross = crossQuestions.map((q) => ({
+        answer: q.correct_answer,
+        explanation: "The correct answer is supported by the passage.",
+      }));
+      return jsonResponse({
+        teks: teksCode,
+        skill,
+        grade,
+        practice: {
+          questions: [],
+        },
+        cross: {
+          passage: data?.cross?.passage || "",
+          questions: crossQuestions,
+        },
+        tutor: {
+          practice: data?.tutor?.practice || [],
+          cross: (data?.tutor?.cross && data.tutor.cross.length) ? data.tutor.cross : fallbackTutorCross,
+        },
+        answerKey: {
+          practice: data?.answerKey?.practice || [],
+          cross: (data?.answerKey?.cross && data.answerKey.cross.length) ? data.answerKey.cross : fallbackAnswerCross,
+        },
+      });
+    };
 
   const safeFallback = (reason: string, error?: string) => {
     console.log("🚨 FALLBACK TRIGGERED:", reason);

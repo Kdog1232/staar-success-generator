@@ -1766,11 +1766,13 @@
     function renderActivePanels() {
       if (!currentData) return;
       const mode = getActiveMode();
+      const tutorData = currentData?.tutor || { practice: [], cross: [] };
+      const answerData = currentData?.answerKey || { practice: [], cross: [] };
       console.log("🔥 MODE:", mode);
-      console.log("🔥 TUTOR LENGTH:", currentData?.tutor?.[mode]?.length);
-      console.log("🔥 ANSWER LENGTH:", currentData?.answerKey?.[mode]?.length);
-      renderTutorSection(currentData.tutor, mode);
-      renderAnswerSection(currentData.answerKey, mode);
+      console.log("🔥 TUTOR LENGTH:", tutorData?.[mode]?.length || 0);
+      console.log("🔥 ANSWER LENGTH:", answerData?.[mode]?.length || 0);
+      renderTutorSection(tutorData, mode);
+      renderAnswerSection(answerData, mode);
     }
 
     function renderTab(tab = activeTab, options = {}) {
