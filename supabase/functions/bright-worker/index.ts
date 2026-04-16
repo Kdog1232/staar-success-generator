@@ -2874,79 +2874,90 @@ function getAnswerFallback(
   return buildPracticeAnswerFallback(subject, question);
 }
 
+function generateTutor(
+  questions: Question[],
+  subject: CanonicalSubject,
+  mode: "practice" | "cross",
+  level: Level = "On Level",
+  crossPassage = "",
+): TutorExplanation[] {
+  return questions.slice(0, 5).map((q, index) => {
+    const support = buildSupportContent(
+      subject,
+      q,
+      index,
+      level,
+      mode === "cross" ? "Cross-Curricular" : "Practice",
+      mode === "cross" ? crossPassage : "",
+    );
+    return {
+      question_id: ensureQuestionId(q, index, mode),
+      question: String(q.question || "").trim(),
+      explanation: "Start by looking at what the question is really asking and identify the strongest evidence first. Now eliminate choices that are only partly true or unsupported before making your final choice.",
+      common_mistake: support.common_mistake,
+      parent_tip: support.parent_tip,
+      hint: support.hint,
+      think: support.think,
+      step_by_step: support.step_by_step,
+    };
+  });
+}
+
+function generateAnswerKey(
+  questions: Question[],
+  subject: CanonicalSubject,
+  mode: "practice" | "cross",
+  level: Level = "On Level",
+  crossPassage = "",
+): AnswerKeyEntry[] {
+  return questions.slice(0, 5).map((q, index) => {
+    const support = buildSupportContent(
+      subject,
+      q,
+      index,
+      level,
+      mode === "cross" ? "Cross-Curricular" : "Practice",
+      mode === "cross" ? crossPassage : "",
+    );
+    const correctAnswer = normalizeAnswerKeyEntry(q.correct_answer);
+    const sourceLabel = mode === "cross" ? "the passage" : "the prompt";
+    return {
+      question_id: ensureQuestionId(q, index, mode),
+      correct_answer: correctAnswer,
+      explanation: `The correct answer is ${correctAnswer} because it best matches the evidence in ${sourceLabel}. This is supported by the key detail the question targets. The other choices are less accurate because they are unsupported or only partially correct.`,
+      common_mistake: support.common_mistake,
+      parent_tip: support.parent_tip,
+      hint: support.hint,
+      step_by_step: support.step_by_step,
+    };
+  });
+}
+
 function sanitizeTutorExplanations(
-  raw: unknown,
+  _raw: unknown,
   sourceQuestions: Question[],
   subject: CanonicalSubject,
   mode: "practice" | "cross",
   crossPassage = "",
 ): TutorExplanation[] {
-  const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
   const defaultQuestions = mode === "cross" ? buildCrossFallback(subject) : buildPracticeFallback("Main Idea", subject);
   const baseQuestions = sourceQuestions.slice(0, 5);
   while (baseQuestions.length < 5) baseQuestions.push(defaultQuestions[baseQuestions.length]);
-  const sanitized = baseQuestions.slice(0, 5).map((q, index) => {
-    const item = incoming[index];
-    const entry = item && typeof item === "object" ? item as Record<string, unknown> : {};
-    const aligned = buildAlignedExplanation(q, mode === "cross" ? crossPassage : "");
-    const distractorFeedback = buildDistractorFeedback(q);
-    const base = {
-      question_id: ensureQuestionId(q, index, mode),
-      question: String(q.question || "").trim(),
-      explanation: ensureUsableExplanation(`${aligned.why} ${distractorFeedback}`.trim()),
-      common_mistake: aligned.mistake,
-      parent_tip: buildParentTip(subject),
-      hint: aligned.tip,
-      think: buildThinkPrompt(q),
-      step_by_step: String(q.step_by_step || "").trim() || "Read, find evidence, and confirm.",
-    };
-    return {
-      question_id: base.question_id,
-      question: String(entry.question || base.question).trim() || base.question,
-      explanation: ensureUsableExplanation(base.explanation),
-      common_mistake: base.common_mistake,
-      parent_tip: base.parent_tip,
-      hint: base.hint,
-      think: String(entry.think || "").trim() || base.think,
-      step_by_step: String(entry.step_by_step || base.step_by_step || "").trim() || base.step_by_step,
-    };
-  });
-  return sanitized.slice(0, 5);
+  return generateTutor(baseQuestions, subject, mode, "On Level", crossPassage);
 }
 
 function sanitizeAnswerKey(
-  raw: unknown,
+  _raw: unknown,
   sourceQuestions: Question[],
   subject: CanonicalSubject,
-  tutor: TutorExplanation[],
+  _tutor: TutorExplanation[],
   mode: "practice" | "cross",
   crossPassage = "",
 ): AnswerKeyEntry[] {
-  const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
   const defaultQuestions = mode === "cross" ? buildCrossFallback(subject) : buildPracticeFallback("Main Idea", subject);
   const baseQuestions = sourceQuestions.slice(0, 5);
   while (baseQuestions.length < 5) baseQuestions.push(defaultQuestions[baseQuestions.length]);
-  const sanitized = baseQuestions.slice(0, 5).map((q, index) => {
-    const item = incoming[index];
-    const entry = item && typeof item === "object" ? item as Record<string, unknown> : {};
-    const aligned = buildAlignedExplanation(q, mode === "cross" ? crossPassage : "");
-    const distractorFeedback = buildDistractorFeedback(q);
-    const base = {
-      question_id: ensureQuestionId(q, index, mode),
-      correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
-      explanation: ensureUsableExplanation(`${aligned.why} ${distractorFeedback}`.trim()),
-      common_mistake: aligned.mistake,
-      parent_tip: buildParentTip(subject),
-    };
-    return {
-      question_id: base.question_id,
-      correct_answer: normalizeAnswerKeyEntry(entry.correct_answer || entry.answer || base.correct_answer),
-      explanation: ensureUsableExplanation(base.explanation),
-      common_mistake: base.common_mistake,
-      parent_tip: base.parent_tip,
-    };
-  });
-  return sanitized.slice(0, 5);
+  return generateAnswerKey(baseQuestions, subject, mode, "On Level", crossPassage);
 }
 
 function validateTutorAnswerKeyAlignment(
@@ -3373,89 +3384,23 @@ serve(async (req) => {
         : [];
       const crossPassage = String(bodyCross.passage || "");
 
-      const tutor = practiceQuestions.map((q, i) => {
-        const aligned = buildAlignedExplanation(q, core.passage || "");
-        const distractorFeedback = buildDistractorFeedback(q);
-        const support = buildSupportContent(subject, q, i, level, "Practice", core.passage || "");
-        return {
-          question_id: `practice_${i}`,
-          question: q.question,
-          ...support,
-          explanation: ensureUsableExplanation(
-            `${aligned.why} ${distractorFeedback}`.trim(),
-          ),
-          hint: support.hint,
-          common_mistake: aligned.mistake,
-          parent_tip: support.parent_tip,
-        };
-      });
-
-      const crossTutor = crossQuestions.map((q, i) => {
-        const question = q as Question;
-        const aligned = buildAlignedExplanation(question, crossPassage);
-        const distractorFeedback = buildDistractorFeedback(question);
-        const support = buildSupportContent(
-          subject,
-          question,
-          i,
-          level,
-          "Cross-Curricular",
-          crossPassage,
-        );
-        return {
-          question_id: `cross_${i}`,
-          question: q.question,
-          ...support,
-          explanation: ensureUsableExplanation(
-            `${aligned.why} ${distractorFeedback}`.trim(),
-          ),
-          hint: support.hint,
-          common_mistake: aligned.mistake,
-          parent_tip: support.parent_tip,
-        };
-      });
-
-      const answerKey = practiceQuestions.map((q, i) => {
-        const aligned = buildAlignedExplanation(q, core.passage || "");
-        const distractorFeedback = buildDistractorFeedback(q);
-        return {
-          question_id: `practice_${i}`,
-          correct_answer: String(q.correct_answer),
-          explanation: ensureUsableExplanation(
-            `${aligned.why} ${distractorFeedback}`.trim(),
-          ),
-          common_mistake: aligned.mistake,
-          parent_tip: buildParentTip(subject),
-        };
-      });
-
-      const crossAnswerKey = crossQuestions.map((q, i) => {
-        const question = q as Question;
-        const aligned = buildAlignedExplanation(question, crossPassage);
-        const distractorFeedback = buildDistractorFeedback(question);
-        return {
-          question_id: `cross_${i}`,
-          correct_answer: String(q.correct_answer),
-          explanation: ensureUsableExplanation(
-            `${aligned.why} ${distractorFeedback}`.trim(),
-          ),
-          common_mistake: aligned.mistake,
-          parent_tip: buildParentTip(subject),
-        };
-      });
+      const practiceQuestionSet = practiceQuestions as Question[];
+      const crossQuestionSet = crossQuestions as Question[];
+      const tutor = {
+        practice: generateTutor(practiceQuestionSet, subject, "practice", level, core.passage || ""),
+        cross: generateTutor(crossQuestionSet, subject, "cross", level, crossPassage),
+      };
+      const answerKey = {
+        practice: generateAnswerKey(practiceQuestionSet, subject, "practice", level, core.passage || ""),
+        cross: generateAnswerKey(crossQuestionSet, subject, "cross", level, crossPassage),
+      };
 
       return jsonResponse({
         teks: teksCode,
         skill,
         grade,
-        tutor: {
-          practice: tutor,
-          cross: crossTutor,
-        },
-        answerKey: {
-          practice: answerKey,
-          cross: crossAnswerKey,
-        },
+        tutor,
+        answerKey,
       });
     }
     console.log("🔥 RAW MODE:", rawMode);
