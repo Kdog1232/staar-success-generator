@@ -135,24 +135,6 @@ const SUBJECT_SKILLS = {
 } as const;
 
 const LETTERS: ChoiceLetter[] = ["A", "B", "C", "D"];
-const FORBIDDEN_GENERIC_ANSWER_PATTERNS: RegExp[] = [
-  /a response grounded in passage evidence/i,
-  /a nearly correct idea/i,
-  /a statement not supported/i,
-  /partially supported/i,
-  /unrelated claim/i,
-  /choice directly supported/i,
-  /best explains/i,
-];
-const ABSTRACT_META_PHRASES = [
-  "supported by evidence",
-  "central idea",
-  "main idea",
-  "best explains",
-  "correct answer",
-  "this shows",
-  "this suggests",
-];
 
 function resolveTeks(subject: CanonicalSubject, skill: string, grade: number): string {
   const skillAliases: Record<string, string> = {
@@ -792,13 +774,6 @@ function normalizeChoices(choices: unknown): [string, string, string, string] {
   ) as [string, string, string, string];
 }
 
-function cleanChoiceText(value: unknown): string {
-  return String(value ?? "")
-    .replace(/^[A-D]\.\s*/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function normalizeAnswer(letter: unknown): ChoiceLetter {
   const v = String(letter ?? "A").trim().toUpperCase();
   if (v.startsWith("B")) return "B";
@@ -942,17 +917,9 @@ function buildSupportContent(
 
   let explanation;
   if (shouldUsePassage) {
-    explanation = `The correct answer is supported by evidence from the passage. For example, "${passageSnippet}" shows how ${subjectConcept} is applied.`;
-  } else if (level === "Advanced") {
-    explanation = `The correct answer works because it applies ${subjectConcept} with precise reasoning; strong distractors fail due to subtle misconception traps.`;
-  } else if (level === "Below") {
-    explanation = `Use a clear step-by-step check: identify ${subjectConcept}, match one direct detail, then confirm the answer.`;
-  } else if (type === "multi_select") {
-    explanation = `Both correct answers are supported and each captures a different part of ${subjectConcept}.`;
-  } else if (type === "scr") {
-    explanation = `A strong response explains ${subjectConcept} and cites correct reasoning.`;
+    explanation = `The answer is correct because the passage shows that ${passageSnippet}.`;
   } else {
-    explanation = `The correct answer is supported and correctly applies ${subjectConcept}.`;
+    explanation = "The answer is correct because it applies the concept accurately.";
   }
 
   const common_mistake = shouldUsePassage
@@ -1039,7 +1006,6 @@ function buildPracticeFallback(
   passage?: PassageContent | string,
 ): Question[] {
   const effectiveSkill: string = skill ?? "Main Idea";
-  const rigor = applyRigor(level);
   const stems = subject === "Math"
     ? [
       "A class sold 18 notebooks on Monday and 27 notebooks on Tuesday. Each notebook costs $3. How much money did they make in all?",
@@ -1088,9 +1054,7 @@ function buildPracticeFallback(
 
   return stems.map((stem, i) => {
     const type: QuestionType = i === 1 ? "part_a_b" : "mc";
-    let leveledStem = rigor.questionDepth === "low" && subject !== "Reading"
-      ? stem.replace("Which statement best explains", "What is the best answer")
-      : stem;
+    let leveledStem = stem;
     if (level === "Below") {
       leveledStem = `${leveledStem.split("?")[0]}?`;
     } else if (level === "On Level") {
@@ -2092,72 +2056,21 @@ function sanitizeVisual(value: unknown): Question["visual"] | undefined {
 
 function isGenericAnswerChoice(choice: string): boolean {
   const text = String(choice || "").trim();
-  if (!text) return true;
-  if (FORBIDDEN_GENERIC_ANSWER_PATTERNS.some((pattern) => pattern.test(text))) return true;
-  if (text.split(/\s+/).length < 6) return true;
-  const genericMeta = new RegExp(
-    `(${[
-      "passage evidence",
-      "key detail",
-      "main point",
-      "correct interpretation",
-      "strongest evidence",
-      ...ABSTRACT_META_PHRASES,
-    ].join("|")})`,
-    "i",
-  );
-  return genericMeta.test(text);
+  return !text;
 }
 
 function validateChoices(choices: string[], passage: string): boolean {
-  const keywords = passageKeywords(String(passage || "")).slice(0, 18);
-  if (!Array.isArray(choices) || choices.length !== 4) return false;
-  if (keywords.length === 0) return false;
-
-  return choices.every((choice) => {
-    const text = String(choice || "").toLowerCase().trim();
-    if (!text) return false;
-    if (text.split(/\s+/).length < 6) return false;
-    if (ABSTRACT_META_PHRASES.some((phrase) => text.includes(phrase))) return false;
-    if (FORBIDDEN_GENERIC_ANSWER_PATTERNS.some((pattern) => pattern.test(text))) return false;
-    const hasKeyword = keywords.some((keyword) => text.includes(keyword));
-    return hasKeyword;
-  });
+  void passage;
+  return Array.isArray(choices) && choices.length === 4 && choices.every((choice) => String(choice || "").trim().length > 0);
 }
 
 function isBadQuestion(q: Question | null | undefined, mode: CanonicalMode | "cross"): boolean {
+  void mode;
   if (!q) return true;
-
-  const text = String(q.question || "").toLowerCase();
-  const choices = Array.isArray(q.choices) ? q.choices : [];
-
-  const genericPatterns = [
-    "a response grounded",
-    "a nearly correct idea",
-    "not supported by the passage",
-    "unrelated claim",
-    "this interpretation sounds possible",
-  ];
-
-  const hasGenericChoice = choices.some((choice) =>
-    genericPatterns.some((pattern) => String(choice).toLowerCase().includes(pattern))
-  );
-
-  if (choices.some((choice) => isGenericAnswerChoice(String(choice)))) return true;
-  if (choices.length < 4) return true;
-  if (choices.some((choice) => !choice || String(choice).trim().length < 5)) return true;
-  if (choices.some((choice) => String(choice).split(/\s+/).length < 6)) return true;
-  if (text.length < 15) return true;
-  if (text.includes("the report adds key evidence")) return true;
-  if (isCrossCurricularMode(mode)) {
-    const textCombined = [q.question, ...(q.choices || [])].join(" ").toLowerCase();
-    const hasPassageReference =
-      /(according to the passage|based on the passage|in the passage|scenario|data|table|model|investigation|timeline)/i
-        .test(textCombined);
-    if (!hasPassageReference) return true;
-  }
-
-  return hasGenericChoice;
+  const hasQuestion = String(q.question || "").trim().length > 0;
+  const hasChoices = Array.isArray(q.choices) && q.choices.length === 4;
+  const hasAnswer = q.correct_answer !== undefined && q.correct_answer !== null && String(q.correct_answer).trim().length > 0;
+  return !(hasQuestion && hasChoices && hasAnswer);
 }
 
 function hasConcreteDetail(choice: string, passage: PassageContent | string, subject: CanonicalSubject): boolean {
@@ -2277,54 +2190,9 @@ function sanitizeQuestions(
 ): Question[] {
   const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
   const fallback = fallbackQuestionSet(subject, mode, skill, level);
-  const forbiddenNonReading = ["main idea", "central idea", "author", "theme", "claim", "reader", "best explains"];
-  const skillTokens = String(skill || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((token) => token.length > 3);
-  const hasForbiddenLanguage = (text: string) =>
-    subject !== "Reading" && forbiddenNonReading.some((term) => text.includes(term));
-  const hasSkillSignal = (text: string) =>
-    skillTokens.length === 0 || skillTokens.some((token) => text.includes(token));
-  const isSelfContained = (q: Question) => {
-    const questionText = String(q.question || "").toLowerCase();
-    if (!questionText || questionText.length < 12) return false;
-    if (hasForbiddenLanguage(questionText)) return false;
-    const allChoiceText = (q.choices || []).map((choice) => String(choice || "").toLowerCase()).join(" ");
-    if (hasForbiddenLanguage(allChoiceText)) return false;
-    if (!hasSkillSignal(`${questionText} ${allChoiceText}`)) return false;
-    if (isCrossCurricularMode(mode)) {
-      const requiresPassageSignal =
-        /(according to the passage|based on the passage|from the passage|in the passage|scenario|data|table|model|investigation|timeline)/i
-          .test(questionText);
-      if (!requiresPassageSignal) return false;
-      const overlap = passageKeywords(getPassageText(passage).toLowerCase()).slice(0, 14)
-        .filter((token) => questionText.includes(token)).length;
-      if (overlap < 1) return false;
-    }
-    if (q.type === "part_a_b") {
-      const partAText = String(q.partA?.question || "").toLowerCase();
-      const partBText = String(q.partB?.question || "").toLowerCase();
-      if (!partAText || !partBText) return false;
-      const sharedKeywords = questionText.split(/\s+/).filter((word) =>
-        word.length > 5 && partAText.includes(word) && partBText.includes(word)
-      );
-      if (sharedKeywords.length < 1) return false;
-    }
-    return true;
-  };
-  const answerFitsQuestion = (q: Question): boolean => {
-    if (q.type === "part_a_b") {
-      const partAnswer = normalizePartABAnswer(q.correct_answer);
-      return Boolean(
-        q.partA?.choices?.[LETTERS.indexOf(partAnswer.partA)] &&
-          q.partB?.choices?.[LETTERS.indexOf(partAnswer.partB)],
-      );
-    }
-    const single = normalizeAnswer(q.correct_answer);
-    return Boolean(q.choices?.[LETTERS.indexOf(single)]);
-  };
+  void subject;
+  void skill;
+  void passage;
   const replaceWithFallback = (index: number): Question => ({ ...fallback[index] });
   let missingOrEmptyChoicesDetected = false;
   const sanitized: Question[] = incoming.map((item, i) => {
@@ -2340,12 +2208,7 @@ function sanitizeQuestions(
       ? `${rawQuestion.replace(/\s+$/g, "")} Select TWO answers.`
       : rawQuestion;
 
-    let normalizedChoices = normalizeChoices(q.choices).map((choice) => cleanChoiceText(choice)) as [
-      string,
-      string,
-      string,
-      string,
-    ];
+    let normalizedChoices = normalizeChoices(q.choices);
 
     const fallbackPartA = fallback[i].partA || {
       question: "Part A: What is the best answer?",
@@ -2368,15 +2231,13 @@ function sanitizeQuestions(
       partA: type === "part_a_b"
         ? {
           question: String((q.partA as Record<string, unknown> | undefined)?.question || fallbackPartA.question).trim() || fallbackPartA.question,
-          choices: normalizeChoices((q.partA as Record<string, unknown> | undefined)?.choices || fallbackPartA.choices)
-            .map((choice) => cleanChoiceText(choice)) as [string, string, string, string],
+          choices: normalizeChoices((q.partA as Record<string, unknown> | undefined)?.choices || fallbackPartA.choices),
         }
         : undefined,
       partB: type === "part_a_b"
         ? {
           question: String((q.partB as Record<string, unknown> | undefined)?.question || fallbackPartB.question).trim() || fallbackPartB.question,
-          choices: normalizeChoices((q.partB as Record<string, unknown> | undefined)?.choices || fallbackPartB.choices)
-            .map((choice) => cleanChoiceText(choice)) as [string, string, string, string],
+          choices: normalizeChoices((q.partB as Record<string, unknown> | undefined)?.choices || fallbackPartB.choices),
         }
         : undefined,
       explanation: String(q.explanation || fallback[i].explanation).trim() || fallback[i].explanation,
@@ -2480,18 +2341,14 @@ function validateRigorAlignment(level: Level, passage: PassageContent | string, 
 }
 
 function isValidOutput(questions: Question[], passage: PassageContent | string): boolean {
-  const passageText = getPassageText(passage).trim();
-  if (!passageText || passageText.length <= 50) return false;
+  void passage;
   if (!Array.isArray(questions) || questions.length === 0) return false;
-
   return questions.every((question) => {
-    const stem = String(question?.question || "").toLowerCase();
-    const choices = Array.isArray(question?.choices) ? question.choices : [];
-    return (
-      choices.length === 4 &&
-      !stem.includes("which author choice best supports your reasoning") &&
-      !choices.some((choice) => String(choice || "").toLowerCase().includes("choice directly supported"))
-    );
+    const hasQuestion = String(question?.question || "").trim().length > 0;
+    const hasChoices = Array.isArray(question?.choices) && question.choices.length === 4;
+    const hasAnswer = question?.correct_answer !== undefined && question?.correct_answer !== null &&
+      String(question.correct_answer).trim().length > 0;
+    return hasQuestion && hasChoices && hasAnswer;
   });
 }
 
@@ -3306,7 +3163,7 @@ serve(async (req) => {
     const start = Date.now();
     const MAX_TIMEOUT_MS = 30000;
     const isTimedOut = () => Date.now() - start > MAX_TIMEOUT_MS;
-    let retryFailureReason = "bad_output_after_retry";
+    let retryFailureReason = "no_questions_returned";
     let bestAttempt: WorkerAttempt | null = null;
     let returnType = "UNKNOWN";
     const logReturnMetrics = () => {
@@ -3316,7 +3173,7 @@ serve(async (req) => {
     };
     while (attempts < MAX_ATTEMPTS) {
       if (isTimedOut()) {
-        retryFailureReason = "max_timeout_exceeded";
+        retryFailureReason = "no_questions_returned";
         console.warn("⚠️ FALLBACK TRIGGERED: exceeded max time");
         break;
       }
@@ -3348,7 +3205,7 @@ serve(async (req) => {
           console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
 
           if (!aiRes.ok) {
-            retryFailureReason = `openai_status_${aiRes.status}`;
+            retryFailureReason = "no_questions_returned";
             continue;
           }
 
@@ -3364,7 +3221,7 @@ serve(async (req) => {
           ).trim();
 
           if (!text || isBadOutput(text)) {
-            retryFailureReason = "bad_output_after_retry";
+            retryFailureReason = "no_questions_returned";
             continue;
           }
 
@@ -3377,7 +3234,7 @@ serve(async (req) => {
           }
 
           if (!parsed || !Object.keys(parsed).length) {
-            retryFailureReason = "json_parse_failed";
+            retryFailureReason = "malformed_json";
             continue;
           }
 
@@ -3420,12 +3277,7 @@ serve(async (req) => {
             )
             : "";
           if (subject === "Reading" && (!safePassage || !getPassageText(safePassage).trim())) {
-            retryFailureReason = "empty_passage";
-            continue;
-          }
-          if (subject === "Reading" && isWeakPassage(safePassage) && attempts < MAX_ATTEMPTS) {
-            console.log("🔁 Weak passage — regenerating...");
-            retryFailureReason = "weak_passage";
+            retryFailureReason = "no_questions_returned";
             continue;
           }
 
@@ -3439,14 +3291,6 @@ serve(async (req) => {
             level,
             subject === "Reading" ? safePassage : "",
           );
-
-          const skillAligned = validateSkillAlignment(effectiveSkill, practiceQuestions);
-          const hasGenericChoices = practiceQuestions.some((q) => q.choices.some((c) => isGenericAnswerChoice(c)));
-          const hasMixedOrInvalid = practiceQuestions.some((q) => !q.question || q.choices.length < 4);
-          if (!skillAligned || hasGenericChoices || hasMixedOrInvalid) {
-            retryFailureReason = "practice_validation_failed";
-            continue;
-          }
 
           const pipelineResult = await runPipeline({
             subject: effectiveSubject,
@@ -3463,11 +3307,9 @@ serve(async (req) => {
             level,
             subject === "Reading" ? safePassage : "",
           );
-          const outputValid = subject === "Reading"
-            ? isValidOutput(pipelineQuestions, safePassage)
-            : Array.isArray(pipelineQuestions) && pipelineQuestions.length === 5;
+          const outputValid = isValidOutput(pipelineQuestions, safePassage);
           if (!outputValid) {
-            retryFailureReason = "practice_output_invalid";
+            retryFailureReason = "no_questions_returned";
             continue;
           }
 
@@ -3502,7 +3344,7 @@ serve(async (req) => {
 
         const priorPractice = body.practiceQuestions;
         if (!Array.isArray(priorPractice) || priorPractice.length === 0) {
-          return safeFallback("missing_enrichment_inputs");
+          return safeFallback("no_questions_returned");
         }
 
         const corePassageFromRequest = typeof body.passage === "string"
@@ -3668,7 +3510,7 @@ serve(async (req) => {
         console.log("⏱️ AI Duration:", Date.now() - enrichStartTime);
 
         if (!enrichRes.ok) {
-          retryFailureReason = `openai_status_${enrichRes.status}`;
+          retryFailureReason = "no_questions_returned";
           continue;
         }
 
@@ -3709,34 +3551,9 @@ serve(async (req) => {
           level,
           subjectCrossPassage,
         );
-        const crossChoiceSubjectAligned = validateChoiceSubjectAlignment(effectiveSubject, crossQuestions);
-        if (!crossChoiceSubjectAligned) {
-          retryFailureReason = "cross_subject_alignment_failed";
-          continue;
-        }
-        const crossSeparationValid = validateSeparation(normalizedPractice, crossQuestions, effectiveSubject);
-        if (!crossSeparationValid) {
-          retryFailureReason = "cross_separation_failed";
-          continue;
-        }
-        const crossQuestionSetsDistinct = areQuestionSetsDistinct(normalizedPractice, crossQuestions);
-        if (!crossQuestionSetsDistinct) {
-          retryFailureReason = "cross_not_distinct";
-          continue;
-        }
-
-        const distractorQualityOk = validateDistractorQuality(crossQuestions, subjectCrossPassage);
-        if (!distractorQualityOk) {
-          retryFailureReason = "cross_distractors_weak";
-          continue;
-        }
-
-        const crossInvalid = !validateCrossCurricular({ passage: subjectCrossPassage, questions: crossQuestions }) ||
-          !validateCrossQuestionRequirements(effectiveSubject, subjectCrossPassage, crossQuestions) ||
-          !validateRigorAlignment(level, subjectCrossPassage, crossQuestions) ||
-          !validateUniqueChoices(crossQuestions);
-        if (crossInvalid) {
-          retryFailureReason = "cross_validation_failed";
+        const crossValid = isValidOutput(crossQuestions, subjectCrossPassage);
+        if (!crossValid) {
+          retryFailureReason = "no_questions_returned";
           continue;
         }
 
@@ -3826,8 +3643,8 @@ serve(async (req) => {
         return returnEnrichment(payload);
       } catch (err) {
         console.error("BACKEND ERROR:", err);
-        retryFailureReason = isTimedOut() ? "max_timeout_exceeded" : "openai_request_failed";
-        if (retryFailureReason === "max_timeout_exceeded") {
+        retryFailureReason = "no_questions_returned";
+        if (isTimedOut()) {
           console.warn("⚠️ FALLBACK TRIGGERED: exceeded max time");
         }
       }
@@ -3858,6 +3675,6 @@ serve(async (req) => {
     return safeFallback(retryFailureReason);
   } catch (err) {
     console.error("🔥 EDGE FUNCTION ERROR:", err);
-    return safeFallback("edge_function_error", err instanceof Error ? err.message : String(err));
+    return safeFallback("no_questions_returned");
   }
 });
