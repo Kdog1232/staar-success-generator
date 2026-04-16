@@ -114,6 +114,15 @@ const FORBIDDEN_GENERIC_ANSWER_PATTERNS: RegExp[] = [
   /choice directly supported/i,
   /best explains/i,
 ];
+const ABSTRACT_META_PHRASES = [
+  "supported by evidence",
+  "central idea",
+  "main idea",
+  "best explains",
+  "correct answer",
+  "this shows",
+  "this suggests",
+];
 
 function shuffledLetters(): ChoiceLetter[] {
   const pool = [...LETTERS];
@@ -660,52 +669,22 @@ function normalizeChoices(
   }) as [string, string, string, string];
 }
 
+function cleanChoiceText(value: unknown): string {
+  return String(value ?? "")
+    .replace(/^[A-D]\.\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function strengthenChoiceSet(
   choices: [string, string, string, string],
   questionText: string,
   passage: PassageContent | string = "",
   subject: CanonicalSubject = "Reading",
 ): [string, string, string, string] {
-  if (subject !== "Reading") return normalizeChoices(choices, subject);
-
-  const text = getPassageText(passage);
-  const keywords = passageKeywords(text).slice(0, 4);
-  const defaultKeywords = questionText
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((w) => w.length > 4)
-    .slice(0, 4);
-  const anchors = (keywords.length ? keywords : defaultKeywords).slice(0, 2);
-  const [anchorA, anchorB] = [anchors[0] || "evidence", anchors[1] || "results"];
-
-  const weakSignal = /(unrelated|not supported|random|impossible|always|never|no evidence|cannot be)/i;
-  const upgraded = choices.map((choice, index) => {
-    const clean = String(choice || "").trim();
-    if (!clean || weakSignal.test(clean)) {
-      const variants = [
-        `A report can name ${anchorA} correctly but still draw the wrong conclusion if it links ${anchorA} to ${anchorB} incorrectly.`,
-        `A writer may describe ${anchorA} accurately but miss a later detail that changes the result for ${anchorB}.`,
-        `Reversing the order of ${anchorA} and ${anchorB} can make a conclusion sound reasonable even when the timeline is wrong.`,
-        `A claim can cite details about ${anchorA} but apply them to the wrong cause-and-effect relationship.`,
-      ];
-      return variants[index % variants.length];
-    }
-
-    if (clean.split(/\s+/).length < 8) {
-      const shortVariants = [
-        `${clean} based on ${anchorA} and ${anchorB}.`,
-        `${clean} using the passage details about ${anchorA}.`,
-        `${clean} with evidence connected to ${anchorB}.`,
-        `${clean} from the scenario data on ${anchorA}.`,
-      ];
-      return shortVariants[index % shortVariants.length];
-    }
-
-    return clean;
-  });
-
-  return upgraded as [string, string, string, string];
+  void questionText;
+  void passage;
+  return normalizeChoices(choices, subject).map((choice) => cleanChoiceText(choice)) as [string, string, string, string];
 }
 
 function validateHybridCross(questions: Question[]): boolean {
@@ -1158,38 +1137,64 @@ function buildReadingChoices(
   questionText: string,
   level: Level = "On Level",
 ): [string, string, string, string] {
-  void questionText;
+  void level;
   const text = getPassageText(passage).trim();
-  const keywords = passageKeywords(text).slice(0, 4);
-  const focus = keywords[0] || "the main idea";
-  const detail = keywords[1] || "key evidence";
-  const context = keywords[2] || "supporting detail";
-  const shift = keywords[3] || "a later development";
+  const cleanSentence = (value: string): string =>
+    String(value || "")
+      .replace(/\s+/g, " ")
+      .replace(/^[^a-zA-Z0-9]+/, "")
+      .trim()
+      .replace(/\.$/, "");
+  const sentences = text
+    .split(/[.!?]+/)
+    .map((s) => cleanSentence(s))
+    .filter((s) => s.split(/\s+/).length >= 8);
+  const keywords = passageKeywords(text).filter((token) => token.length >= 4);
+  const questionTokens = String(questionText || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length >= 4);
+  const baseSentence = (sentences.length
+    ? sentences
+      .slice()
+      .sort((a, b) => {
+        const aLower = a.toLowerCase();
+        const bLower = b.toLowerCase();
+        const score = (candidate: string) =>
+          questionTokens.filter((token) => candidate.includes(token)).length +
+          keywords.slice(0, 8).filter((token) => candidate.includes(token)).length;
+        return score(bLower) - score(aLower);
+      })[0]
+    : cleanSentence(text)) || "Community members changed decisions after events in the town affected daily routines";
+  const baseWords = baseSentence.split(/\s+/).filter(Boolean);
+  const subject = baseWords.slice(0, 3).join(" ") || "Community leaders";
+  const action = baseWords.slice(3, 8).join(" ") || "reviewed records and changed plans";
+  const outcome = baseWords.slice(8, 15).join(" ") || "after new results changed local priorities";
+  const keywordA = keywords[0] || "community";
+  const keywordB = keywords[1] || "results";
+  const keywordC = keywords[2] || "decisions";
 
-  if (level === "Below") {
-    return [
-      `${focus} is directly explained using ${detail} in the passage.`,
-      `${detail} is mentioned but not connected to ${focus}.`,
-      `${context} is incorrectly treated as the main idea.`,
-      `${shift} changes the outcome but is ignored.`,
-    ];
-  }
+  const correct = `${subject} ${action} ${outcome}`.replace(/\s+/g, " ").trim();
+  const partialTruth =
+    `${subject} ${action}, but it leaves out how ${keywordB} later changed what people chose.`.replace(/\s+/g, " ").trim();
+  const overgeneralization =
+    `${keywordA} affected every group in exactly the same way, no matter the timing or the ${keywordB} reported.`.replace(/\s+/g, " ").trim();
+  const contradiction =
+    `${subject} did not change any plans, so ${keywordA} had no effect on later ${keywordC} in the passage events.`.replace(/\s+/g, " ").trim();
 
-  if (level === "Advanced") {
-    return [
-      `${focus} is supported through a relationship between ${detail} and ${context}.`,
-      `${detail} is accurate but misinterpreted in how it affects ${focus}.`,
-      `${context} is overgeneralized beyond what the passage supports.`,
-      `${shift} is treated as central even though it alters the conclusion.`,
-    ];
-  }
+  const candidateSet = [correct, partialTruth, overgeneralization, contradiction] as [string, string, string, string];
+  if (validateChoices(candidateSet, text)) return candidateSet;
 
-  return [
-    `${focus} is supported by evidence about ${detail}.`,
-    `${detail} is mentioned but its role in ${focus} is misunderstood.`,
-    `${context} is overemphasized even though it is not central.`,
-    `${shift} is treated as the main idea even though it changes the conclusion.`,
-  ];
+  const fallbackSentences = sentences.length ? sentences : [baseSentence];
+  const regenerated = [
+    `${fallbackSentences[0] || baseSentence}`.replace(/\s+/g, " ").trim(),
+    `${fallbackSentences[0] || baseSentence}, but the later ${keywordB} detail is omitted.`.replace(/\s+/g, " ").trim(),
+    `${keywordA} alone explains every result in the passage, regardless of context or timing.`.replace(/\s+/g, " ").trim(),
+    `${subject} ignored ${keywordA}, which means none of the later ${keywordC} were affected.`.replace(/\s+/g, " ").trim(),
+  ] as [string, string, string, string];
+
+  return validateChoices(regenerated, text) ? regenerated : buildSSFallbackChoices();
 }
 
 function buildCrossFallback(
@@ -1749,8 +1754,34 @@ function isGenericAnswerChoice(choice: string): boolean {
   if (!text) return true;
   if (FORBIDDEN_GENERIC_ANSWER_PATTERNS.some((pattern) => pattern.test(text))) return true;
   if (text.split(/\s+/).length < 6) return true;
-  const genericMeta = /(passage evidence|key detail|main point|correct interpretation|strongest evidence)/i;
+  const genericMeta = new RegExp(
+    `(${[
+      "passage evidence",
+      "key detail",
+      "main point",
+      "correct interpretation",
+      "strongest evidence",
+      ...ABSTRACT_META_PHRASES,
+    ].join("|")})`,
+    "i",
+  );
   return genericMeta.test(text);
+}
+
+function validateChoices(choices: string[], passage: string): boolean {
+  const keywords = passageKeywords(String(passage || "")).slice(0, 18);
+  if (!Array.isArray(choices) || choices.length !== 4) return false;
+  if (keywords.length === 0) return false;
+
+  return choices.every((choice) => {
+    const text = String(choice || "").toLowerCase().trim();
+    if (!text) return false;
+    if (text.split(/\s+/).length < 6) return false;
+    if (ABSTRACT_META_PHRASES.some((phrase) => text.includes(phrase))) return false;
+    if (FORBIDDEN_GENERIC_ANSWER_PATTERNS.some((pattern) => pattern.test(text))) return false;
+    const hasKeyword = keywords.some((keyword) => text.includes(keyword));
+    return hasKeyword;
+  });
 }
 
 function isBadQuestion(q: Question | null | undefined, mode: CanonicalMode | "cross"): boolean {
@@ -1911,10 +1942,6 @@ function sanitizeQuestions(
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter((token) => token.length > 3);
-  const cleanChoiceText = (value: unknown): string =>
-    String(value ?? "")
-      .replace(/^[A-D]\.\s*/i, "")
-      .trim();
   const hasForbiddenLanguage = (text: string) =>
     subject !== "Reading" && forbiddenNonReading.some((term) => text.includes(term));
   const hasSkillSignal = (text: string) =>
@@ -1958,10 +1985,11 @@ function sanitizeQuestions(
     return Boolean(q.choices?.[LETTERS.indexOf(single)]);
   };
   const replaceWithFallback = (index: number): Question => ({ ...fallback[index] });
-  let anyQuestionFailed = false;
+  let missingOrEmptyChoicesDetected = false;
   const sanitized: Question[] = incoming.map((item, i) => {
     const q = item && typeof item === "object" ? item as Record<string, unknown> : {};
-    if (!q.question || !q.choices || !Array.isArray(q.choices) || q.choices.length < 4) {
+    if (!q.choices || !Array.isArray(q.choices) || q.choices.length === 0 || q.choices.every((choice) => !String(choice || "").trim())) {
+      missingOrEmptyChoicesDetected = true;
       return replaceWithFallback(i);
     }
     const expectedType = fallback[i].type || "mc";
@@ -1971,11 +1999,16 @@ function sanitizeQuestions(
       ? `${rawQuestion.replace(/\s+$/g, "")} Select TWO answers.`
       : rawQuestion;
 
-    let normalizedChoices = (
-      subject === "Reading"
-        ? strengthenChoiceSet(normalizeChoices(q.choices, subject, skill), questionText, passage, subject)
-        : normalizeChoices(q.choices, subject, skill).map((choice) => cleanChoiceText(choice))
-    ) as [string, string, string, string];
+    let normalizedChoices = normalizeChoices(q.choices, subject, skill).map((choice) => cleanChoiceText(choice)) as [
+      string,
+      string,
+      string,
+      string,
+    ];
+
+    if (subject === "Reading" && !validateChoices(normalizedChoices, getPassageText(passage))) {
+      normalizedChoices = buildReadingChoices(passage || "", questionText, level);
+    }
 
     if (subject === "Math") {
       normalizedChoices = normalizedChoices.map((choice) => {
@@ -2059,25 +2092,19 @@ function sanitizeQuestions(
       ([base.question, ...base.choices].some((entry) => referencesPassage(entry)));
 
     if (!isSelfContained(base) || !answerFitsQuestion(base) || choiceFailures || subjectStrictFailure || practicePassageBleed) {
-      anyQuestionFailed = true;
-      return replaceWithFallback(i);
+      if (subject === "Reading") {
+        return {
+          ...base,
+          choices: buildReadingChoices(passage || "", questionText, level),
+        };
+      }
+      return base;
     }
     return base;
   });
 
   while (sanitized.length < 5) sanitized.push(replaceWithFallback(sanitized.length));
-  const fallbackQuestions =
-    isCrossCurricularMode(mode)
-      ? buildCrossFallback(subject, skill, level)
-      : buildPracticeFallback(skill, subject, level);
-
-  let questions = sanitized.slice(0, 5).map((q, i) => {
-    if (isBadQuestion(q, mode)) {
-      console.log("⚠️ Replacing bad question at index:", i);
-      return { ...(fallbackQuestions[i] || q) };
-    }
-    return q;
-  });
+  let questions = sanitized.slice(0, 5);
 
   questions = questions.map((q) => ({
     ...q,
@@ -2085,50 +2112,13 @@ function sanitizeQuestions(
   }));
   console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", questions.length);
   const finalSet = questions;
-  const fullSetFailed = finalSet.some((q) =>
-    !q?.question ||
-    !Array.isArray(q?.choices) ||
-    q.choices.length < 4 ||
-    q.choices.some((choice) => isGenericAnswerChoice(choice))
-  );
-
-  const setLevelSubjectValidationFailed = (() => {
-    if (subject === "Math") {
-      const hasMultiStep = finalSet.some((q) => isMultiStepMathQuestion(q));
-      const numericCorrectAnswers = finalSet.every((q) => correctAnswerLooksNumeric(q));
-      return !hasMultiStep || !numericCorrectAnswers;
-    }
-    if (subject === "Science") {
-      return finalSet.some((q) => !/(process|relationship|cause|effect|variable|result|observation)/i.test(String(q.explanation || "")));
-    }
-    if (subject === "Social Studies") {
-      return finalSet.some((q) => !/(cause|effect|impact|result|outcome|led to|changed)/i.test(String(q.explanation || "")));
-    }
-    return finalSet.some((q) =>
-      !referencesPassage(q.question) ||
-      !/(evidence|inference|theme|supports|passage)/i.test(String(q.explanation || ""))
-    );
-  })();
-
-  const practiceCrossBleedFailed = mode === "Practice" && subject !== "Reading" &&
-    finalSet.some((q) => [q.question, ...q.choices].some((entry) => referencesPassage(entry)));
-  const levelComplexityFailed = !validateLevelComplexity(subject, level, finalSet);
-  const distractorRigorFailed = finalSet.some((q) => !validateDistractorRigor(q, level));
-  const allTooEasy = finalSet.every((q) => (q.choices || []).every((choice) => String(choice || "").split(/\s+/).length <= 4));
-  const allObviouslyWrong = finalSet.every((q) =>
-    (q.choices || []).filter((_, index) => LETTERS[index] !== normalizeAnswer(q.correct_answer))
-      .every((choice) => /(always|never|impossible|unrelated|not supported)/i.test(String(choice || "")))
-  );
 
   if (
-    anyQuestionFailed ||
-    fullSetFailed ||
-    setLevelSubjectValidationFailed ||
-    practiceCrossBleedFailed ||
-    levelComplexityFailed ||
-    distractorRigorFailed ||
-    allTooEasy ||
-    allObviouslyWrong
+    missingOrEmptyChoicesDetected ||
+    finalSet.some((q) =>
+      !Array.isArray(q?.choices) ||
+      q.choices.every((choice) => !String(choice || "").trim())
+    )
   ) {
     return fallback.slice(0, 5).map((q) => ({ ...q }));
   }
