@@ -243,9 +243,13 @@ Step 4: Check that your answer makes sense.
 Final Answer: ${correctAnswer}`;
 }
 
-function buildCrossExplanation(passage: string, question: string): string {
+function teacherStyleExplanation(passage: string, question: string): string {
   const snippet = getRelevantSnippet(passage, question);
-  return `Go back to the passage. Notice this part: "${snippet}". This detail directly supports the correct answer.`;
+  return `The correct answer is supported by this part of the passage: "${snippet}". This detail helps explain why the correct choice is the strongest answer when compared to the other options.`;
+}
+
+function buildCrossExplanation(passage: string, question: string): string {
+  return teacherStyleExplanation(passage, question);
 }
 
 function buildParentTip(subject: string): string {
@@ -1274,11 +1278,7 @@ function buildPracticeFallback(
       ]
       : buildReadingChoices(safePassage, leveledStem, level);
     const correctAnswer = String(sourceChoices[0] || "").trim();
-    const numericCorrectAnswer = Number(correctAnswer.replace(/[^0-9.-]/g, ""));
-    const distractorSeed = subject === "Math" && Number.isFinite(numericCorrectAnswer)
-      ? numericCorrectAnswer
-      : correctAnswer;
-    const distractors = buildDistractors(distractorSeed, leveledStem, subject);
+    const distractors = buildStudentMistakeDistractors(safePassage, String(correctAnswer || "").trim(), leveledStem);
     const choices = [correctAnswer, ...distractors];
     const finalChoices = shuffleArray(choices.map((choice) => String(choice || "").trim()).filter(Boolean));
     while (finalChoices.length < 4) {
@@ -1369,7 +1369,7 @@ function buildReadingChoices(
   const outcome = baseWords.slice(8, 15).join(" ") || "after new results changed local priorities";
 
   const correct = `${subject} ${action} ${outcome}`.replace(/\s+/g, " ").trim();
-  const distractors = buildDistractors(correct, questionText, "Reading");
+  const distractors = buildStudentMistakeDistractors(text, correct, questionText);
   const choices = [correct, ...distractors];
   const finalChoices = shuffleArray(choices.map((choice) => String(choice).trim()).filter(Boolean));
 
@@ -1385,25 +1385,58 @@ function buildReadingChoices(
   return normalizeChoices(finalChoices as [string, string, string, string]);
 }
 
-function buildDistractors(correctAnswer: string | number, question: string, subject: string): string[] {
-  void question;
-  const distractors: string[] = [];
+function buildStudentMistakeDistractors(
+  passage: string,
+  correctAnswer: string,
+  question: string,
+): string[] {
+  const sentences = String(passage || "")
+    .split(/[.!?]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 25);
 
-  if (subject === "Math" && typeof correctAnswer === "number") {
-    const val = correctAnswer;
-    distractors.push(String(val + 2));
-    distractors.push(String(val - 2));
-    distractors.push(String(Math.round(val * 1.2)));
-    distractors.push(String(Math.round(val * 0.8)));
-  } else {
-    distractors.push("A detail from the passage that is true but does not answer the question.");
-    distractors.push("A statement that reverses the cause and effect relationship.");
-    distractors.push("An idea that is related to the topic but not supported by the passage.");
+  const distractors: string[] = [];
+  const correctLower = String(correctAnswer || "").toLowerCase();
+  const questionLower = String(question || "").toLowerCase();
+
+  for (const s of sentences) {
+    if (!correctLower.includes(s.toLowerCase()) && s.length > 20) {
+      const partial = s.split(",")[0];
+      if (partial.length > 20) {
+        distractors.push(partial);
+        break;
+      }
+    }
   }
 
-  const unique = Array.from(new Set(distractors));
+  for (const s of sentences) {
+    if (
+      !correctLower.includes(s.toLowerCase()) &&
+      !questionLower.includes(s.toLowerCase()) &&
+      s.length > 20
+    ) {
+      distractors.push(s);
+      break;
+    }
+  }
 
-  return unique.slice(0, 3);
+  if (String(correctAnswer || "").includes("because")) {
+    const flipped = String(correctAnswer || "").replace("because", "so");
+    if (flipped !== correctAnswer) {
+      distractors.push(flipped);
+    }
+  }
+
+  distractors.push("The situation affected many aspects of the community without a clear single cause.");
+
+  const words = String(correctAnswer || "").split(" ").filter((w) => w.length > 4);
+  if (words.length > 0) {
+    distractors.push(`${words[0]} was the main reason for the outcome.`);
+  }
+
+  return Array.from(new Set(distractors))
+    .filter((d) => d && d.length > 20 && d.toLowerCase() !== correctLower)
+    .slice(0, 3);
 }
 
 function shuffleArray<T>(arr: T[]): T[] {
@@ -1567,11 +1600,7 @@ function buildCrossFallback(
     const support = buildSupportContent(subject, leveledStem, "mc", i, level, "Cross-Curricular", crossPassage);
     const sourceChoices = choiceBanks[i % choiceBanks.length];
     const correctAnswer = String(sourceChoices[0] || "").trim();
-    const numericCorrectAnswer = Number(correctAnswer.replace(/[^0-9.-]/g, ""));
-    const distractorSeed = subject === "Math" && Number.isFinite(numericCorrectAnswer)
-      ? numericCorrectAnswer
-      : correctAnswer;
-    const distractors = buildDistractors(distractorSeed, leveledStem, subject);
+    const distractors = buildStudentMistakeDistractors(crossPassage, correctAnswer, leveledStem);
     const choices = shuffleArray([correctAnswer, ...distractors].map((choice) => String(choice || "").trim()).filter(Boolean));
     while (choices.length < 4) {
       choices.push(`Option ${choices.length + 1}`);
