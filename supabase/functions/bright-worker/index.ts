@@ -1210,40 +1210,44 @@ function buildDistractors(
   sentences: string[],
   keywords: string[],
 ): [string, string, string, string] {
-  const clean = (value: string): string => String(value || "").replace(/\s+/g, " ").replace(/\.$/, "").trim();
-  const safeCorrect = clean(correct);
-  const normalizedKeywords = keywords.map((token) => clean(token).toLowerCase()).filter((token) => token.length >= 4);
-  const sourceSentences = sentences.map((sentence) => clean(sentence)).filter((sentence) => sentence.split(/\s+/).length >= 8);
-  const lowerCorrect = safeCorrect.toLowerCase();
+  void keywords;
+  const clean = (value: string): string => value.replace(/\s+/g, " ").trim();
 
-  const wrongRealSentence = sourceSentences.find((sentence) => sentence.toLowerCase() !== lowerCorrect) ||
-    sourceSentences[0] ||
-    safeCorrect;
+  const base = clean(correct);
 
-  const misconceptionSeed = sourceSentences.find((sentence) =>
-    sentence.toLowerCase() !== lowerCorrect &&
-    normalizedKeywords.some((token) => sentence.toLowerCase().includes(token))
-  ) || wrongRealSentence;
-  const misconceptionWords = misconceptionSeed.split(/\s+/).filter(Boolean);
-  const misconceptionLead = misconceptionWords.slice(0, 5).join(" ") || "People in the passage";
-  const misconception =
-    `${misconceptionLead} only changed because ${normalizedKeywords[0] || "events"} stayed identical, which kept ${normalizedKeywords[1] || "results"} from shaping later ${normalizedKeywords[2] || "decisions"}`.replace(/\s+/g, " ").trim();
+  // Extract meaningful chunks
+  const parts = base.split(" ");
 
-  const correctWords = safeCorrect.split(/\s+/).filter(Boolean);
-  const incomplete = `${correctWords.slice(0, Math.max(6, Math.ceil(correctWords.length * 0.55))).join(" ")} after early ${normalizedKeywords[0] || "events"}, without the later ${normalizedKeywords[1] || "details"}`.replace(/\s+/g, " ").trim();
+  const claim1 = base; // correct
 
-  const pool = [safeCorrect, misconception, wrongRealSentence, incomplete]
-    .map((choice) => clean(choice))
-    .filter((choice) => choice.split(/\s+/).length >= 6);
+  // PARTIAL SUPPORT (only one detail)
+  const claim2 = clean(
+    parts.slice(0, 6).join(" ") +
+      " based on one detail, but does not include the full outcome",
+  );
 
-  while (pool.length < 4) pool.push(safeCorrect);
+  // MISINTERPRETATION
+  const claim3 = clean(
+    base.replace(/because|after|when/gi, "even though"),
+  );
 
-  for (let i = pool.length - 1; i > 0; i--) {
+  // WRONG CONTEXT
+  const altSentence =
+    sentences.find((sentence) => !base.includes(sentence)) || sentences[0] || base;
+
+  const claim4 = clean(
+    altSentence + " but this applies to a different part of the passage",
+  );
+
+  const choices = [claim1, claim2, claim3, claim4];
+
+  // shuffle
+  for (let i = choices.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
+    [choices[i], choices[j]] = [choices[j], choices[i]];
   }
 
-  return pool.slice(0, 4) as [string, string, string, string];
+  return choices as [string, string, string, string];
 }
 
 function buildCrossFallback(
