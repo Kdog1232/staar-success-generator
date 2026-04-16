@@ -1211,83 +1211,122 @@ function buildDistractors(
   keywords: string[],
 ): [string, string, string, string] {
   const clean = (value: string): string => String(value || "").replace(/\s+/g, " ").replace(/\.$/, "").trim();
+  const splitWords = (value: string): string[] => clean(value).toLowerCase().split(/\s+/).filter(Boolean);
+  const pickRandom = <T>(items: T[]): T => items[Math.floor(Math.random() * items.length)];
+
   const base = clean(correct);
   const sourceSentences = sentences.map((sentence) => clean(sentence)).filter((sentence) => sentence.split(/\s+/).length >= 8);
   const normalizedKeywords = keywords.map((token) => clean(token).toLowerCase()).filter((token) => token.length >= 4);
   const fallbackKeyword = normalizedKeywords[0] || "";
-  const baseWords = base.split(/\s+/).filter(Boolean);
 
-  const isWeakChoice = (choice: string): boolean => choice.split(/\s+/).length < 6;
-  const hasSubjectActionOutcome = (choice: string): boolean => choice.split(/\s+/).length >= 9;
+  const connectorParts = base.split(/\b(because|so|therefore|as a result|after|before|when|while|since)\b/i).map((part) => clean(part)).filter(Boolean);
+  const connectors = ["because", "so", "therefore", "as a result", "after", "before", "when", "while", "since"];
+  const tokenizedBase = splitWords(base);
+
   const hasPassageGrounding = (choice: string): boolean => {
     const text = choice.toLowerCase();
-    const sentenceOverlap = sourceSentences.some((sentence) =>
-      sentence.toLowerCase().split(/\s+/).filter((token) => token.length >= 4).some((token) => text.includes(token))
-    );
+    const sentenceOverlap = sourceSentences.some((sentence) => {
+      const tokens = splitWords(sentence).filter((token) => token.length >= 4);
+      let overlap = 0;
+      for (const token of tokens) {
+        if (text.includes(token)) overlap += 1;
+      }
+      return overlap >= 2;
+    });
     const keywordOverlap = normalizedKeywords.some((keyword) => text.includes(keyword));
     return sentenceOverlap || keywordOverlap || (!!fallbackKeyword && text.includes(fallbackKeyword));
   };
 
-  const buildCandidates = (attempt: number): [string, string, string, string] => {
-    const claim1 = base;
-
-    const claim2 = clean(
-      `${baseWords.slice(0, 6).join(" ") || base} but does not fully explain the outcome described in the passage`,
-    );
-
-    const claim3Seed = /because|after|when/i.test(base)
-      ? base.replace(/because|after|when/gi, "even though")
-      : `${base} even though the timing and causes are interpreted differently`;
-    const claim3 = clean(claim3Seed);
-
-    const alt = sourceSentences.find((sentence, index) =>
-      !base.toLowerCase().includes(sentence.toLowerCase()) && index >= attempt % Math.max(1, sourceSentences.length)
-    ) ||
-      sourceSentences.find((sentence) => !base.toLowerCase().includes(sentence.toLowerCase())) ||
-      base;
-
-    const claim4 = clean(`${alt} but this detail does not fully support the main idea`);
-    const rawChoices = [claim1, claim2, claim3, claim4];
-    const uniqueChoices = Array.from(new Set(rawChoices.map((choice) => clean(choice))));
-
-    if (uniqueChoices.length !== 4) {
-      return [
-        claim1,
-        clean(`${claim2} in this context`),
-        clean(`${claim3} in this context`),
-        clean(`${claim4} in this context`),
-      ];
-    }
-    return uniqueChoices as [string, string, string, string];
+  const hasSubjectActionOutcome = (choice: string): boolean => {
+    const words = splitWords(choice);
+    const hasAction = /\b(is|are|was|were|led|caused|made|showed|changed|increased|decreased|supported|delayed|improved|reduced|allowed|prevented|helped|pushed|kept|moved|shifted|grew)\b/i.test(choice);
+    const hasOutcomeSignal = /\b(so|therefore|result|outcome|eventually|later|then|which|leading|causing|meant|left|created)\b/i.test(choice) || words.length >= 12;
+    return words.length >= 8 && hasAction && hasOutcomeSignal;
   };
 
-  for (let attempt = 0; attempt < 6; attempt++) {
-    const choices = buildCandidates(attempt);
-    const shuffled = [...choices];
+  const sharesRepeatedStructure = (choice: string): boolean => {
+    const tokens = splitWords(choice);
+    if (tokens.length < 6 || tokenizedBase.length < 6) return false;
+    const baseBigrams = new Set(tokenizedBase.slice(0, -1).map((w, i) => `${w} ${tokenizedBase[i + 1]}`));
+    const choiceBigrams = tokens.slice(0, -1).map((w, i) => `${w} ${tokens[i + 1]}`);
+    const overlap = choiceBigrams.filter((pair) => baseBigrams.has(pair)).length;
+    const ratio = overlap / Math.max(1, choiceBigrams.length);
+    return ratio >= 0.65;
+  };
+
+  const isWeakChoice = (choice: string): boolean => {
+    return splitWords(choice).length < 8 || sharesRepeatedStructure(choice) || !hasSubjectActionOutcome(choice);
+  };
+
+  const sampleSentencePool = sourceSentences.length ? sourceSentences : [base];
+
+  const buildCompetingClaims = (): [string, string, string, string] => {
+    const baseSentence = pickRandom(sampleSentencePool);
+    const altSentence = pickRandom(sampleSentencePool);
+    const detailSentence = pickRandom(sampleSentencePool);
+
+    const baseDetail = connectorParts[0] || baseSentence;
+    const baseOutcome = connectorParts.slice(1).join(" ") || base;
+
+    const detailTokens = splitWords(detailSentence);
+    const emphasizedDetail = clean(detailTokens.slice(0, Math.min(10, detailTokens.length)).join(" ")) || baseDetail;
+
+    const contextA = clean(baseSentence.split(/[,;:]/)[0]);
+    const contextB = clean(altSentence.split(/[,;:]/)[0]);
+
+    const missedOutcomeTemplates = [
+      `${emphasizedDetail} and this explains part of the situation, yet the larger result in the passage comes from another step`,
+      `${emphasizedDetail}, which is accurate, though it leaves out what ultimately changed in the passage`,
+      `${emphasizedDetail}, but that point alone cannot account for the final development described by the author`,
+    ];
+
+    const reversedLogicTemplates = [
+      `The later outcome happened first, and only afterward did ${clean(baseDetail).toLowerCase()} shape events`,
+      `${clean(baseOutcome)} happened before ${clean(baseDetail).toLowerCase()}, so the sequence in the passage is reversed`,
+      `${clean(baseDetail)} appears after the final result, which flips the cause-and-effect relationship described in the text`,
+    ];
+
+    const contextShiftTemplates = [
+      `${contextA} supports a similar idea, but it applies to ${contextB.toLowerCase()} rather than the decision described in the question`,
+      `${contextB} reflects the same theme, yet it is tied to a different part of the passage than the one being asked about`,
+      `${contextA} fits the passage details, but it transfers that reasoning to ${contextB.toLowerCase()} instead of the original context`,
+    ];
+
+    const distractorB = clean(pickRandom(missedOutcomeTemplates));
+    const distractorC = clean(pickRandom(reversedLogicTemplates));
+    const distractorD = clean(pickRandom(contextShiftTemplates));
+
+    return [base, distractorB, distractorC, distractorD];
+  };
+
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const candidateChoices = buildCompetingClaims();
+    const shuffled = [...candidateChoices];
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
 
     const uniqueCount = new Set(shuffled.map((choice) => choice.toLowerCase())).size;
-    const allGrounded = shuffled.every((choice) => hasPassageGrounding(choice) && hasSubjectActionOutcome(choice));
-    if (uniqueCount === 4 && !shuffled.some(isWeakChoice) && allGrounded) {
+    const allGrounded = shuffled.every((choice) => hasPassageGrounding(choice));
+    const allStrong = shuffled.every((choice) => !isWeakChoice(choice));
+    const nonBaseWithConnectorShift = shuffled.filter((choice) => choice !== base).some((choice) => connectors.some((connector) => choice.toLowerCase().includes(connector)));
+
+    if (uniqueCount === 4 && allGrounded && allStrong && nonBaseWithConnectorShift) {
       return shuffled as [string, string, string, string];
     }
   }
 
-  const fallbackAlt = sourceSentences.find((sentence) => sentence.toLowerCase() !== base.toLowerCase()) || base;
+  const fallbackSentence = pickRandom(sampleSentencePool);
+  const fallbackAlt = pickRandom(sampleSentencePool);
   return [
     base,
-    clean(`${baseWords.slice(0, 6).join(" ") || base} but does not fully explain the outcome described in the passage`),
-    clean(
-      (/because|after|when/i.test(base)
-        ? base.replace(/because|after|when/gi, "even though")
-        : `${base} even though the timing and causes are interpreted differently`),
-    ),
-    clean(`${fallbackAlt} but this detail does not fully support the main idea`),
+    clean(`${fallbackSentence} and this detail is accurate, yet it does not include the full chain of events in the passage`),
+    clean(`The passage sequence is reversed here: ${base} is treated as happening after the final result`),
+    clean(`${fallbackAlt} uses a valid idea from the text but applies it to a different situation than the question asks about`),
   ];
 }
+
 
 function buildCrossFallback(
   subject: CanonicalSubject,
