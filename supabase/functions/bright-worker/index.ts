@@ -853,6 +853,10 @@ function normalizePartABAnswer(value: unknown): PartABAnswer {
   };
 }
 
+function pickRandom<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
 function clampPassageWords(passage: string, min: number, max: number): string {
   const cleaned = String(passage || "").replace(/\s+/g, " ").trim();
   const words = cleaned.split(" ").filter(Boolean);
@@ -1312,7 +1316,6 @@ function buildDistractors(
 ): [string, string, string, string] {
   const clean = (value: string): string => String(value || "").replace(/\s+/g, " ").replace(/\.$/, "").trim();
   const splitWords = (value: string): string[] => clean(value).toLowerCase().split(/\s+/).filter(Boolean);
-  const pickRandom = <T>(items: T[]): T => items[Math.floor(Math.random() * items.length)];
 
   const base = clean(correct);
   const sourceSentences = sentences.map((sentence) => clean(sentence)).filter((sentence) => sentence.split(/\s+/).length >= 8);
