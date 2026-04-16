@@ -872,7 +872,6 @@ function ensurePassageLength(
   allowFallback = true,
 ): string {
   const cleaned = String(passage || "").replace(/\s+/g, " ").trim();
-  }
   const words = cleaned.split(" ").filter(Boolean);
   if (words.length >= min && words.length <= max) return cleaned;
   if (words.length > max) return words.slice(0, max).join(" ");
@@ -880,9 +879,15 @@ function ensurePassageLength(
     console.warn("Short passage — expanding instead of fallback");
 
     let expanded = cleaned;
+    const expansionPool = [
+      "This shows how evidence, decisions, and outcomes are connected in real-world situations.",
+      "Each detail builds on the one before it, helping the reader track cause and effect.",
+      "By comparing observations, students can explain why some results are stronger than others.",
+      "These examples make it easier to connect the passage ideas to everyday problem-solving.",
+    ];
 
     while (expanded.split(/\s+/).length < min) {
-      expanded += " This shows how evidence, decisions, and outcomes are connected in real-world situations.";
+      expanded += ` ${pickRandom(expansionPool)}`;
     }
 
     return expanded.split(/\s+/).slice(0, max).join(" ");
