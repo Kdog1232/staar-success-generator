@@ -200,6 +200,126 @@ function gradeWordRange(grade: number, subject: CanonicalSubject, mode: Canonica
   return { min: grade <= 4 ? 120 : 140, max: grade <= 4 ? 220 : 260 };
 }
 
+type GradeConstraints = {
+  maxWordsPerSentence: number;
+  maxSentences: number;
+  vocab: string;
+  allowAbstract: boolean | "limited";
+  passageLength: string;
+};
+
+function getGradeConstraints(grade: number): GradeConstraints {
+  if (grade <= 3) {
+    return {
+      maxWordsPerSentence: 10,
+      maxSentences: 5,
+      vocab: "simple",
+      allowAbstract: false,
+      passageLength: "short",
+    };
+  }
+
+  if (grade === 4) {
+    return {
+      maxWordsPerSentence: 12,
+      maxSentences: 6,
+      vocab: "simple-moderate",
+      allowAbstract: "limited",
+      passageLength: "short-medium",
+    };
+  }
+
+  if (grade === 5) {
+    return {
+      maxWordsPerSentence: 14,
+      maxSentences: 7,
+      vocab: "moderate",
+      allowAbstract: "limited",
+      passageLength: "medium",
+    };
+  }
+
+  if (grade === 6) {
+    return {
+      maxWordsPerSentence: 16,
+      maxSentences: 8,
+      vocab: "moderate",
+      allowAbstract: true,
+      passageLength: "medium",
+    };
+  }
+
+  if (grade === 7) {
+    return {
+      maxWordsPerSentence: 18,
+      maxSentences: 9,
+      vocab: "moderate-advanced",
+      allowAbstract: true,
+      passageLength: "medium-long",
+    };
+  }
+
+  return {
+    maxWordsPerSentence: 20,
+    maxSentences: 10,
+    vocab: "advanced",
+    allowAbstract: true,
+    passageLength: "long",
+  };
+}
+
+function getForbiddenWords(grade: number): string[] {
+  if (grade <= 3) {
+    return ["biodiversity", "infrastructure", "regulation", "irreversible"];
+  }
+  if (grade <= 5) {
+    return ["irreversible", "concentration"];
+  }
+  return [];
+}
+
+function violatesGradeLevel(text: string, grade: number): boolean {
+  const forbidden = getForbiddenWords(grade);
+  const lower = text.toLowerCase();
+  return forbidden.some((word) => lower.includes(word));
+}
+
+function enforceSentenceLength(text: string, maxWords: number): string {
+  return text
+    .split(".")
+    .map((sentence) => {
+      const words = sentence.trim().split(/\s+/).filter(Boolean);
+      return words.slice(0, maxWords).join(" ");
+    })
+    .filter(Boolean)
+    .join(". ");
+}
+
+function simplifyQuestionByGrade(text: string, grade: number): string {
+  if (grade <= 3) {
+    return text
+      .replace(/compare.*interpretations/gi, "What does the passage show?")
+      .replace(/which detail best supports/gi, "Which detail helps the most?")
+      .replace(/evaluate|analyze/gi, "choose");
+  }
+
+  if (grade <= 5) {
+    return text
+      .replace(/evaluate/gi, "decide")
+      .replace(/analyze/gi, "look at");
+  }
+
+  return text;
+}
+
+function isQuestionAligned(q: Question, passage: PassageContent | string): boolean {
+  const passageText = getPassageText(passage);
+  if (!passageText.trim()) return true;
+  const combined = `${q.question} ${(q.choices || []).join(" ")}`.toLowerCase();
+  const keywords = passageText.toLowerCase().split(/\s+/).slice(0, 12);
+  return keywords.some((word) => word.length > 2 && combined.includes(word));
+}
+
 function getRelevantSnippet(passage: string, question: string): string {
   const sentences = passage
     .split(/[.!?]+/)
@@ -268,9 +388,9 @@ function ensureUsableExplanation(explanation: string): string {
 }
 
 function rigorInstruction(level: Level): string {
-  if (level === "Below") return "Use simpler language while keeping the same thinking depth and rigor.";
+  if (level === "Below") return "Use direct reasoning with explicit clues and clearer evidence paths.";
   if (level === "Advanced") return "Increase reasoning depth, abstraction, and evidence precision.";
-  return "Use grade-level language and reasoning rigor.";
+  return "Use grade-appropriate reasoning rigor.";
 }
 
 type RigorProfile = {
@@ -315,13 +435,13 @@ function routeBySkill(skill: string): "vocab" | "main_idea" | "inference" | "the
 
 function getDifficultyInstructions(level: Level): string {
   if (level === "Below") {
-    return "Use a shorter informational passage, explicit main ideas, direct identification questions, and clearly incorrect but plausible distractors.";
+    return "Use explicit main ideas, direct identification questions, and clearly incorrect but plausible distractors.";
   }
   if (level === "On Level") {
-    return "Use a moderate-length informational passage, require some inference, and include realistic distractors.";
+    return "Require some inference and include realistic distractors.";
   }
   if (level === "Advanced") {
-    return "Use a complex informational passage with multiple ideas or shifts, deeper reasoning, and subtle distractors close to correct.";
+    return "Use deeper reasoning with multiple ideas or shifts, and subtle distractors close to correct.";
   }
   return "";
 }
@@ -566,6 +686,7 @@ function buildCorePrompt(params: {
   const { grade, subject, skill, level, teksCode = "Unknown" } = params;
   const rigor = applyRigor(level);
   const rigorEngineRules = getRigorEngineRules(level, subject);
+  const constraints = getGradeConstraints(grade);
   if (subject === "Reading") {
     const readingRange = readingPracticeWordRange(level);
     const mainIdeaStemRule = isMainIdeaSkill(skill)
@@ -596,6 +717,12 @@ Rules:
 - TEKS alignment: skill "${skill}" at grade ${grade} must be assessed through application (analyze/infer/compare/explain), not definition recall.
 - Subject is Reading, so include a new informational passage only (${readingRange.min}–${readingRange.max} words).
 - If any instruction conflicts with the required passage length, follow ${readingRange.min}–${readingRange.max} words only.
+- Grade readability lock (must override level language changes):
+  - max words per sentence: ${constraints.maxWordsPerSentence}
+  - max sentence count target: ${constraints.maxSentences}
+  - vocabulary band: ${constraints.vocab}
+  - abstract language allowance: ${String(constraints.allowAbstract)}
+  - passage length signal: ${constraints.passageLength}
 - Passage genre lock: informational text ONLY. No stories, no characters, no narrative events, no character names.
 - Generate exactly 5 STAAR-style reading questions tied directly to that passage.
 - All 4 answer choices must explicitly reference passage details (events/actions/outcomes).
@@ -610,7 +737,7 @@ Rules:
   - Advanced: complex passage with multiple ideas/shifts, subtle distractors close to correct.
 ${mainIdeaStemRule}
 - Rigor profile:
-  - passage complexity: ${rigor.passage}
+  - passage complexity: grade-locked readability only (do not change by level)
   - question depth: ${rigor.questionDepth}
   - distractor quality: ${rigor.distractorQuality}
 - RIGOR ENGINE: ${rigorEngineRules}
@@ -636,6 +763,10 @@ Rules:
 - Instruction: Design the question to match how this TEKS is assessed on STAAR.
 - TEKS alignment: skill "${skill}" at grade ${grade} must be assessed through application (analyze/infer/compare/explain), not definition recall.
 - Subject is ${subject}, so DO NOT generate a passage.
+- Grade readability lock (must override level language changes):
+  - max words per sentence: ${constraints.maxWordsPerSentence}
+  - vocabulary band: ${constraints.vocab}
+  - abstract language allowance: ${String(constraints.allowAbstract)}
 - Generate exactly 5 standalone STAAR-style ${subject} questions.
 - Use multi-step reasoning where appropriate.
 - Questions must be subject-driven and not ELAR-framed.
@@ -660,6 +791,7 @@ function buildEnrichmentPrompt(params: {
   const { grade, subject, skill, practiceQuestions, level, crossPassage = "", teksCode = "Unknown" } = params;
   const rigor = applyRigor(level);
   const rigorEngineRules = getRigorEngineRules(level, subject);
+  const constraints = getGradeConstraints(grade);
   const subjectFocus = subject === "Math"
     ? [
       "Math passage must include numbers, quantities, rates, or comparisons.",
@@ -709,6 +841,11 @@ GRADE-LEVEL ADAPTATION
 - Grades 3-4: clear inference, concrete reasoning, shorter responses, direct passage links.
 - Grades 5-6: multi-step reasoning, combined details, moderate complexity.
 - Grades 7-8: abstract thinking, subtle choice differences, multi-layer reasoning.
+- Enforce readability from grade only (do not use level to alter vocabulary or sentence complexity):
+  - max words per sentence: ${constraints.maxWordsPerSentence}
+  - max sentence count target: ${constraints.maxSentences}
+  - vocabulary band: ${constraints.vocab}
+  - abstract language allowance: ${String(constraints.allowAbstract)}
 
 ANSWER CHOICE RULES
 - ALL 4 choices must reference the passage explicitly.
@@ -1233,63 +1370,8 @@ function buildPracticeFallback(
     } else {
       leveledStem = subject === "Math"
         ? `${leveledStem} Include only relevant numbers and ignore extra information to solve.`
-        : `${leveledStem} Compare at least two plausible interpretations before selecting the best answer.`;
+        : "What does the passage show?";
     }
-    const partAChoices: [string, string, string, string] = subject === "Math"
-      ? [
-        "She needs 9 more pages because 14 + 18 + 9 = 41 and 50 - 41 = 9.",
-        "She needs 23 more pages because 14 + 9 = 23.",
-        "She needs 5 more pages because 50 - 45 = 5.",
-        "She does not need more pages because she already read 50 pages.",
-      ]
-      : subject === "Science"
-      ? [
-        "The plant near the window received more light energy for photosynthesis.",
-        "The plant near the window had less water, so it always grows taller.",
-        "Plants in dark places grow fastest because they save energy.",
-        "Light does not affect growth when plants are in the same room.",
-      ]
-      : subject === "Social Studies"
-      ? [
-        "Rivers gave settlers water and transportation routes for trade.",
-        "Rivers were chosen mainly because they had fewer storms every year.",
-        "Settlers avoided rivers because travel was harder there.",
-        "Rivers were important only for recreation, not survival or trade.",
-      ]
-      : [
-        "Editors compared interviews and survey results, then revised headlines so each claim matched the strongest source evidence.",
-        "Editors kept the first draft headline even when later quotes changed what the article was really saying.",
-        "Editors replaced survey evidence with a new fact about cafeteria prices that did not appear in their notes.",
-        "Editors removed conflicting quotes and based the final conclusion on only one student comment.",
-      ];
-
-    const partBChoices: [string, string, string, string] = subject === "Math"
-      ? [
-        "The stem states she read 14 pages Friday, 18 Saturday, and 9 Sunday before comparing to 50.",
-        "The stem states she read only Friday and Saturday pages and skipped Sunday.",
-        "The stem states the goal changed from 50 pages to 41 pages.",
-        "The stem states page totals should be multiplied instead of added.",
-      ]
-      : subject === "Science"
-      ? [
-        "The scenario compares a plant near a window with one in a dark corner.",
-        "The scenario says both plants got the same amount of sunlight all day.",
-        "The scenario says growth was measured only by leaf color, not height.",
-        "The scenario says the dark-corner plant received stronger light.",
-      ]
-      : subject === "Social Studies"
-      ? [
-        "The question asks why settlers built near rivers, linking resources and movement.",
-        "The question says rivers were not used for crops, trade, or travel.",
-        "The question states towns were built far from water for safety.",
-        "The question says rivers mattered only after railroads were built.",
-      ]
-      : [
-        "The final publication says the team re-read original statements and adjusted wording so claims matched verified sources.",
-        "The final publication says headline wording never affected meaning as long as articles stayed the same length.",
-        "The final publication says interview quotes were optional because survey totals alone answer every question.",
-        "The final publication says conflicting reports should be combined without checking the original statements.",
-      ];
     const safePassage =
       passage && String(passage).trim().length > 0
         ? passage
@@ -1324,8 +1406,8 @@ function buildPracticeFallback(
     }
     const safeChoices = normalizeChoices(finalChoices as [string, string, string, string]);
     const resolvedCorrectAnswer = LETTERS[Math.max(0, finalChoices.findIndex((c) => String(c) === String(correctAnswer)))] || "A";
-    const safePartAChoices = normalizeChoices(partAChoices);
-    const safePartBChoices = normalizeChoices(partBChoices);
+    const partA = buildPartA(leveledStem, safePassage);
+    const partB = buildPartB(safePassage, correctAnswer);
     const question: Question = {
       type,
       question: leveledStem,
@@ -1333,24 +1415,8 @@ function buildPracticeFallback(
       correct_answer: type === "part_a_b"
         ? { partA: nextSingleAnswer(), partB: nextSingleAnswer() }
         : resolvedCorrectAnswer,
-      partA: type === "part_a_b"
-        ? {
-          question: `Part A: ${leveledStem}`,
-          choices: safePartAChoices,
-        }
-        : undefined,
-      partB: type === "part_a_b"
-        ? {
-          question: subject === "Math"
-            ? "Part B: Which step shows the correct reasoning for your Part A answer?"
-            : subject === "Science"
-            ? "Part B: Which evidence from the scenario supports your Part A answer?"
-            : subject === "Social Studies"
-            ? "Part B: Which detail from the event timeline best supports your Part A answer?"
-            : "Part B: Which sentence best supports your Part A answer?",
-          choices: safePartBChoices,
-        }
-        : undefined,
+      partA: type === "part_a_b" ? partA : undefined,
+      partB: type === "part_a_b" ? partB : undefined,
       explanation: "",
       hint: "",
       think: "",
@@ -1424,6 +1490,37 @@ function buildReadingChoices(
   }
 
   return normalizeChoices(finalChoices as [string, string, string, string]);
+}
+
+function buildPartA(question: string, passage: PassageContent | string): PartBlock {
+  return {
+    question: `Part A: ${question}`,
+    choices: buildReadingChoices(passage, question),
+  };
+}
+
+function buildPartB(passage: PassageContent | string, correctAnswer: string): PartBlock {
+  void correctAnswer;
+  const text = getPassageText(passage);
+  const sentences = text
+    .split(".")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 20);
+  const choices = sentences.slice(0, 4);
+  while (choices.length < 4) {
+    choices.push(sentences[0] || text.trim() || "The passage provides evidence for the answer.");
+  }
+
+  return {
+    question: "Part B: Which sentence from the passage best supports your answer?",
+    choices: normalizeChoices(choices as [string, string, string, string]),
+  };
+}
+
+function isValidPartAB(q: Question, passage: PassageContent | string): boolean {
+  const text = JSON.stringify(q).toLowerCase();
+  const passageWords = getPassageText(passage).toLowerCase().split(/\s+/).slice(0, 15);
+  return passageWords.some((word) => word.length > 2 && text.includes(word));
 }
 
 function buildStudentMistakeDistractors(
@@ -1721,46 +1818,8 @@ function buildCrossFallback(
       choices[0] = correctAnswer;
     }
     const resolvedCorrectAnswer = LETTERS[Math.max(0, choices.findIndex((c) => String(c) === String(correctAnswer)))] || "A";
-    const partAChoices: [string, string, string, string] = subject === "Math"
-      ? [
-        "After combo sales dropped by 8, single-item sales rose by 15, changing which items drove total earnings.",
-        "After combo sales dropped by 8, both combo and single-item sales decreased in hour two.",
-        "After combo sales dropped by 8, prices changed, so the two hours cannot be compared.",
-        "After combo sales dropped by 8, organizers stopped tracking sales data entirely.",
-      ]
-      : subject === "Science"
-      ? [
-        "After watering one section, the temperature increased less there, supporting a moisture-related effect.",
-        "After watering one section, blacktop heated faster than before because water traps heat.",
-        "After watering one section, all surfaces showed identical temperatures every hour.",
-        "After watering one section, students removed wind and sunlight from the experiment.",
-      ]
-      : [
-        "After flooding delayed shipments and raised prices, voters later approved the bridge bond.",
-        "After flooding delayed shipments, leaders canceled all transportation projects permanently.",
-        "After flooding delayed shipments, population declined on both riverbanks.",
-        "After flooding delayed shipments, merchants ended local trade immediately.",
-      ];
-    const partBChoices: [string, string, string, string] = subject === "Math"
-      ? [
-        "The passage states hour-two single-item sales increased by 15 after the announcement.",
-        "The passage states single-item prices increased from $2 to $6 in hour two.",
-        "The passage states combo sales increased by 15 after the announcement.",
-        "The passage states no hour-two sales were recorded.",
-      ]
-      : subject === "Science"
-      ? [
-        "The report notes a smaller temperature increase after one section was watered.",
-        "The report notes watering caused blacktop to absorb more heat than direct sun.",
-        "The report notes airflow and moisture were unrelated to temperature changes.",
-        "The report notes students ignored surface type during data collection.",
-      ]
-      : [
-        "Meeting records and election results show a shift from rail-first planning to the bridge bond.",
-        "Records show flooding improved rail shipments, so no transportation change was needed.",
-        "Election results show voters rejected the bridge after flooding delays.",
-        "Records show the bridge was built before the first rail decision in 1908.",
-      ];
+    const partA = buildPartA(leveledStem, crossPassage);
+    const partB = buildPartB(crossPassage, correctAnswer);
 
     const question: Question = {
       type,
@@ -1769,22 +1828,8 @@ function buildCrossFallback(
       correct_answer: type === "part_a_b"
         ? { partA: nextSingleAnswer(), partB: nextSingleAnswer() }
         : resolvedCorrectAnswer,
-      partA: type === "part_a_b"
-        ? {
-          question: `Part A: ${leveledStem}`,
-          choices: partAChoices,
-        }
-        : undefined,
-      partB: type === "part_a_b"
-        ? {
-          question: subject === "Math"
-            ? "Part B: Which step from the passage data best proves the Part A solution?"
-            : subject === "Science"
-            ? "Part B: Which evidence from the investigation best supports Part A?"
-            : "Part B: Which historical detail best supports Part A?",
-          choices: partBChoices,
-        }
-        : undefined,
+      partA: type === "part_a_b" ? partA : undefined,
+      partB: type === "part_a_b" ? partB : undefined,
       explanation: "",
       hint: "",
       think: "",
@@ -1962,46 +2007,8 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
   const questions = stems
     .map((stem, i) => {
     const type: QuestionType = i === 1 ? "part_a_b" : i === 4 ? "scr" : "mc";
-    const partAChoices: [string, string, string, string] = crossSubject === "Science"
-      ? [
-        "The passage shows temperature results changed when moisture and sunlight conditions changed.",
-        "The passage shows results stayed the same across all surfaces and conditions.",
-        "The passage shows students ignored data and used opinions only.",
-        "The passage shows watering increased temperature more than direct sunlight.",
-      ]
-      : crossSubject === "Math"
-      ? [
-        "The passage shows hour-two single-item demand changed after the announcement and affected earnings decisions.",
-        "The passage shows combo and single-item prices became identical in hour two.",
-        "The passage shows no sales data were collected in the second hour.",
-        "The passage shows only combo sales determine total revenue.",
-      ]
-      : [
-        "The passage shows transportation decisions shifted after flooding delays and later voter action.",
-        "The passage shows leaders never changed transportation plans over time.",
-        "The passage shows election results rejected all transportation projects.",
-        "The passage shows flooding had no effect on trade or prices.",
-      ];
-    const partBChoices: [string, string, string, string] = crossSubject === "Science"
-      ? [
-        "It states a watered section showed a smaller temperature increase in repeated testing.",
-        "It states blacktop cooled faster than shaded grass in direct sun.",
-        "It states wind and moisture were removed from the investigation.",
-        "It states thermometers were used only once before recommendations.",
-      ]
-      : crossSubject === "Math"
-      ? [
-        "It states combo sales dropped by 8 while single-item sales increased by 15 in hour two.",
-        "It states prices changed from $6 and $2 to higher values in hour two.",
-        "It states both combo and single-item sales dropped in hour two.",
-        "It states organizers ignored hour-one data during planning.",
-      ]
-      : [
-        "It states flooding delayed shipments and, years later, voters passed a bridge bond.",
-        "It states flooding improved rail shipping and lowered prices immediately.",
-        "It states population growth reduced the need for transportation changes.",
-        "It states bridge approval happened before any rail debate in 1908.",
-      ];
+    const partA = buildPartA(stem, crossPassage);
+    const partB = buildPartB(crossPassage, "A");
     let choices = (crossChoiceBanks[crossSubject]?.[i] ||
       crossChoiceBanks[crossSubject]?.[0] ||
       crossChoiceBanks["Social Studies"][0]) as [string, string, string, string];
@@ -2016,16 +2023,10 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
         ? { partA: nextSingleAnswer(), partB: nextSingleAnswer() }
         : nextSingleAnswer(),
       partA: type === "part_a_b"
-        ? {
-          question: `Part A: ${stem}`,
-          choices: partAChoices,
-        }
+        ? partA
         : undefined,
       partB: type === "part_a_b"
-        ? {
-          question: "Part B: Which sentence from the passage best supports your Part A answer?",
-          choices: partBChoices,
-        }
+        ? partB
         : undefined,
       explanation: "",
       sample_answer: type === "scr"
@@ -2175,6 +2176,7 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
         ? baseSocial
         : baseReading;
 
+  const fallbackPartPassage = fallbackPassage(effectiveSubject, mode, 5, level);
   return stems.map((stem, i) => {
     const type: QuestionType = i === 1 ? "part_a_b" : i === 3 ? "multi_select" : i === 4 ? "scr" : "mc";
     const baseChoices = normalizeChoices([
@@ -2183,12 +2185,8 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
       "Plants farther from the lamp appeared to grow faster because lower heat outweighed reduced light.",
       "Plant height changed randomly and was not related to the light conditions in the investigation.",
     ], effectiveSubject, skill);
-    const partBChoices = normalizeChoices([
-      "The investigation compared plant growth at different distances from the lamp over two weeks.",
-      "The passage says all plants were measured only once at the end of the week.",
-      "The class ignored light distance and focused only on soil color.",
-      "The scenario states that light intensity never changed during the test.",
-    ], effectiveSubject, skill);
+    const partA = buildPartA(stem, fallbackPartPassage);
+    const partB = buildPartB(fallbackPartPassage, "A");
     const question: Question = {
       type,
       question: stem,
@@ -2199,16 +2197,10 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
         ? { partA: nextSingleAnswer(), partB: nextSingleAnswer() }
         : nextSingleAnswer(),
       partA: type === "part_a_b"
-        ? {
-          question: `Part A: ${stem}`,
-          choices: baseChoices,
-        }
+        ? partA
         : undefined,
       partB: type === "part_a_b"
-        ? {
-          question: "Part B: Which evidence best supports your Part A answer?",
-          choices: partBChoices,
-        }
+        ? partB
         : undefined,
       explanation: "",
       sample_answer: type === "scr"
@@ -2420,6 +2412,7 @@ function sanitizeQuestions(
   skill: string,
   level: Level = "On Level",
   passage: PassageContent | string = "",
+  grade = 5,
 ): Question[] {
   const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
   const fallback = fallbackQuestionSet(subject, mode, skill, level);
@@ -2511,11 +2504,30 @@ function sanitizeQuestions(
     choices: normalizeChoices(q.choices),
   }));
   console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", questions.length);
-  const finalSet = questions;
+  const fallbackQuestions = fallback.slice(0, 5);
+  const finalSet = questions.map((q, i) => {
+    const simplified = {
+      ...q,
+      question: simplifyQuestionByGrade(q.question, grade),
+    };
+    const isPartAB = simplified.type === "part_a_b";
+    if (!isPartAB && !isQuestionAligned(simplified, passage)) {
+      console.warn("⚠️ Replacing misaligned question:", i);
+      return { ...fallbackQuestions[i] };
+    }
+    return simplified;
+  });
+  const alignedSet = finalSet.map((question, i) => {
+    if (question.type === "part_a_b" && !isValidPartAB(question, passage)) {
+      console.warn("⚠️ Invalid Part A/B — keeping original instead of fallback");
+      return question;
+    }
+    return question;
+  });
 
   if (
     missingOrEmptyChoicesDetected ||
-    finalSet.some((q) =>
+    alignedSet.some((q) =>
       !Array.isArray(q?.choices) ||
       q.choices.every((choice) => !String(choice || "").trim())
     )
@@ -2523,7 +2535,7 @@ function sanitizeQuestions(
     return fallback.slice(0, 5).map((q) => ({ ...q }));
   }
 
-  return finalSet;
+  return alignedSet;
 }
 
 function validateSkillAlignment(skill: string, questions: Question[]): boolean {
@@ -3368,6 +3380,7 @@ serve(async (req) => {
             effectiveSkill,
             level,
             crossContent.passage,
+            grade,
           ),
         },
       });
@@ -3492,6 +3505,7 @@ serve(async (req) => {
             continue;
           }
 
+          const constraints = getGradeConstraints(grade);
           const parsedPassage = parsed.passage;
           const passage = parsedPassage && typeof parsedPassage === "object" && !Array.isArray(parsedPassage)
             ? {
@@ -3523,13 +3537,22 @@ serve(async (req) => {
               grade,
               level,
             );
-          const safePassage = subject === "Reading"
+          let safePassage = subject === "Reading"
             ? (
               typeof passage === "string"
                 ? passage
                 : (passage.text_1 && passage.text_2 ? passage : null)
             )
             : "";
+          if (subject === "Reading" && typeof safePassage === "string" && safePassage.trim()) {
+            safePassage = enforceSentenceLength(safePassage, constraints.maxWordsPerSentence);
+            if (violatesGradeLevel(safePassage, grade)) {
+              console.warn("⚠️ Passage too advanced for grade:", grade);
+              const fallback = buildPracticeFallback(effectiveSkill, effectiveSubject, level);
+              safePassage = getPassageText(fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill, level));
+              parsed.practice = { questions: fallback };
+            }
+          }
           if (subject === "Reading" && (!safePassage || !getPassageText(safePassage).trim())) {
             retryFailureReason = "no_questions_returned";
             continue;
@@ -3549,6 +3572,7 @@ serve(async (req) => {
             effectiveSkill,
             level,
             subject === "Reading" ? safePassage : "",
+            grade,
           );
 
           const pipelineResult = await runPipeline({
@@ -3565,6 +3589,7 @@ serve(async (req) => {
             effectiveSkill,
             level,
             subject === "Reading" ? safePassage : "",
+            grade,
           );
           const outputValid = isValidOutput(pipelineQuestions, safePassage);
           if (!outputValid) {
@@ -3618,6 +3643,7 @@ serve(async (req) => {
           effectiveSkill,
           level,
           corePassageForChecks,
+          grade,
         );
         console.log("🧠 CROSS SUBJECT:", effectiveSubject);
         const crossContent = effectiveSubject === "Reading"
@@ -3629,6 +3655,7 @@ serve(async (req) => {
         }
 
         if (effectiveMode === "cross") {
+          const constraints = getGradeConstraints(grade);
           const crossPassage = ensurePassageLength(
             baseCrossPassage,
             250,
@@ -3638,19 +3665,24 @@ serve(async (req) => {
             grade,
             level,
           );
+          const gradeSafeCrossPassage = violatesGradeLevel(crossPassage, grade)
+            ? (console.warn("⚠️ Passage too advanced for grade:", grade),
+              getPassageText(fallbackPassageContent(effectiveSubject, "Cross-Curricular", grade, effectiveSkill, level)))
+            : enforceSentenceLength(crossPassage, constraints.maxWordsPerSentence);
           const crossQuestions = sanitizeQuestions(
             crossContent.questions || [],
             effectiveSubject,
             "Cross-Curricular",
             effectiveSkill,
             level,
-            crossPassage,
+            gradeSafeCrossPassage,
+            grade,
           );
           const result = await runPipeline({
             stems: crossQuestions,
             crossSubject: effectiveSubject,
             subject: effectiveSubject,
-            crossPassage,
+            crossPassage: gradeSafeCrossPassage,
             questions: crossQuestions,
           });
           const pipelineCrossQuestions = sanitizeQuestions(
@@ -3659,11 +3691,12 @@ serve(async (req) => {
             "Cross-Curricular",
             effectiveSkill,
             level,
-            crossPassage,
+            gradeSafeCrossPassage,
+            grade,
           );
           const payload = {
             cross: {
-              passage: crossPassage,
+              passage: gradeSafeCrossPassage,
               questions: pipelineCrossQuestions,
             },
           };
@@ -3691,6 +3724,7 @@ serve(async (req) => {
             effectiveSkill,
             level,
             priorCrossPassage,
+            grade,
           );
           const tutorPractice = sanitizeTutorExplanations(
             [],
@@ -3792,6 +3826,7 @@ serve(async (req) => {
           console.warn("⚠️ Invalid or duplicated cross passage, forcing subject passage");
           subjectCrossPassage = baseCrossPassage;
         }
+        const constraints = getGradeConstraints(grade);
         subjectCrossPassage = ensurePassageLength(
           subjectCrossPassage,
           250,
@@ -3801,6 +3836,11 @@ serve(async (req) => {
           grade,
           level,
         );
+        subjectCrossPassage = enforceSentenceLength(subjectCrossPassage, constraints.maxWordsPerSentence);
+        if (violatesGradeLevel(subjectCrossPassage, grade)) {
+          console.warn("⚠️ Passage too advanced for grade:", grade);
+          subjectCrossPassage = getPassageText(fallbackPassageContent(effectiveSubject, "Cross-Curricular", grade, effectiveSkill, level));
+        }
 
         let crossQuestions = sanitizeQuestions(
           parsedCross.questions || [],
@@ -3809,6 +3849,7 @@ serve(async (req) => {
           effectiveSkill,
           level,
           subjectCrossPassage,
+          grade,
         );
         const crossValid = isValidOutput(crossQuestions, subjectCrossPassage);
         if (!crossValid) {
