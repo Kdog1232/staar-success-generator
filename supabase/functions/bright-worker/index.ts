@@ -281,7 +281,7 @@ function getRigorEngineRules(level: Level, subject: CanonicalSubject): string {
 function readingPracticeWordRange(level: Level): { min: number; max: number } {
   if (level === "Below") return { min: 170, max: 220 };
   if (level === "Advanced") return { min: 280, max: 340 };
-  return { min: 230, max: 280 };
+  return { min: 230, max: 300 };
 }
 
 function hasNarrativeReadingSignals(passage: PassageContent | string): boolean {
@@ -528,6 +528,7 @@ Rules:
 - Instruction: Design the question to match how this TEKS is assessed on STAAR.
 - TEKS alignment: skill "${skill}" at grade ${grade} must be assessed through application (analyze/infer/compare/explain), not definition recall.
 - Subject is Reading, so include a new informational passage only (${readingRange.min}–${readingRange.max} words).
+- If any instruction conflicts with the required passage length, follow ${readingRange.min}–${readingRange.max} words only.
 - Passage genre lock: informational text ONLY. No stories, no characters, no narrative events, no character names.
 - Generate exactly 5 STAAR-style reading questions tied directly to that passage.
 - All 4 answer choices must explicitly reference passage details (events/actions/outcomes).
@@ -3007,8 +3008,8 @@ serve(async (req) => {
         grade,
         passage: ensurePassageLength(
           getPassageText(data.passage || ""),
-          250,
-          300,
+          readingPracticeWordRange(level).min,
+          readingPracticeWordRange(level).max,
           subject,
           toCanonicalMode(mode),
           grade,
