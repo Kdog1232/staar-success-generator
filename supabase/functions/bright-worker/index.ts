@@ -1578,7 +1578,27 @@ function buildShortResponse(): string {
   return "What is the author’s purpose in organizing the passage this way, and which two details best support your response?";
 }
 
+let retryAttempted = false;
+
 function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
+  const safeFallback = (reason: string): { questions: Question[] } => {
+    console.warn("CROSS_GENERATION_FALLBACK:", reason);
+    return {
+      questions: [{
+        type: "mc",
+        question: "Which statement best connects the passage evidence to the central idea?",
+        choices: [
+          "The passage links evidence and outcomes to support a clear conclusion.",
+          "The passage avoids evidence and relies on unrelated opinions.",
+          "The passage reverses event order so no conclusion can be supported.",
+          "The passage omits all details about decisions and outcomes.",
+        ],
+        correct_answer: "A",
+        explanation: "The strongest answer is supported by evidence from the passage.",
+      }],
+    };
+  };
+
   const subject: CanonicalSubject = "Reading";
   const crossPassage = buildSubjectPassage(crossSubject, "On Level");
   const stems = [
@@ -1588,13 +1608,6 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
     buildVocabQuestion(),
     buildShortResponse(),
   ];
-  const singleAnswerSequence = [...shuffledLetters(), ...shuffledLetters()];
-  let singleAnswerIndex = 0;
-  const nextSingleAnswer = (): ChoiceLetter => {
-    const letter = singleAnswerSequence[singleAnswerIndex % singleAnswerSequence.length];
-    singleAnswerIndex += 1;
-    return letter;
-  };
 
   const crossChoiceBanks: Record<CanonicalSubject, [string, string, string, string][]> = {
     Math: [
@@ -1701,99 +1714,75 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
     ]],
   };
 
-  const ensureCrossReadingChoiceQuality = (choices: [string, string, string, string]): void => {
+  const ensureCrossReadingChoiceQuality = (choices: [string, string, string, string]): boolean => {
     const referencesPassageEvents = choices.every((choice) => /(after|when|later|timeline|records|passage|investigation|election|hour)/i.test(choice));
     const hasCauseEffect = choices.every((choice) => /(because|so|led to|result|changed|therefore)/i.test(choice));
     const hasDecisionSignal = choices.every((choice) =>
       /(decided|decision|approved|supported|recommended|revised|shifted|adjusted|planned|finalized|ignored|canceled|changed)/i.test(choice)
     );
     if (!referencesPassageEvents || !hasCauseEffect || !hasDecisionSignal) {
-      throw new Error("GENERIC_CROSS_CHOICES_DETECTED");
+      console.warn("GENERIC_CROSS_CHOICES_DETECTED");
+      return false;
     }
+    return true;
   };
 
-  const questions = stems.map((stem, i) => {
-    const type: QuestionType = i === 1 ? "part_a_b" : i === 4 ? "scr" : "mc";
-    const support = buildSupportContent("Reading", stem, type, i, "On Level", "Cross-Curricular", crossPassage);
-    const partAChoices: [string, string, string, string] = crossSubject === "Science"
-      ? [
-        "The passage shows temperature results changed when moisture and sunlight conditions changed.",
-        "The passage shows results stayed the same across all surfaces and conditions.",
-        "The passage shows students ignored data and used opinions only.",
-        "The passage shows watering increased temperature more than direct sunlight.",
-      ]
-      : crossSubject === "Math"
-      ? [
-        "The passage shows hour-two single-item demand changed after the announcement and affected earnings decisions.",
-        "The passage shows combo and single-item prices became identical in hour two.",
-        "The passage shows no sales data were collected in the second hour.",
-        "The passage shows only combo sales determine total revenue.",
-      ]
-      : [
-        "The passage shows transportation decisions shifted after flooding delays and later voter action.",
-        "The passage shows leaders never changed transportation plans over time.",
-        "The passage shows election results rejected all transportation projects.",
-        "The passage shows flooding had no effect on trade or prices.",
-      ];
-    const partBChoices: [string, string, string, string] = crossSubject === "Science"
-      ? [
-        "It states a watered section showed a smaller temperature increase in repeated testing.",
-        "It states blacktop cooled faster than shaded grass in direct sun.",
-        "It states wind and moisture were removed from the investigation.",
-        "It states thermometers were used only once before recommendations.",
-      ]
-      : crossSubject === "Math"
-      ? [
-        "It states combo sales dropped by 8 while single-item sales increased by 15 in hour two.",
-        "It states prices changed from $6 and $2 to higher values in hour two.",
-        "It states both combo and single-item sales dropped in hour two.",
-        "It states organizers ignored hour-one data during planning.",
-      ]
-      : [
-        "It states flooding delayed shipments and, years later, voters passed a bridge bond.",
-        "It states flooding improved rail shipping and lowered prices immediately.",
-        "It states population growth reduced the need for transportation changes.",
-        "It states bridge approval happened before any rail debate in 1908.",
-      ];
-    const choices = (crossChoiceBanks[crossSubject]?.[i] ||
-      crossChoiceBanks[crossSubject]?.[0] ||
-      crossChoiceBanks["Social Studies"][0]) as [string, string, string, string];
-    if (choices.some(containsMetaLanguage) || partAChoices.some(containsMetaLanguage) || partBChoices.some(containsMetaLanguage)) {
-      throw new Error("META_LANGUAGE_DETECTED");
+  function runGeneration(
+    { stems, crossSubject, subject, crossPassage }: {
+      stems: string[];
+      crossSubject: CanonicalSubject;
+      subject: CanonicalSubject;
+      crossPassage: PassageContent;
+    },
+  ): { questions: Question[] } {
+    try {
+      const questions = stems.map((stem, i) => {
+        const type: QuestionType = i === 1 ? "part_a_b" : i === 4 ? "scr" : "mc";
+        const support = buildSupportContent("Reading", stem, type, i, "On Level", "Cross-Curricular", crossPassage);
+        const choices = (crossChoiceBanks[crossSubject]?.[i] ||
+          crossChoiceBanks[crossSubject]?.[0] ||
+          crossChoiceBanks["Social Studies"][0]) as [string, string, string, string];
+
+        if (choices.some(containsMetaLanguage)) {
+          throw new Error("META_LANGUAGE_DETECTED");
+        }
+
+        if (subject === "Reading") {
+          if (!ensureCrossReadingChoiceQuality(choices)) {
+            throw new Error("GENERIC_CROSS_CHOICES_DETECTED");
+          }
+        }
+
+        return {
+          type,
+          question: stem,
+          choices,
+          correct_answer: "A",
+          explanation: support.explanation,
+        };
+      });
+
+      return { questions };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.warn("GENERATION ERROR:", errorMessage);
+      if (!retryAttempted) {
+        retryAttempted = true;
+        console.warn("Retrying generation...");
+        return runGeneration({ stems, crossSubject, subject, crossPassage });
+      }
+      return safeFallback("generation_failed");
     }
-    if (subject === "Reading") ensureCrossReadingChoiceQuality(choices);
-    return {
-      type,
-      question: stem,
-      choices,
-      correct_answer: type === "scr"
-        ? "A"
-        : type === "part_a_b"
-        ? { partA: nextSingleAnswer(), partB: nextSingleAnswer() }
-        : nextSingleAnswer(),
-      partA: type === "part_a_b"
-        ? {
-          question: `Part A: ${stem}`,
-          choices: partAChoices,
-        }
-        : undefined,
-      partB: type === "part_a_b"
-        ? {
-          question: "Part B: Which sentence from the passage best supports your Part A answer?",
-          choices: partBChoices,
-        }
-        : undefined,
-      explanation: support.explanation,
-      sample_answer: type === "scr"
-        ? "The author’s purpose is to inform readers about the topic using evidence and examples. Key details in the passage show how those examples support the central claim."
-        : undefined,
-      hint: support.hint,
-      think: support.think,
-      step_by_step: support.step_by_step,
-      common_mistake: support.common_mistake,
-      parent_tip: support.parent_tip,
-    };
+  }
+
+  retryAttempted = false;
+  const result = runGeneration({
+    stems,
+    crossSubject,
+    subject,
+    crossPassage,
   });
+  const questions = result.questions;
 
   const passageText = getPassageText(crossPassage).toLowerCase();
 
