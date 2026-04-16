@@ -245,7 +245,7 @@ Final Answer: ${correctAnswer}`;
 
 function teacherStyleExplanation(passage: string, question: string): string {
   const snippet = getRelevantSnippet(passage, question);
-  return `The correct answer is supported by this part of the passage: "${snippet}". This detail helps explain why the correct choice is the strongest answer when compared to the other options.`;
+  return `${getExplanationStarter()}: "${snippet}". This detail helps explain why the correct choice is the strongest answer when compared to the other options.`;
 }
 
 function buildCrossExplanation(passage: string, question: string): string {
@@ -924,6 +924,38 @@ function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+function trimExpansionTail(text: string): string {
+  const sentences = text
+    .split(/[.!?]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const badPatterns = [
+    "This shows how evidence",
+    "These examples make it easier",
+    "Each detail builds",
+    "By comparing observations",
+  ];
+
+  const filtered = sentences.filter((s) =>
+    !badPatterns.some((p) => s.includes(p))
+  );
+
+  if (!filtered.length) return "";
+  return `${filtered.join(". ")}.`;
+}
+
+function getExplanationStarter(): string {
+  const starters = [
+    "This part of the passage shows that",
+    "The passage explains that",
+    "You can see this when the text states",
+    "This line reveals that",
+    "The author shows this by stating",
+  ];
+  return starters[Math.floor(Math.random() * starters.length)];
+}
+
 function clampPassageWords(passage: string, min: number, max: number): string {
   const cleaned = String(passage || "").replace(/\s+/g, " ").trim();
   const words = cleaned.split(" ").filter(Boolean);
@@ -944,8 +976,8 @@ function ensurePassageLength(
 ): string {
   const cleaned = String(passage || "").replace(/\s+/g, " ").trim();
   const words = cleaned.split(" ").filter(Boolean);
-  if (words.length >= min && words.length <= max) return cleaned;
-  if (words.length > max) return words.slice(0, max).join(" ");
+  if (words.length >= min && words.length <= max) return trimExpansionTail(cleaned);
+  if (words.length > max) return trimExpansionTail(words.slice(0, max).join(" "));
   if (words.length < min) {
     console.warn("Short passage — expanding instead of fallback");
 
@@ -969,10 +1001,11 @@ function ensurePassageLength(
       expanded += ` ${next}`;
     }
 
-    return expanded.split(/\s+/).slice(0, max).join(" ");
+    const finalPassage = expanded.split(/\s+/).slice(0, max).join(" ");
+    return trimExpansionTail(finalPassage);
   }
   // NEVER fallback here — just return cleaned
-  return cleaned;
+  return trimExpansionTail(cleaned);
 }
 
 function isWeakPassage(passage: PassageContent | string): boolean {
