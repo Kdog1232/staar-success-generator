@@ -35,7 +35,7 @@
     }
 
     .container {
-      max-width: 900px;
+      max-width: 1000px;
       margin: 0 auto;
       width: 100%;
     }
@@ -103,12 +103,12 @@
       display: flex;
       align-items: center;
       gap: 9px;
-      color: #3730a3;
+      color: #374151;
       font-weight: 500;
       font-size: 0.95rem;
       padding: 10px 16px;
-      background: #eef2ff;
-      border: none;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
       border-radius: 999px;
     }
 
@@ -117,7 +117,9 @@
     }
 
     .generator-card {
-      padding: 22px;
+      background: #f8fafc;
+      border-radius: 14px;
+      padding: 20px;
       margin-bottom: 20px;
     }
 
@@ -199,7 +201,10 @@
       background: white;
       border-radius: 16px;
       padding: 24px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.12);
+      margin-top: -40px;
+      position: relative;
+      z-index: 2;
       border: 1px solid #e2e8f0;
     }
 
@@ -209,7 +214,7 @@
       font-size: 1.1rem;
       font-weight: 600;
       border-radius: 12px;
-      background: linear-gradient(135deg, #4f46e5, #6366f1);
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
       color: #fff;
       border: none;
       cursor: pointer;
@@ -218,7 +223,7 @@
 
     .generate-btn:hover:not(:disabled) {
       transform: translateY(-1px);
-      box-shadow: 0 8px 20px rgba(79,70,229,0.25);
+      box-shadow: 0 12px 25px rgba(79,70,229,0.35);
     }
 
     .auth-secondary {
@@ -462,18 +467,23 @@
 
     .hero {
       text-align: center;
-      margin-bottom: 24px;
+      margin-bottom: 32px;
+      padding: 32px 20px;
+      background: linear-gradient(135deg, #4f46e5, #6366f1);
+      color: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 40px rgba(79,70,229,0.25);
     }
 
     .hero h1 {
-      font-size: 28px;
+      font-size: 30px;
       font-weight: 700;
-      color: #0f172a;
+      color: white;
       margin-bottom: 6px;
     }
 
     .hero p {
-      color: #64748b;
+      color: rgba(255,255,255,0.9);
       font-size: 15px;
     }
 
