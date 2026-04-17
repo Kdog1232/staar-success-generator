@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>STAAR Success Generator</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg: #f8fafc;
@@ -25,12 +25,9 @@
 
     body {
       margin: 0;
-      font-family: "Inter", Arial, sans-serif;
+      font-family: "Inter", sans-serif;
       font-size: 14px;
-      background:
-        linear-gradient(180deg, rgba(248,250,252,0.92), rgba(241,245,249,0.95)),
-        url('/background.jpg') no-repeat center center fixed;
-      background-size: cover;
+      background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
       color: var(--text);
       line-height: 1.5;
       padding: 32px 16px 56px;
@@ -106,13 +103,13 @@
       display: flex;
       align-items: center;
       gap: 9px;
-      color: #1f3347;
-      font-weight: 600;
+      color: #3730a3;
+      font-weight: 500;
       font-size: 0.95rem;
-      padding: 10px 12px;
-      background: #f8fbff;
-      border: 1px solid #e5edf7;
-      border-radius: 12px;
+      padding: 10px 16px;
+      background: #eef2ff;
+      border: none;
+      border-radius: 999px;
     }
 
     .value-list li span {
@@ -139,26 +136,30 @@
 
     .field label {
       font-size: 0.92rem;
-      color: #344154;
+      color: #475569;
       font-weight: 600;
+      margin-bottom: 6px;
     }
 
-    .field select {
+    .field select,
+    .auth-input {
       width: 100%;
       appearance: none;
-      border: 1px solid #cfd8e3;
-      border-radius: 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
       background: #fff;
       color: var(--text);
-      padding: 11px 12px;
-      font-size: 1rem;
+      padding: 12px;
+      font-size: 15px;
       outline: none;
       transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      font-family: inherit;
     }
 
-    .field select:focus {
-      border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+    .field select:focus,
+    .auth-input:focus {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
     }
 
     .subject-selector {
@@ -196,21 +197,19 @@
 
     .main-card {
       background: white;
-      border-radius: 18px;
-      padding: 28px;
-      box-shadow:
-        0 10px 30px rgba(0,0,0,0.05),
-        0 20px 60px rgba(0,0,0,0.08);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
       border: 1px solid #e2e8f0;
     }
 
     .generate-btn {
       width: 100%;
-      padding: 14px;
-      font-size: 1.05rem;
-      font-weight: 800;
+      padding: 16px;
+      font-size: 1.1rem;
+      font-weight: 600;
       border-radius: 12px;
-      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      background: linear-gradient(135deg, #4f46e5, #6366f1);
       color: #fff;
       border: none;
       cursor: pointer;
@@ -219,7 +218,18 @@
 
     .generate-btn:hover:not(:disabled) {
       transform: translateY(-1px);
-      box-shadow: 0 10px 20px rgba(37,99,235,0.25);
+      box-shadow: 0 8px 20px rgba(79,70,229,0.25);
+    }
+
+    .auth-secondary {
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      color: #334155;
+      opacity: 0.85;
+    }
+
+    .auth-secondary:hover {
+      opacity: 1;
     }
 
     .generate-btn:disabled {
@@ -342,12 +352,7 @@
     }
 
     .auth-input {
-      padding: 10px;
-      width: 100%;
       margin-bottom: 8px;
-      border: 1px solid #cfd8e3;
-      border-radius: 10px;
-      font: inherit;
     }
 
     .forgot-btn {
@@ -424,22 +429,66 @@
       margin-bottom: 14px;
     }
 
-    .view-toggle-btn {
+    .mode-btn {
       flex: 1;
-      border: 1px solid #cfd8e3;
-      background: #fff;
-      color: #1e334a;
-      border-radius: 10px;
-      padding: 10px 12px;
-      font-weight: 700;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 10px 16px;
+      font-weight: 500;
+      color: #334155;
       cursor: pointer;
       transition: all 0.2s ease;
     }
 
-    .view-toggle-btn.active {
-      background: #eaf1ff;
-      border-color: #7aa3ee;
-      color: #123567;
+    .mode-btn:hover {
+      background: #e0e7ff;
+    }
+
+    .mode-btn.active {
+      background: linear-gradient(135deg, #4f46e5, #6366f1);
+      color: white;
+      border: none;
+      box-shadow: 0 6px 16px rgba(79,70,229,0.25);
+    }
+
+    .mode-btn:active {
+      transform: scale(0.97);
+    }
+
+    .generate-btn:active {
+      transform: scale(0.98);
+    }
+
+    .hero {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    .hero h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 6px;
+    }
+
+    .hero p {
+      color: #64748b;
+      font-size: 15px;
+    }
+
+    #generate-btn {
+      margin-top: 12px;
+    }
+
+    #mode-indicator {
+      margin: 0 0 12px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: #eef2ff;
+      color: #3730a3;
+      font-size: 0.95rem;
+      font-weight: 500;
     }
 
     .mode-status {
@@ -817,9 +866,14 @@
       text-align: center;
     }
 
+    h2,
+    h3 {
+      font-weight: 600;
+      color: #0f172a;
+    }
+
     .testimonial-header h2 {
       font-size: 28px;
-      font-weight: 700;
       margin-bottom: 8px;
     }
 
@@ -953,6 +1007,11 @@
       <p>Ideal for parents, teachers, tutors, and homeschool educators</p>
     </header>
 
+    <section class="hero">
+      <h1>STAAR Practice That Feels Like a Tutor</h1>
+      <p>Generate rigorous practice, explanations, and cross-curricular questions in seconds.</p>
+    </section>
+
     <section class="value-card section" aria-label="Key benefits">
       <ul class="value-list">
         <li><span>✅</span>Aligned to STAAR rigor</li>
@@ -1014,7 +1073,7 @@
           Sign Up
         </button>
 
-        <button type="submit" class="generate-btn">
+        <button type="submit" class="generate-btn auth-secondary">
           Log In
         </button>
         <button type="button" onclick="forgotPassword()" class="forgot-btn">
@@ -1032,11 +1091,12 @@
 
     <section class="worksheet-card section">
       <div class="view-toggle" id="view-toggle" style="display: none;">
-        <button id="practice-tab" class="view-toggle-btn active" type="button" onclick="setMode('practice')">👨‍🎓 Practice Mode</button>
-        <button id="cross-tab" class="view-toggle-btn" type="button" onclick="setMode('cross')">🌎 Cross-Curricular</button>
-        <button id="tutor-tab" class="view-toggle-btn" type="button" onclick="setMode('tutor')">👨‍🏫 Tutor Mode</button>
-        <button id="answer-tab" class="view-toggle-btn" type="button" onclick="setMode('answer')">🧠 Answer Key</button>
+        <button id="practice-tab" class="mode-btn active" data-mode="practice" type="button">👨‍🎓 Practice Mode</button>
+        <button id="cross-tab" class="mode-btn" data-mode="cross" type="button">🌎 Cross-Curricular</button>
+        <button id="tutor-tab" class="mode-btn" data-mode="tutor" type="button">👨‍🏫 Tutor Mode</button>
+        <button id="answer-tab" class="mode-btn" data-mode="answer" type="button">🧠 Answer Key</button>
       </div>
+      <div id="mode-indicator"></div>
       <div id="output">Your STAAR practice will appear here...</div>
     </section>
 
@@ -1134,8 +1194,7 @@
       Science: "🔬 Science",
       "Social Studies": "🌎 Social Studies"
     };
-    let activeTab = "practice"; // practice | cross | tutor | answer
-    let currentMode = "Practice"; // Practice | Cross-Curricular
+    let currentMode = "practice"; // practice | cross | tutor | answer
     let contentMode = "standard"; // standard | cross_curricular
     let profileUpdatesChannel = null;
     let profileUpdatesUserId = null;
@@ -1281,9 +1340,8 @@
       const banner = document.getElementById("upgrade-banner");
       outputDiv.innerText = "Your STAAR practice will appear here...";
       viewToggle.style.display = "none";
-      activeTab = "practice";
+      currentMode = "practice";
       contentMode = "standard";
-      currentMode = "Practice";
       resetGenerateState();
       lastGeneratedContentMode = null;
       standardContent = "";
@@ -1293,6 +1351,7 @@
       emailLabel.textContent = "Logged in as: —";
       profilePlan.textContent = "Plan: Free";
       banner.style.display = "none";
+      setMode("practice");
     }
 
     function renderUsageStatus(profile) {
@@ -1944,7 +2003,7 @@
       `;
     }
 
-    function renderTutorSection(tutorData, mode = activeTab) {
+    function renderTutorSection(tutorData, mode = currentMode) {
       const tutorSection = document.getElementById("tutor-section");
       if (!tutorSection) return;
       const passage = mode === "cross" ? (currentData?.cross?.passage || "") : (currentData?.passage || "");
@@ -1964,7 +2023,7 @@
       `;
     }
 
-    function renderAnswerSection(answerKeyData, mode = activeTab) {
+    function renderAnswerSection(answerKeyData, mode = currentMode) {
       const answerSection = document.getElementById("answer-section");
       if (!answerSection) return;
       const answerEntries = mode === "cross"
@@ -1980,7 +2039,7 @@
     }
 
     function getActiveMode() {
-      return currentMode === "Cross-Curricular" ? "cross" : "practice";
+      return currentMode === "cross" ? "cross" : "practice";
     }
 
     function renderActivePanels() {
@@ -1995,7 +2054,7 @@
       renderAnswerSection(answerData, mode);
     }
 
-    function renderTab(tab = activeTab, options = {}) {
+    function renderTab(tab = currentMode, options = {}) {
       const { fromGenerate = false } = options;
 
       if (fromGenerate && hasRenderedThisRun) {
@@ -2020,20 +2079,36 @@
     }
 
     function setMode(mode) {
-      activeTab = ["practice", "cross", "tutor", "answer"].includes(mode) ? mode : "practice";
+      currentMode = mode;
 
-      if (activeTab === "cross") {
+      if (currentMode === "cross") {
         contentMode = "cross_curricular";
-        currentMode = "Cross-Curricular";
-      } else if (activeTab === "practice") {
+      } else if (currentMode === "practice") {
         contentMode = "standard";
-        currentMode = "Practice";
+      }
+
+      document.querySelectorAll(".mode-btn").forEach((btn) => {
+        btn.classList.remove("active");
+      });
+
+      const activeBtn = document.querySelector(`[data-mode="${mode}"]`);
+      if (activeBtn) activeBtn.classList.add("active");
+
+      const label = document.getElementById("mode-indicator");
+      if (label) {
+        const labels = {
+          practice: "👨‍🎓 Practice Mode: Answer questions independently",
+          cross: "🌎 Cross-Curricular: Apply skills across subjects",
+          tutor: "👨‍🏫 Tutor Mode: Guided explanations",
+          answer: "🧠 Answer Key: Review correct answers"
+        };
+        label.textContent = labels[mode] || "";
       }
 
       if (currentData) {
         renderActivePanels();
       }
-      renderTab(activeTab);
+      renderTab(mode);
     }
 
     function toggleView(view) {
@@ -2331,11 +2406,11 @@
         const token = session.access_token;
 
         console.log("SENDING REQUEST");
-        const apiMode = activeTab === "cross"
+        const apiMode = currentMode === "cross"
           ? "Cross-Curricular"
-          : activeTab === "tutor"
+          : currentMode === "tutor"
             ? "Tutor"
-            : activeTab === "answer"
+            : currentMode === "answer"
               ? "Answer Key"
               : "Practice";
         const payload = {
@@ -2442,8 +2517,7 @@
         };
         const selectedMode = apiMode === "Cross-Curricular" ? "Cross-Curricular" : "Practice";
         const selectedContent = resolveModeContent(currentData, selectedMode);
-        activeTab = selectedContent.isCross ? "cross" : "practice";
-        currentMode = selectedContent.isCross ? "Cross-Curricular" : "Practice";
+        currentMode = selectedContent.isCross ? "cross" : "practice";
 
         lastGeneratedContentMode = "both";
         const progressCount = incrementDailyProgress();
@@ -2488,7 +2562,8 @@
         }
 
         renderActivePanels();
-        renderTab("practice", { fromGenerate: true });
+        renderTab(currentMode, { fromGenerate: true });
+        setMode(currentMode);
         await new Promise((resolve) => requestAnimationFrame(() => resolve()));
         console.log("STEP 6: render complete");
 
@@ -2553,7 +2628,7 @@
         }
 
         if (supportData?.tutor && supportData?.answerKey) {
-          const isCrossActive = currentMode === "Cross-Curricular";
+          const isCrossActive = currentMode === "cross";
 
           currentData = {
             ...currentData,
@@ -2637,7 +2712,7 @@
           renderActivePanels();
 
           await new Promise((resolve) => requestAnimationFrame(() => resolve()));
-          renderTab(activeTab);
+          renderTab(currentMode);
           const modeStatusAfter = document.getElementById("mode-status");
           if (modeStatusAfter) {
             modeStatusAfter.textContent = "Mode: Practice Mode ON • Cross/Tutor ready";
@@ -2697,6 +2772,14 @@
     window.signIn = signIn;
     window.logout = logout;
     window.forgotPassword = forgotPassword;
+
+    document.querySelectorAll(".mode-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const mode = btn.dataset.mode;
+        setMode(mode);
+      });
+    });
+
     document.addEventListener("click", (e) => {
       if (e.target?.id === "generate-btn") {
         generate();
@@ -2711,6 +2794,7 @@
       }
     });
     populateSubjectButtons();
+    setMode("practice");
     setAppAuthenticatedState(false);
     await initAuth();
   </script>
