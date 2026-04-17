@@ -1318,63 +1318,6 @@ function buildSubjectDistractors(q: Question, passage: string, subject: Canonica
     .join("\n");
 }
 
-function buildTargetedParentTip(
-  type: string,
-  subject: CanonicalSubject,
-  question: string,
-): string {
-  void question;
-  if (subject === "Reading") {
-    if (type === "too_literal") {
-      return "Your child may be focusing only on what the text says directly. Ask them to combine clues from different parts of the passage to explain their answer.";
-    }
-
-    if (type === "too_narrow") {
-      return "Your child is likely focusing on one detail. Ask them to explain the overall idea of the passage and then match the answer to that idea.";
-    }
-
-    if (type === "not_in_passage") {
-      return "Your child may be guessing based on what sounds right. Have them point to the exact sentence in the passage that supports their answer.";
-    }
-  }
-
-  if (subject === "Math") {
-    if (type === "wrong_operation") {
-      return "Your child may be using the wrong operation. Ask them to explain what the problem is asking before solving it, then check if their operation matches that goal.";
-    }
-
-    if (type === "calculation_error") {
-      return "Your child likely made a calculation mistake. Have them redo the problem step by step and check each part of their work.";
-    }
-
-    if (type === "misread_problem") {
-      return "Your child may be misreading the question. Ask them to restate the problem in their own words before solving.";
-    }
-  }
-
-  if (subject === "Science") {
-    if (type === "cause_effect_confusion") {
-      return "Your child may be confusing cause and effect. Ask them what caused the change and what happened as a result.";
-    }
-
-    if (type === "misinterprets_data") {
-      return "Your child may be misreading the data. Have them describe what the chart or passage is showing before choosing an answer.";
-    }
-  }
-
-  if (subject === "Social Studies") {
-    if (type === "incorrect_reasoning") {
-      return "Your child may not fully understand the reasoning behind the event. Ask them to explain why it happened, not just what happened.";
-    }
-
-    if (type === "not_in_context") {
-      return "Your child may be choosing answers that don’t match the historical context. Ask them to connect the answer to what was happening during that time.";
-    }
-  }
-
-  return "Ask your child to explain how they chose their answer and what evidence or steps they used.";
-}
-
 function buildSupportContent(
   subject: CanonicalSubject,
   q: Question,
@@ -1399,7 +1342,7 @@ function buildSupportContent(
   const distractorAnalysis = buildSubjectDistractors(q, passageText, subject);
   const thinkingType = detectThinkingType(questionText);
   const evidenceSource = snippet || passageSnippet;
-  let baseExplanation = subject === "Math"
+  let explanation = subject === "Math"
     ? "Start by identifying what the problem is asking. Then solve step by step by choosing the correct operation, calculating carefully, and checking whether the result is reasonable."
     : subject === "Science"
     ? `This question requires understanding cause and effect in a system. The data or details show a relationship that leads to the best-supported conclusion${evidenceSource ? `, especially in: "${evidenceSource}."` : "."}`
@@ -1413,44 +1356,23 @@ A strong reader uses this evidence to connect directly to the question. This det
 `.trim();
 
   if (thinkingType === "inference") {
-    baseExplanation = `${baseExplanation}\n\nFor inference questions, combine clues across the passage instead of searching for one exact phrase.`;
+    explanation = `${explanation}\n\nFor inference questions, combine clues across the passage instead of searching for one exact phrase.`;
   } else if (thinkingType === "evidence") {
-    baseExplanation = `${baseExplanation}\n\nFor evidence questions, choose the answer you can point to directly in the text.`;
+    explanation = `${explanation}\n\nFor evidence questions, choose the answer you can point to directly in the text.`;
   } else if (thinkingType === "main_idea") {
-    baseExplanation = `${baseExplanation}\n\nFor main idea questions, focus on the pattern repeated across multiple details.`;
+    explanation = `${explanation}\n\nFor main idea questions, focus on the pattern repeated across multiple details.`;
   } else if (thinkingType === "cause_effect") {
-    baseExplanation = `${baseExplanation}\n\nFor cause-and-effect questions, trace what happened and which detail caused that outcome.`;
+    explanation = `${explanation}\n\nFor cause-and-effect questions, trace what happened and which detail caused that outcome.`;
   } else {
-    baseExplanation = `${baseExplanation}\n\nStart with what the question is asking, then match it to the strongest text evidence.`;
+    explanation = `${explanation}\n\nStart with what the question is asking, then match it to the strongest text evidence.`;
   }
-  baseExplanation = buildSubjectExplanation(subject, baseExplanation);
-  const hint = "Look for clues across more than one sentence.";
-  const think = "What details work together to support the answer?";
+  explanation = buildSubjectExplanation(subject, explanation);
 
-  const crossPrefix = isCross
-    ? `Now think like a ${subject} student. This isn’t just reading—it’s applying what you know.\n\n`
-    : "";
-  let explanation = `${crossPrefix}${baseExplanation}`.trim();
-  if (isTutor) {
-    explanation = `
-Let's think through this step by step.
-
-${explanation}
-
-Hint: ${hint}
-
-Ask yourself: ${think}
-`.trim();
-  }
-  if (isAnswer) {
-    explanation = `
-Correct Answer: ${normalizeAnswerKeyEntry(q.correct_answer)}
-
-${explanation}
-
-Why the other answers are incorrect:
-${distractorAnalysis}
-`.trim();
+  const fullExplanation = `${explanation}\n\n${distractorAnalysis}`.trim();
+  if (isCross) {
+    explanation = `Now think like a ${subject} student. This isn’t just reading—it’s applying what you know.\n\n${fullExplanation}`;
+  } else {
+    explanation = fullExplanation;
   }
 
   const common_mistake = "Students often choose an answer that sounds correct but is not fully supported by the passage. Strong readers always check for evidence.";
@@ -1459,6 +1381,8 @@ ${distractorAnalysis}
     ? `Ask your child: "Where in the passage do you see this?" Have them point to a sentence like: "${passageSnippet}".`
     : "Ask your child to explain how they solved the problem step by step.";
 
+  const hint = "Look for clues across more than one sentence.";
+  const think = "What details work together to support the answer?";
   const step_by_step = "1. Read the question carefully\n2. Find key details in the passage\n3. Eliminate weak answers\n4. Choose the best-supported answer";
 
   return {
@@ -3167,36 +3091,22 @@ function generateAnswerKey(
     const passageText = String(crossPassage || "");
     const keywords = String(q.question || "").split(/\s+/).slice(0, 5);
     const snippet = extractEvidenceSnippet(passageText, keywords);
+    const distractorAnalysis = buildSubjectDistractors(q, passageText, subject);
     const answerSource = snippet || passageText;
-    const normalizedChoices = normalizeChoices(q.choices);
-    const wrongTypes = normalizedChoices
-      .map((choice, idx) => ({ choice: `${LETTERS[idx]}. ${choice}`, letter: LETTERS[idx] }))
-      .filter((entry) => entry.letter !== correctAnswer)
-      .map((entry) => classifyDistractor(entry.choice, passageText, String(q.question || ""), subject));
-    const priorityOrder = [
-      "wrong_operation",
-      "too_literal",
-      "too_narrow",
-      "cause_effect_confusion",
-      "misinterprets_data",
-      "incorrect_reasoning",
-      "not_in_passage",
-    ];
-    const misconceptionType = priorityOrder.find((type) => wrongTypes.includes(type)) ||
-      wrongTypes.find((type) => type !== "partial") ||
-      wrongTypes[0] ||
-      "";
-    const targetedParentTip = misconceptionType
-      ? buildTargetedParentTip(misconceptionType, subject, String(q.question || ""))
-      : "Have your child explain why their answer is correct. Teaching it out loud helps strengthen their understanding.";
     return {
       question_id: ensureQuestionId(q, index, mode),
       correct_answer: correctAnswer,
-      explanation: support.explanation || `
+      explanation: `
 Correct Answer: ${correctAnswer}
 
 Evidence from passage:
 "${answerSource}"
+
+Why this is correct:
+This detail directly supports the answer and connects to what the question is asking.
+
+Why other answers are incorrect:
+${distractorAnalysis}
 `.trim(),
       common_mistake: support.common_mistake,
       parent_tip: `👨‍👩‍👧 Parent Tip:\n${targetedParentTip}`,
