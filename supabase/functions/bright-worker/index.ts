@@ -1260,6 +1260,12 @@ function extractEvidence(passage: string, keywords: string[]): string {
 
 function buildCorrectExplanation(question: string, correct: string, passage: string): string {
   void question;
+  if (!passage || passage.length < 20) {
+    return `Correct Answer: ${correct}
+
+Why this is correct:
+This answer is supported by the logic of the question and correct reasoning.`;
+  }
   let evidence = extractEvidence(passage, [correct]);
   if (!evidence || evidence.length < 10) {
     evidence = String(passage || "").split(".")[0]?.trim() || "";
@@ -1467,15 +1473,38 @@ function explainDistractor(
   return `❌ ${choice} — This answer may sound correct, but it does not match the passage as closely as the correct answer (${correct}).`;
 }
 
+function buildBetterDistractors(passage: string, correct: string): string[] {
+  void correct;
+  const sentences = passage
+    .split(/[.?!]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 40);
+
+  const a = sentences[0] || "";
+  const b = sentences[1] || "";
+  const c = sentences[2] || "";
+
+  return [
+    `${a} but it does not explain the result in the question.`,
+    `${b} is mentioned in the passage but is not the cause of the outcome.`,
+    `${c} is a detail, but it does not support the correct conclusion.`,
+  ];
+}
+
 function buildSubjectDistractors(q: Question, passage: string, subject: CanonicalSubject): string {
   const correct = normalizeAnswerKeyEntry(q.correct_answer);
   const normalizedChoices = normalizeChoices(q.choices);
   const correctChoice = normalizedChoices[LETTERS.indexOf(normalizeAnswer(correct))] || "";
+  const hasPassage = String(passage || "").trim().length > 0;
+  const passageDistractors = hasPassage ? buildBetterDistractors(String(passage || ""), correctChoice) : [];
   return normalizedChoices
     .map((choice, index) => ({ choice, letter: LETTERS[index] }))
     .filter(({ letter }) => letter !== correct)
-    .map(({ choice, letter }) => {
-      const withLetter = `${letter}. ${choice}`;
+    .map(({ choice, letter }, index) => {
+      const distractorChoice = hasPassage && (isWeakDistractor(choice) || String(choice || "").trim().length === 0)
+        ? (passageDistractors[index] || choice)
+        : choice;
+      const withLetter = `${letter}. ${distractorChoice}`;
       return explainDistractor(
         withLetter,
         `${correct}. ${correctChoice}`,
@@ -1499,9 +1528,8 @@ function buildSupportContent(
 ): { explanation: string; common_mistake: string; parent_tip: string; hint: string; think: string; step_by_step: string } {
   void supportMode;
   const questionText = String(q.question || "").trim();
-  const isReading = subject === "Reading";
   const isCross = mode === "Cross-Curricular";
-  const shouldUsePassage = isCross || isReading;
+  const shouldUsePassage = mode === "Cross-Curricular" || subject === "Reading";
   const passageText = shouldUsePassage ? getPassageText(passage) : "";
   const passageSnippet = passageText
     ? passageText.split(".").slice(0, 2).join(".").trim()
@@ -2760,6 +2788,7 @@ function isAllowedMainIdeaStem(stem: string): boolean {
 }
 
 function isWeakDistractor(choice: string): boolean {
+  if (choice.split(" ").length < 6) return true;
   const weakPatterns = [
     "is true, but",
     "proves that this happened in every case",
@@ -2797,33 +2826,11 @@ function fixDistractors(
   correctAnswer: string,
   passage: PassageContent | string,
 ): string[] {
-  void correctAnswer;
-  const [anchorA, anchorB, anchorC] = getPassageAnchors(passage, question);
-  if (subject === "Science") {
-    return [
-      `The results were caused only by ${anchorA}, so surface differences such as ${anchorB} did not matter.`,
-      `${anchorB} in the passage stayed cooler than ${anchorA} because it reflected more sunlight.`,
-      `The change in ${anchorC} proves moisture and airflow could not influence heating or cooling.`,
-    ];
-  }
-
-  if (subject === "Math") {
-    return [
-      `Uses the numbers linked to ${anchorA} but chooses the wrong operation for the relationship in the problem.`,
-      `Computes with ${anchorB} correctly, then reports a value about ${anchorC} instead of the quantity asked.`,
-      `Applies a familiar formula to ${anchorA}, even though the passage details show a different setup is needed.`,
-    ];
-  }
-
-  if (subject === "Social Studies") {
-    return [
-      `Treats ${anchorA} as an effect of ${anchorB}, even though the timeline in the passage shows the opposite order.`,
-      `Uses ${anchorC} as supporting evidence, but that detail does not explain the policy or economic outcome.`,
-      `Extends the passage claim about ${anchorA} to every community, beyond the historical evidence provided.`,
-    ];
-  }
-
-  return [];
+  void subject;
+  void question;
+  const passageText = getPassageText(passage);
+  if (!passageText || passageText.trim().length === 0) return [];
+  return buildBetterDistractors(passageText, correctAnswer);
 }
 
 function sanitizeQuestions(
