@@ -1395,52 +1395,6 @@ function classifyErrorType(subject: string, question: string, choice: string): s
   return "reading_error";
 }
 
-function buildMistakeAndTip(
-  subject: CanonicalSubject,
-  question: string,
-  correct: string,
-): { mistake: string; tip: string } {
-  const errorType = classifyErrorType(subject, question, correct);
-
-  if (subject === "Math") {
-    if (errorType === "wrong_operation") {
-      return {
-        mistake: "Students often choose the wrong operation when solving the problem.",
-        tip: "Which operation did you choose and why?",
-      };
-    }
-    if (errorType === "calculation_error") {
-      return {
-        mistake: "Students may make small calculation mistakes even when their setup is correct.",
-        tip: "Can you check each step of your calculation?",
-      };
-    }
-    return {
-      mistake: "Students sometimes make errors in the steps used to solve the problem.",
-      tip: "Can you explain each step you used to solve the problem?",
-    };
-  }
-
-  if (subject === "Science") {
-    return {
-      mistake: "Students often misunderstand how variables or energy interact in a system.",
-      tip: "What changed in the situation, and what was the result?",
-    };
-  }
-
-  if (subject === "Social Studies") {
-    return {
-      mistake: "Students may misunderstand the cause or context of events.",
-      tip: "What caused this event or decision?",
-    };
-  }
-
-  return {
-    mistake: "Students often choose answers that sound correct but are not fully supported by the passage.",
-    tip: "Where in the passage can you prove your answer?",
-  };
-}
-
 function explainDistractor(
   choice: string,
   correct: string,
