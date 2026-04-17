@@ -3048,25 +3048,39 @@ function generateTutor(
   crossPassage = "",
 ): TutorExplanation[] {
   return questions.slice(0, 5).map((q, index) => {
-    const support = buildSupportContent(
-      subject,
-      q,
-      index,
-      level,
-      mode === "cross" ? "Cross-Curricular" : "Practice",
-      mode === "cross" ? crossPassage : "",
-      "Tutor",
-    );
-    return {
-      question_id: ensureQuestionId(q, index, mode),
-      question: String(q.question || "").trim(),
-      explanation: support.explanation,
-      common_mistake: support.common_mistake,
-      parent_tip: support.parent_tip,
-      hint: support.hint,
-      think: support.think,
-      step_by_step: support.step_by_step,
-    };
+    try {
+      const support = buildSupportContent(
+        subject,
+        q,
+        index,
+        level,
+        mode === "cross" ? "Cross-Curricular" : "Practice",
+        mode === "cross" ? crossPassage : "",
+        "Tutor",
+      );
+      return {
+        question_id: ensureQuestionId(q, index, mode),
+        question: String(q.question || "").trim(),
+        explanation: support.explanation || "",
+        common_mistake: support.common_mistake || "",
+        parent_tip: "",
+        hint: support.hint || "",
+        think: support.think || "",
+        step_by_step: support.step_by_step || "",
+      };
+    } catch (err) {
+      console.error("Tutor build failed:", err);
+      return {
+        question_id: ensureQuestionId(q, index, mode),
+        question: String(q.question || "").trim(),
+        explanation: "Explanation unavailable.",
+        common_mistake: "",
+        parent_tip: "",
+        hint: "",
+        think: "",
+        step_by_step: "",
+      };
+    }
   });
 }
 
@@ -3078,25 +3092,26 @@ function generateAnswerKey(
   crossPassage = "",
 ): AnswerKeyEntry[] {
   return questions.slice(0, 5).map((q, index) => {
-    const support = buildSupportContent(
-      subject,
-      q,
-      index,
-      level,
-      mode === "cross" ? "Cross-Curricular" : "Practice",
-      mode === "cross" ? crossPassage : "",
-      "Answer Key",
-    );
-    const correctAnswer = normalizeAnswerKeyEntry(q.correct_answer);
-    const passageText = String(crossPassage || "");
-    const keywords = String(q.question || "").split(/\s+/).slice(0, 5);
-    const snippet = extractEvidenceSnippet(passageText, keywords);
-    const distractorAnalysis = buildSubjectDistractors(q, passageText, subject);
-    const answerSource = snippet || passageText;
-    return {
-      question_id: ensureQuestionId(q, index, mode),
-      correct_answer: correctAnswer,
-      explanation: `
+    try {
+      const support = buildSupportContent(
+        subject,
+        q,
+        index,
+        level,
+        mode === "cross" ? "Cross-Curricular" : "Practice",
+        mode === "cross" ? crossPassage : "",
+        "Answer Key",
+      );
+      const correctAnswer = normalizeAnswerKeyEntry(q.correct_answer);
+      const passageText = String(crossPassage || "");
+      const keywords = String(q.question || "").split(/\s+/).slice(0, 5);
+      const snippet = extractEvidenceSnippet(passageText, keywords);
+      const distractorAnalysis = buildSubjectDistractors(q, passageText, subject);
+      const answerSource = snippet || passageText;
+      return {
+        question_id: ensureQuestionId(q, index, mode),
+        correct_answer: correctAnswer || "",
+        explanation: `
 Correct Answer: ${correctAnswer}
 
 Evidence from passage:
@@ -3108,11 +3123,21 @@ This detail directly supports the answer and connects to what the question is as
 Why other answers are incorrect:
 ${distractorAnalysis}
 `.trim(),
-      common_mistake: support.common_mistake,
-      parent_tip: `👨‍👩‍👧 Parent Tip:\n${targetedParentTip}`,
-      hint: support.hint,
-      step_by_step: support.step_by_step,
-    };
+        common_mistake: support.common_mistake || "",
+        parent_tip: support.parent_tip
+          ? `👨‍👩‍👧 Parent Tip:\n${support.parent_tip}`
+          : "",
+      };
+    } catch (err) {
+      console.error("Answer build failed:", err);
+      return {
+        question_id: ensureQuestionId(q, index, mode),
+        correct_answer: "",
+        explanation: "Answer unavailable.",
+        common_mistake: "",
+        parent_tip: "",
+      };
+    }
   });
 }
 
@@ -3160,8 +3185,7 @@ function validateTutorAnswerKeyAlignment(
     );
     const answerRequired = Boolean(
       answerEntry?.correct_answer && answerEntry?.explanation &&
-      answerEntry?.common_mistake && answerEntry?.parent_tip &&
-      answerEntry?.hint && answerEntry?.step_by_step,
+      answerEntry?.common_mistake && answerEntry?.parent_tip,
     );
     return tutorRequired &&
       answerRequired &&
@@ -3398,18 +3422,27 @@ serve(async (req) => {
         questions: [],
       },
       tutor: {
-        practice: (data?.practice?.questions || []).map((q) => ({
+        practice: (data?.practice?.questions || []).map((q, index) => ({
+          question_id: ensureQuestionId(q, index, "practice"),
           question: q.question,
           explanation: q.explanation || "Step-by-step thinking: break the problem into parts and solve carefully.",
           hint: q.hint || "Look back at the key numbers or details in the problem.",
+          think: q.think || "",
+          step_by_step: q.step_by_step || q.explanation || "Read the question, eliminate weak choices, and prove your selection.",
           common_mistake: q.common_mistake || "Choosing an answer without checking all steps.",
+          parent_tip: "",
         })),
         cross: [],
       },
       answerKey: {
-        practice: (data?.practice?.questions || []).map((q) => ({
+        practice: (data?.practice?.questions || []).map((q, index) => ({
+          question_id: ensureQuestionId(q, index, "practice"),
           correct_answer: q.correct_answer,
           explanation: q.explanation || "Check each step and verify your work.",
+          common_mistake: q.common_mistake || "Selecting an answer before verifying all options against evidence.",
+          parent_tip: q.parent_tip
+            ? `👨‍👩‍👧 Parent Tip:\n${q.parent_tip}`
+            : "👨‍👩‍👧 Parent Tip:\nAsk your child to explain why each incorrect answer does not match the prompt.",
         })),
         cross: [],
       },
@@ -3815,7 +3848,7 @@ serve(async (req) => {
               correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
               explanation: "Review the passage and identify key supporting details.",
               common_mistake: "Choosing an answer without pointing to clear text evidence.",
-              parent_tip: "Ask your student to underline one detail that proves the answer choice.",
+              parent_tip: "👨‍👩‍👧 Parent Tip:\nAsk your student to underline one detail that proves the answer choice.",
             }));
             bestAttempt = {
               passage: safePassage,
