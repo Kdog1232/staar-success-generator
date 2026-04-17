@@ -3601,7 +3601,12 @@ function enrichOutput(result: PipelineResult): PipelineResult {
 }
 
 async function runPipeline(input: PipelineInput): Promise<PipelineResult> {
-  let result = generateQuestions(input); // existing logic
+  const generate = () => generateQuestions(input);
+  let result = generate();
+  if (!result.questions?.length) {
+    console.warn("No questions returned, retrying once...");
+    result = generate(); // retry once
+  }
   result = normalizeOutput(result);
   result = guaranteeOutput(result);
   result = enrichOutput(result);
@@ -3987,7 +3992,7 @@ serve(async (req) => {
     let attempts = 0;
     const MAX_ATTEMPTS = 2;
     const start = Date.now();
-    const MAX_TIMEOUT_MS = 30000;
+    const MAX_TIMEOUT_MS = 45000;
     const isTimedOut = () => Date.now() - start > MAX_TIMEOUT_MS;
     let retryFailureReason = "no_questions_returned";
     let bestAttempt: WorkerAttempt | null = null;
