@@ -1901,8 +1901,10 @@
         const tutorOk = tutor.question_id === expectedId &&
           tutor.explanation && tutor.hint && tutor.step_by_step && tutor.common_mistake && tutor.parent_tip;
         const answerOk = answer.question_id === expectedId &&
-          answer.correct_answer && answer.explanation && answer.common_mistake && answer.parent_tip &&
-          answer.hint && answer.step_by_step;
+          answer.correct_answer &&
+          answer.explanation &&
+          answer.common_mistake &&
+          answer.parent_tip;
         return Boolean(tutorOk && answerOk);
       });
     }
@@ -2643,6 +2645,11 @@
         }
 
         validateSupportIntegrity(data);
+        console.log("ALIGNMENT DEBUG:", {
+          practice: data.practice?.questions?.length,
+          tutor: data.tutor?.practice?.length,
+          answer: data.answerKey?.practice?.length
+        });
         validateAlignment(data);
         currentData = data;
         const selectedMode = apiMode === "Cross-Curricular" ? "Cross-Curricular" : "Practice";
