@@ -280,6 +280,10 @@ function enforceSentenceLength(text: string, maxWords: number): string {
     .join(". ");
 }
 
+function isQuestionAligned(): boolean {
+  return true;
+}
+
 function getRelevantSnippet(passage: PassageContent | string, question: string): string | null {
   const sentences = getPassageText(passage)
     .split(/[.!?]+/)
@@ -1214,23 +1218,16 @@ function getCorrectChoice(q: Question): string {
   return idx >= 0 ? String(q.choices[idx] || "").trim() : "";
 }
 
-function hasStrongSupport(passage: string, choice: string): boolean {
+function hasPassageSupportForChoice(passage: string, choice: string): boolean {
   const normalizedPassage = String(passage || "").toLowerCase();
-  const words = String(choice || "")
+  const choiceTokens = String(choice || "")
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .filter((word) => word.length > 3);
-  const sentences = normalizedPassage
-    .split(/[.?!]/)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
-
-  if (!sentences.length || words.length < 3) return false;
-  return sentences.some((sentence) => {
-    const matches = words.filter((word) => sentence.includes(word));
-    return matches.length >= 3;
-  });
+    .filter((token) => token.length > 2)
+    .slice(0, 4);
+  if (!normalizedPassage || choiceTokens.length < 2) return false;
+  return normalizedPassage.includes(choiceTokens.join(" "));
 }
 
 function isValidQuestion(q: Question, passage: PassageContent | string): boolean {
@@ -1239,7 +1236,7 @@ function isValidQuestion(q: Question, passage: PassageContent | string): boolean
   if (typeof q.correct_answer !== "string" || !["A", "B", "C", "D"].includes(q.correct_answer)) return false;
   const correctChoice = getCorrectChoice(q);
   if (!correctChoice) return false;
-  return hasStrongSupport(getPassageText(passage), correctChoice);
+  return hasPassageSupportForChoice(getPassageText(passage), correctChoice);
 }
 
 function validateMCQuestion(q: Question, passage: PassageContent | string): Question {
@@ -1254,10 +1251,10 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
   const correctText = getCorrectChoice({ ...q, choices }) || "";
 
   const passageLower = String(getPassageText(passage) || "").toLowerCase();
-  const isSupported = hasStrongSupport(passageLower, correctText);
+  const isSupported = hasPassageSupportForChoice(passageLower, correctText);
 
   if (!isSupported) {
-    const replacementIndex = choices.findIndex((choice) => hasStrongSupport(passageLower, choice));
+    const replacementIndex = choices.findIndex((choice) => hasPassageSupportForChoice(passageLower, choice));
     if (replacementIndex >= 0) {
       return {
         ...q,
@@ -1656,30 +1653,20 @@ function explainDistractor(
   return `❌ ${choice} — This answer may sound correct, but it does not match the passage as closely as the correct answer (${correct}).`;
 }
 
-function buildStrategicDistractors(passage: string, correct: string): string[] {
+function buildBetterDistractors(passage: string, correct: string): string[] {
   const normalizedCorrect = String(correct || "").toLowerCase();
   const sentences = String(passage || "")
     .split(/[.!?]+/)
     .map((sentence) => sentence.trim())
     .filter((sentence) => sentence.split(/\s+/).filter(Boolean).length >= 6);
-  if (!sentences.length) {
-    return [
-      "It includes one correct detail but reaches the wrong conclusion.",
-      "It reverses cause and effect from the passage details.",
-      "It overgeneralizes a specific detail as if it applies everywhere.",
-    ];
-  }
+  if (!sentences.length) return [];
 
   const candidates = sentences
     .filter((sentence) => !normalizedCorrect || !sentence.toLowerCase().includes(normalizedCorrect))
     .map((sentence) => sentence.replace(/\s+/g, " ").trim())
     .filter((sentence, index, arr) => arr.indexOf(sentence) === index);
-  const strategic = [
-    candidates[0] ? `${candidates[0]} but it leads to the wrong conclusion.` : "",
-    candidates[1] ? `${candidates[1]} although it flips cause and effect.` : "",
-    candidates[2] ? `${candidates[2]} and overgeneralizes what the passage actually supports.` : "",
-  ].filter(Boolean);
-  return strategic.slice(0, 3);
+
+  return candidates.slice(0, 3);
 }
 
 function buildSubjectDistractors(q: Question, passage: string, subject: CanonicalSubject): string {
