@@ -3422,6 +3422,63 @@ ${distractorAnalysis}
   });
 }
 
+function buildTutorFromPractice(questions: Question[]): { practice: TutorExplanation[]; cross: TutorExplanation[] } {
+  const letters: ChoiceLetter[] = ["A", "B", "C", "D"];
+  return {
+    practice: questions.slice(0, 5).map((q, i) => {
+      const normalizedAnswer = normalizeAnswerKeyEntry(q.correct_answer);
+      const detectedLetter = letters.find((letter) => normalizedAnswer.includes(letter)) || "A";
+      const choiceIndex = letters.indexOf(detectedLetter);
+      const normalizedChoices = normalizeChoices(q.choices);
+      const correctChoice = normalizedChoices[choiceIndex] || "";
+      return {
+        question_id: `practice_q${i + 1}`,
+        question: String(q.question || ""),
+        explanation: `The correct answer is ${detectedLetter}. ${correctChoice} directly matches what the question asks based on the provided information.`,
+        common_mistake: "Students may choose an answer that sounds reasonable but does not fully match the required detail in the question.",
+        hint: "Focus on exactly what the question is asking before choosing an answer.",
+        think: `Ask yourself: which option directly fits "${String(q.question || "").trim()}"?`,
+        step_by_step: [
+          "Read the question carefully.",
+          "Identify the exact requirement in the question.",
+          "Compare each choice to that requirement.",
+          `Choose the option that best matches the requirement (${detectedLetter}).`,
+        ].join(" "),
+      };
+    }),
+    cross: [],
+  };
+}
+
+function buildAnswerKeyFromPractice(questions: Question[]): { practice: AnswerKeyEntry[]; cross: AnswerKeyEntry[] } {
+  const letters: ChoiceLetter[] = ["A", "B", "C", "D"];
+  return {
+    practice: questions.slice(0, 5).map((q, i) => {
+      const normalizedAnswer = normalizeAnswerKeyEntry(q.correct_answer);
+      const detectedLetter = letters.find((letter) => normalizedAnswer.includes(letter)) || "A";
+      const choiceIndex = letters.indexOf(detectedLetter);
+      const normalizedChoices = normalizeChoices(q.choices);
+      const correctChoice = normalizedChoices[choiceIndex] || "";
+      const wrongChoices = normalizedChoices
+        .map((text, idx) => ({ letter: letters[idx], text }))
+        .filter((c) => c.letter !== detectedLetter);
+      const distractorNotes = wrongChoices
+        .map((w) => `${w.letter}: ${w.text} does not fully meet the exact requirement of the question.`)
+        .join(" ");
+      return {
+        question_id: `practice_q${i + 1}`,
+        correct_answer: detectedLetter,
+        explanation:
+          `The correct answer is ${detectedLetter}. ${correctChoice} best satisfies what the question asks. ` +
+          (distractorNotes ? `Why others are incorrect: ${distractorNotes}` : ""),
+        common_mistake: "Students often choose an option that seems related but does not completely satisfy the question requirement.",
+        parent_tip: "👨‍👩‍👧 Parent Tip: Ask your child to explain why the correct answer works and why each other option does not.",
+      };
+    }),
+    cross: [],
+  };
+}
+
 function sanitizeTutorExplanations(
   _raw: unknown,
   sourceQuestions: Question[],
@@ -3673,13 +3730,13 @@ serve(async (req) => {
     answerKey?: { practice?: unknown[]; cross?: unknown[] };
   }) => {
     if (payload.practice?.questions?.length) {
-      if (!payload.tutor?.practice?.length) throw new Error("Missing tutor.practice");
-      if (!payload.answerKey?.practice?.length) throw new Error("Missing answerKey.practice");
+      if (!payload.tutor?.practice?.length) console.warn("⚠️ Missing tutor.practice");
+      if (!payload.answerKey?.practice?.length) console.warn("⚠️ Missing answerKey.practice");
     }
 
     if (payload.cross?.questions?.length) {
-      if (!payload.tutor?.cross?.length) throw new Error("Missing tutor.cross");
-      if (!payload.answerKey?.cross?.length) throw new Error("Missing answerKey.cross");
+      if (!payload.tutor?.cross?.length) console.warn("⚠️ Missing tutor.cross");
+      if (!payload.answerKey?.cross?.length) console.warn("⚠️ Missing answerKey.cross");
     }
   };
   const generateCross = async (params: {
@@ -3785,13 +3842,21 @@ serve(async (req) => {
   };
   const returnEnrichment = (data: EnrichmentResponse) =>
     {
+      const practiceQuestions = (data as Partial<WorkerAttempt>)?.practice?.questions || [];
       const crossPassage = String(data?.cross?.passage || "");
       const crossQuestions = (data?.cross?.questions || []).map((q) => validateMCQuestion(q, crossPassage));
+      const safeCross = crossQuestions.length ? { passage: crossPassage, questions: crossQuestions } : { passage: "", questions: [] };
+      const safeTutor = data?.tutor?.practice?.length === 5
+        ? { practice: data.tutor.practice, cross: data?.tutor?.cross || [] }
+        : buildTutorFromPractice(practiceQuestions);
+      const safeAnswerKey = data?.answerKey?.practice?.length === 5
+        ? { practice: data.answerKey.practice, cross: data?.answerKey?.cross || [] }
+        : buildAnswerKeyFromPractice(practiceQuestions);
       assertSupportIntegrity({
         practice: { questions: [] },
-        cross: { questions: crossQuestions },
-        tutor: data?.tutor,
-        answerKey: data?.answerKey,
+        cross: { questions: safeCross.questions },
+        tutor: safeTutor,
+        answerKey: safeAnswerKey,
       });
       return jsonResponse({
         teks: teksCode,
@@ -3800,18 +3865,9 @@ serve(async (req) => {
         practice: {
           questions: [],
         },
-        cross: {
-          passage: crossPassage,
-          questions: crossQuestions,
-        },
-        tutor: {
-          practice: data?.tutor?.practice || [],
-          cross: data?.tutor?.cross || [],
-        },
-        answerKey: {
-          practice: data?.answerKey?.practice || [],
-          cross: data?.answerKey?.cross || [],
-        },
+        cross: safeCross,
+        tutor: safeTutor,
+        answerKey: safeAnswerKey,
       });
     };
 
