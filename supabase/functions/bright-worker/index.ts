@@ -283,8 +283,8 @@ function isQuestionAligned(): boolean {
   return true;
 }
 
-function getRelevantSnippet(passage: string, question: string): string {
-  const sentences = passage
+function getRelevantSnippet(passage: PassageContent | string, question: string): string {
+  const sentences = getPassageText(passage)
     .split(/[.!?]+/)
     .map((s) => s.trim())
     .filter(Boolean);
@@ -326,12 +326,12 @@ Step 4: Check that your answer makes sense.
 Final Answer: ${correctAnswer}`;
 }
 
-function teacherStyleExplanation(passage: string, question: string): string {
+function teacherStyleExplanation(passage: PassageContent | string, question: string): string {
   const snippet = getRelevantSnippet(passage, question);
   return `${getExplanationStarter()}: "${snippet}". This detail helps explain why the correct choice is the strongest answer when compared to the other options.`;
 }
 
-function buildCrossExplanation(passage: string, question: string): string {
+function buildCrossExplanation(passage: PassageContent | string, question: string): string {
   return teacherStyleExplanation(passage, question);
 }
 
@@ -1199,12 +1199,7 @@ function buildSupportContent(
   const isReading = subject === "Reading";
   const isCross = mode === "Cross-Curricular";
   const shouldUsePassage = isCross || isReading;
-  const passagePayload = passage && typeof passage === "object" ? passage as Record<string, string> : {};
-  const passageText = shouldUsePassage
-    ? (typeof passage === "string"
-      ? passage
-      : (passagePayload.text || passagePayload.text_1 || ""))
-    : "";
+  const passageText = shouldUsePassage ? getPassageText(passage) : "";
   const passageSnippet = passageText
     ? passageText.split(".").slice(0, 2).join(".").trim()
     : "";
@@ -1356,10 +1351,10 @@ function buildPracticeFallback(
         ? `${leveledStem} Include only relevant numbers and ignore extra information to solve.`
         : leveledStem;
     }
-    const safePassage =
-      passage && String(passage).trim().length > 0
-        ? passage
-        : buildSubjectPassage("Reading", level);
+    const passageText = getPassageText(passage || "").trim();
+    const safePassage = passageText.length > 0
+      ? passageText
+      : buildSubjectPassage("Reading", level);
     const sourceChoices = subject === "Math"
       ? mathChoiceBanks[i % mathChoiceBanks.length]
       : subject === "Science"
@@ -1399,11 +1394,9 @@ function buildPracticeFallback(
       type,
       question: leveledStem,
       choices: safeChoices,
-      correct_answer: type === "part_a_b"
-        ? { partA: partAAnswer, partB: partBAnswer }
-        : resolvedCorrectAnswer,
-      partA: type === "part_a_b" ? partA : undefined,
-      partB: type === "part_a_b" ? partB : undefined,
+      correct_answer: resolvedCorrectAnswer,
+      partA: undefined,
+      partB: undefined,
       explanation: "",
       hint: "",
       think: "",
@@ -1613,11 +1606,11 @@ function isValidPartAB(q: Question, passage: PassageContent | string): boolean {
 }
 
 function buildStudentMistakeDistractors(
-  passage: string,
+  passage: PassageContent | string,
   correctAnswer: string,
   question: string,
 ): string[] {
-  const sentences = String(passage || "")
+  const sentences = getPassageText(passage)
     .split(/[.!?]+/)
     .map((s) => s.trim())
     .filter((s) => s.length > 20);
@@ -1897,11 +1890,9 @@ function buildCrossFallback(
       type,
       question: leveledStem,
       choices: choices as [string, string, string, string],
-      correct_answer: type === "part_a_b"
-        ? { partA: partAAnswer, partB: partBAnswer }
-        : resolvedCorrectAnswer,
-      partA: type === "part_a_b" ? partA : undefined,
-      partB: type === "part_a_b" ? partB : undefined,
+      correct_answer: resolvedCorrectAnswer,
+      partA: undefined,
+      partB: undefined,
       explanation: "",
       hint: "",
       think: "",
@@ -2092,18 +2083,9 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
       choices,
       correct_answer: type === "scr"
         ? "A"
-        : type === "part_a_b"
-        ? {
-          partA: resolvePartABAnswer(partA, choices[0] || ""),
-          partB: resolvePartABAnswer(partB, partA.choices[LETTERS.indexOf(resolvePartABAnswer(partA, choices[0] || ""))] || ""),
-        }
         : nextSingleAnswer(),
-      partA: type === "part_a_b"
-        ? partA
-        : undefined,
-      partB: type === "part_a_b"
-        ? partB
-        : undefined,
+      partA: undefined,
+      partB: undefined,
       explanation: "",
       sample_answer: type === "scr"
         ? "The author’s purpose is to inform readers about the topic using evidence and examples. Key details in the passage show how those examples support the central claim."
@@ -2260,7 +2242,7 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
       "All plants grew at the same rate, so light intensity did not matter in this setup.",
       "Plants farther from the lamp appeared to grow faster because lower heat outweighed reduced light.",
       "Plant height changed randomly and was not related to the light conditions in the investigation.",
-    ], effectiveSubject, skill);
+    ]);
     const partA = buildPartA(stem, fallbackPartPassage);
     const partASeed = partA.choices[0] || "";
     const partB = buildPartB(fallbackPartPassage, partASeed);
@@ -2270,18 +2252,9 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
       choices: baseChoices,
       correct_answer: type === "multi_select"
         ? nextMultiAnswer()
-        : type === "part_a_b"
-        ? {
-          partA: resolvePartABAnswer(partA, baseChoices[0] || ""),
-          partB: resolvePartABAnswer(partB, partA.choices[LETTERS.indexOf(resolvePartABAnswer(partA, baseChoices[0] || ""))] || ""),
-        }
         : nextSingleAnswer(),
-      partA: type === "part_a_b"
-        ? partA
-        : undefined,
-      partB: type === "part_a_b"
-        ? partB
-        : undefined,
+      partA: undefined,
+      partB: undefined,
       explanation: "",
       sample_answer: type === "scr"
         ? "The author develops the central idea by introducing a problem and supporting the solution with clear evidence. One detail explains the challenge, and another shows why the response is effective. These details justify the best interpretation."
@@ -2494,21 +2467,21 @@ function sanitizeQuestions(
   passage: PassageContent | string = "",
   grade = 5,
 ): Question[] {
+  const buildSafeMC = (questionText = "", explanationText = ""): Question => ({
+    type: "mc",
+    question: String(questionText || "").trim() || "Placeholder",
+    choices: ["Option A", "Option B", "Option C", "Option D"],
+    correct_answer: "A",
+    explanation: String(explanationText || "").trim(),
+  });
   const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
   void mode;
   void level;
-  void passage;
   void grade;
   const sanitized: Question[] = incoming.map((item, i) => {
     const q = item && typeof item === "object" ? item as Record<string, unknown> : {};
     if (!q.choices || !Array.isArray(q.choices) || q.choices.length === 0 || q.choices.every((choice) => !String(choice || "").trim())) {
-      return {
-        type: "mc",
-        question: String(q.question || "").trim(),
-        choices: [],
-        correct_answer: "",
-        explanation: String(q.explanation || "").trim(),
-      };
+      return buildSafeMC(String(q.question || ""), String(q.explanation || ""));
     }
     const expectedType = (q.type === "part_a_b" || q.type === "multi_select" || q.type === "part_a" || q.type === "part_b")
       ? q.type
@@ -3452,11 +3425,11 @@ serve(async (req) => {
       const practiceQuestionSet = practiceQuestions as Question[];
       const crossQuestionSet = crossQuestions as Question[];
       const tutor = {
-        practice: generateTutor(practiceQuestionSet, subject, "practice", level, core.passage || ""),
+        practice: generateTutor(practiceQuestionSet, subject, "practice", level, getPassageText(core.passage || "")),
         cross: generateTutor(crossQuestionSet, subject, "cross", level, crossPassage),
       };
       const answerKey = {
-        practice: generateAnswerKey(practiceQuestionSet, subject, "practice", level, core.passage || ""),
+        practice: generateAnswerKey(practiceQuestionSet, subject, "practice", level, getPassageText(core.passage || "")),
         cross: generateAnswerKey(crossQuestionSet, subject, "cross", level, crossPassage),
       };
 
@@ -3779,7 +3752,7 @@ serve(async (req) => {
           console.log("⚠️ Cross passage duplication detected");
         }
 
-        if (effectiveMode === "cross") {
+        {
           const constraints = getGradeConstraints(grade);
           const crossPassage = ensurePassageLength(
             baseCrossPassage,
@@ -3845,7 +3818,7 @@ serve(async (req) => {
           return jsonResponse({ ...payload, teks: teksCode, skill, grade });
         }
 
-        if (effectiveMode === "support") {
+        {
           const priorCrossQuestions = Array.isArray(body.crossQuestions) ? body.crossQuestions : [];
           const priorCrossPassage = typeof body.crossPassage === "string"
             ? String(body.crossPassage || "").trim()
@@ -4094,22 +4067,7 @@ serve(async (req) => {
     if (bestAttempt) {
       returnType = "BEST_ATTEMPT";
       logReturnMetrics();
-      if (effectiveMode === "enrichment") {
-        return returnEnrichment(bestAttempt);
-      }
-      if (effectiveMode === "cross") {
-        return jsonResponse({ teks: teksCode, skill, grade, cross: bestAttempt.cross });
-      }
-      if (effectiveMode === "support") {
-        return jsonResponse({
-          teks: teksCode,
-          skill,
-          grade,
-          tutor: bestAttempt.tutor,
-          answerKey: bestAttempt.answerKey,
-        });
-      }
-      return returnCore(bestAttempt);
+      return returnEnrichment(bestAttempt);
     }
     if (attempts >= 2) {
       console.log("🚨 FALLBACK TRIGGERED AFTER ATTEMPTS");
