@@ -280,18 +280,14 @@ function enforceSentenceLength(text: string, maxWords: number): string {
     .join(". ");
 }
 
-function isQuestionAligned(): boolean {
-  return true;
-}
-
-function getRelevantSnippet(passage: PassageContent | string, question: string): string {
+function getRelevantSnippet(passage: PassageContent | string, question: string): string | null {
   const sentences = getPassageText(passage)
     .split(/[.!?]+/)
     .map((s) => s.trim())
     .filter(Boolean);
   const keywords = question.toLowerCase().split(" ").filter((w) => w.length > 4);
 
-  let best = sentences[0] || "";
+  let best: string | null = null;
   let bestScore = 0;
 
   for (const sentence of sentences) {
@@ -308,7 +304,7 @@ function getRelevantSnippet(passage: PassageContent | string, question: string):
     }
   }
 
-  return best;
+  return bestScore > 0 ? best : null;
 }
 
 function teacherExplain(question: string, answer: string, subject: string): string {
@@ -329,6 +325,9 @@ Final Answer: ${correctAnswer}`;
 
 function teacherStyleExplanation(passage: PassageContent | string, question: string): string {
   const snippet = getRelevantSnippet(passage, question);
+  if (!snippet) {
+    return "This answer requires combining multiple details from the passage. Re-read carefully to identify supporting evidence.";
+  }
   return `${getExplanationStarter()}: "${snippet}". This detail helps explain why the correct choice is the strongest answer when compared to the other options.`;
 }
 
@@ -1071,6 +1070,37 @@ ${requiredQuestionBlock}
 - JSON only.${passageDirective}`;
 }
 
+function buildGenerationPrompt(params: {
+  mode: "core" | "enrichment";
+  grade: number;
+  subject: CanonicalSubject;
+  skill: string;
+  level: Level;
+  teksCode?: string;
+  practiceQuestions?: Question[];
+  crossPassage?: string;
+}): string {
+  if (params.mode === "core") {
+    return buildCorePrompt({
+      grade: params.grade,
+      subject: params.subject,
+      skill: params.skill,
+      level: params.level,
+      teksCode: params.teksCode,
+    });
+  }
+
+  return buildEnrichmentPrompt({
+    grade: params.grade,
+    subject: params.subject,
+    skill: params.skill,
+    practiceQuestions: params.practiceQuestions || [],
+    level: params.level,
+    crossPassage: params.crossPassage || "",
+    teksCode: params.teksCode,
+  });
+}
+
 function buildSubjectPassage(subject: CanonicalSubject, level: Level = "On Level"): string {
   const rigor = applyRigor(level);
   if (subject === "Science") {
@@ -1184,6 +1214,34 @@ function getCorrectChoice(q: Question): string {
   return idx >= 0 ? String(q.choices[idx] || "").trim() : "";
 }
 
+function hasStrongSupport(passage: string, choice: string): boolean {
+  const normalizedPassage = String(passage || "").toLowerCase();
+  const words = String(choice || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 3);
+  const sentences = normalizedPassage
+    .split(/[.?!]/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+
+  if (!sentences.length || words.length < 3) return false;
+  return sentences.some((sentence) => {
+    const matches = words.filter((word) => sentence.includes(word));
+    return matches.length >= 3;
+  });
+}
+
+function isValidQuestion(q: Question, passage: PassageContent | string): boolean {
+  if (!q || q.type === "part_a_b") return true;
+  if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
+  if (typeof q.correct_answer !== "string" || !["A", "B", "C", "D"].includes(q.correct_answer)) return false;
+  const correctChoice = getCorrectChoice(q);
+  if (!correctChoice) return false;
+  return hasStrongSupport(getPassageText(passage), correctChoice);
+}
+
 function validateMCQuestion(q: Question, passage: PassageContent | string): Question {
   if (q.type && q.type !== "mc") {
     return {
@@ -1196,13 +1254,17 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
   const correctText = getCorrectChoice({ ...q, choices }) || "";
 
   const passageLower = String(getPassageText(passage) || "").toLowerCase();
-  const correctLower = correctText.toLowerCase();
-
-  const isSupported =
-    correctLower.length > 5 &&
-    passageLower.includes(correctLower.split(" ").slice(0, 4).join(" "));
+  const isSupported = hasStrongSupport(passageLower, correctText);
 
   if (!isSupported) {
+    const replacementIndex = choices.findIndex((choice) => hasStrongSupport(passageLower, choice));
+    if (replacementIndex >= 0) {
+      return {
+        ...q,
+        choices,
+        correct_answer: LETTERS[replacementIndex],
+      };
+    }
     return {
       ...q,
       choices,
@@ -1373,7 +1435,7 @@ function detectThinkingType(question: string): "inference" | "evidence" | "main_
   return "general";
 }
 
-function extractEvidenceSnippet(passage: string, keywords: string[]): string {
+function extractEvidenceSnippet(passage: string, keywords: string[]): string | null {
   const sentences = String(passage || "")
     .split(/[.?!]/)
     .map((sentence) => sentence.trim())
@@ -1387,10 +1449,10 @@ function extractEvidenceSnippet(passage: string, keywords: string[]): string {
     }
   }
 
-  return sentences[0]?.trim() || "";
+  return null;
 }
 
-function extractEvidence(passage: string, keywords: string[]): string {
+function extractEvidence(passage: string, keywords: string[]): string | null {
   const sentences = String(passage || "").split(/[.!?]/).map((s) => s.trim()).filter(Boolean);
 
   for (const keyword of keywords) {
@@ -1400,7 +1462,7 @@ function extractEvidence(passage: string, keywords: string[]): string {
     if (match) return match;
   }
 
-  return sentences[0] || "";
+  return null;
 }
 
 function buildTargetedHint(question: string): string {
@@ -1594,10 +1656,30 @@ function explainDistractor(
   return `❌ ${choice} — This answer may sound correct, but it does not match the passage as closely as the correct answer (${correct}).`;
 }
 
-function buildBetterDistractors(passage: string, correct: string): string[] {
-  void passage;
-  void correct;
-  return [];
+function buildStrategicDistractors(passage: string, correct: string): string[] {
+  const normalizedCorrect = String(correct || "").toLowerCase();
+  const sentences = String(passage || "")
+    .split(/[.!?]+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.split(/\s+/).filter(Boolean).length >= 6);
+  if (!sentences.length) {
+    return [
+      "It includes one correct detail but reaches the wrong conclusion.",
+      "It reverses cause and effect from the passage details.",
+      "It overgeneralizes a specific detail as if it applies everywhere.",
+    ];
+  }
+
+  const candidates = sentences
+    .filter((sentence) => !normalizedCorrect || !sentence.toLowerCase().includes(normalizedCorrect))
+    .map((sentence) => sentence.replace(/\s+/g, " ").trim())
+    .filter((sentence, index, arr) => arr.indexOf(sentence) === index);
+  const strategic = [
+    candidates[0] ? `${candidates[0]} but it leads to the wrong conclusion.` : "",
+    candidates[1] ? `${candidates[1]} although it flips cause and effect.` : "",
+    candidates[2] ? `${candidates[2]} and overgeneralizes what the passage actually supports.` : "",
+  ].filter(Boolean);
+  return strategic.slice(0, 3);
 }
 
 function buildSubjectDistractors(q: Question, passage: string, subject: CanonicalSubject): string {
@@ -1605,7 +1687,7 @@ function buildSubjectDistractors(q: Question, passage: string, subject: Canonica
   const normalizedChoices = normalizeChoices(q.choices);
   const correctChoice = getCorrectChoice({ ...q, choices: normalizedChoices as [string, string, string, string] }) || "";
   const hasPassage = String(passage || "").trim().length > 0;
-  const passageDistractors = hasPassage ? buildBetterDistractors(String(passage || ""), correctChoice) : [];
+  const passageDistractors = hasPassage ? buildStrategicDistractors(String(passage || ""), correctChoice) : [];
   return normalizedChoices
     .map((choice, index) => ({ choice, letter: LETTERS[index] }))
     .filter(({ letter }) => letter !== correct)
@@ -2915,7 +2997,7 @@ function getPassageAnchors(passage: PassageContent | string, question: string): 
     "about", "after", "again", "because", "before", "between", "could", "every", "first", "found", "from",
     "their", "there", "these", "those", "through", "under", "using", "which", "while", "would",
   ]);
-  const snippet = getRelevantSnippet(passage, question);
+  const snippet = getRelevantSnippet(passage, question) || "";
   const text = `${snippet} ${getPassageText(passage)}`.toLowerCase();
   const tokens = text
     .split(/[^a-z0-9-]+/)
@@ -3041,6 +3123,7 @@ function sanitizeQuestions(
 
   const passageText = getPassageText(passage);
   questions = questions.map((q) => validateMCQuestion(q, passageText));
+  questions = questions.filter((q) => isValidQuestion(q, passageText));
   console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", questions.length);
   const alignedSet = questions.map((question) => {
     if (question.type === "part_a_b" && !isValidPartAB(question, passage)) {
@@ -4134,7 +4217,8 @@ serve(async (req) => {
             },
             body: JSON.stringify({
               model: "gpt-4o-mini",
-              input: buildCorePrompt({
+              input: buildGenerationPrompt({
+                mode: "core",
                 grade,
                 subject,
                 skill: effectiveSkill,
@@ -4226,6 +4310,11 @@ serve(async (req) => {
             const rawWordCount = rawPassage.split(/\s+/).filter(Boolean).length;
             if (!rawPassage || rawWordCount < 20) {
               markRetry("no_questions_returned");
+              continue;
+            }
+            if (!/[.!?]["')\]]?\s*$/.test(rawPassage)) {
+              console.warn("⚠️ Truncated passage detected — retrying AI generation");
+              markRetry("truncated_passage");
               continue;
             }
             if (isWeakPassage(rawPassage, grade)) {
@@ -4536,7 +4625,8 @@ serve(async (req) => {
           },
           body: JSON.stringify({
             model: "gpt-4o-mini",
-            input: buildEnrichmentPrompt({
+            input: buildGenerationPrompt({
+              mode: "enrichment",
               grade,
               subject: effectiveSubject,
               skill: effectiveSkill,
