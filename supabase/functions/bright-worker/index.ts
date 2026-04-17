@@ -54,7 +54,6 @@ type TutorExplanation = {
   question: string;
   explanation: string;
   common_mistake: string;
-  parent_tip: string;
   hint?: string;
   think?: string;
   step_by_step?: string;
@@ -65,7 +64,7 @@ type AnswerKeyEntry = {
   correct_answer: string;
   explanation: string;
   common_mistake: string;
-  parent_tip: string;
+  parent_tip?: string;
   hint?: string;
   step_by_step?: string;
 };
@@ -2917,7 +2916,6 @@ function buildPracticeTutorFallback(subject: CanonicalSubject, question: Questio
       question: promptFocus,
       explanation: `${aligned.why} ${distractorFeedback}`.trim(),
       common_mistake: aligned.mistake,
-      parent_tip: "Ask your child to show each step and explain why each operation is used.",
       hint: "Break the problem into smaller parts before combining results.",
       think,
       step_by_step: "Identify numbers → choose operations → solve each step → check reasonableness.",
@@ -2929,7 +2927,6 @@ function buildPracticeTutorFallback(subject: CanonicalSubject, question: Questio
       question: promptFocus,
       explanation: `${aligned.why} ${distractorFeedback}`.trim(),
       common_mistake: aligned.mistake,
-      parent_tip: "Ask your child which variable changed and what result was observed.",
       hint: "Focus on how one factor affects another in the system.",
       think,
       step_by_step: "Identify variables → find cause/effect relationship → apply the concept to the choices.",
@@ -2941,7 +2938,6 @@ function buildPracticeTutorFallback(subject: CanonicalSubject, question: Questio
       question: promptFocus,
       explanation: `${aligned.why} ${distractorFeedback}`.trim(),
       common_mistake: aligned.mistake,
-      parent_tip: "Ask your child what changed as a result of the event or decision in the question.",
       hint: "Track the cause, then connect it to the most direct impact.",
       think,
       step_by_step: "Identify event/context → determine cause or decision → determine impact/outcome.",
@@ -2952,7 +2948,6 @@ function buildPracticeTutorFallback(subject: CanonicalSubject, question: Questio
     question: promptFocus,
     explanation: `${aligned.why} ${distractorFeedback}`.trim(),
     common_mistake: aligned.mistake,
-    parent_tip: "Ask your child to point to the exact sentence that supports the answer choice.",
     hint: "Look back at the text and find the best supporting detail.",
     think,
     step_by_step: "Read question → locate evidence in text → match evidence to the best choice.",
@@ -2967,7 +2962,6 @@ function buildCrossTutorFallback(subject: CanonicalSubject, question: Question, 
     question: String(question.question || "").trim(),
     explanation: `${aligned.why} ${distractorFeedback}`.trim(),
     common_mistake: aligned.mistake,
-    parent_tip: "Ask your child to cite one specific sentence from the passage that proves the answer.",
     hint: aligned.tip,
     think: buildThinkPrompt(question),
     step_by_step: "Read question carefully → find related part of passage → match evidence to the best choice.",
@@ -3063,7 +3057,6 @@ function generateTutor(
         question: String(q.question || "").trim(),
         explanation: support.explanation || "",
         common_mistake: support.common_mistake || "",
-        parent_tip: "",
         hint: support.hint || "",
         think: support.think || "",
         step_by_step: support.step_by_step || "",
@@ -3075,7 +3068,6 @@ function generateTutor(
         question: String(q.question || "").trim(),
         explanation: "Explanation unavailable.",
         common_mistake: "",
-        parent_tip: "",
         hint: "",
         think: "",
         step_by_step: "",
@@ -3185,7 +3177,7 @@ function validateTutorAnswerKeyAlignment(
     );
     const answerRequired = Boolean(
       answerEntry?.correct_answer && answerEntry?.explanation &&
-      answerEntry?.common_mistake && answerEntry?.parent_tip,
+      answerEntry?.common_mistake,
     );
     return tutorRequired &&
       answerRequired &&
@@ -3430,7 +3422,6 @@ serve(async (req) => {
           think: q.think || "",
           step_by_step: q.step_by_step || q.explanation || "Read the question, eliminate weak choices, and prove your selection.",
           common_mistake: q.common_mistake || "Choosing an answer without checking all steps.",
-          parent_tip: "",
         })),
         cross: [],
       },
@@ -3841,7 +3832,6 @@ serve(async (req) => {
               question: q.question,
               explanation: "Review the passage and identify key supporting details.",
               common_mistake: "Choosing an answer without pointing to clear text evidence.",
-              parent_tip: "Ask your student to underline one detail that proves the answer choice.",
             }));
             const lightweightAnswerKey = practiceQuestions.map((q, index) => ({
               question_id: ensureQuestionId(q, index, "practice"),
