@@ -1325,7 +1325,10 @@ function buildSupportContent(
   _level: Level = "On Level",
   mode: CanonicalMode = "Practice",
   passage: PassageContent | string = "",
+  supportMode: "Tutor" | "Answer Key" = "Tutor",
 ): { explanation: string; common_mistake: string; parent_tip: string; hint: string; think: string; step_by_step: string } {
+  const isTutor = supportMode === "Tutor";
+  const isAnswer = supportMode === "Answer Key";
   const questionText = String(q.question || "").trim();
   const isReading = subject === "Reading";
   const isCross = mode === "Cross-Curricular";
@@ -3052,6 +3055,7 @@ function generateTutor(
       level,
       mode === "cross" ? "Cross-Curricular" : "Practice",
       mode === "cross" ? crossPassage : "",
+      "Tutor",
     );
     return {
       question_id: ensureQuestionId(q, index, mode),
@@ -3081,6 +3085,7 @@ function generateAnswerKey(
       level,
       mode === "cross" ? "Cross-Curricular" : "Practice",
       mode === "cross" ? crossPassage : "",
+      "Answer Key",
     );
     const correctAnswer = normalizeAnswerKeyEntry(q.correct_answer);
     const passageText = String(crossPassage || "");
@@ -3104,7 +3109,7 @@ Why other answers are incorrect:
 ${distractorAnalysis}
 `.trim(),
       common_mistake: support.common_mistake,
-      parent_tip: support.parent_tip,
+      parent_tip: `👨‍👩‍👧 Parent Tip:\n${targetedParentTip}`,
       hint: support.hint,
       step_by_step: support.step_by_step,
     };
