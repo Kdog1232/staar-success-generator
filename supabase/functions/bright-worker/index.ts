@@ -1237,6 +1237,18 @@ function hasLooseSupport(passage: string, choice: string): boolean {
   return words.some((word) => normalizedPassage.includes(word));
 }
 
+function scoreChoiceSupport(passage: string, choice: string): number {
+  const normalizedPassage = String(passage || "").toLowerCase();
+  const words = String(choice || "")
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => w.replace(/[^a-z0-9]/g, ""))
+    .filter((w) => w.length > 3);
+  if (!normalizedPassage || words.length === 0) return 0;
+  const uniqueWords = Array.from(new Set(words));
+  return uniqueWords.reduce((score, word) => score + (normalizedPassage.includes(word) ? 1 : 0), 0);
+}
+
 function isValidQuestion(q: Question, passage: PassageContent | string): boolean {
   if (!q || q.type === "part_a_b") return true;
   if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
@@ -1262,11 +1274,13 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
   const choices = normalizeChoices(q.choices);
   const correctText = getCorrectChoice({ ...q, choices }) || "";
 
-  const passageLower = String(getPassageText(passage) || "").toLowerCase();
-  const isSupported = hasLooseSupport(passageLower, correctText);
+  const passageText = String(getPassageText(passage) || "");
+  const isSupported = hasLooseSupport(passageText, correctText) || hasPassageSupportForChoice(passageText, correctText);
 
   if (!isSupported) {
-    const replacementIndex = choices.findIndex((choice) => hasLooseSupport(passageLower, choice));
+    const replacementIndex = choices.findIndex((choice) =>
+      hasLooseSupport(passageText, choice) || hasPassageSupportForChoice(passageText, choice)
+    );
     if (replacementIndex >= 0) {
       return {
         ...q,
@@ -1274,10 +1288,13 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
         correct_answer: LETTERS[replacementIndex],
       };
     }
+    const strongestIndex = choices
+      .map((choice, index) => ({ index, score: scoreChoiceSupport(passageText, choice) }))
+      .sort((a, b) => b.score - a.score)[0];
     return {
       ...q,
       choices,
-      correct_answer: "A",
+      correct_answer: LETTERS[strongestIndex?.index ?? 0],
     };
   }
 
@@ -1750,26 +1767,33 @@ function buildSupportContent(
   const isCross = mode === "Cross-Curricular";
   const shouldUsePassage = mode === "Cross-Curricular" || subject === "Reading";
   const passageText = shouldUsePassage ? getPassageText(passage) : "";
-  const passageSnippet = passageText
-    ? passageText.split(".").slice(0, 2).join(".").trim()
-    : "";
   const keywords = questionText.split(/\s+/).slice(0, 5);
-  const snippet = extractEvidenceSnippet(passageText, keywords);
+  const correctChoice = getCorrectChoice({ ...q, choices: normalizeChoices(q.choices) as [string, string, string, string] }) || "";
+  const snippet = extractEvidenceSnippet(passageText, [...keywords, ...String(correctChoice || "").split(/\s+/).slice(0, 5)]);
   const distractorAnalysis = buildSubjectDistractors(q, passageText, subject);
   const thinkingType = detectThinkingType(questionText);
-  const evidenceSource = snippet || passageSnippet || normalizeChoices(q.choices)[0] || "The strongest supporting sentence in the passage";
+  const hasEvidence = Boolean(snippet);
+  const noEvidenceMessage = "This answer requires combining multiple details from the passage. Re-read carefully to identify supporting evidence.";
   let explanation = subject === "Math"
     ? "Start by identifying what the problem is asking. Then solve step by step by choosing the correct operation, calculating carefully, and checking whether the result is reasonable."
     : subject === "Science"
-    ? `This question requires understanding cause and effect in a system. The data or details show a relationship that leads to the best-supported conclusion${evidenceSource ? `, especially in: "${evidenceSource}."` : "."}`
+    ? hasEvidence
+      ? `This question requires understanding cause and effect in a system. The data or details show a relationship that leads to the best-supported conclusion, especially in: "${snippet}."`
+      : noEvidenceMessage
     : subject === "Social Studies"
-    ? `This question asks you to reason through historical context and decisions. Use the situation described in the source to identify the most supported outcome${evidenceSource ? `, such as: "${evidenceSource}."` : "."}`
+    ? hasEvidence
+      ? `This question asks you to reason through historical context and decisions. Use the situation described in the source to identify the most supported outcome, such as: "${snippet}."`
+      : noEvidenceMessage
     : `
 The correct answer is supported by the passage. For example, the text states:
-"${evidenceSource}."
+"${snippet}."
 
 A strong reader uses this evidence to connect directly to the question. This detail helps confirm why the correct answer is the best choice.
 `.trim();
+
+  if ((subject === "Reading" || shouldUsePassage) && !hasEvidence) {
+    explanation = noEvidenceMessage;
+  }
 
   if (thinkingType === "inference") {
     explanation = `${explanation}\n\nFor inference questions, combine clues across the passage instead of searching for one exact phrase.`;
