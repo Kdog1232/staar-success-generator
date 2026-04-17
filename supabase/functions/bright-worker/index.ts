@@ -1463,8 +1463,7 @@ function buildSupportContent(
   passage: PassageContent | string = "",
   supportMode: "Tutor" | "Answer Key" = "Tutor",
 ): { explanation: string; common_mistake: string; parent_tip: string; hint: string; think: string; step_by_step: string } {
-  const isTutor = supportMode === "Tutor";
-  const isAnswer = supportMode === "Answer Key";
+  void supportMode;
   const questionText = String(q.question || "").trim();
   const isReading = subject === "Reading";
   const isCross = mode === "Cross-Curricular";
@@ -1511,11 +1510,17 @@ A strong reader uses this evidence to connect directly to the question. This det
     explanation = fullExplanation;
   }
 
-  const common_mistake = "Students often choose an answer that sounds correct but is not fully supported by the passage. Strong readers always check for evidence.";
+  const normalizedChoices = normalizeChoices(q.choices);
+  const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
+  const wrongChoices = normalizedChoices.filter((_, i) => LETTERS[i] !== correctLetter);
+  const sampleWrong =
+    wrongChoices.find((choice) => classifyErrorType(subject, questionText, choice) === "wrong_operation") ||
+    wrongChoices[0] ||
+    "";
+  const mt = buildMistakeAndTip(subject, questionText, sampleWrong);
 
-  const parent_tip = shouldUsePassage
-    ? `Ask your child: "Where in the passage do you see this?" Have them point to a sentence like: "${passageSnippet}".`
-    : "Ask your child to explain how they solved the problem step by step.";
+  const common_mistake = mt.mistake;
+  const parent_tip = `👨‍👩‍👧 Parent Tip: Ask your child: ${mt.tip}`;
 
   const strategy = buildTargetedStrategy(subject, questionText, passageText, thinkingType);
   const hint = buildTargetedHint(questionText);
@@ -3256,7 +3261,9 @@ ${distractorAnalysis}
 `.trim(),
         common_mistake: support.common_mistake || "",
         parent_tip: support.parent_tip
-          ? `👨‍👩‍👧 Parent Tip:\n${support.parent_tip}`
+          ? (String(support.parent_tip).startsWith("👨‍👩‍👧 Parent Tip")
+            ? String(support.parent_tip)
+            : `👨‍👩‍👧 Parent Tip:\n${support.parent_tip}`)
           : "",
       };
     } catch (err) {
