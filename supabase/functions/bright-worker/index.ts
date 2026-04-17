@@ -1070,6 +1070,46 @@ function normalizeAnswer(letter: unknown): ChoiceLetter {
   return "A";
 }
 
+function validateMCQuestion(q: Question, passage: PassageContent | string): Question {
+  const letters: ChoiceLetter[] = ["A", "B", "C", "D"];
+  if (q.type && q.type !== "mc") {
+    return {
+      ...q,
+      choices: normalizeChoices(q.choices),
+    };
+  }
+
+  const choices = normalizeChoices(q.choices);
+  const correctLetter = normalizeAnswer(q.correct_answer);
+  const correctText = choices[letters.indexOf(correctLetter)] || "";
+
+  const passageLower = String(getPassageText(passage) || "").toLowerCase();
+  const correctLower = correctText.toLowerCase();
+
+  const isSupported =
+    correctLower.length > 5 &&
+    passageLower.includes(correctLower.split(" ").slice(0, 4).join(" "));
+
+  if (!isSupported) {
+    const bestIndex = choices.findIndex((choice) =>
+      passageLower.includes(choice.toLowerCase().split(" ").slice(0, 3).join(" "))
+    );
+
+    if (bestIndex >= 0) {
+      return {
+        ...q,
+        choices,
+        correct_answer: letters[bestIndex],
+      };
+    }
+  }
+
+  return {
+    ...q,
+    choices,
+  };
+}
+
 function normalizeMultiSelectAnswer(value: unknown): [ChoiceLetter, ChoiceLetter] {
   const raw = Array.isArray(value) ? value : [];
   const normalized = raw
@@ -1474,21 +1514,9 @@ function explainDistractor(
 }
 
 function buildBetterDistractors(passage: string, correct: string): string[] {
+  void passage;
   void correct;
-  const sentences = passage
-    .split(/[.?!]/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 40);
-
-  const a = sentences[0] || "";
-  const b = sentences[1] || "";
-  const c = sentences[2] || "";
-
-  return [
-    `${a} but it does not explain the result in the question.`,
-    `${b} is mentioned in the passage but is not the cause of the outcome.`,
-    `${c} is a detail, but it does not support the correct conclusion.`,
-  ];
+  return [];
 }
 
 function buildSubjectDistractors(q: Question, passage: string, subject: CanonicalSubject): string {
@@ -2828,9 +2856,9 @@ function fixDistractors(
 ): string[] {
   void subject;
   void question;
-  const passageText = getPassageText(passage);
-  if (!passageText || passageText.trim().length === 0) return [];
-  return buildBetterDistractors(passageText, correctAnswer);
+  void correctAnswer;
+  void passage;
+  return [];
 }
 
 function sanitizeQuestions(
@@ -2931,10 +2959,8 @@ function sanitizeQuestions(
 
   let questions = sanitized.slice(0, 5);
 
-  questions = questions.map((q) => ({
-    ...q,
-    choices: normalizeChoices(q.choices),
-  }));
+  const passageText = getPassageText(passage);
+  questions = questions.map((q) => validateMCQuestion(q, passageText));
   console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", questions.length);
   const alignedSet = questions.map((question) => {
     if (question.type === "part_a_b" && !isValidPartAB(question, passage)) {
@@ -3713,6 +3739,7 @@ serve(async (req) => {
       level,
       practiceQuestions,
     });
+    cross.questions = cross.questions.map((q) => validateMCQuestion(q, cross.passage));
     return jsonResponse({
       teks: teksCode,
       skill,
@@ -3753,7 +3780,8 @@ serve(async (req) => {
   };
   const returnEnrichment = (data: EnrichmentResponse) =>
     {
-      const crossQuestions = data?.cross?.questions || [];
+      const crossPassage = String(data?.cross?.passage || "");
+      const crossQuestions = (data?.cross?.questions || []).map((q) => validateMCQuestion(q, crossPassage));
       assertSupportIntegrity({
         practice: { questions: [] },
         cross: { questions: crossQuestions },
@@ -3768,7 +3796,7 @@ serve(async (req) => {
           questions: [],
         },
         cross: {
-          passage: data?.cross?.passage || "",
+          passage: crossPassage,
           questions: crossQuestions,
         },
         tutor: {
@@ -3897,7 +3925,7 @@ serve(async (req) => {
             level,
             crossContent.passage,
             grade,
-          ),
+          ).map((q) => validateMCQuestion(q, crossContent.passage)),
         },
       });
     }
@@ -4309,7 +4337,7 @@ serve(async (req) => {
           const payload = {
             cross: {
               passage: gradeSafeCrossPassage,
-              questions: pipelineCrossQuestions,
+              questions: pipelineCrossQuestions.map((q) => validateMCQuestion(q, gradeSafeCrossPassage)),
             },
           };
           bestAttempt = {
@@ -4546,7 +4574,10 @@ serve(async (req) => {
         }
 
         const payload = {
-          cross: { passage: subjectCrossPassage, questions: crossQuestions },
+          cross: {
+            passage: subjectCrossPassage,
+            questions: crossQuestions.map((q) => validateMCQuestion(q, subjectCrossPassage)),
+          },
           tutor: { practice: tutorPractice, cross: tutorCross },
           answerKey: { practice: answerKeyPractice, cross: answerKeyCross },
         };
