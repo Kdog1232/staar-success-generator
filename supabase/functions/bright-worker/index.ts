@@ -2725,6 +2725,73 @@ function isAllowedMainIdeaStem(stem: string): boolean {
     normalized === "which statement best describes the main idea?";
 }
 
+function isWeakDistractor(choice: string): boolean {
+  const weakPatterns = [
+    "is true, but",
+    "proves that this happened in every case",
+    "was a result of the final outcome",
+    "is enough to fully explain",
+    "this shows",
+    "this proves",
+  ];
+
+  return weakPatterns.some((pattern) => String(choice || "").toLowerCase().includes(pattern));
+}
+
+function getPassageAnchors(passage: PassageContent | string, question: string): [string, string, string] {
+  const stopwords = new Set([
+    "about", "after", "again", "because", "before", "between", "could", "every", "first", "found", "from",
+    "their", "there", "these", "those", "through", "under", "using", "which", "while", "would",
+  ]);
+  const snippet = getRelevantSnippet(passage, question);
+  const text = `${snippet} ${getPassageText(passage)}`.toLowerCase();
+  const tokens = text
+    .split(/[^a-z0-9-]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 5 && !stopwords.has(token) && /[a-z]/.test(token));
+  const unique = Array.from(new Set(tokens));
+  return [
+    unique[0] || "the first detail",
+    unique[1] || "another detail",
+    unique[2] || "the final observation",
+  ];
+}
+
+function fixDistractors(
+  subject: CanonicalSubject,
+  question: string,
+  correctAnswer: string,
+  passage: PassageContent | string,
+): string[] {
+  void correctAnswer;
+  const [anchorA, anchorB, anchorC] = getPassageAnchors(passage, question);
+  if (subject === "Science") {
+    return [
+      `The results were caused only by ${anchorA}, so surface differences such as ${anchorB} did not matter.`,
+      `${anchorB} in the passage stayed cooler than ${anchorA} because it reflected more sunlight.`,
+      `The change in ${anchorC} proves moisture and airflow could not influence heating or cooling.`,
+    ];
+  }
+
+  if (subject === "Math") {
+    return [
+      `Uses the numbers linked to ${anchorA} but chooses the wrong operation for the relationship in the problem.`,
+      `Computes with ${anchorB} correctly, then reports a value about ${anchorC} instead of the quantity asked.`,
+      `Applies a familiar formula to ${anchorA}, even though the passage details show a different setup is needed.`,
+    ];
+  }
+
+  if (subject === "Social Studies") {
+    return [
+      `Treats ${anchorA} as an effect of ${anchorB}, even though the timeline in the passage shows the opposite order.`,
+      `Uses ${anchorC} as supporting evidence, but that detail does not explain the policy or economic outcome.`,
+      `Extends the passage claim about ${anchorA} to every community, beyond the historical evidence provided.`,
+    ];
+  }
+
+  return [];
+}
+
 function sanitizeQuestions(
   raw: unknown,
   subject: CanonicalSubject,
@@ -2760,6 +2827,19 @@ function sanitizeQuestions(
       : rawQuestion;
 
     let normalizedChoices = normalizeChoices(q.choices);
+    const normalizedCorrectAnswer = type === "multi_select"
+      ? normalizeMultiSelectAnswer(q.correct_answer || "")
+      : type === "part_a_b"
+      ? normalizePartABAnswer(q.correct_answer || "")
+      : normalizeAnswer(q.correct_answer || "");
+    const correctChoiceIndex = type === "mc" ? LETTERS.indexOf(normalizedCorrectAnswer as AnswerLetter) : -1;
+    const correctChoiceText = normalizedChoices[correctChoiceIndex >= 0 ? correctChoiceIndex : 0];
+    if (type === "mc" && normalizedChoices.some(isWeakDistractor)) {
+      const fixedDistractors = fixDistractors(subject, questionText, correctChoiceText, passage);
+      if (fixedDistractors.length > 0) {
+        normalizedChoices = normalizeChoices([correctChoiceText, ...fixedDistractors.slice(0, 3)]);
+      }
+    }
 
     const isReadingMainIdea = subject === "Reading" && isMainIdeaSkill(skill);
     let normalizedQuestionText = questionText;
@@ -2773,11 +2853,7 @@ function sanitizeQuestions(
       type,
       question: normalizedQuestionText,
       choices: normalizedChoices,
-      correct_answer: type === "multi_select"
-        ? normalizeMultiSelectAnswer(q.correct_answer || "")
-        : type === "part_a_b"
-        ? normalizePartABAnswer(q.correct_answer || "")
-        : normalizeAnswer(q.correct_answer || ""),
+      correct_answer: normalizedCorrectAnswer,
       partA: type === "part_a_b"
         ? {
           question: String((q.partA as Record<string, unknown> | undefined)?.question || "").trim() || "Part A: What is the best answer?",
