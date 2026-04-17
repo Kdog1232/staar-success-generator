@@ -159,19 +159,6 @@ function shuffledLetters(): ChoiceLetter[] {
   return pool;
 }
 
-function canonicalizeMode(mode: unknown): CanonicalMode | "support" | "cross" {
-  const value = String(mode || "").toLowerCase();
-  if (value === "cross" || value.includes("cross")) return "cross";
-  if (value === "support") return "support";
-  if (value.includes("tutor")) return "Tutor";
-  if (value.includes("answer")) return "Answer Key";
-  return "Practice";
-}
-
-function isCrossCurricularMode(mode: CanonicalMode | "cross"): boolean {
-  return mode === "cross" || mode === "Cross-Curricular";
-}
-
 function canonicalizeSubject(subject: unknown): CanonicalSubject {
   const value = String(subject || "").toLowerCase();
   if (value.includes("math")) return "Math";
@@ -184,12 +171,6 @@ function normalizeLevel(level: unknown): Level {
   const value = String(level || "");
   if (value === "Below" || value === "Advanced") return value;
   return "On Level";
-}
-
-function toCanonicalMode(value: CanonicalMode | "support" | "cross"): CanonicalMode {
-  if (value === "cross") return "Cross-Curricular";
-  if (value === "support") return "Practice";
-  return value;
 }
 
 function gradeWordRange(grade: number, subject: CanonicalSubject, mode: CanonicalMode): { min: number; max: number } {
@@ -1120,16 +1101,16 @@ function ensurePassageLength(
   if (words.length >= min && words.length <= max) return trimExpansionTail(cleaned);
   if (words.length > max) return trimExpansionTail(words.slice(0, max).join(" "));
   if (words.length < min) {
-    console.warn("⚠️ Weak passage detected in ensurePassageLength; preserving original for top-level regeneration");
     return trimExpansionTail(cleaned);
   }
   // NEVER fallback here — just return cleaned
   return trimExpansionTail(cleaned);
 }
 
-function isWeakPassage(passage: PassageContent | string): boolean {
+function isWeakPassage(passage: PassageContent | string, grade = 5): boolean {
   const text = getPassageText(passage).trim();
-  return !text || text.split(/\s+/).filter(Boolean).length < 200;
+  const minWordsByGrade = grade <= 3 ? 120 : 160;
+  return !text || text.split(/\s+/).filter(Boolean).length < minWordsByGrade;
 }
 
 function fallbackPassage(subject: CanonicalSubject, mode: CanonicalMode, grade: number, level: Level = "On Level"): string {
@@ -1327,13 +1308,6 @@ function buildPracticeFallback(
       "Which sentence from the passage is the best evidence for the theme?",
       "What conclusion is best supported by two details in the passage?",
     ];
-  const singleAnswerSequence = [...shuffledLetters(), ...shuffledLetters()];
-  let singleAnswerIndex = 0;
-  const nextSingleAnswer = (): ChoiceLetter => {
-    const letter = singleAnswerSequence[singleAnswerIndex % singleAnswerSequence.length];
-    singleAnswerIndex += 1;
-    return letter;
-  };
   const mathChoiceBanks: [string, string, string, string][] = [
     ["$135", "$81", "$45", "$162"],
     ["9 pages", "41 pages", "23 pages", "5 pages"],
@@ -1390,12 +1364,14 @@ function buildPracticeFallback(
     const resolvedCorrectAnswer = LETTERS[Math.max(0, finalChoices.findIndex((c) => String(c) === String(correctAnswer)))] || "A";
     const partA = buildPartA(leveledStem, safePassage);
     const partB = buildPartB(safePassage, correctAnswer);
+    const partAAnswer = resolvePartABAnswer(partA, partA.choices[0] || "");
+    const partBAnswer = resolvePartABAnswer(partB, partB.choices[0] || "");
     const question: Question = {
       type,
       question: leveledStem,
       choices: safeChoices,
       correct_answer: type === "part_a_b"
-        ? { partA: nextSingleAnswer(), partB: nextSingleAnswer() }
+        ? { partA: partAAnswer, partB: partBAnswer }
         : resolvedCorrectAnswer,
       partA: type === "part_a_b" ? partA : undefined,
       partB: type === "part_a_b" ? partB : undefined,
@@ -1497,6 +1473,34 @@ function buildPartB(passage: PassageContent | string, correctAnswer: string): Pa
     question: "Part B: Which sentence from the passage best supports your answer?",
     choices: normalizeChoices(choices as [string, string, string, string]),
   };
+}
+
+function resolvePartABAnswer(
+  part: PartBlock,
+  hint = "",
+): ChoiceLetter {
+  const normalizedHintWords = String(hint || "")
+    .toLowerCase()
+    .split(/\W+/)
+    .filter((word) => word.length > 3);
+  if (!normalizedHintWords.length) return "A";
+  let bestIdx = 0;
+  let bestScore = -1;
+  for (let i = 0; i < part.choices.length; i++) {
+    const choiceText = String(part.choices[i] || "").toLowerCase();
+    const score = normalizedHintWords.reduce((total, word) => total + (choiceText.includes(word) ? 1 : 0), 0);
+    if (score > bestScore) {
+      bestScore = score;
+      bestIdx = i;
+    } else if (score === bestScore) {
+      const currentLen = String(part.choices[bestIdx] || "").length;
+      const candidateLen = String(part.choices[i] || "").length;
+      if (candidateLen > currentLen) {
+        bestIdx = i;
+      }
+    }
+  }
+  return LETTERS[bestIdx] || "A";
 }
 
 function isValidPartAB(q: Question, passage: PassageContent | string): boolean {
@@ -1802,13 +1806,15 @@ function buildCrossFallback(
     const resolvedCorrectAnswer = LETTERS[Math.max(0, choices.findIndex((c) => String(c) === String(correctAnswer)))] || "A";
     const partA = buildPartA(leveledStem, crossPassage);
     const partB = buildPartB(crossPassage, correctAnswer);
+    const partAAnswer = resolvePartABAnswer(partA, partA.choices[0] || "");
+    const partBAnswer = resolvePartABAnswer(partB, partB.choices[0] || "");
 
     const question: Question = {
       type,
       question: leveledStem,
       choices: choices as [string, string, string, string],
       correct_answer: type === "part_a_b"
-        ? { partA: nextSingleAnswer(), partB: nextSingleAnswer() }
+        ? { partA: partAAnswer, partB: partBAnswer }
         : resolvedCorrectAnswer,
       partA: type === "part_a_b" ? partA : undefined,
       partB: type === "part_a_b" ? partB : undefined,
@@ -2002,7 +2008,7 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
       correct_answer: type === "scr"
         ? "A"
         : type === "part_a_b"
-        ? { partA: nextSingleAnswer(), partB: nextSingleAnswer() }
+        ? { partA: resolvePartABAnswer(partA, choices[0] || ""), partB: resolvePartABAnswer(partB, choices[0] || "") }
         : nextSingleAnswer(),
       partA: type === "part_a_b"
         ? partA
@@ -2176,7 +2182,7 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
       correct_answer: type === "multi_select"
         ? nextMultiAnswer()
         : type === "part_a_b"
-        ? { partA: nextSingleAnswer(), partB: nextSingleAnswer() }
+        ? { partA: resolvePartABAnswer(partA, baseChoices[0] || ""), partB: resolvePartABAnswer(partB, baseChoices[0] || "") }
         : nextSingleAnswer(),
       partA: type === "part_a_b"
         ? partA
@@ -3156,9 +3162,8 @@ serve(async (req) => {
   let subject: CanonicalSubject = "Reading";
   let skill = READING_SKILL_DEFAULT;
   let level: Level = "On Level";
-  let mode: CanonicalMode | "support" | "cross" = "Practice";
-  let requestMode: "core" | "enrichment" = "core";
   let effectiveMode: "core" | "cross" | "support" | "enrichment" = "core";
+  let contentMode: CanonicalMode = "Practice";
   let effectiveSubject: CanonicalSubject = "Reading";
   let effectiveSkill = READING_SKILL_DEFAULT;
   let teksCode = "Unknown";
@@ -3180,7 +3185,7 @@ serve(async (req) => {
             readingPracticeWordRange(level).min,
             readingPracticeWordRange(level).max,
             subject,
-            toCanonicalMode(mode),
+            contentMode,
             grade,
             level,
           ),
@@ -3249,7 +3254,7 @@ serve(async (req) => {
     console.log("🚨 FALLBACK TRIGGERED:", reason);
     if (error) console.log("🚨 FALLBACK ERROR:", error);
     const payload = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, level);
-    if (requestMode === "enrichment") {
+    if (effectiveMode === "enrichment") {
       return returnEnrichment(payload);
     }
     return returnCore(payload);
@@ -3304,7 +3309,6 @@ serve(async (req) => {
       skill: incomingSkill,
       level: incomingLevel,
       mode: incomingMode,
-      contentMode: incomingContentMode,
     } = body;
 
     console.log("🔥 BACKEND RECEIVED:", {
@@ -3320,26 +3324,24 @@ serve(async (req) => {
     skill = String(incomingSkill || READING_SKILL_DEFAULT).trim() || READING_SKILL_DEFAULT;
     teksCode = resolveTeks(subject, skill, grade);
     level = normalizeLevel(incomingLevel);
-    const rawMode = String(body?.mode || "").toLowerCase();
-
-    if (rawMode === "cross" || rawMode === "cross-curricular") {
+    const normalizedMode = String(incomingMode || "").toLowerCase().trim();
+    if (normalizedMode === "cross" || normalizedMode === "cross-curricular") {
       effectiveMode = "cross";
-    } else if (rawMode === "support") {
+    } else if (normalizedMode === "support") {
       effectiveMode = "support";
-    } else if (rawMode === "enrichment") {
+    } else if (normalizedMode === "enrichment") {
       effectiveMode = "enrichment";
     } else {
       effectiveMode = "core";
     }
-    requestMode = effectiveMode === "enrichment" ? "enrichment" : "core";
-    mode = canonicalizeMode(incomingContentMode);
+    contentMode = effectiveMode === "cross" ? "Cross-Curricular" : "Practice";
     effectiveSubject = subject;
     effectiveSkill = skill ?? "Main Idea";
 
-    console.log("🔥 FINAL MODE:", mode);
+    console.log("🔥 FINAL MODE:", contentMode);
 
     // 🚀 NEW MODE ROUTING
-    if (mode === "cross") {
+    if (effectiveMode === "cross") {
       const crossContent = buildSubjectCrossContent(subject, level);
       const result = await runPipeline({
         stems: crossContent.questions,
@@ -3368,7 +3370,7 @@ serve(async (req) => {
       });
     }
 
-    if (mode === "support") {
+    if (effectiveMode === "support") {
       const core = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, level);
       const practiceQuestions = core.practice?.questions || [];
       const bodyCross = body?.cross && typeof body.cross === "object"
@@ -3398,10 +3400,9 @@ serve(async (req) => {
         answerKey,
       });
     }
-    console.log("🔥 RAW MODE:", rawMode);
+    console.log("🔥 RAW MODE:", normalizedMode);
     console.log("🔥 EFFECTIVE MODE:", effectiveMode);
-    console.log("🧠 REQUEST MODE:", requestMode);
-    console.log("🧠 CONTENT MODE:", mode);
+    console.log("🧠 CONTENT MODE:", contentMode);
     console.log("🧠 SUBJECT:", subject);
     console.log("🧠 EFFECTIVE SUBJECT:", effectiveSubject);
     const readingRange = readingPracticeWordRange(level);
@@ -3422,8 +3423,18 @@ serve(async (req) => {
     };
     while (attempts < MAX_ATTEMPTS) {
       if (isTimedOut()) {
+        if (bestAttempt) {
+          returnType = "BEST_ATTEMPT_TIMEOUT";
+          console.warn("⚠️ Returning best attempt before timeout");
+          logReturnMetrics();
+          return returnCore(bestAttempt);
+        }
         retryFailureReason = "no_questions_returned";
         console.warn("⚠️ FALLBACK TRIGGERED: exceeded max time");
+        break;
+      }
+      if (attempts > 0 && Date.now() - start > 20000) {
+        console.warn("⚠️ Skipping retry due to time limit");
         break;
       }
       attempts++;
@@ -3496,7 +3507,7 @@ serve(async (req) => {
                 range.min,
                 range.max,
                 subject,
-                mode,
+                contentMode,
                 grade,
                 level,
               ),
@@ -3505,7 +3516,7 @@ serve(async (req) => {
                 range.min,
                 range.max,
                 subject,
-                mode,
+                contentMode,
                 grade,
                 level,
               ),
@@ -3515,7 +3526,7 @@ serve(async (req) => {
               range.min,
               range.max,
               subject,
-              mode,
+              contentMode,
               grade,
               level,
             );
@@ -3526,33 +3537,41 @@ serve(async (req) => {
                 : (passage.text_1 && passage.text_2 ? passage : null)
             )
             : "";
-          if (subject === "Reading" && typeof safePassage === "string" && safePassage.trim()) {
-            safePassage = enforceSentenceLength(safePassage, constraints.maxWordsPerSentence);
-            if (violatesGradeLevel(safePassage, grade)) {
+          if (subject === "Reading") {
+            const rawPassage = getPassageText(safePassage).trim();
+            const rawWordCount = rawPassage.split(/\s+/).filter(Boolean).length;
+            if (!rawPassage || rawWordCount < 20) {
+              retryFailureReason = "no_questions_returned";
+              continue;
+            }
+            if (isWeakPassage(rawPassage, grade)) {
+              console.warn("⚠️ Weak generation — retrying AI generation");
+              retryFailureReason = "weak_passage";
+              continue;
+            }
+            if (violatesGradeLevel(rawPassage, grade)) {
               console.warn("⚠️ Passage too advanced — retrying AI generation for grade:", grade);
               retryFailureReason = "grade_violation";
               continue;
             }
-          }
-          if (subject === "Reading" && isWeakPassage(safePassage)) {
-            console.warn("⚠️ Weak generation — retrying AI generation");
-            retryFailureReason = "weak_passage";
-            continue;
-          }
-          if (subject === "Reading" && (!safePassage || !getPassageText(safePassage).trim())) {
-            retryFailureReason = "no_questions_returned";
-            continue;
-          }
-          if (subject === "Reading" && hasNarrativeReadingSignals(safePassage)) {
-            console.warn("⚠️ Narrative reading passage detected; regenerating once with informational lock.");
-            retryFailureReason = "narrative_output_filtered";
-            continue;
+            if (hasNarrativeReadingSignals(rawPassage)) {
+              console.log("🧪 Narrative detected preview:", rawPassage.slice(0, 100));
+              console.warn("⚠️ Narrative reading passage detected; regenerating once with informational lock.");
+              retryFailureReason = "narrative_output_filtered";
+              continue;
+            }
+            safePassage = enforceSentenceLength(rawPassage, constraints.maxWordsPerSentence);
           }
 
+          const parsedPractice = parsed?.practice && typeof parsed.practice === "object"
+            ? parsed.practice as Record<string, unknown>
+            : null;
+          const rawQuestions = parsedPractice?.questions ||
+            parsed.questions ||
+            parsed.items ||
+            [];
           const practiceQuestions = sanitizeQuestions(
-            parsed?.practice && typeof parsed.practice === "object"
-              ? (parsed.practice as Record<string, unknown>).questions
-              : parsed.questions,
+            rawQuestions,
             effectiveSubject,
             "Practice",
             effectiveSkill,
@@ -3560,6 +3579,29 @@ serve(async (req) => {
             subject === "Reading" ? safePassage : "",
             grade,
           );
+          if (subject === "Reading" && safePassage && practiceQuestions?.length) {
+            const lightweightTutor = practiceQuestions.map((q, index) => ({
+              question_id: ensureQuestionId(q, index, "practice"),
+              question: q.question,
+              explanation: "Review the passage and identify key supporting details.",
+              common_mistake: "Choosing an answer without pointing to clear text evidence.",
+              parent_tip: "Ask your student to underline one detail that proves the answer choice.",
+            }));
+            const lightweightAnswerKey = practiceQuestions.map((q, index) => ({
+              question_id: ensureQuestionId(q, index, "practice"),
+              correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
+              explanation: "Review the passage and identify key supporting details.",
+              common_mistake: "Choosing an answer without pointing to clear text evidence.",
+              parent_tip: "Ask your student to underline one detail that proves the answer choice.",
+            }));
+            bestAttempt = {
+              passage: safePassage,
+              practice: { questions: practiceQuestions },
+              cross: { passage: "", questions: [] },
+              tutor: { practice: lightweightTutor, cross: [] },
+              answerKey: { practice: lightweightAnswerKey, cross: [] },
+            };
+          }
 
           const pipelineResult = await runPipeline({
             subject: effectiveSubject,
@@ -3585,7 +3627,7 @@ serve(async (req) => {
 
           const payload: CoreResponse = {
             passage: subject === "Reading"
-              ? ensurePassageLength(getPassageText(safePassage), range.min, range.max, subject, mode, grade, level)
+              ? ensurePassageLength(getPassageText(safePassage), range.min, range.max, subject, contentMode, grade, level)
               : undefined,
             practice: { questions: pipelineQuestions },
           };
@@ -3939,7 +3981,7 @@ serve(async (req) => {
     if (bestAttempt) {
       returnType = "BEST_ATTEMPT";
       logReturnMetrics();
-      if (requestMode === "enrichment") {
+      if (effectiveMode === "enrichment") {
         return returnEnrichment(bestAttempt);
       }
       if (effectiveMode === "cross") {
