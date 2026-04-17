@@ -738,6 +738,40 @@ Rules:
 - Correct answers must include a specific event plus cause/effect OR decision/result reasoning.
 - Distractors must use one of: misinterpretation, partial-truth wrong conclusion, overgeneralization, or cause/effect confusion.
 - If any choice feels generic or easy, rewrite it with more specific passage evidence.
+- ANSWER VALIDATION TYPES:
+  - TYPE 1 — TEXT EVIDENCE QUESTIONS:
+    - The correct answer MUST match an exact sentence in the passage.
+    - If no exact sentence proves the answer, REWRITE the question and choices.
+  - TYPE 2 — INFERENCE QUESTIONS:
+    - The correct answer MUST be supported by combining TWO OR MORE details from the passage.
+    - The answer must NOT be stated word-for-word in a single sentence.
+    - The reasoning must logically connect multiple pieces of evidence.
+- INFERENCE-SPECIFIC VALIDATION:
+  - For inference stems (for example: "What can the reader conclude..." or "What is most likely..."):
+    - DO NOT rely on a single sentence.
+    - The correct answer MUST require combining multiple details.
+    - The answer must be logically derived, not directly stated.
+  - EXPLANATION REQUIREMENT:
+    - The explanation MUST explicitly reference at least TWO different details from the passage.
+    - The explanation must show how those details connect to support the correct answer.
+    - DO NOT give a generic explanation.
+  - STRICT RULE:
+    - If the answer can be found in one sentence, it is NOT valid. Rewrite it.
+- STRICT VALIDATION RULES:
+  - DO NOT invent evidence.
+  - DO NOT create answers based on general knowledge.
+  - DO NOT create answers that are "probably true."
+  - ONLY use information explicitly stated or clearly implied by the passage.
+- DISTRACTOR VALIDATION RULES:
+  - Wrong answers must:
+    - use real passage details but misinterpret them
+    - OR include partial truth with wrong conclusion
+  - DO NOT create unrelated or vague distractors.
+- FINAL VALIDATION CHECK:
+  - For text-evidence questions: "Can the correct answer be underlined in one sentence?"
+    - If NO, regenerate that question.
+  - For inference questions: "Can I identify at least TWO different passage details that support the answer?"
+    - If NO, regenerate that question.
 - For Part A / Part B items:
   - Part A must require inference or analysis.
   - Part B must ask for text evidence that supports Part A.
@@ -791,6 +825,40 @@ Rules:
   - "What is most likely..."
   - "Which detail suggests..."
 - Questions must be subject-driven and not ELAR-framed.
+- ANSWER VALIDATION TYPES:
+  - TYPE 1 — TEXT EVIDENCE QUESTIONS:
+    - The correct answer MUST match an exact statement in the provided stimulus/data/context.
+    - If no exact statement proves the answer, REWRITE the question and choices.
+  - TYPE 2 — INFERENCE QUESTIONS:
+    - The correct answer MUST be supported by combining TWO OR MORE details from the provided information.
+    - The answer must NOT be stated word-for-word in a single line or statement.
+    - The reasoning must logically connect multiple pieces of evidence.
+- INFERENCE-SPECIFIC VALIDATION:
+  - For inference stems (for example: "What can be concluded..." or "What is most likely..."):
+    - DO NOT rely on a single statement.
+    - The correct answer MUST require combining multiple details.
+    - The answer must be logically derived, not directly stated.
+  - EXPLANATION REQUIREMENT:
+    - The explanation MUST explicitly reference at least TWO different details from the provided content.
+    - The explanation must show how those details connect to support the correct answer.
+    - DO NOT give a generic explanation.
+  - STRICT RULE:
+    - If the answer can be found in one sentence/statement, it is NOT valid. Rewrite it.
+- STRICT VALIDATION RULES:
+  - DO NOT invent evidence.
+  - DO NOT create answers based on general knowledge.
+  - DO NOT create answers that are "probably true."
+  - ONLY use information explicitly stated or clearly implied by the provided content.
+- DISTRACTOR VALIDATION RULES:
+  - Wrong answers must:
+    - use real details but misinterpret them
+    - OR include partial truth with wrong conclusion
+  - DO NOT create unrelated or vague distractors.
+- FINAL VALIDATION CHECK:
+  - For text-evidence questions: "Can the correct answer be underlined in one statement?"
+    - If NO, regenerate that question.
+  - For inference questions: "Can I identify at least TWO different supporting details?"
+    - If NO, regenerate that question.
 - For Part A / Part B items:
   - Part A must require inference or analysis.
   - Part B must ask for text evidence that supports Part A.
@@ -863,6 +931,30 @@ STAAR DESIGN REQUIREMENTS
 - Require reasoning, not recall.
 - Ground every answer in passage evidence.
 - Reflect how TEKS skills are assessed, not just defined.
+- ANSWER VALIDATION TYPES:
+  - TYPE 1 — TEXT EVIDENCE QUESTIONS:
+    - The correct answer MUST match an exact sentence in the cross passage.
+    - If no exact sentence proves the answer, REWRITE the question and choices.
+  - TYPE 2 — INFERENCE QUESTIONS:
+    - The correct answer MUST be supported by combining TWO OR MORE details from the cross passage.
+    - The answer must NOT be stated word-for-word in a single sentence.
+    - The reasoning must logically connect multiple pieces of evidence.
+- INFERENCE-SPECIFIC VALIDATION:
+  - For inference stems (for example: "What can the reader conclude..." or "What is most likely..."):
+    - DO NOT rely on a single sentence.
+    - The correct answer MUST require combining multiple details.
+    - The answer must be logically derived, not directly stated.
+  - EXPLANATION REQUIREMENT:
+    - The explanation MUST explicitly reference at least TWO different details from the cross passage.
+    - The explanation must show how those details connect to support the correct answer.
+    - DO NOT give a generic explanation.
+  - STRICT RULE:
+    - If the answer can be found in one sentence, it is NOT valid. Rewrite it.
+- STRICT VALIDATION RULES:
+  - DO NOT invent evidence.
+  - DO NOT create answers based on general knowledge.
+  - DO NOT create answers that are "probably true."
+  - ONLY use information explicitly stated or clearly implied by the cross passage.
 
 GRADE-LEVEL ADAPTATION
 - Grades 3-4: clear inference, concrete reasoning, shorter responses, direct passage links.
@@ -887,6 +979,8 @@ DISTRACTOR DESIGN (TEKS-ALIGNED)
   - partial understanding of the skill
   - incorrect inference
   - cause/effect confusion
+- Wrong answers must use real cross passage details with misinterpretation OR partial truth with wrong conclusion.
+- DO NOT create unrelated or vague distractors.
 
 CORRECT ANSWER RULE
 - The correct answer must use specific passage evidence.
@@ -904,6 +998,11 @@ SELF-CHECK (MANDATORY)
   - Part B choices are passage-based sentences/details.
   - Correct Part B directly proves correct Part A.
 - If not, revise before returning.
+- FINAL CHECK:
+  - For text-evidence questions: can the correct answer be underlined in one sentence?
+    - If NO, regenerate that question.
+  - For inference questions: can I identify at least TWO different details supporting the answer?
+    - If NO, regenerate that question.
 
 OUTPUT FORMAT FOR EACH cross.questions ITEM:
 {
@@ -923,7 +1022,7 @@ Design each item as if it will appear on a STAAR test aligned to TEKS.`;
   return `Generate a NEW cross-curricular passage and cross-curricular questions, then return JSON only:
 {
   "cross": {
-    "passage": "REQUIRED string (250–300 words)",
+    "passage": "REQUIRED string (250–300 words, MUST be complete, no cut-off sentences)",
     "questions": [5 subject-aligned questions]
   }
 }
