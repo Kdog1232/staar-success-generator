@@ -3156,7 +3156,7 @@ function validateTutorAnswerKeyAlignment(
     const answerEntry = answerKey[index];
     const tutorRequired = Boolean(
       tutorEntry?.explanation && tutorEntry?.hint && tutorEntry?.step_by_step &&
-      tutorEntry?.common_mistake && tutorEntry?.parent_tip,
+      tutorEntry?.common_mistake,
     );
     const answerRequired = Boolean(
       answerEntry?.correct_answer && answerEntry?.explanation &&
