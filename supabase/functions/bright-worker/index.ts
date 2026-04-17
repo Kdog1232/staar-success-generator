@@ -1685,7 +1685,7 @@ function buildSubjectDistractors(q: Question, passage: string, subject: Canonica
   const normalizedChoices = normalizeChoices(q.choices);
   const correctChoice = getCorrectChoice({ ...q, choices: normalizedChoices as [string, string, string, string] }) || "";
   const hasPassage = String(passage || "").trim().length > 0;
-  const passageDistractors = hasPassage ? buildStrategicDistractors(String(passage || ""), correctChoice) : [];
+  const passageDistractors = hasPassage ? buildBetterDistractors(String(passage || ""), correctChoice) : [];
   return normalizedChoices
     .map((choice, index) => ({ choice, letter: LETTERS[index] }))
     .filter(({ letter }) => letter !== correct)
