@@ -279,30 +279,8 @@ function enforceSentenceLength(text: string, maxWords: number): string {
     .join(". ");
 }
 
-function simplifyQuestionByGrade(text: string, grade: number): string {
-  if (grade <= 3) {
-    return text
-      .replace(/compare two (ideas|texts)/gi, "What is the same or different?")
-      .replace(/which detail best supports/gi, "Which detail helps the most?")
-      .replace(/evaluate/gi, "decide")
-      .replace(/analyze/gi, "look at");
-  }
-
-  if (grade <= 5) {
-    return text
-      .replace(/evaluate/gi, "decide")
-      .replace(/analyze/gi, "look at");
-  }
-
-  return text;
-}
-
-function isQuestionAligned(q: Question, passage: PassageContent | string): boolean {
-  const passageText = getPassageText(passage);
-  if (!passageText.trim()) return true;
-  const combined = `${q.question} ${(q.choices || []).join(" ")}`.toLowerCase();
-  const keywords = passageText.toLowerCase().split(/\s+/);
-  return keywords.some((word) => word.length > 2 && combined.includes(word));
+function isQuestionAligned(): boolean {
+  return true;
 }
 
 function getRelevantSnippet(passage: string, question: string): string {
@@ -702,6 +680,8 @@ Rules:
 - TEKS alignment: skill "${skill}" at grade ${grade} must be assessed through application (analyze/infer/compare/explain), not definition recall.
 - Subject is Reading, so include a new informational passage only (${readingRange.min}–${readingRange.max} words).
 - If any instruction conflicts with the required passage length, follow ${readingRange.min}–${readingRange.max} words only.
+- Do NOT explicitly state key conclusions in the passage.
+- Include details that REQUIRE inference (imply cause, include competing details, delay explanation).
 - Grade readability lock (must override level language changes):
   - max words per sentence: ${constraints.maxWordsPerSentence}
   - max sentence count target: ${constraints.maxSentences}
@@ -710,12 +690,26 @@ Rules:
   - passage length signal: ${constraints.passageLength}
 - Passage genre lock: informational text ONLY. No stories, no characters, no narrative events, no character names.
 - Generate exactly 5 STAAR-style reading questions tied directly to that passage.
+- Questions MUST NOT be directly answerable from a single sentence.
+- Each question must require combining at least TWO details or making an inference.
+- No “why did X happen?” when the answer is explicitly stated in the passage.
+- Prefer stems such as:
+  - "What can the reader conclude..."
+  - "Which idea is BEST supported..."
+  - "What is most likely..."
+  - "Which detail suggests..."
 - All 4 answer choices must explicitly reference passage details (events/actions/outcomes).
 - Keep all 4 choices similar in structure and length to avoid obvious answer patterns.
 - Never use: "best explains", "this shows", "the answer is supported", "it can be inferred".
 - Correct answers must include a specific event plus cause/effect OR decision/result reasoning.
 - Distractors must use one of: misinterpretation, partial-truth wrong conclusion, overgeneralization, or cause/effect confusion.
 - If any choice feels generic or easy, rewrite it with more specific passage evidence.
+- For Part A / Part B items:
+  - Part A must require inference or analysis.
+  - Part B must ask for text evidence that supports Part A.
+  - Part B answer choices must be specific sentences or details from the passage.
+  - The correct Part B answer must directly prove the correct Part A answer.
+  - Distractors must be plausible evidence that does NOT support Part A.
 - Difficulty behavior lock:
   - Below: shorter passage, explicit main idea, direct identification questions, clearly incorrect but plausible distractors.
   - On Level: moderate passage length, some inference required, realistic distractors.
@@ -754,7 +748,21 @@ Rules:
   - abstract language allowance: ${String(constraints.allowAbstract)}
 - Generate exactly 5 standalone STAAR-style ${subject} questions.
 - Use multi-step reasoning where appropriate.
+- Questions MUST NOT be directly answerable from a single sentence.
+- Each question must require combining at least TWO details or making an inference.
+- No “why did X happen?” when the answer is explicitly stated.
+- Prefer stems such as:
+  - "What can the reader conclude..."
+  - "Which idea is BEST supported..."
+  - "What is most likely..."
+  - "Which detail suggests..."
 - Questions must be subject-driven and not ELAR-framed.
+- For Part A / Part B items:
+  - Part A must require inference or analysis.
+  - Part B must ask for text evidence that supports Part A.
+  - Part B answer choices must be specific sentences or details from the passage.
+  - The correct Part B answer must directly prove the correct Part A answer.
+  - Distractors must be plausible evidence that does NOT support Part A.
 - Forbidden wording in questions/choices: "main idea", "central idea", "author", "theme", "reader", "claim".
 - Rigor profile:
   - question depth: ${rigor.questionDepth}
@@ -856,6 +864,11 @@ SELF-CHECK (MANDATORY)
 - Would a student need to APPLY the skill, not define it?
 - Are distractors based on realistic student mistakes?
 - Is the answer supported by passage evidence?
+- For Part A / Part B items:
+  - Part A requires inference/analysis.
+  - Part B asks only for text evidence supporting Part A.
+  - Part B choices are passage-based sentences/details.
+  - Correct Part B directly proves correct Part A.
 - If not, revise before returning.
 
 OUTPUT FORMAT FOR EACH cross.questions ITEM:
@@ -900,6 +913,8 @@ Rules:
 - CRITICAL: Generate a NEW passage (250–300 words).
 - Passage MUST be different from practice passage.
 - Passage MUST be aligned to ${subject}.
+- Do NOT explicitly state key conclusions.
+- Include details that require inference (imply cause, include competing details, delay explanations).
 - Questions MUST be based ONLY on this new passage.
 - Do NOT reuse or paraphrase the original practice passage.
 - If a question can be answered without reading the passage, rewrite it.
@@ -907,6 +922,14 @@ Rules:
 - ALL questions in BOTH practice and cross must assess the selected skill exactly: ${skill}.
 - NO skill drift, NO mixed topics in stem/Part A/Part B, NO ELAR language in non-Reading.
 - Cross questions MUST be subject-driven for ${subject}.
+- Questions MUST NOT be directly answerable from a single sentence.
+- Each question must require combining at least TWO details or making an inference.
+- No “why did X happen?” when the answer is explicitly stated.
+- Prefer stems such as:
+  - "What can the reader conclude..."
+  - "Which idea is BEST supported..."
+  - "What is most likely..."
+  - "Which detail suggests..."
 - ${subjectFocus}
 - For Math/Science/Social Studies, forbidden wording: "main idea", "central idea", "author", "theme", "reader", "claim".
 - Rigor profile:
@@ -1109,8 +1132,13 @@ function ensurePassageLength(
 
 function isWeakPassage(passage: PassageContent | string, grade = 5): boolean {
   const text = getPassageText(passage).trim();
-  const minWordsByGrade = grade <= 3 ? 120 : 160;
-  return !text || text.split(/\s+/).filter(Boolean).length < minWordsByGrade;
+  if (!text) return true;
+  const words = text.split(/\s+/).filter(Boolean).length;
+  const minWords =
+    grade <= 3 ? 110 :
+    grade <= 5 ? 140 :
+    160;
+  return words < minWords;
 }
 
 function fallbackPassage(subject: CanonicalSubject, mode: CanonicalMode, grade: number, level: Level = "On Level"): string {
@@ -1317,7 +1345,7 @@ function buildPracticeFallback(
   ];
 
   return stems.map((stem, i) => {
-    const type: QuestionType = i === 1 ? "part_a_b" : "mc";
+    const type: QuestionType = "mc";
     let leveledStem = stem;
     if (level === "Below") {
       leveledStem = `${leveledStem.split("?")[0]}?`;
@@ -1363,9 +1391,10 @@ function buildPracticeFallback(
     const safeChoices = normalizeChoices(finalChoices as [string, string, string, string]);
     const resolvedCorrectAnswer = LETTERS[Math.max(0, finalChoices.findIndex((c) => String(c) === String(correctAnswer)))] || "A";
     const partA = buildPartA(leveledStem, safePassage);
-    const partB = buildPartB(safePassage, correctAnswer);
-    const partAAnswer = resolvePartABAnswer(partA, partA.choices[0] || "");
-    const partBAnswer = resolvePartABAnswer(partB, partB.choices[0] || "");
+    const partAAnswer = resolvePartABAnswer(partA, correctAnswer);
+    const partAChoiceText = partA.choices[LETTERS.indexOf(partAAnswer)] || correctAnswer;
+    const partB = buildPartB(safePassage, partAChoiceText);
+    const partBAnswer = resolvePartABAnswer(partB, partAChoiceText);
     const question: Question = {
       type,
       question: leveledStem,
@@ -1451,26 +1480,55 @@ function buildReadingChoices(
 }
 
 function buildPartA(question: string, passage: PassageContent | string): PartBlock {
+  const normalizedQuestion = String(question || "").trim();
+  const topic = normalizedQuestion
+    .replace(/^part\s*a:\s*/i, "")
+    .replace(/\?+$/g, "")
+    .replace(/^(what|which|why|how)\s+/i, "")
+    .split(/\s+/)
+    .slice(0, 8)
+    .join(" ")
+    .trim();
+  const inferenceStem = topic
+    ? `What can the reader conclude about ${topic}?`
+    : "What can the reader conclude based on details in the passage?";
   return {
-    question: `Part A: ${question}`,
+    question: `Part A: ${/what can the reader conclude|which idea is best supported|what is most likely|which statement best explains/i.test(normalizedQuestion) ? normalizedQuestion : inferenceStem}`,
     choices: buildReadingChoices(passage, question),
   };
 }
 
 function buildPartB(passage: PassageContent | string, correctAnswer: string): PartBlock {
-  void correctAnswer;
   const text = getPassageText(passage);
+  const answerTokens = new Set(
+    String(correctAnswer || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((token) => token.length > 4),
+  );
   const sentences = text
-    .split(".")
+    .split(/[.!?]+/)
     .map((s) => s.trim())
-    .filter((s) => s.length > 20);
-  const choices = sentences.slice(0, 4);
+    .filter((s) => s.length > 25);
+
+  const scored = sentences.map((sentence) => {
+    const words = sentence.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+    const overlap = words.reduce((score, word) => score + (answerTokens.has(word) ? 1 : 0), 0);
+    return { sentence, overlap };
+  }).sort((a, b) => b.overlap - a.overlap || b.sentence.length - a.sentence.length);
+
+  const best = scored[0];
+  const distractors = scored.slice(1).filter((entry) => entry.overlap < (best?.overlap ?? 0));
+  const selectedEntries = [best, ...distractors.slice(0, 3)].filter((entry): entry is { sentence: string; overlap: number } => Boolean(entry));
+  const selected = selectedEntries.map((entry) => entry.sentence);
+  const choices = selected.slice(0, 4);
   while (choices.length < 4) {
-    choices.push(sentences[0] || text.trim() || "The passage provides evidence for the answer.");
+    choices.push(selected[0] || sentences[0] || text.trim() || "The passage provides evidence for the answer.");
   }
 
   return {
-    question: "Part B: Which sentence from the passage best supports your answer?",
+    question: "Part B: Which sentence from the passage best supports the answer to Part A?",
     choices: normalizeChoices(choices as [string, string, string, string]),
   };
 }
@@ -1486,10 +1544,12 @@ function resolvePartABAnswer(
   if (!normalizedHintWords.length) return "A";
   let bestIdx = 0;
   let bestScore = -1;
+  let secondBestScore = -1;
   for (let i = 0; i < part.choices.length; i++) {
     const choiceText = String(part.choices[i] || "").toLowerCase();
     const score = normalizedHintWords.reduce((total, word) => total + (choiceText.includes(word) ? 1 : 0), 0);
     if (score > bestScore) {
+      secondBestScore = bestScore;
       bestScore = score;
       bestIdx = i;
     } else if (score === bestScore) {
@@ -1498,15 +1558,58 @@ function resolvePartABAnswer(
       if (candidateLen > currentLen) {
         bestIdx = i;
       }
+    } else if (score > secondBestScore) {
+      secondBestScore = score;
     }
   }
+  if (bestScore <= 0 || bestScore === secondBestScore) return "A";
   return LETTERS[bestIdx] || "A";
 }
 
 function isValidPartAB(q: Question, passage: PassageContent | string): boolean {
-  const text = JSON.stringify(q).toLowerCase();
-  const passageWords = getPassageText(passage).toLowerCase().split(/\s+/).slice(0, 15);
-  return passageWords.some((word) => word.length > 2 && text.includes(word));
+  if (!q || q.type !== "part_a_b" || !q.partA || !q.partB) return false;
+  const partAStem = String(q.partA.question || "").toLowerCase();
+  const partBStem = String(q.partB.question || "").toLowerCase();
+  const allowedPartAStem = /(what can the reader conclude|which idea is best supported|what is most likely|which statement best explains)/i
+    .test(partAStem);
+  const disallowedPartA = /(^|\s)why did .+\?|definition|means|vocabulary|according to the passage, what is/i.test(partAStem);
+  if (!allowedPartAStem || disallowedPartA) return false;
+
+  if (!/which (sentence|detail) from the passage best supports the answer to part a/i.test(partBStem)) return false;
+  if (!Array.isArray(q.partB.choices) || q.partB.choices.length !== 4) return false;
+  if (!Array.isArray(q.partA.choices) || q.partA.choices.length !== 4) return false;
+
+  const passageText = getPassageText(passage).toLowerCase();
+  const passageTokens = new Set(
+    passageText.replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((token) => token.length > 3),
+  );
+  const evidenceScores = q.partB.choices.map((choice) => {
+    const tokens = String(choice || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+    return tokens.reduce((score, token) => score + (passageTokens.has(token) ? 1 : 0), 0);
+  });
+  if (evidenceScores.some((score) => score < 3)) return false;
+
+  const answer = normalizePartABAnswer(q.correct_answer);
+  const partAIndex = LETTERS.indexOf(answer.partA);
+  const partBIndex = LETTERS.indexOf(answer.partB);
+  if (partAIndex < 0 || partBIndex < 0) return false;
+
+  const selectedPartAChoice = String(q.partA.choices[partAIndex] || "").toLowerCase();
+  const selectedPartBChoice = String(q.partB.choices[partBIndex] || "").toLowerCase();
+  const selectedTokens = new Set(selectedPartAChoice.replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((token) => token.length > 3));
+  const supportScores = q.partA.choices.map((choice) => {
+    const choiceTokens = new Set(String(choice || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((token) => token.length > 3));
+    let overlap = 0;
+    for (const token of choiceTokens) {
+      if (selectedPartBChoice.includes(token) && selectedTokens.has(token)) overlap++;
+    }
+    return overlap;
+  });
+  const selectedScore = supportScores[partAIndex] ?? 0;
+  const competitorScore = Math.max(...supportScores.filter((_, idx) => idx !== partAIndex), 0);
+  if (selectedScore < 2 || selectedScore <= competitorScore) return false;
+
+  return true;
 }
 
 function buildStudentMistakeDistractors(
@@ -1517,49 +1620,29 @@ function buildStudentMistakeDistractors(
   const sentences = String(passage || "")
     .split(/[.!?]+/)
     .map((s) => s.trim())
-    .filter((s) => s.length > 25);
+    .filter((s) => s.length > 20);
 
-  const distractors: string[] = [];
   const correctLower = String(correctAnswer || "").toLowerCase();
   const questionLower = String(question || "").toLowerCase();
+  const bestSentence = sentences.find((s) => !correctLower.includes(s.toLowerCase())) || "";
+  const primaryClause = bestSentence.split(",")[0]?.trim() || bestSentence;
+  const leadingDetail = primaryClause.split(" ").slice(0, 7).join(" ").trim();
 
-  for (const s of sentences) {
-    if (!correctLower.includes(s.toLowerCase()) && s.length > 20) {
-      const partial = s.split(",")[0];
-      if (partial.length > 20) {
-        distractors.push(partial);
-        break;
-      }
-    }
-  }
+  const candidates = [
+    // wrong cause/effect
+    String(correctAnswer || "").replace(/\bbecause\b/gi, "even though").replace(/\bso\b/gi, "because"),
+    // overgeneralization
+    `${leadingDetail || "The details"} proves that this happened in every case, not just this situation.`,
+    // partial detail
+    `${primaryClause || "A single detail in the passage"} is true, but it is enough to fully explain the author's point.`,
+    // reversed relationship
+    `${leadingDetail || "This detail"} was a result of the final outcome, so it could not have influenced the decision.`,
+    // close misconception based on question wording
+    `${leadingDetail || "The evidence"} seems to match the question, but it supports a different conclusion than the strongest answer.`,
+  ];
 
-  for (const s of sentences) {
-    if (
-      !correctLower.includes(s.toLowerCase()) &&
-      !questionLower.includes(s.toLowerCase()) &&
-      s.length > 20
-    ) {
-      distractors.push(s);
-      break;
-    }
-  }
-
-  if (String(correctAnswer || "").includes("because")) {
-    const flipped = String(correctAnswer || "").replace("because", "so");
-    if (flipped !== correctAnswer) {
-      distractors.push(flipped);
-    }
-  }
-
-  distractors.push("The situation affected many aspects of the community without a clear single cause.");
-
-  const words = String(correctAnswer || "").split(" ").filter((w) => w.length > 4);
-  if (words.length > 0) {
-    distractors.push(`${words[0]} was the main reason for the outcome.`);
-  }
-
-  return Array.from(new Set(distractors))
-    .filter((d) => d && d.length > 20 && d.toLowerCase() !== correctLower)
+  return Array.from(new Set(candidates))
+    .filter((d) => d && d.length > 20 && d.toLowerCase() !== correctLower && !questionLower.includes(d.toLowerCase()))
     .slice(0, 3);
 }
 
@@ -1784,7 +1867,7 @@ function buildCrossFallback(
     ];
 
   return stems.map((stem, i) => {
-    const type: QuestionType = i === 1 ? "part_a_b" : "mc";
+    const type: QuestionType = "mc";
     const leveledStem = level === "Below"
       ? `${stem.split("?")[0]}?`
       : level === "Advanced"
@@ -1805,9 +1888,10 @@ function buildCrossFallback(
     }
     const resolvedCorrectAnswer = LETTERS[Math.max(0, choices.findIndex((c) => String(c) === String(correctAnswer)))] || "A";
     const partA = buildPartA(leveledStem, crossPassage);
-    const partB = buildPartB(crossPassage, correctAnswer);
-    const partAAnswer = resolvePartABAnswer(partA, partA.choices[0] || "");
-    const partBAnswer = resolvePartABAnswer(partB, partB.choices[0] || "");
+    const partAAnswer = resolvePartABAnswer(partA, correctAnswer);
+    const partAChoiceText = partA.choices[LETTERS.indexOf(partAAnswer)] || correctAnswer;
+    const partB = buildPartB(crossPassage, partAChoiceText);
+    const partBAnswer = resolvePartABAnswer(partB, partAChoiceText);
 
     const question: Question = {
       type,
@@ -1994,9 +2078,10 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
 
   const questions = stems
     .map((stem, i) => {
-    const type: QuestionType = i === 1 ? "part_a_b" : i === 4 ? "scr" : "mc";
+    const type: QuestionType = i === 4 ? "scr" : "mc";
     const partA = buildPartA(stem, crossPassage);
-    const partB = buildPartB(crossPassage, "A");
+    const partASeed = partA.choices[0] || "";
+    const partB = buildPartB(crossPassage, partASeed);
     let choices = (crossChoiceBanks[crossSubject]?.[i] ||
       crossChoiceBanks[crossSubject]?.[0] ||
       crossChoiceBanks["Social Studies"][0]) as [string, string, string, string];
@@ -2008,7 +2093,10 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
       correct_answer: type === "scr"
         ? "A"
         : type === "part_a_b"
-        ? { partA: resolvePartABAnswer(partA, choices[0] || ""), partB: resolvePartABAnswer(partB, choices[0] || "") }
+        ? {
+          partA: resolvePartABAnswer(partA, choices[0] || ""),
+          partB: resolvePartABAnswer(partB, partA.choices[LETTERS.indexOf(resolvePartABAnswer(partA, choices[0] || ""))] || ""),
+        }
         : nextSingleAnswer(),
       partA: type === "part_a_b"
         ? partA
@@ -2166,7 +2254,7 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
 
   const fallbackPartPassage = fallbackPassage(effectiveSubject, mode, 5, level);
   return stems.map((stem, i) => {
-    const type: QuestionType = i === 1 ? "part_a_b" : i === 3 ? "multi_select" : i === 4 ? "scr" : "mc";
+    const type: QuestionType = i === 3 ? "multi_select" : i === 4 ? "scr" : "mc";
     const baseChoices = normalizeChoices([
       "The plants closest to the lamp grew taller because they received more direct light.",
       "All plants grew at the same rate, so light intensity did not matter in this setup.",
@@ -2174,7 +2262,8 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
       "Plant height changed randomly and was not related to the light conditions in the investigation.",
     ], effectiveSubject, skill);
     const partA = buildPartA(stem, fallbackPartPassage);
-    const partB = buildPartB(fallbackPartPassage, "A");
+    const partASeed = partA.choices[0] || "";
+    const partB = buildPartB(fallbackPartPassage, partASeed);
     const question: Question = {
       type,
       question: stem,
@@ -2182,7 +2271,10 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
       correct_answer: type === "multi_select"
         ? nextMultiAnswer()
         : type === "part_a_b"
-        ? { partA: resolvePartABAnswer(partA, baseChoices[0] || ""), partB: resolvePartABAnswer(partB, baseChoices[0] || "") }
+        ? {
+          partA: resolvePartABAnswer(partA, baseChoices[0] || ""),
+          partB: resolvePartABAnswer(partB, partA.choices[LETTERS.indexOf(resolvePartABAnswer(partA, baseChoices[0] || ""))] || ""),
+        }
         : nextSingleAnswer(),
       partA: type === "part_a_b"
         ? partA
@@ -2403,35 +2495,31 @@ function sanitizeQuestions(
   grade = 5,
 ): Question[] {
   const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
-  const fallback = fallbackQuestionSet(subject, mode, skill, level);
-  void subject;
-  void skill;
+  void mode;
+  void level;
   void passage;
-  const replaceWithFallback = (index: number): Question => ({ ...fallback[index] });
-  let missingOrEmptyChoicesDetected = false;
+  void grade;
   const sanitized: Question[] = incoming.map((item, i) => {
     const q = item && typeof item === "object" ? item as Record<string, unknown> : {};
     if (!q.choices || !Array.isArray(q.choices) || q.choices.length === 0 || q.choices.every((choice) => !String(choice || "").trim())) {
-      missingOrEmptyChoicesDetected = true;
-      return replaceWithFallback(i);
+      return {
+        type: "mc",
+        question: String(q.question || "").trim(),
+        choices: [],
+        correct_answer: "",
+        explanation: String(q.explanation || "").trim(),
+      };
     }
-    const expectedType = fallback[i].type || "mc";
+    const expectedType = (q.type === "part_a_b" || q.type === "multi_select" || q.type === "part_a" || q.type === "part_b")
+      ? q.type
+      : "mc";
     const type: QuestionType = expectedType;
-    const rawQuestion = String(q.question || fallback[i].question).trim() || fallback[i].question;
+    const rawQuestion = String(q.question || "").trim();
     const questionText = type === "multi_select" && !/select\s+two\s+answers\./i.test(rawQuestion)
       ? `${rawQuestion.replace(/\s+$/g, "")} Select TWO answers.`
       : rawQuestion;
 
     let normalizedChoices = normalizeChoices(q.choices);
-
-    const fallbackPartA = fallback[i].partA || {
-      question: "Part A: What is the best answer?",
-      choices: normalizeChoices(fallback[i].choices),
-    };
-    const fallbackPartB = fallback[i].partB || {
-      question: "Part B: Which evidence best supports Part A?",
-      choices: normalizeChoices(fallback[i].choices),
-    };
 
     const isReadingMainIdea = subject === "Reading" && isMainIdeaSkill(skill);
     let normalizedQuestionText = questionText;
@@ -2446,45 +2534,44 @@ function sanitizeQuestions(
       question: normalizedQuestionText,
       choices: normalizedChoices,
       correct_answer: type === "multi_select"
-        ? normalizeMultiSelectAnswer(q.correct_answer || fallback[i].correct_answer)
+        ? normalizeMultiSelectAnswer(q.correct_answer || "")
         : type === "part_a_b"
-        ? normalizePartABAnswer(q.correct_answer || fallback[i].correct_answer)
-        : normalizeAnswer(q.correct_answer || fallback[i].correct_answer),
+        ? normalizePartABAnswer(q.correct_answer || "")
+        : normalizeAnswer(q.correct_answer || ""),
       partA: type === "part_a_b"
         ? {
-          question: String((q.partA as Record<string, unknown> | undefined)?.question || fallbackPartA.question).trim() || fallbackPartA.question,
-          choices: normalizeChoices((q.partA as Record<string, unknown> | undefined)?.choices || fallbackPartA.choices),
+          question: String((q.partA as Record<string, unknown> | undefined)?.question || "").trim() || "Part A: What is the best answer?",
+          choices: normalizeChoices((q.partA as Record<string, unknown> | undefined)?.choices || q.choices || []),
         }
         : undefined,
       partB: type === "part_a_b"
         ? {
-          question: String((q.partB as Record<string, unknown> | undefined)?.question || fallbackPartB.question).trim() || fallbackPartB.question,
-          choices: normalizeChoices((q.partB as Record<string, unknown> | undefined)?.choices || fallbackPartB.choices),
+          question: String((q.partB as Record<string, unknown> | undefined)?.question || "").trim() || "Part B: Which evidence best supports Part A?",
+          choices: normalizeChoices((q.partB as Record<string, unknown> | undefined)?.choices || q.choices || []),
         }
         : undefined,
-      explanation: String(q.explanation || fallback[i].explanation).trim() || fallback[i].explanation,
-      paired_with: typeof q.paired_with === "number" ? q.paired_with : fallback[i].paired_with,
-      sample_answer: String(q.sample_answer || fallback[i].sample_answer || "").trim() || fallback[i].sample_answer,
+      explanation: String(q.explanation || "").trim(),
+      paired_with: typeof q.paired_with === "number" ? q.paired_with : undefined,
+      sample_answer: String(q.sample_answer || "").trim(),
       part_b_question: type === "part_a" || type === "part_b"
-        ? (String(q.part_b_question || fallback[i].part_b_question || "").trim() || fallback[i].part_b_question)
+        ? String(q.part_b_question || "").trim()
         : undefined,
       part_b_choices: type === "part_a" || type === "part_b"
-        ? normalizeChoices(q.part_b_choices || fallback[i].part_b_choices)
+        ? normalizeChoices(q.part_b_choices || [])
         : undefined,
       part_b_correct_answer: type === "part_a" || type === "part_b"
-        ? normalizeAnswer(q.part_b_correct_answer || fallback[i].part_b_correct_answer)
+        ? normalizeAnswer(q.part_b_correct_answer || "")
         : undefined,
-      hint: String(q.hint || fallback[i].hint || "").trim(),
-      think: String(q.think || fallback[i].think || "").trim(),
-      step_by_step: String(q.step_by_step || fallback[i].step_by_step || "").trim(),
-      common_mistake: String(q.common_mistake || fallback[i].common_mistake || "").trim(),
-      parent_tip: String(q.parent_tip || fallback[i].parent_tip || "").trim(),
-      visual: sanitizeVisual(q.visual) || fallback[i].visual,
+      hint: String(q.hint || "").trim(),
+      think: String(q.think || "").trim(),
+      step_by_step: String(q.step_by_step || "").trim(),
+      common_mistake: String(q.common_mistake || "").trim(),
+      parent_tip: String(q.parent_tip || "").trim(),
+      visual: sanitizeVisual(q.visual),
     };
     return base;
   });
 
-  while (sanitized.length < 5) sanitized.push(replaceWithFallback(sanitized.length));
   let questions = sanitized.slice(0, 5);
 
   questions = questions.map((q) => ({
@@ -2492,36 +2579,13 @@ function sanitizeQuestions(
     choices: normalizeChoices(q.choices),
   }));
   console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", questions.length);
-  const fallbackQuestions = fallback.slice(0, 5);
-  const finalSet = questions.map((q, i) => {
-    const simplified = {
-      ...q,
-      question: simplifyQuestionByGrade(q.question, grade),
-    };
-    const isPartAB = simplified.type === "part_a_b";
-    if (!isPartAB && !isQuestionAligned(simplified, passage)) {
-      console.warn("⚠️ Replacing misaligned question:", i);
-      return { ...fallbackQuestions[i] };
-    }
-    return simplified;
-  });
-  const alignedSet = finalSet.map((question, i) => {
+  const alignedSet = questions.map((question) => {
     if (question.type === "part_a_b" && !isValidPartAB(question, passage)) {
       console.warn("⚠️ Invalid Part A/B — keeping original instead of fallback");
       return question;
     }
     return question;
   });
-
-  if (
-    missingOrEmptyChoicesDetected ||
-    alignedSet.some((q) =>
-      !Array.isArray(q?.choices) ||
-      q.choices.every((choice) => !String(choice || "").trim())
-    )
-  ) {
-    return fallback.slice(0, 5).map((q) => ({ ...q }));
-  }
 
   return alignedSet;
 }
@@ -2591,6 +2655,10 @@ function isValidOutput(questions: Question[], passage: PassageContent | string):
       String(question.correct_answer).trim().length > 0;
     return hasQuestion && hasChoices && hasAnswer;
   });
+}
+
+function hasInvalidPartABSet(questions: Question[], passage: PassageContent | string): boolean {
+  return Array.isArray(questions) && questions.some((question) => question.type === "part_a_b" && !isValidPartAB(question, passage));
 }
 
 function validateDistractorQuality(questions: Question[], passage: PassageContent | string): boolean {
@@ -3416,6 +3484,10 @@ serve(async (req) => {
     let retryFailureReason = "no_questions_returned";
     let bestAttempt: WorkerAttempt | null = null;
     let returnType = "UNKNOWN";
+    const markRetry = (reason: string) => {
+      retryFailureReason = reason;
+      console.log("❌ RETRY REASON:", retryFailureReason);
+    };
     const logReturnMetrics = () => {
       console.log("🔁 ATTEMPTS USED:", attempts);
       console.log("🎯 RETURN TYPE:", returnType);
@@ -3429,7 +3501,7 @@ serve(async (req) => {
           logReturnMetrics();
           return returnCore(bestAttempt);
         }
-        retryFailureReason = "no_questions_returned";
+        markRetry("no_questions_returned");
         console.warn("⚠️ FALLBACK TRIGGERED: exceeded max time");
         break;
       }
@@ -3465,7 +3537,7 @@ serve(async (req) => {
           console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
 
           if (!aiRes.ok) {
-            retryFailureReason = "no_questions_returned";
+            markRetry("no_questions_returned");
             continue;
           }
 
@@ -3481,7 +3553,7 @@ serve(async (req) => {
           ).trim();
 
           if (!text || isBadOutput(text)) {
-            retryFailureReason = "no_questions_returned";
+            markRetry("no_questions_returned");
             continue;
           }
 
@@ -3494,7 +3566,7 @@ serve(async (req) => {
           }
 
           if (!parsed || !Object.keys(parsed).length) {
-            retryFailureReason = "malformed_json";
+            markRetry("malformed_json");
             continue;
           }
 
@@ -3541,23 +3613,23 @@ serve(async (req) => {
             const rawPassage = getPassageText(safePassage).trim();
             const rawWordCount = rawPassage.split(/\s+/).filter(Boolean).length;
             if (!rawPassage || rawWordCount < 20) {
-              retryFailureReason = "no_questions_returned";
+              markRetry("no_questions_returned");
               continue;
             }
             if (isWeakPassage(rawPassage, grade)) {
               console.warn("⚠️ Weak generation — retrying AI generation");
-              retryFailureReason = "weak_passage";
+              markRetry("weak_passage");
               continue;
             }
             if (violatesGradeLevel(rawPassage, grade)) {
               console.warn("⚠️ Passage too advanced — retrying AI generation for grade:", grade);
-              retryFailureReason = "grade_violation";
+              markRetry("grade_violation");
               continue;
             }
             if (hasNarrativeReadingSignals(rawPassage)) {
               console.log("🧪 Narrative detected preview:", rawPassage.slice(0, 100));
               console.warn("⚠️ Narrative reading passage detected; regenerating once with informational lock.");
-              retryFailureReason = "narrative_output_filtered";
+              markRetry("narrative_output_filtered");
               continue;
             }
             safePassage = enforceSentenceLength(rawPassage, constraints.maxWordsPerSentence);
@@ -3579,6 +3651,14 @@ serve(async (req) => {
             subject === "Reading" ? safePassage : "",
             grade,
           );
+          if (practiceQuestions.length < 5 && attempts === 1) {
+            markRetry("bad_question");
+            continue;
+          }
+          if (hasInvalidPartABSet(practiceQuestions, safePassage)) {
+            markRetry("invalid_part_ab");
+            continue;
+          }
           if (subject === "Reading" && safePassage && practiceQuestions?.length) {
             const lightweightTutor = practiceQuestions.map((q, index) => ({
               question_id: ensureQuestionId(q, index, "practice"),
@@ -3619,9 +3699,17 @@ serve(async (req) => {
             subject === "Reading" ? safePassage : "",
             grade,
           );
+          if (pipelineQuestions.length < 5 && attempts === 1) {
+            markRetry("bad_question");
+            continue;
+          }
+          if (hasInvalidPartABSet(pipelineQuestions, safePassage)) {
+            markRetry("invalid_part_ab");
+            continue;
+          }
           const outputValid = isValidOutput(pipelineQuestions, safePassage);
           if (!outputValid) {
-            retryFailureReason = "no_questions_returned";
+            markRetry(!pipelineQuestions.length ? "bad_question" : "no_questions_returned");
             continue;
           }
 
@@ -3656,7 +3744,8 @@ serve(async (req) => {
 
         const priorPractice = body.practiceQuestions;
         if (!Array.isArray(priorPractice) || priorPractice.length === 0) {
-          return safeFallback("no_questions_returned");
+          markRetry("no_questions_returned");
+          continue;
         }
 
         const corePassageFromRequest = typeof body.passage === "string"
@@ -3673,6 +3762,14 @@ serve(async (req) => {
           corePassageForChecks,
           grade,
         );
+        if (normalizedPractice.length < 5 && attempts === 1) {
+          markRetry("bad_question");
+          continue;
+        }
+        if (hasInvalidPartABSet(normalizedPractice, corePassageForChecks)) {
+          markRetry("invalid_part_ab");
+          continue;
+        }
         console.log("🧠 CROSS SUBJECT:", effectiveSubject);
         const crossContent = effectiveSubject === "Reading"
           ? buildELARFallback(level)
@@ -3722,6 +3819,14 @@ serve(async (req) => {
             gradeSafeCrossPassage,
             grade,
           );
+          if (pipelineCrossQuestions.length < 5 && attempts === 1) {
+            markRetry("bad_question");
+            continue;
+          }
+          if (hasInvalidPartABSet(pipelineCrossQuestions, gradeSafeCrossPassage)) {
+            markRetry("invalid_part_ab");
+            continue;
+          }
           const payload = {
             cross: {
               passage: gradeSafeCrossPassage,
@@ -3831,7 +3936,7 @@ serve(async (req) => {
         console.log("⏱️ AI Duration:", Date.now() - enrichStartTime);
 
         if (!enrichRes.ok) {
-          retryFailureReason = "no_questions_returned";
+          markRetry("no_questions_returned");
           continue;
         }
 
@@ -3880,8 +3985,16 @@ serve(async (req) => {
           grade,
         );
         const crossValid = isValidOutput(crossQuestions, subjectCrossPassage);
+        if (crossQuestions.length < 5 && attempts === 1) {
+          markRetry("bad_question");
+          continue;
+        }
+        if (hasInvalidPartABSet(crossQuestions, subjectCrossPassage)) {
+          markRetry("invalid_part_ab");
+          continue;
+        }
         if (!crossValid) {
-          retryFailureReason = "no_questions_returned";
+          markRetry(!crossQuestions.length ? "bad_question" : "no_questions_returned");
           continue;
         }
 
@@ -3971,7 +4084,7 @@ serve(async (req) => {
         return returnEnrichment(payload);
       } catch (err) {
         console.error("BACKEND ERROR:", err);
-        retryFailureReason = "no_questions_returned";
+        markRetry("no_questions_returned");
         if (isTimedOut()) {
           console.warn("⚠️ FALLBACK TRIGGERED: exceeded max time");
         }
@@ -3998,9 +4111,15 @@ serve(async (req) => {
       }
       return returnCore(bestAttempt);
     }
-    returnType = "FALLBACK";
+    if (attempts >= 2) {
+      console.log("🚨 FALLBACK TRIGGERED AFTER ATTEMPTS");
+      returnType = "FALLBACK";
+      logReturnMetrics();
+      return safeFallback(retryFailureReason);
+    }
+    returnType = "NO_RESULT";
     logReturnMetrics();
-    return safeFallback(retryFailureReason);
+    return jsonResponse({ error: "no_usable_output", retryFailureReason }, 500);
   } catch (err) {
     console.error("🔥 EDGE FUNCTION ERROR:", err);
     return safeFallback("no_questions_returned");
