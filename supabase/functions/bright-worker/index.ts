@@ -1074,6 +1074,37 @@ ${requiredQuestionBlock}
 - JSON only.${passageDirective}`;
 }
 
+function buildGenerationPrompt(params: {
+  mode: "core" | "enrichment";
+  grade: number;
+  subject: CanonicalSubject;
+  skill: string;
+  level: Level;
+  teksCode?: string;
+  practiceQuestions?: Question[];
+  crossPassage?: string;
+}): string {
+  if (params.mode === "core") {
+    return buildCorePrompt({
+      grade: params.grade,
+      subject: params.subject,
+      skill: params.skill,
+      level: params.level,
+      teksCode: params.teksCode,
+    });
+  }
+
+  return buildEnrichmentPrompt({
+    grade: params.grade,
+    subject: params.subject,
+    skill: params.skill,
+    practiceQuestions: params.practiceQuestions || [],
+    level: params.level,
+    crossPassage: params.crossPassage || "",
+    teksCode: params.teksCode,
+  });
+}
+
 function buildSubjectPassage(subject: CanonicalSubject, level: Level = "On Level"): string {
   const rigor = applyRigor(level);
   if (subject === "Science") {
@@ -1418,7 +1449,7 @@ function extractEvidenceSnippet(passage: string, keywords: string[]): string | n
   return null;
 }
 
-function extractEvidence(passage: string, keywords: string[]): string {
+function extractEvidence(passage: string, keywords: string[]): string | null {
   const sentences = String(passage || "").split(/[.!?]/).map((s) => s.trim()).filter(Boolean);
 
   for (const keyword of keywords) {
@@ -1428,7 +1459,7 @@ function extractEvidence(passage: string, keywords: string[]): string {
     if (match) return match;
   }
 
-  return sentences[0] || "";
+  return null;
 }
 
 function buildTargetedHint(question: string): string {
@@ -1643,7 +1674,7 @@ function buildSubjectDistractors(q: Question, passage: string, subject: Canonica
   const normalizedChoices = normalizeChoices(q.choices);
   const correctChoice = getCorrectChoice({ ...q, choices: normalizedChoices as [string, string, string, string] }) || "";
   const hasPassage = String(passage || "").trim().length > 0;
-  const passageDistractors = hasPassage ? buildBetterDistractors(String(passage || ""), correctChoice) : [];
+  const passageDistractors = hasPassage ? buildStrategicDistractors(String(passage || ""), correctChoice) : [];
   return normalizedChoices
     .map((choice, index) => ({ choice, letter: LETTERS[index] }))
     .filter(({ letter }) => letter !== correct)
@@ -4173,7 +4204,8 @@ serve(async (req) => {
             },
             body: JSON.stringify({
               model: "gpt-4o-mini",
-              input: buildCorePrompt({
+              input: buildGenerationPrompt({
+                mode: "core",
                 grade,
                 subject,
                 skill: effectiveSkill,
@@ -4580,7 +4612,8 @@ serve(async (req) => {
           },
           body: JSON.stringify({
             model: "gpt-4o-mini",
-            input: buildEnrichmentPrompt({
+            input: buildGenerationPrompt({
+              mode: "enrichment",
               grade,
               subject: effectiveSubject,
               skill: effectiveSkill,
