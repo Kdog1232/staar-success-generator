@@ -1899,12 +1899,11 @@
         const tutor = tutorEntries[i] || {};
         const answer = answerEntries[i] || {};
         const tutorOk = tutor.question_id === expectedId &&
-          tutor.explanation && tutor.hint && tutor.step_by_step && tutor.common_mistake && tutor.parent_tip;
+          tutor.explanation && tutor.hint && tutor.step_by_step && tutor.common_mistake;
         const answerOk = answer.question_id === expectedId &&
           answer.correct_answer &&
           answer.explanation &&
-          answer.common_mistake &&
-          answer.parent_tip;
+          answer.common_mistake;
         return Boolean(tutorOk && answerOk);
       });
     }
