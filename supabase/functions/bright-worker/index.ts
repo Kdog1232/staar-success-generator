@@ -280,10 +280,6 @@ function enforceSentenceLength(text: string, maxWords: number): string {
     .join(". ");
 }
 
-function isQuestionAligned(): boolean {
-  return true;
-}
-
 function getRelevantSnippet(passage: PassageContent | string, question: string): string | null {
   const sentences = getPassageText(passage)
     .split(/[.!?]+/)
@@ -1247,7 +1243,12 @@ function isValidQuestion(q: Question, passage: PassageContent | string): boolean
   if (typeof q.correct_answer !== "string" || !["A", "B", "C", "D"].includes(q.correct_answer)) return false;
   const correctChoice = getCorrectChoice(q);
   if (!correctChoice) return false;
-  return hasLooseSupport(getPassageText(passage), correctChoice);
+  const passageText = getPassageText(passage);
+
+  if (hasLooseSupport(passageText, correctChoice)) return true;
+  if (hasPassageSupportForChoice(passageText, correctChoice)) return true;
+
+  return false;
 }
 
 function validateMCQuestion(q: Question, passage: PassageContent | string): Question {
@@ -1276,6 +1277,7 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
     return {
       ...q,
       choices,
+      correct_answer: "A",
     };
   }
 
@@ -1665,19 +1667,47 @@ function explainDistractor(
 }
 
 function buildBetterDistractors(passage: string, correct: string): string[] {
-  const normalizedCorrect = String(correct || "").toLowerCase();
-  const sentences = String(passage || "")
+  const normalizedCorrect = String(correct || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ");
+  const correctTokens = normalizedCorrect.split(/\s+/).filter((token) => token.length > 3);
+  const sentencePool = String(passage || "")
     .split(/[.!?]+/)
-    .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence.split(/\s+/).filter(Boolean).length >= 6);
-  if (!sentences.length) return [];
-
-  const candidates = sentences
-    .filter((sentence) => !normalizedCorrect || !sentence.toLowerCase().includes(normalizedCorrect))
     .map((sentence) => sentence.replace(/\s+/g, " ").trim())
-    .filter((sentence, index, arr) => arr.indexOf(sentence) === index);
+    .filter((sentence) => sentence.split(/\s+/).filter(Boolean).length >= 7);
 
-  return candidates.slice(0, 3);
+  if (!sentencePool.length) return [];
+
+  const ranked = sentencePool
+    .map((sentence) => {
+      const lower = sentence.toLowerCase();
+      const overlap = correctTokens.reduce((score, token) => score + (lower.includes(token) ? 1 : 0), 0);
+      return { sentence, lower, overlap };
+    })
+    .filter((entry) => !normalizedCorrect || !entry.lower.includes(normalizedCorrect))
+    .sort((a, b) => b.overlap - a.overlap || b.sentence.length - a.sentence.length);
+
+  const transformed = ranked
+    .slice(0, 8)
+    .flatMap(({ sentence }) => {
+      const clipped = sentence.replace(/,\s*[^,]+$/, "").trim() || sentence;
+      const reversedCause = clipped
+        .replace(/\bbecause\b/gi, "even though")
+        .replace(/\btherefore\b/gi, "however")
+        .replace(/\bso that\b/gi, "even if");
+      const overgeneralized = `${clipped.replace(/\.$/, "")} in every situation.`;
+      const partial = clipped
+        .replace(/\bmost\b/gi, "some")
+        .replace(/\bmainly\b/gi, "partly")
+        .replace(/\balways\b/gi, "sometimes");
+      return [reversedCause, overgeneralized, partial];
+    })
+    .map((candidate) => candidate.replace(/\s+/g, " ").trim())
+    .filter((candidate) =>
+      candidate.length > 25 &&
+      candidate.toLowerCase() !== normalizedCorrect &&
+      !candidate.toLowerCase().includes(normalizedCorrect),
+    );
+
+  return Array.from(new Set(transformed)).slice(0, 3);
 }
 
 function buildSubjectDistractors(q: Question, passage: string, subject: CanonicalSubject): string {
