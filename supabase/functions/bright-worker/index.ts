@@ -284,14 +284,14 @@ function isQuestionAligned(): boolean {
   return true;
 }
 
-function getRelevantSnippet(passage: PassageContent | string, question: string): string {
+function getRelevantSnippet(passage: PassageContent | string, question: string): string | null {
   const sentences = getPassageText(passage)
     .split(/[.!?]+/)
     .map((s) => s.trim())
     .filter(Boolean);
   const keywords = question.toLowerCase().split(" ").filter((w) => w.length > 4);
 
-  let best = sentences[0] || "";
+  let best: string | null = null;
   let bestScore = 0;
 
   for (const sentence of sentences) {
@@ -308,7 +308,7 @@ function getRelevantSnippet(passage: PassageContent | string, question: string):
     }
   }
 
-  return best;
+  return bestScore > 0 ? best : null;
 }
 
 function teacherExplain(question: string, answer: string, subject: string): string {
@@ -329,6 +329,9 @@ Final Answer: ${correctAnswer}`;
 
 function teacherStyleExplanation(passage: PassageContent | string, question: string): string {
   const snippet = getRelevantSnippet(passage, question);
+  if (!snippet) {
+    return "This answer requires combining multiple details from the passage. Re-read carefully to identify supporting evidence.";
+  }
   return `${getExplanationStarter()}: "${snippet}". This detail helps explain why the correct choice is the strongest answer when compared to the other options.`;
 }
 
@@ -1184,6 +1187,27 @@ function getCorrectChoice(q: Question): string {
   return idx >= 0 ? String(q.choices[idx] || "").trim() : "";
 }
 
+function hasPassageSupportForChoice(passage: string, choice: string): boolean {
+  const normalizedPassage = String(passage || "").toLowerCase();
+  const choiceTokens = String(choice || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 2)
+    .slice(0, 4);
+  if (!normalizedPassage || choiceTokens.length < 2) return false;
+  return normalizedPassage.includes(choiceTokens.join(" "));
+}
+
+function isValidQuestion(q: Question, passage: PassageContent | string): boolean {
+  if (!q || q.type === "part_a_b") return true;
+  if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
+  if (typeof q.correct_answer !== "string" || !["A", "B", "C", "D"].includes(q.correct_answer)) return false;
+  const correctChoice = getCorrectChoice(q);
+  if (!correctChoice) return false;
+  return hasPassageSupportForChoice(getPassageText(passage), correctChoice);
+}
+
 function validateMCQuestion(q: Question, passage: PassageContent | string): Question {
   if (q.type && q.type !== "mc") {
     return {
@@ -1196,13 +1220,17 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
   const correctText = getCorrectChoice({ ...q, choices }) || "";
 
   const passageLower = String(getPassageText(passage) || "").toLowerCase();
-  const correctLower = correctText.toLowerCase();
-
-  const isSupported =
-    correctLower.length > 5 &&
-    passageLower.includes(correctLower.split(" ").slice(0, 4).join(" "));
+  const isSupported = hasPassageSupportForChoice(passageLower, correctText);
 
   if (!isSupported) {
+    const replacementIndex = choices.findIndex((choice) => hasPassageSupportForChoice(passageLower, choice));
+    if (replacementIndex >= 0) {
+      return {
+        ...q,
+        choices,
+        correct_answer: LETTERS[replacementIndex],
+      };
+    }
     return {
       ...q,
       choices,
@@ -1373,7 +1401,7 @@ function detectThinkingType(question: string): "inference" | "evidence" | "main_
   return "general";
 }
 
-function extractEvidenceSnippet(passage: string, keywords: string[]): string {
+function extractEvidenceSnippet(passage: string, keywords: string[]): string | null {
   const sentences = String(passage || "")
     .split(/[.?!]/)
     .map((sentence) => sentence.trim())
@@ -1387,7 +1415,7 @@ function extractEvidenceSnippet(passage: string, keywords: string[]): string {
     }
   }
 
-  return sentences[0]?.trim() || "";
+  return null;
 }
 
 function extractEvidence(passage: string, keywords: string[]): string {
@@ -1595,9 +1623,19 @@ function explainDistractor(
 }
 
 function buildBetterDistractors(passage: string, correct: string): string[] {
-  void passage;
-  void correct;
-  return [];
+  const normalizedCorrect = String(correct || "").toLowerCase();
+  const sentences = String(passage || "")
+    .split(/[.!?]+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.split(/\s+/).filter(Boolean).length >= 6);
+  if (!sentences.length) return [];
+
+  const candidates = sentences
+    .filter((sentence) => !normalizedCorrect || !sentence.toLowerCase().includes(normalizedCorrect))
+    .map((sentence) => sentence.replace(/\s+/g, " ").trim())
+    .filter((sentence, index, arr) => arr.indexOf(sentence) === index);
+
+  return candidates.slice(0, 3);
 }
 
 function buildSubjectDistractors(q: Question, passage: string, subject: CanonicalSubject): string {
@@ -2915,7 +2953,7 @@ function getPassageAnchors(passage: PassageContent | string, question: string): 
     "about", "after", "again", "because", "before", "between", "could", "every", "first", "found", "from",
     "their", "there", "these", "those", "through", "under", "using", "which", "while", "would",
   ]);
-  const snippet = getRelevantSnippet(passage, question);
+  const snippet = getRelevantSnippet(passage, question) || "";
   const text = `${snippet} ${getPassageText(passage)}`.toLowerCase();
   const tokens = text
     .split(/[^a-z0-9-]+/)
@@ -3041,6 +3079,7 @@ function sanitizeQuestions(
 
   const passageText = getPassageText(passage);
   questions = questions.map((q) => validateMCQuestion(q, passageText));
+  questions = questions.filter((q) => isValidQuestion(q, passageText));
   console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", questions.length);
   const alignedSet = questions.map((question) => {
     if (question.type === "part_a_b" && !isValidPartAB(question, passage)) {
@@ -4226,6 +4265,11 @@ serve(async (req) => {
             const rawWordCount = rawPassage.split(/\s+/).filter(Boolean).length;
             if (!rawPassage || rawWordCount < 20) {
               markRetry("no_questions_returned");
+              continue;
+            }
+            if (!/[.!?]["')\]]?\s*$/.test(rawPassage)) {
+              console.warn("⚠️ Truncated passage detected — retrying AI generation");
+              markRetry("truncated_passage");
               continue;
             }
             if (isWeakPassage(rawPassage, grade)) {
