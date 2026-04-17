@@ -3529,19 +3529,15 @@ serve(async (req) => {
           if (subject === "Reading" && typeof safePassage === "string" && safePassage.trim()) {
             safePassage = enforceSentenceLength(safePassage, constraints.maxWordsPerSentence);
             if (violatesGradeLevel(safePassage, grade)) {
-              console.warn("⚠️ Passage too advanced for grade:", grade);
-              const regeneratedPassage = fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill, level);
-              const regeneratedQuestions = buildPracticeFallback(effectiveSkill, effectiveSubject, level, regeneratedPassage);
-              safePassage = getPassageText(regeneratedPassage);
-              parsed.practice = { questions: regeneratedQuestions };
+              console.warn("⚠️ Passage too advanced — retrying AI generation for grade:", grade);
+              retryFailureReason = "grade_violation";
+              continue;
             }
           }
           if (subject === "Reading" && isWeakPassage(safePassage)) {
-            console.warn("⚠️ Weak generation — regenerating full practice set");
-            const regeneratedPassage = fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill, level);
-            const regeneratedQuestions = buildPracticeFallback(effectiveSkill, effectiveSubject, level, regeneratedPassage);
-            safePassage = getPassageText(regeneratedPassage);
-            parsed.practice = { questions: regeneratedQuestions };
+            console.warn("⚠️ Weak generation — retrying AI generation");
+            retryFailureReason = "weak_passage";
+            continue;
           }
           if (subject === "Reading" && (!safePassage || !getPassageText(safePassage).trim())) {
             retryFailureReason = "no_questions_returned";
