@@ -93,8 +93,9 @@ type EnrichmentResponse = {
 };
 
 type WorkerAttempt = CoreResponse & EnrichmentResponse;
-type IncomingCrossQuestion = Partial<
-  Pick<Question, "question" | "type" | "correct_answer" | "explanation" | "common_mistake" | "parent_tip">
+type IncomingCrossQuestion = Pick<
+  Question,
+  "question" | "type" | "choices" | "correct_answer" | "explanation" | "common_mistake" | "parent_tip"
 >;
 
 const corsHeaders = {
@@ -891,14 +892,6 @@ Design each item as if it will appear on a STAAR test aligned to TEKS.`;
   "cross": {
     "passage": "REQUIRED string (250–300 words)",
     "questions": [5 subject-aligned questions]
-  },
-  "tutor": {
-    "practice": [5 entries],
-    "cross": [5 entries]
-  },
-  "answerKey": {
-    "practice": [5 entries],
-    "cross": [5 entries]
   }
 }
 
@@ -942,9 +935,7 @@ Rules:
 - Validate answer correctness before returning.
 - For cross question generation, apply this block exactly:
 ${requiredQuestionBlock}
-- Tutor entries (practice + cross) must include: question_id, question, explanation, common_mistake, parent_tip, hint, think, step_by_step.
-- Answer key entries (practice + cross) must include: question_id, correct_answer, explanation, common_mistake, parent_tip.
-- Cross tutor + answer key must reference cross passage evidence.
+- Return cross passage + cross questions only.
 - JSON only.${passageDirective}`;
 }
 
@@ -1185,17 +1176,157 @@ function isCompareSkill(skill: string): boolean {
   return normalized.includes("compare") || normalized.includes("contrast") || normalized.includes("two texts");
 }
 
+function detectThinkingType(question: string): "inference" | "evidence" | "main_idea" | "cause_effect" | "general" {
+  const q = question.toLowerCase();
+
+  if (q.includes("infer") || q.includes("conclude") || q.includes("most likely")) {
+    return "inference";
+  }
+  if (q.includes("evidence") || q.includes("which sentence")) {
+    return "evidence";
+  }
+  if (q.includes("main idea") || q.includes("central idea")) {
+    return "main_idea";
+  }
+  if (q.includes("cause") || q.includes("why")) {
+    return "cause_effect";
+  }
+
+  return "general";
+}
+
+function extractEvidenceSnippet(passage: string, keywords: string[]): string {
+  const sentences = String(passage || "")
+    .split(/[.?!]/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+
+  for (const sentence of sentences) {
+    for (const keyword of keywords) {
+      if (sentence.toLowerCase().includes(keyword.toLowerCase())) {
+        return sentence.trim();
+      }
+    }
+  }
+
+  return sentences[0]?.trim() || "";
+}
+
+function buildSubjectExplanation(subject: CanonicalSubject, baseExplanation: string): string {
+  if (subject === "Math") {
+    return `A strong math student solves step by step. ${baseExplanation}`;
+  }
+
+  if (subject === "Science") {
+    return `Think like a scientist. Look at the relationship between variables. ${baseExplanation}`;
+  }
+
+  if (subject === "Social Studies") {
+    return `Think about the situation and context. ${baseExplanation}`;
+  }
+
+  return baseExplanation;
+}
+
+function classifyDistractor(choice: string, passage: string, question: string, subject: CanonicalSubject): string {
+  const c = choice.toLowerCase();
+  const p = passage.toLowerCase();
+  const q = question.toLowerCase();
+
+  if (subject === "Math") {
+    if (c.match(/\d/)) return "calculation_error";
+    if (q.includes("total") || q.includes("sum")) return "wrong_operation";
+    return "misread_problem";
+  }
+
+  if (subject === "Science") {
+    if (q.includes("cause") || q.includes("effect")) return "cause_effect_confusion";
+    if (!p.includes(c.split(" ")[0])) return "not_supported_data";
+    return "misinterprets_data";
+  }
+
+  if (subject === "Social Studies") {
+    if (!p.includes(c.split(" ")[0])) return "not_in_context";
+    if (q.includes("why") || q.includes("result")) return "incorrect_reasoning";
+    return "partial_context";
+  }
+
+  if (!p.includes(c.split(" ")[0])) return "not_in_passage";
+  if (q.includes("infer")) return "too_literal";
+  if (q.includes("main idea")) return "too_narrow";
+  return "partial";
+}
+
+function compareToCorrect(choice: string, correct: string, question: string): string {
+  const q = question.toLowerCase();
+  void choice;
+  if (q.includes("infer")) {
+    return `Unlike the correct answer (${correct}), this option relies on what is directly stated instead of combining clues to make an inference.`;
+  }
+
+  if (q.includes("main idea")) {
+    return `Unlike the correct answer (${correct}), this option focuses on a single detail instead of the overall idea of the passage.`;
+  }
+
+  if (q.includes("cause") || q.includes("effect")) {
+    return `Unlike the correct answer (${correct}), this option does not correctly explain the cause-and-effect relationship.`;
+  }
+
+  return `Unlike the correct answer (${correct}), this option does not fully match what the question is asking.`;
+}
+
+function explainDistractor(
+  type: string,
+  choice: string,
+  subject: CanonicalSubject,
+  correct: string,
+  question: string,
+): string {
+  const base = (() => {
+    if (subject === "Math") {
+      if (type === "wrong_operation") {
+        return "This uses the wrong operation.";
+      }
+      return "This comes from a mistake in solving the problem.";
+    }
+
+    if (subject === "Science") {
+      return "This misinterprets the data or relationship.";
+    }
+
+    if (subject === "Social Studies") {
+      return "This does not match the context or reasoning.";
+    }
+
+    return "This is not fully supported by the passage.";
+  })();
+
+  return `❌ ${choice} — ${base} ${compareToCorrect(choice, correct, question)}`;
+}
+
+function buildSubjectDistractors(q: Question, passage: string, subject: CanonicalSubject): string {
+  const correct = normalizeAnswerKeyEntry(q.correct_answer);
+  const normalizedChoices = normalizeChoices(q.choices);
+  return normalizedChoices
+    .map((choice, index) => ({ choice, letter: LETTERS[index] }))
+    .filter(({ letter }) => letter !== correct)
+    .map(({ choice, letter }) => {
+      const withLetter = `${letter}. ${choice}`;
+      const type = classifyDistractor(withLetter, passage, String(q.question || ""), subject);
+      return explainDistractor(type, withLetter, subject, correct, String(q.question || ""));
+    })
+    .join("\n");
+}
+
 function buildSupportContent(
   subject: CanonicalSubject,
   q: Question,
-  index: number,
-  level: Level = "On Level",
+  _index: number,
+  _level: Level = "On Level",
   mode: CanonicalMode = "Practice",
   passage: PassageContent | string = "",
 ): { explanation: string; common_mistake: string; parent_tip: string; hint: string; think: string; step_by_step: string } {
   const questionText = String(q.question || "").trim();
-  const type = q.type || "mc";
-  const usesVisual = /(table|diagram|model|map|chart)/i.test(questionText);
   const isReading = subject === "Reading";
   const isCross = mode === "Cross-Curricular";
   const shouldUsePassage = isCross || isReading;
@@ -1203,62 +1334,53 @@ function buildSupportContent(
   const passageSnippet = passageText
     ? passageText.split(".").slice(0, 2).join(".").trim()
     : "";
-  const sourceRef = shouldUsePassage
-    ? "the passage"
-    : usesVisual
-    ? "the visual and scenario details"
-    : "the scenario details";
-  const subjectConcept = subject === "Math"
-    ? "the mathematical relationship in the problem"
+  const keywords = questionText.split(/\s+/).slice(0, 5);
+  const snippet = extractEvidenceSnippet(passageText, keywords);
+  const distractorAnalysis = buildSubjectDistractors(q, passageText, subject);
+  const thinkingType = detectThinkingType(questionText);
+  const evidenceSource = snippet || passageSnippet;
+  let explanation = subject === "Math"
+    ? "Start by identifying what the problem is asking. Then solve step by step by choosing the correct operation, calculating carefully, and checking whether the result is reasonable."
     : subject === "Science"
-    ? "the scientific cause-and-effect relationship"
+    ? `This question requires understanding cause and effect in a system. The data or details show a relationship that leads to the best-supported conclusion${evidenceSource ? `, especially in: "${evidenceSource}."` : "."}`
     : subject === "Social Studies"
-    ? "the historical or civic cause-and-effect relationship"
-    : "the central idea and supporting evidence";
+    ? `This question asks you to reason through historical context and decisions. Use the situation described in the source to identify the most supported outcome${evidenceSource ? `, such as: "${evidenceSource}."` : "."}`
+    : `
+The correct answer is supported by the passage. For example, the text states:
+"${evidenceSource}."
 
-  const aligned = buildAlignedExplanation({
-    question: questionText,
-    choices: q.choices,
-    correct_answer: q.correct_answer,
-    explanation: q.explanation || passageSnippet || subjectConcept,
-    type: q.type,
-    partA: q.partA,
-    partB: q.partB,
-  }, passageText);
-  const explanation = aligned.why;
-  const common_mistake = aligned.mistake;
+A strong reader uses this evidence to connect directly to the question. This detail helps confirm why the correct answer is the best choice.
+`.trim();
+
+  if (thinkingType === "inference") {
+    explanation = `${explanation}\n\nFor inference questions, combine clues across the passage instead of searching for one exact phrase.`;
+  } else if (thinkingType === "evidence") {
+    explanation = `${explanation}\n\nFor evidence questions, choose the answer you can point to directly in the text.`;
+  } else if (thinkingType === "main_idea") {
+    explanation = `${explanation}\n\nFor main idea questions, focus on the pattern repeated across multiple details.`;
+  } else if (thinkingType === "cause_effect") {
+    explanation = `${explanation}\n\nFor cause-and-effect questions, trace what happened and which detail caused that outcome.`;
+  } else {
+    explanation = `${explanation}\n\nStart with what the question is asking, then match it to the strongest text evidence.`;
+  }
+  explanation = buildSubjectExplanation(subject, explanation);
+
+  const fullExplanation = `${explanation}\n\n${distractorAnalysis}`.trim();
+  if (isCross) {
+    explanation = `Now think like a ${subject} student. This isn’t just reading—it’s applying what you know.\n\n${fullExplanation}`;
+  } else {
+    explanation = fullExplanation;
+  }
+
+  const common_mistake = "Students often choose an answer that sounds correct but is not fully supported by the passage. Strong readers always check for evidence.";
 
   const parent_tip = shouldUsePassage
     ? `Ask your child: "Where in the passage do you see this?" Have them point to a sentence like: "${passageSnippet}".`
     : "Ask your child to explain how they solved the problem step by step.";
 
-  const hintVariants = [
-    `Find the detail in ${usesVisual ? "the visual and scenario" : "the scenario"} that directly supports the concept.`,
-    `Locate the key evidence first, then match it to the answer choice that best fits the concept.`,
-    `Underline one clue from the prompt before choosing an answer.`,
-    `Use the model/data to eliminate options that only partly fit the concept.`,
-    `Focus on what changed in the scenario and which option explains that change best.`,
-  ];
-
-  const stepVariants = [
-    "1) Identify the concept being tested. 2) Match evidence from the prompt. 3) Confirm why other options are weaker.",
-    "1) Read the stem carefully. 2) Mark the strongest clue. 3) Choose the option with direct support.",
-    "1) Use the scenario or visual first. 2) Eliminate partial truths. 3) Select the best-supported answer.",
-    "1) Identify what must be explained. 2) Compare evidence across choices. 3) Verify the final choice.",
-    "1) Decode the question focus. 2) Cross-check with data/model details. 3) Defend the answer with evidence.",
-  ];
-
-  const hint = shouldUsePassage
-    ? "Go back to the passage and find the sentence that supports the answer."
-    : `Think about the key concept needed to solve this problem using ${sourceRef}.`;
-  const think = buildThinkPrompt(q);
-  const step_by_step = mode === "Cross-Curricular"
-    ? "1) Read the question. 2) Find the related part of the passage. 3) Match evidence to the best answer."
-    : level === "Below"
-    ? "1) Read the question. 2) Find one direct clue. 3) Do the needed step/calculation. 4) Check one wrong choice and explain why it is wrong."
-    : level === "Advanced"
-    ? "1) Identify the target concept. 2) Compare close options. 3) Eliminate misconception traps. 4) Justify why each wrong option fails."
-    : stepVariants[index % stepVariants.length];
+  const hint = "Look for clues across more than one sentence.";
+  const think = "What details work together to support the answer?";
+  const step_by_step = "1. Read the question carefully\n2. Find key details in the passage\n3. Eliminate weak answers\n4. Choose the best-supported answer";
 
   return {
     explanation,
@@ -2934,7 +3056,7 @@ function generateTutor(
     return {
       question_id: ensureQuestionId(q, index, mode),
       question: String(q.question || "").trim(),
-      explanation: "Start by looking at what the question is really asking and identify the strongest evidence first. Now eliminate choices that are only partly true or unsupported before making your final choice.",
+      explanation: support.explanation,
       common_mistake: support.common_mistake,
       parent_tip: support.parent_tip,
       hint: support.hint,
@@ -2961,11 +3083,26 @@ function generateAnswerKey(
       mode === "cross" ? crossPassage : "",
     );
     const correctAnswer = normalizeAnswerKeyEntry(q.correct_answer);
-    const sourceLabel = mode === "cross" ? "the passage" : "the prompt";
+    const passageText = String(crossPassage || "");
+    const keywords = String(q.question || "").split(/\s+/).slice(0, 5);
+    const snippet = extractEvidenceSnippet(passageText, keywords);
+    const distractorAnalysis = buildSubjectDistractors(q, passageText, subject);
+    const answerSource = snippet || passageText;
     return {
       question_id: ensureQuestionId(q, index, mode),
       correct_answer: correctAnswer,
-      explanation: `The correct answer is ${correctAnswer} because it best matches the evidence in ${sourceLabel}. This is supported by the key detail the question targets. The other choices are less accurate because they are unsupported or only partially correct.`,
+      explanation: `
+Correct Answer: ${correctAnswer}
+
+Evidence from passage:
+"${answerSource}"
+
+Why this is correct:
+This detail directly supports the answer and connects to what the question is asking.
+
+Why other answers are incorrect:
+${distractorAnalysis}
+`.trim(),
       common_mistake: support.common_mistake,
       parent_tip: support.parent_tip,
       hint: support.hint,
@@ -3434,8 +3571,24 @@ serve(async (req) => {
         : [];
       const crossPassage = String(bodyCross.passage || "");
 
-      const practiceQuestionSet = practiceQuestions as Question[];
-      const crossQuestionSet = crossQuestions as Question[];
+      const practiceQuestionSet = sanitizeQuestions(
+        practiceQuestions,
+        subject,
+        "Practice",
+        effectiveSkill,
+        level,
+        getPassageText(core.passage || ""),
+        grade,
+      );
+      const crossQuestionSet = sanitizeQuestions(
+        crossQuestions,
+        subject,
+        "Cross-Curricular",
+        effectiveSkill,
+        level,
+        crossPassage,
+        grade,
+      );
       const tutor = {
         practice: generateTutor(practiceQuestionSet, subject, "practice", level, getPassageText(core.passage || "")),
         cross: generateTutor(crossQuestionSet, subject, "cross", level, crossPassage),
@@ -3989,21 +4142,14 @@ serve(async (req) => {
           continue;
         }
 
-        const parsedTutor = parsed?.tutor && typeof parsed.tutor === "object"
-          ? parsed.tutor as Record<string, unknown>
-          : {};
-        const parsedAnswerKey = parsed?.answerKey && typeof parsed.answerKey === "object"
-          ? parsed.answerKey as Record<string, unknown>
-          : {};
-
         const tutorPractice = sanitizeTutorExplanations(
-          parsedTutor.practice || parsedTutor.explanations || [],
+          [],
           normalizedPractice,
           effectiveSubject,
           "practice",
         );
         let tutorCross = sanitizeTutorExplanations(
-          parsedTutor.cross || [],
+          [],
           crossQuestions,
           effectiveSubject,
           "cross",
@@ -4011,14 +4157,14 @@ serve(async (req) => {
         );
 
         const answerKeyPractice = sanitizeAnswerKey(
-          parsedAnswerKey.practice || parsedAnswerKey.answers || [],
+          [],
           normalizedPractice,
           effectiveSubject,
           tutorPractice,
           "practice",
         );
         let answerKeyCross = sanitizeAnswerKey(
-          parsedAnswerKey.cross || [],
+          [],
           crossQuestions,
           effectiveSubject,
           tutorCross,
