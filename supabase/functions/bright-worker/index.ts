@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 type Level = "Below" | "On Level" | "Advanced";
 type ChoiceLetter = "A" | "B" | "C" | "D";
+type AnswerLetter = "A" | "B" | "C" | "D";
 type CanonicalSubject = "Reading" | "Math" | "Science" | "Social Studies";
 type CanonicalMode = "Practice" | "Cross-Curricular" | "Tutor" | "Answer Key";
 
@@ -343,6 +344,39 @@ function buildParentTip(subject: string): string {
     return "Ask your child to point to the exact sentence that supports their answer.";
   }
   return "Ask your child to explain their thinking and justify their answer with evidence.";
+}
+
+function buildMistakeAndTip(subject: string, question: string, wrongChoice: string): {
+  mistake: string;
+  tip: string;
+} {
+  void question;
+  const normalizedSubject = String(subject || "").toLowerCase();
+  if (normalizedSubject.includes("math")) {
+    return {
+      mistake: `Students often choose "${wrongChoice}" after using the wrong operation or skipping a step in their setup.`,
+      tip: `Why might "${wrongChoice}" look right at first, and which operation should be used instead?`,
+    };
+  }
+
+  if (normalizedSubject.includes("science")) {
+    return {
+      mistake: `Students often choose "${wrongChoice}" because they mix up cause and effect from the investigation details.`,
+      tip: `What detail in the passage or data makes "${wrongChoice}" tempting, and what evidence rules it out?`,
+    };
+  }
+
+  if (normalizedSubject.includes("social")) {
+    return {
+      mistake: `Students often choose "${wrongChoice}" when they misread the historical context or timeline relationship.`,
+      tip: `Which event sequence might make "${wrongChoice}" seem possible, and what source detail proves otherwise?`,
+    };
+  }
+
+  return {
+    mistake: `Students often misunderstand the concept behind "${wrongChoice}".`,
+    tip: `Why might "${wrongChoice}" seem correct at first?`,
+  };
 }
 
 function ensureUsableExplanation(explanation: string): string {
@@ -3596,7 +3630,7 @@ serve(async (req) => {
     });
   const assertSupportIntegrity = (payload: {
     practice?: { questions?: unknown[] };
-    cross?: { questions?: unknown[] };
+    cross?: { passage?: string; questions?: unknown[] };
     tutor?: { practice?: unknown[]; cross?: unknown[] };
     answerKey?: { practice?: unknown[]; cross?: unknown[] };
   }) => {
