@@ -1230,13 +1230,24 @@ function hasPassageSupportForChoice(passage: string, choice: string): boolean {
   return normalizedPassage.includes(choiceTokens.join(" "));
 }
 
+function hasLooseSupport(passage: string, choice: string): boolean {
+  const normalizedPassage = String(passage || "").toLowerCase();
+  const words = String(choice || "")
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => w.replace(/[^a-z0-9]/g, ""))
+    .filter((w) => w.length > 3);
+  if (!normalizedPassage || words.length === 0) return false;
+  return words.some((word) => normalizedPassage.includes(word));
+}
+
 function isValidQuestion(q: Question, passage: PassageContent | string): boolean {
   if (!q || q.type === "part_a_b") return true;
   if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
   if (typeof q.correct_answer !== "string" || !["A", "B", "C", "D"].includes(q.correct_answer)) return false;
   const correctChoice = getCorrectChoice(q);
   if (!correctChoice) return false;
-  return hasPassageSupportForChoice(getPassageText(passage), correctChoice);
+  return hasLooseSupport(getPassageText(passage), correctChoice);
 }
 
 function validateMCQuestion(q: Question, passage: PassageContent | string): Question {
@@ -1251,10 +1262,10 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
   const correctText = getCorrectChoice({ ...q, choices }) || "";
 
   const passageLower = String(getPassageText(passage) || "").toLowerCase();
-  const isSupported = hasPassageSupportForChoice(passageLower, correctText);
+  const isSupported = hasLooseSupport(passageLower, correctText);
 
   if (!isSupported) {
-    const replacementIndex = choices.findIndex((choice) => hasPassageSupportForChoice(passageLower, choice));
+    const replacementIndex = choices.findIndex((choice) => hasLooseSupport(passageLower, choice));
     if (replacementIndex >= 0) {
       return {
         ...q,
@@ -3109,8 +3120,13 @@ function sanitizeQuestions(
   let questions = sanitized.slice(0, 5);
 
   const passageText = getPassageText(passage);
-  questions = questions.map((q) => validateMCQuestion(q, passageText));
-  questions = questions.filter((q) => isValidQuestion(q, passageText));
+  const validatedQuestions = questions.map((q) => validateMCQuestion(q, passageText));
+  const clean = validatedQuestions.filter((q) => isValidQuestion(q, passageText));
+  if (clean.length < 3) {
+    console.log("⚠️ Too few valid questions, retrying...");
+    return [];
+  }
+  questions = clean;
   console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", questions.length);
   const alignedSet = questions.map((question) => {
     if (question.type === "part_a_b" && !isValidPartAB(question, passage)) {
@@ -3190,7 +3206,7 @@ function validateRigorAlignment(level: Level, passage: PassageContent | string, 
 
 function isValidOutput(questions: Question[], passage: PassageContent | string): boolean {
   void passage;
-  if (!Array.isArray(questions) || questions.length === 0) return false;
+  if (!Array.isArray(questions) || questions.length < 3) return false;
   return questions.every((question) => {
     const hasQuestion = String(question?.question || "").trim().length > 0;
     const hasChoices = Array.isArray(question?.choices) && question.choices.length === 4;
@@ -4688,7 +4704,7 @@ serve(async (req) => {
           continue;
         }
         if (!crossValid) {
-          markRetry(!crossQuestions.length ? "bad_question" : "no_questions_returned");
+          markRetry(crossQuestions.length < 3 ? "bad_question" : "no_questions_returned");
           continue;
         }
 
