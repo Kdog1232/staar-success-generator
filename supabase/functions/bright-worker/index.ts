@@ -1070,8 +1070,22 @@ function normalizeAnswer(letter: unknown): ChoiceLetter {
   return "A";
 }
 
-function validateMCQuestion(q: Question, passage: PassageContent | string): Question {
+function safeCorrectAnswer(value: unknown): ChoiceLetter {
+  const v = String(value || "").trim().toUpperCase();
+  if (v === "A" || v === "B" || v === "C" || v === "D") return v;
+  return "A";
+}
+
+function getCorrectChoice(q: Question): string {
   const letters: ChoiceLetter[] = ["A", "B", "C", "D"];
+  if (!Array.isArray(q.choices) || q.choices.length !== 4) return "";
+  const answer = q.correct_answer;
+  if (typeof answer !== "string") return "";
+  const idx = letters.indexOf(answer as ChoiceLetter);
+  return idx >= 0 ? String(q.choices[idx] || "").trim() : "";
+}
+
+function validateMCQuestion(q: Question, passage: PassageContent | string): Question {
   if (q.type && q.type !== "mc") {
     return {
       ...q,
@@ -1080,8 +1094,7 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
   }
 
   const choices = normalizeChoices(q.choices);
-  const correctLetter = normalizeAnswer(q.correct_answer);
-  const correctText = choices[letters.indexOf(correctLetter)] || "";
+  const correctText = getCorrectChoice({ ...q, choices }) || "";
 
   const passageLower = String(getPassageText(passage) || "").toLowerCase();
   const correctLower = correctText.toLowerCase();
@@ -1091,17 +1104,10 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
     passageLower.includes(correctLower.split(" ").slice(0, 4).join(" "));
 
   if (!isSupported) {
-    const bestIndex = choices.findIndex((choice) =>
-      passageLower.includes(choice.toLowerCase().split(" ").slice(0, 3).join(" "))
-    );
-
-    if (bestIndex >= 0) {
-      return {
-        ...q,
-        choices,
-        correct_answer: letters[bestIndex],
-      };
-    }
+    return {
+      ...q,
+      choices,
+    };
   }
 
   return {
@@ -1296,30 +1302,6 @@ function extractEvidence(passage: string, keywords: string[]): string {
   }
 
   return sentences[0] || "";
-}
-
-function buildCorrectExplanation(question: string, correct: string, passage: string): string {
-  void question;
-  if (!passage || passage.length < 20) {
-    return `Correct Answer: ${correct}
-
-Why this is correct:
-This answer is supported by the logic of the question and correct reasoning.`;
-  }
-  let evidence = extractEvidence(passage, [correct]);
-  if (!evidence || evidence.length < 10) {
-    evidence = String(passage || "").split(".")[0]?.trim() || "";
-  }
-  if (!evidence || evidence.length < 10) {
-    evidence = "The strongest supporting detail in the passage aligns with the correct answer.";
-  }
-
-  return `Correct Answer: ${correct}
-
-Evidence from passage: "${evidence}"
-
-Why this is correct:
-This answer matches the strongest evidence in the passage and directly answers what the question is asking.`;
 }
 
 function buildTargetedHint(question: string): string {
@@ -1520,9 +1502,9 @@ function buildBetterDistractors(passage: string, correct: string): string[] {
 }
 
 function buildSubjectDistractors(q: Question, passage: string, subject: CanonicalSubject): string {
-  const correct = normalizeAnswerKeyEntry(q.correct_answer);
+  const correct = typeof q.correct_answer === "string" ? q.correct_answer : "A";
   const normalizedChoices = normalizeChoices(q.choices);
-  const correctChoice = normalizedChoices[LETTERS.indexOf(normalizeAnswer(correct))] || "";
+  const correctChoice = getCorrectChoice({ ...q, choices: normalizedChoices as [string, string, string, string] }) || "";
   const hasPassage = String(passage || "").trim().length > 0;
   const passageDistractors = hasPassage ? buildBetterDistractors(String(passage || ""), correctChoice) : [];
   return normalizedChoices
@@ -1601,7 +1583,7 @@ A strong reader uses this evidence to connect directly to the question. This det
   }
 
   const normalizedChoices = normalizeChoices(q.choices);
-  const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
+  const correctLetter = typeof q.correct_answer === "string" ? normalizeAnswer(q.correct_answer) : "A";
   const wrongChoices = normalizedChoices.filter((_, i) => LETTERS[i] !== correctLetter);
   const sampleWrong =
     wrongChoices.find((choice) => classifyErrorType(subject, questionText, choice) === "wrong_operation") ||
@@ -2878,7 +2860,6 @@ function sanitizeQuestions(
     explanation: String(explanationText || "").trim(),
   });
   const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
-  void mode;
   void level;
   void grade;
   const sanitized: Question[] = incoming.map((item, i) => {
@@ -2900,7 +2881,7 @@ function sanitizeQuestions(
       ? normalizeMultiSelectAnswer(q.correct_answer || "")
       : type === "part_a_b"
       ? normalizePartABAnswer(q.correct_answer || "")
-      : normalizeAnswer(q.correct_answer || "");
+      : safeCorrectAnswer(q.correct_answer);
     const correctChoiceIndex = type === "mc" ? LETTERS.indexOf(normalizedCorrectAnswer as AnswerLetter) : -1;
     const correctChoiceText = normalizedChoices[correctChoiceIndex >= 0 ? correctChoiceIndex : 0];
     if (type === "mc" && normalizedChoices.some(isWeakDistractor)) {
@@ -2969,6 +2950,16 @@ function sanitizeQuestions(
     }
     return question;
   });
+
+  if (mode === "Cross-Curricular") {
+    return alignedSet.filter((question) => {
+      if (!Array.isArray(question.choices) || question.choices.length !== 4) return false;
+      if (typeof question.correct_answer !== "string") return false;
+      if (!["A", "B", "C", "D"].includes(question.correct_answer)) return false;
+      if (!String(question.explanation || "").trim()) return false;
+      return true;
+    });
+  }
 
   return alignedSet;
 }
@@ -3371,37 +3362,12 @@ function generateAnswerKey(
 ): AnswerKeyEntry[] {
   return questions.slice(0, 5).map((q, index) => {
     try {
-      const support = buildSupportContent(
-        subject,
-        q,
-        index,
-        level,
-        mode === "cross" ? "Cross-Curricular" : "Practice",
-        passageText,
-        "Answer Key",
-      );
-      const correctAnswer = normalizeAnswerKeyEntry(q.correct_answer);
-      const answerPassage = String(passageText || "");
-      const questionText = String(q.question || "");
-      const keywords = [correctAnswer, questionText.slice(0, 20)];
-      let evidence = extractEvidence(answerPassage, keywords);
-      if (!evidence || evidence.length < 10) {
-        evidence = String(answerPassage || "").split(".")[0]?.trim() || "";
-      }
-      if (!evidence || evidence.length < 10) {
-        evidence = normalizeChoices(q.choices)[0] || "The strongest supporting detail in the passage aligns with the correct answer.";
-      }
-      const distractorAnalysis = buildSubjectDistractors(q, answerPassage, subject);
-      const correctExplanation = buildCorrectExplanation(questionText, correctAnswer, answerPassage || evidence);
+      const support = buildSupportContent(subject, q, index, level, mode === "cross" ? "Cross-Curricular" : "Practice", passageText, "Answer Key");
+      const correctAnswer = typeof q.correct_answer === "string" ? q.correct_answer : "A";
       return {
         question_id: ensureQuestionId(q, index, mode),
         correct_answer: correctAnswer || "",
-        explanation: `
-${correctExplanation}
-
-Why other answers are incorrect:
-${distractorAnalysis}
-`.trim(),
+        explanation: String(q.explanation || "").trim() || support.explanation || "",
         common_mistake: support.common_mistake || "",
         parent_tip: support.parent_tip
           ? (String(support.parent_tip).startsWith("👨‍👩‍👧 Parent Tip")
@@ -3423,27 +3389,18 @@ ${distractorAnalysis}
 }
 
 function buildTutorFromPractice(questions: Question[]): { practice: TutorExplanation[]; cross: TutorExplanation[] } {
-  const letters: ChoiceLetter[] = ["A", "B", "C", "D"];
   return {
     practice: questions.slice(0, 5).map((q, i) => {
-      const normalizedAnswer = normalizeAnswerKeyEntry(q.correct_answer);
-      const detectedLetter = letters.find((letter) => normalizedAnswer.includes(letter)) || "A";
-      const choiceIndex = letters.indexOf(detectedLetter);
-      const normalizedChoices = normalizeChoices(q.choices);
-      const correctChoice = normalizedChoices[choiceIndex] || "";
+      const detectedLetter = typeof q.correct_answer === "string" ? q.correct_answer : "A";
+      const correctChoice = getCorrectChoice(q);
       return {
         question_id: `practice_q${i + 1}`,
         question: String(q.question || ""),
-        explanation: `The correct answer is ${detectedLetter}. ${correctChoice} directly matches what the question asks based on the provided information.`,
-        common_mistake: "Students may choose an answer that sounds reasonable but does not fully match the required detail in the question.",
-        hint: "Focus on exactly what the question is asking before choosing an answer.",
-        think: `Ask yourself: which option directly fits "${String(q.question || "").trim()}"?`,
-        step_by_step: [
-          "Read the question carefully.",
-          "Identify the exact requirement in the question.",
-          "Compare each choice to that requirement.",
-          `Choose the option that best matches the requirement (${detectedLetter}).`,
-        ].join(" "),
+        explanation: String(q.explanation || "").trim(),
+        common_mistake: String(q.common_mistake || "").trim(),
+        hint: String(q.hint || "").trim(),
+        think: String(q.think || "").trim(),
+        step_by_step: String(q.step_by_step || "").trim() || `Choose the option that best matches the requirement (${detectedLetter}: ${correctChoice}).`,
       };
     }),
     cross: [],
@@ -3451,28 +3408,15 @@ function buildTutorFromPractice(questions: Question[]): { practice: TutorExplana
 }
 
 function buildAnswerKeyFromPractice(questions: Question[]): { practice: AnswerKeyEntry[]; cross: AnswerKeyEntry[] } {
-  const letters: ChoiceLetter[] = ["A", "B", "C", "D"];
   return {
     practice: questions.slice(0, 5).map((q, i) => {
-      const normalizedAnswer = normalizeAnswerKeyEntry(q.correct_answer);
-      const detectedLetter = letters.find((letter) => normalizedAnswer.includes(letter)) || "A";
-      const choiceIndex = letters.indexOf(detectedLetter);
-      const normalizedChoices = normalizeChoices(q.choices);
-      const correctChoice = normalizedChoices[choiceIndex] || "";
-      const wrongChoices = normalizedChoices
-        .map((text, idx) => ({ letter: letters[idx], text }))
-        .filter((c) => c.letter !== detectedLetter);
-      const distractorNotes = wrongChoices
-        .map((w) => `${w.letter}: ${w.text} does not fully meet the exact requirement of the question.`)
-        .join(" ");
+      const detectedLetter = typeof q.correct_answer === "string" ? q.correct_answer : "A";
       return {
         question_id: `practice_q${i + 1}`,
         correct_answer: detectedLetter,
-        explanation:
-          `The correct answer is ${detectedLetter}. ${correctChoice} best satisfies what the question asks. ` +
-          (distractorNotes ? `Why others are incorrect: ${distractorNotes}` : ""),
-        common_mistake: "Students often choose an option that seems related but does not completely satisfy the question requirement.",
-        parent_tip: "👨‍👩‍👧 Parent Tip: Ask your child to explain why the correct answer works and why each other option does not.",
+        explanation: String(q.explanation || "").trim(),
+        common_mistake: String(q.common_mistake || "").trim(),
+        parent_tip: String(q.parent_tip || "").trim(),
       };
     }),
     cross: [],
