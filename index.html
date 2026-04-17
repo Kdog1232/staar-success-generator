@@ -627,6 +627,32 @@
       background: #f0fdf4;
     }
 
+    .split-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 8px;
+    }
+
+    .split-panel {
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+      border: 1px solid #e5e7eb;
+    }
+
+    .panel-title {
+      font-size: 1.1rem;
+      margin: 0 0 12px;
+    }
+
+    .empty {
+      color: #9ca3af;
+      font-style: italic;
+      margin: 0;
+    }
+
     .question-block {
       margin-bottom: 16px;
       white-space: normal;
@@ -984,6 +1010,10 @@
 
       .subject-btn {
         flex-basis: 100%;
+      }
+
+      .split-container {
+        grid-template-columns: 1fr;
       }
     }
 
@@ -1770,7 +1800,7 @@
       if (!shouldRenderSupport(mode)) return "";
       const explanations = Array.isArray(tutorEntries) ? tutorEntries : [];
       if (!Array.isArray(explanations) || explanations.length === 0) {
-        return `<p class="muted-note">Tutor guidance is not available yet.</p>`;
+        return "";
       }
 
       return explanations.map((q, i) => {
@@ -1801,7 +1831,7 @@
       if (!shouldRenderSupport(mode)) return "";
       const answers = Array.isArray(answerEntries) ? answerEntries : [];
       if (!Array.isArray(answers) || answers.length === 0) {
-        return `<p class="muted-note">Answer key is not available yet.</p>`;
+        return "";
       }
 
       return answers.map((entry, i) => {
@@ -2021,14 +2051,23 @@
       console.log("🔥 TUTOR MODE USING:", mode);
       console.log("🔥 PASSAGE USED:", passage);
       console.log("🔥 TUTOR DATA:", enrichedTutor);
-      const tutorEntries = mode === "cross"
-        ? (Array.isArray(tutorData?.cross) ? tutorData.cross : [])
-        : (Array.isArray(tutorData?.practice) ? tutorData.practice : []);
-      const tutorMarkup = renderTutor(tutorEntries, "Tutor");
+      const practiceTutor = Array.isArray(tutorData?.practice) ? tutorData.practice : [];
+      const crossTutor = Array.isArray(tutorData?.cross) ? tutorData.cross : [];
+      const practiceTutorMarkup = renderTutor(practiceTutor, "Tutor");
+      const crossTutorMarkup = renderTutor(crossTutor, "Tutor");
       tutorSection.innerHTML = `
         <section class="worksheet-section">
-          <h3>🧠 Think Like This</h3>
-          ${tutorMarkup}
+          <h3>🧠 Tutor Support</h3>
+          <div class="split-container">
+            <div class="split-panel">
+              <h4 class="panel-title">📘 Practice Mode</h4>
+              ${practiceTutorMarkup}
+            </div>
+            <div class="split-panel">
+              <h4 class="panel-title">🌍 Cross-Curricular Mode</h4>
+              ${crossTutorMarkup}
+            </div>
+          </div>
         </section>
       `;
     }
@@ -2036,16 +2075,45 @@
     function renderAnswerSection(answerKeyData, mode = currentMode) {
       const answerSection = document.getElementById("answer-section");
       if (!answerSection) return;
-      const answerEntries = mode === "cross"
-        ? (Array.isArray(answerKeyData?.cross) ? answerKeyData.cross : [])
-        : (Array.isArray(answerKeyData?.practice) ? answerKeyData.practice : []);
-      const answerMarkup = renderAnswerKey(answerEntries, "Answer Key");
+      const practiceAnswers = Array.isArray(answerKeyData?.practice) ? answerKeyData.practice : [];
+      const crossAnswers = Array.isArray(answerKeyData?.cross) ? answerKeyData.cross : [];
+      const practiceAnswerMarkup = renderAnswerKey(practiceAnswers, "Answer Key");
+      const crossAnswerMarkup = renderAnswerKey(crossAnswers, "Answer Key");
       answerSection.innerHTML = `
         <section class="worksheet-section">
           <h3>✅ Answer Key</h3>
-          ${answerMarkup}
+          <div class="split-container">
+            <div class="split-panel">
+              <h4 class="panel-title">📘 Practice Mode</h4>
+              ${practiceAnswerMarkup}
+            </div>
+            <div class="split-panel">
+              <h4 class="panel-title">🌍 Cross-Curricular Mode</h4>
+              ${crossAnswerMarkup}
+            </div>
+          </div>
         </section>
       `;
+    }
+
+    function validateSupportIntegrity(data) {
+      if (data?.practice?.questions?.length) {
+        if (!data?.tutor?.practice?.length) {
+          throw new Error("Tutor.practice missing while practice questions exist");
+        }
+        if (!data?.answerKey?.practice?.length) {
+          throw new Error("AnswerKey.practice missing while practice questions exist");
+        }
+      }
+
+      if (data?.cross?.questions?.length) {
+        if (!data?.tutor?.cross?.length) {
+          throw new Error("Tutor.cross missing while cross questions exist");
+        }
+        if (!data?.answerKey?.cross?.length) {
+          throw new Error("AnswerKey.cross missing while cross questions exist");
+        }
+      }
     }
 
     function getActiveMode() {
@@ -2054,6 +2122,7 @@
 
     function renderActivePanels() {
       if (!currentData) return;
+      validateSupportIntegrity(currentData);
       const mode = getActiveMode();
       const tutorData = currentData?.tutor || { practice: [], cross: [] };
       const answerData = currentData?.answerKey || { practice: [], cross: [] };
@@ -2525,6 +2594,7 @@
             cross: Array.isArray(data?.answerKey?.cross) ? data.answerKey.cross.slice(0, 5) : []
           }
         };
+        validateSupportIntegrity(currentData);
         const selectedMode = apiMode === "Cross-Curricular" ? "Cross-Curricular" : "Practice";
         const selectedContent = resolveModeContent(currentData, selectedMode);
         currentMode = selectedContent.isCross ? "cross" : "practice";
@@ -2651,6 +2721,7 @@
               cross: Array.isArray(supportData?.answerKey?.cross) ? supportData.answerKey.cross.slice(0, 5) : []
             }
           };
+          validateSupportIntegrity(currentData);
           renderTutorSection(currentData.tutor, isCrossActive ? "cross" : "practice");
           renderAnswerSection(currentData.answerKey, isCrossActive ? "cross" : "practice");
         }
@@ -2700,10 +2771,10 @@
             "cross"
           );
           if (!practiceAligned) {
-            console.warn("⚠️ Practice tutor misaligned — using received data");
+            throw new Error("Tutor/Answer misalignment in PRACTICE mode");
           }
           if (!crossAligned) {
-            console.warn("⚠️ Cross tutor misaligned — using received data");
+            throw new Error("Tutor/Answer misalignment in CROSS mode");
           }
           currentData = {
             ...currentData,
@@ -2714,6 +2785,7 @@
             tutor: enrichedTutor,
             answerKey: enrichedAnswerKey
           };
+          validateSupportIntegrity(currentData);
 
           if (enrichedCross?.questions?.length) {
             renderCrossSection(currentData.cross, currentData.cross.passage);
@@ -2729,7 +2801,8 @@
           }
         } catch (enrichErr) {
           if (enrichErr?.name !== "AbortError") {
-            console.warn("⚠️ Enrichment request failed:", enrichErr);
+            console.error("❌ Enrichment failed HARD:", enrichErr);
+            throw new Error("Enrichment failed — support data incomplete");
           }
         }
       } catch (err) {

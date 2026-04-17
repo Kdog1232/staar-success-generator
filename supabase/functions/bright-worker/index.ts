@@ -3214,6 +3214,22 @@ serve(async (req) => {
       status,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  const assertSupportIntegrity = (payload: {
+    practice?: { questions?: unknown[] };
+    cross?: { questions?: unknown[] };
+    tutor?: { practice?: unknown[]; cross?: unknown[] };
+    answerKey?: { practice?: unknown[]; cross?: unknown[] };
+  }) => {
+    if (payload.practice?.questions?.length) {
+      if (!payload.tutor?.practice?.length) throw new Error("Missing tutor.practice");
+      if (!payload.answerKey?.practice?.length) throw new Error("Missing answerKey.practice");
+    }
+
+    if (payload.cross?.questions?.length) {
+      if (!payload.tutor?.cross?.length) throw new Error("Missing tutor.cross");
+      if (!payload.answerKey?.cross?.length) throw new Error("Missing answerKey.cross");
+    }
+  };
   const returnCore = (data: CoreResponse) =>
     jsonResponse({
       teks: teksCode,
@@ -3250,7 +3266,7 @@ serve(async (req) => {
       },
       answerKey: {
         practice: (data?.practice?.questions || []).map((q) => ({
-          answer: q.correct_answer,
+          correct_answer: q.correct_answer,
           explanation: q.explanation || "Check each step and verify your work.",
         })),
         cross: [],
@@ -3259,16 +3275,12 @@ serve(async (req) => {
   const returnEnrichment = (data: EnrichmentResponse) =>
     {
       const crossQuestions = data?.cross?.questions || [];
-      const fallbackTutorCross = crossQuestions.map((q) => ({
-        question: q.question,
-        explanation: `The passage shows that ${getRelevantSnippet(data?.cross?.passage || "", q.question)}`,
-        hint: "Find the sentence in the passage that supports your answer.",
-        common_mistake: "Picking an answer not supported by the passage.",
-      }));
-      const fallbackAnswerCross = crossQuestions.map((q) => ({
-        answer: q.correct_answer,
-        explanation: "The correct answer is supported by the passage.",
-      }));
+      assertSupportIntegrity({
+        practice: { questions: [] },
+        cross: { questions: crossQuestions },
+        tutor: data?.tutor,
+        answerKey: data?.answerKey,
+      });
       return jsonResponse({
         teks: teksCode,
         skill,
@@ -3282,11 +3294,11 @@ serve(async (req) => {
         },
         tutor: {
           practice: data?.tutor?.practice || [],
-          cross: (data?.tutor?.cross && data.tutor.cross.length) ? data.tutor.cross : fallbackTutorCross,
+          cross: data?.tutor?.cross || [],
         },
         answerKey: {
           practice: data?.answerKey?.practice || [],
-          cross: (data?.answerKey?.cross && data.answerKey.cross.length) ? data.answerKey.cross : fallbackAnswerCross,
+          cross: data?.answerKey?.cross || [],
         },
       });
     };
@@ -3877,6 +3889,12 @@ serve(async (req) => {
             tutor: payload.tutor,
             answerKey: payload.answerKey,
           };
+          assertSupportIntegrity({
+            practice: { questions: normalizedPractice },
+            cross: { passage: priorCrossPassage, questions: sanitizedCrossQuestions },
+            tutor: payload.tutor,
+            answerKey: payload.answerKey,
+          });
           returnType = "PRIMARY";
           logReturnMetrics();
           return jsonResponse({ ...payload, teks: teksCode, skill, grade });
@@ -4045,6 +4063,12 @@ serve(async (req) => {
           tutor: { practice: tutorPractice, cross: tutorCross },
           answerKey: { practice: answerKeyPractice, cross: answerKeyCross },
         };
+        assertSupportIntegrity({
+          practice: { questions: normalizedPractice },
+          cross: payload.cross,
+          tutor: payload.tutor,
+          answerKey: payload.answerKey,
+        });
         bestAttempt = {
           passage: corePassageForChecks,
           practice: { questions: normalizedPractice },
