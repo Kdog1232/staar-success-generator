@@ -3388,8 +3388,69 @@ serve(async (req) => {
       if (!payload.answerKey?.cross?.length) throw new Error("Missing answerKey.cross");
     }
   };
-  const returnCore = (data: CoreResponse) =>
-    jsonResponse({
+  const generateCross = async (params: {
+    grade: number;
+    subject: CanonicalSubject;
+    skill: string;
+    level: Level;
+    practiceQuestions: Question[];
+  }) => {
+    const { grade, subject, skill, level, practiceQuestions } = params;
+    const baseCross = subject === "Reading" ? buildELARFallback(level) : buildSubjectCrossContent(subject, level);
+    const constraints = getGradeConstraints(grade);
+    const crossPassage = ensurePassageLength(
+      baseCross.passage,
+      250,
+      300,
+      subject,
+      "Cross-Curricular",
+      grade,
+      level,
+    );
+    const gradeSafeCrossPassage = violatesGradeLevel(crossPassage, grade)
+      ? getPassageText(fallbackPassageContent(subject, "Cross-Curricular", grade, skill, level))
+      : enforceSentenceLength(crossPassage, constraints.maxWordsPerSentence);
+    const crossQuestions = sanitizeQuestions(
+      baseCross.questions || [],
+      subject,
+      "Cross-Curricular",
+      skill,
+      level,
+      gradeSafeCrossPassage,
+      grade,
+    );
+    const crossPipeline = await runPipeline({
+      stems: practiceQuestions,
+      crossSubject: subject,
+      subject,
+      skill,
+      level,
+      crossPassage: gradeSafeCrossPassage,
+      questions: crossQuestions,
+    });
+    return {
+      passage: gradeSafeCrossPassage,
+      questions: sanitizeQuestions(
+        crossPipeline.questions,
+        subject,
+        "Cross-Curricular",
+        skill,
+        level,
+        gradeSafeCrossPassage,
+        grade,
+      ),
+    };
+  };
+  const returnCore = async (data: CoreResponse) => {
+    const practiceQuestions = data?.practice?.questions || [];
+    const cross = await generateCross({
+      grade,
+      subject,
+      skill,
+      level,
+      practiceQuestions,
+    });
+    return jsonResponse({
       teks: teksCode,
       skill,
       grade,
@@ -3407,37 +3468,26 @@ serve(async (req) => {
         }
         : {}),
       practice: {
-        questions: data?.practice?.questions || [],
+        questions: practiceQuestions,
       },
-      cross: {
-        passage: "",
-        questions: [],
-      },
+      cross,
       tutor: {
-        practice: (data?.practice?.questions || []).map((q, index) => ({
-          question_id: ensureQuestionId(q, index, "practice"),
-          question: q.question,
-          explanation: q.explanation || "Step-by-step thinking: break the problem into parts and solve carefully.",
-          hint: q.hint || "Look back at the key numbers or details in the problem.",
-          think: q.think || "",
-          step_by_step: q.step_by_step || q.explanation || "Read the question, eliminate weak choices, and prove your selection.",
-          common_mistake: q.common_mistake || "Choosing an answer without checking all steps.",
-        })),
-        cross: [],
+        practice: sanitizeTutorExplanations([], practiceQuestions, subject, "practice"),
+        cross: sanitizeTutorExplanations([], cross.questions, subject, "cross", cross.passage),
       },
       answerKey: {
-        practice: (data?.practice?.questions || []).map((q, index) => ({
-          question_id: ensureQuestionId(q, index, "practice"),
-          correct_answer: q.correct_answer,
-          explanation: q.explanation || "Check each step and verify your work.",
-          common_mistake: q.common_mistake || "Selecting an answer before verifying all options against evidence.",
-          parent_tip: q.parent_tip
-            ? `👨‍👩‍👧 Parent Tip:\n${q.parent_tip}`
-            : "👨‍👩‍👧 Parent Tip:\nAsk your child to explain why each incorrect answer does not match the prompt.",
-        })),
-        cross: [],
+        practice: sanitizeAnswerKey([], practiceQuestions, subject, sanitizeTutorExplanations([], practiceQuestions, subject, "practice"), "practice"),
+        cross: sanitizeAnswerKey(
+          [],
+          cross.questions,
+          subject,
+          sanitizeTutorExplanations([], cross.questions, subject, "cross", cross.passage),
+          "cross",
+          cross.passage,
+        ),
       },
     });
+  };
   const returnEnrichment = (data: EnrichmentResponse) =>
     {
       const crossQuestions = data?.cross?.questions || [];
