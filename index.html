@@ -1244,8 +1244,6 @@
     let isGenerating = false;
     let isStudentView = false;
     let currentController = null;
-    let enrichController = null;
-    let generateRunId = 0;
     let hasRenderedThisRun = false;
     let lastGeneratedContentMode = null;
     let standardContent = "";
@@ -2116,6 +2114,79 @@
       }
     }
 
+    function validateAlignment(data) {
+      const practiceAligned = validateTutorAnswerAlignment(
+        data?.practice?.questions || [],
+        data?.tutor?.practice || [],
+        data?.answerKey?.practice || [],
+        "practice"
+      );
+      if (!practiceAligned) {
+        throw new Error("Tutor/Answer misalignment in PRACTICE mode");
+      }
+
+      const hasCrossQuestions = Array.isArray(data?.cross?.questions) && data.cross.questions.length > 0;
+      if (hasCrossQuestions) {
+        const crossAligned = validateTutorAnswerAlignment(
+          data?.cross?.questions || [],
+          data?.tutor?.cross || [],
+          data?.answerKey?.cross || [],
+          "cross"
+        );
+        if (!crossAligned) {
+          throw new Error("Tutor/Answer misalignment in CROSS mode");
+        }
+      }
+    }
+
+    function renderAll(data, { progressCount, skill, level, currentModeValue }) {
+      const outputDiv = document.getElementById("output");
+      const viewToggle = document.getElementById("view-toggle");
+      if (!outputDiv || !viewToggle) return;
+
+      outputDiv.innerHTML = `
+        <div class="worksheet">
+          <p class="mode-status" id="mode-status">Mode: Practice Mode ON</p>
+
+          <div class="progress-feel">
+            <strong>Skill:</strong> ${skill}<br>
+            <strong>Aligned to TEKS:</strong> ${data?.teks || "Unknown"}<br>
+            <strong>Level:</strong> ${level}<br>
+            <strong>Progress:</strong> ${progressCount} Skill${progressCount === 1 ? "" : "s"} Completed Today ✔
+          </div>
+
+          <div id="practice-section" class="practice-section"></div>
+          <div id="cross-section" class="cross-section" style="display: none;"></div>
+          <div id="tutor-section" class="think-section" style="display: none;"></div>
+          <div id="answer-section" class="answer-section" style="display: none;"></div>
+        </div>
+      `;
+
+      viewToggle.style.display = "flex";
+      if (!Array.isArray(data?.practice?.questions) || data.practice.questions.length === 0) {
+        outputDiv.innerHTML += `<div class="muted-note" style="margin-top:10px;">No questions were returned, so fallback guidance is shown.</div>`;
+      }
+      clearRenderedSections();
+      renderPracticeSection(data.practice, data.passage);
+      if (data?.cross?.questions?.length) {
+        renderCrossSection(data.cross, data.cross.passage);
+      } else {
+        document.getElementById("cross-section").innerHTML = `
+          <div class="mode-label">Cross-Curricular Mode</div>
+          <p class="muted-note">Cross-Curricular Questions not available.</p>
+        `;
+      }
+
+      const modeStatus = document.getElementById("mode-status");
+      if (modeStatus) {
+        modeStatus.textContent = "Mode: Practice Mode ON • Cross/Tutor ready";
+      }
+
+      renderActivePanels();
+      renderTab(currentModeValue, { fromGenerate: true });
+      setMode(currentModeValue);
+    }
+
     function getActiveMode() {
       return currentMode === "cross" ? "cross" : "practice";
     }
@@ -2365,17 +2436,12 @@
 
       hasRenderedThisRun = false;
       isGenerating = true;
-      const runId = ++generateRunId;
       console.log("🚀 GENERATE START");
       // 🔥 FORCE NEW CONTROLLERS EVERY TIME
       if (currentController) {
         currentController.abort();
       }
-      if (enrichController) {
-        enrichController.abort();
-      }
       currentController = new AbortController();
-      enrichController = new AbortController();
       console.log("GENERATE TRIGGERED");
       console.log("STATE:", {
         isGenerating,
@@ -2576,25 +2642,9 @@
           halt("No questions returned from server.");
         }
 
-        currentData = {
-          passage: data?.passage || "",
-          practice: {
-            questions: Array.isArray(data?.practice?.questions) ? data.practice.questions.slice(0, 5) : []
-          },
-          cross: {
-            passage: data?.cross?.passage || "",
-            questions: Array.isArray(data?.cross?.questions) ? data.cross.questions.slice(0, 5) : []
-          },
-          tutor: {
-            practice: Array.isArray(data?.tutor?.practice) ? data.tutor.practice.slice(0, 5) : [],
-            cross: Array.isArray(data?.tutor?.cross) ? data.tutor.cross.slice(0, 5) : []
-          },
-          answerKey: {
-            practice: Array.isArray(data?.answerKey?.practice) ? data.answerKey.practice.slice(0, 5) : [],
-            cross: Array.isArray(data?.answerKey?.cross) ? data.answerKey.cross.slice(0, 5) : []
-          }
-        };
-        validateSupportIntegrity(currentData);
+        validateSupportIntegrity(data);
+        validateAlignment(data);
+        currentData = data;
         const selectedMode = apiMode === "Cross-Curricular" ? "Cross-Curricular" : "Practice";
         const selectedContent = resolveModeContent(currentData, selectedMode);
         currentMode = selectedContent.isCross ? "cross" : "practice";
@@ -2604,207 +2654,9 @@
 
         if (hasRendered) return;
         hasRendered = true;
-        outputDiv.innerHTML = `
-          <div class="worksheet">
-            <p class="mode-status" id="mode-status">Mode: Practice Mode ON</p>
-
-            <div class="progress-feel">
-              <strong>Skill:</strong> ${skill}<br>
-              <strong>Aligned to TEKS:</strong> ${data?.teks || "Unknown"}<br>
-              <strong>Level:</strong> ${level}<br>
-              <strong>Progress:</strong> ${progressCount} Skill${progressCount === 1 ? "" : "s"} Completed Today ✔
-            </div>
-
-            <div id="practice-section" class="practice-section"></div>
-            <div id="cross-section" class="cross-section" style="display: none;"></div>
-            <div id="tutor-section" class="think-section" style="display: none;"></div>
-            <div id="answer-section" class="answer-section" style="display: none;"></div>
-          </div>
-        `;
-
-        viewToggle.style.display = "flex";
-        if (!Array.isArray(data?.practice?.questions) || data.practice.questions.length === 0) {
-          outputDiv.innerHTML += `<div class="muted-note" style="margin-top:10px;">No questions were returned, so fallback guidance is shown.</div>`;
-        }
-        clearRenderedSections();
-        renderPracticeSection(currentData.practice, currentData.passage);
-        if (currentData?.cross?.questions?.length) {
-          renderCrossSection(currentData.cross, currentData.cross.passage);
-        } else {
-          document.getElementById("cross-section").innerHTML = `
-            <div class="mode-label">Cross-Curricular Mode</div>
-            <p class="muted-note">⏳ Loading Cross-Curricular Questions...</p>
-          `;
-        }
-        const modeStatus = document.getElementById("mode-status");
-        if (modeStatus) {
-          modeStatus.textContent = "Step 2: Adding explanations...";
-        }
-
-        renderActivePanels();
-        renderTab(currentMode, { fromGenerate: true });
-        setMode(currentMode);
+        renderAll(currentData, { progressCount, skill, level, currentModeValue: currentMode });
         await new Promise((resolve) => requestAnimationFrame(() => resolve()));
         console.log("STEP 6: render complete");
-
-        const enrichPayload = {
-          subject,
-          grade,
-          skill,
-          level,
-          mode: "enrichment",
-          contentMode: apiMode,
-          practiceQuestions: Array.isArray(data?.practice?.questions) ? data.practice.questions.slice(0, 5) : []
-        };
-
-        const crossPromise = fetch("/functions/v1/cross-only", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-            apikey: SUPABASE_ANON_KEY
-          },
-          body: JSON.stringify(enrichPayload),
-          signal: enrichController.signal
-        });
-        const supportPromise = fetch("/functions/v1/support-only", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-            apikey: SUPABASE_ANON_KEY
-          },
-          body: JSON.stringify(enrichPayload),
-          signal: enrichController.signal
-        });
-
-        let crossData = null;
-        let supportData = null;
-
-        try {
-          crossData = await crossPromise.then((r) => r.json());
-        } catch (e) {
-          console.log("⚠️ Cross failed, will fallback");
-        }
-
-        try {
-          supportData = await supportPromise.then((r) => r.json());
-        } catch (e) {
-          console.log("⚠️ Support failed, will fallback");
-        }
-
-        console.log("🔥 CROSS LOADED:", crossData);
-        console.log("🔥 SUPPORT LOADED:", supportData);
-
-        if (crossData?.cross?.questions?.length) {
-          currentData = {
-            ...currentData,
-            cross: {
-              passage: crossData?.cross?.passage || currentData.cross.passage,
-              questions: Array.isArray(crossData?.cross?.questions) ? crossData.cross.questions.slice(0, 5) : currentData.cross.questions
-            }
-          };
-          renderCrossSection(currentData.cross, currentData.cross.passage);
-        }
-
-        if (supportData?.tutor && supportData?.answerKey) {
-          const isCrossActive = currentMode === "cross";
-
-          currentData = {
-            ...currentData,
-            tutor: {
-              practice: Array.isArray(supportData?.tutor?.practice) ? supportData.tutor.practice.slice(0, 5) : [],
-              cross: Array.isArray(supportData?.tutor?.cross) ? supportData.tutor.cross.slice(0, 5) : []
-            },
-            answerKey: {
-              practice: Array.isArray(supportData?.answerKey?.practice) ? supportData.answerKey.practice.slice(0, 5) : [],
-              cross: Array.isArray(supportData?.answerKey?.cross) ? supportData.answerKey.cross.slice(0, 5) : []
-            }
-          };
-          validateSupportIntegrity(currentData);
-          renderTutorSection(currentData.tutor, isCrossActive ? "cross" : "practice");
-          renderAnswerSection(currentData.answerKey, isCrossActive ? "cross" : "practice");
-        }
-
-        try {
-          const enrichRes = await fetch("https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-              apikey: SUPABASE_ANON_KEY
-            },
-            body: JSON.stringify(enrichPayload),
-            signal: enrichController.signal
-          });
-          if (!enrichRes.ok) {
-            throw new Error(`enrichment_status_${enrichRes.status}`);
-          }
-          const enrichData = await enrichRes.json();
-          if (runId !== generateRunId) {
-            throw new Error("HALT_STALE_RUN");
-          }
-          if (!currentData || !enrichData) {
-            throw new Error("HALT_MISSING_ENRICH_DATA");
-          }
-          const enrichedCross = {
-            questions: Array.isArray(enrichData?.cross?.questions) ? enrichData.cross.questions.slice(0, 5) : []
-          };
-          const enrichedTutor = {
-            practice: Array.isArray(enrichData?.tutor?.practice) ? enrichData.tutor.practice.slice(0, 5) : [],
-            cross: Array.isArray(enrichData?.tutor?.cross) ? enrichData.tutor.cross.slice(0, 5) : []
-          };
-          const enrichedAnswerKey = {
-            practice: Array.isArray(enrichData?.answerKey?.practice) ? enrichData.answerKey.practice.slice(0, 5) : [],
-            cross: Array.isArray(enrichData?.answerKey?.cross) ? enrichData.answerKey.cross.slice(0, 5) : []
-          };
-          const practiceAligned = validateTutorAnswerAlignment(
-            currentData?.practice?.questions || [],
-            enrichedTutor.practice,
-            enrichedAnswerKey.practice,
-            "practice"
-          );
-          const crossAligned = validateTutorAnswerAlignment(
-            enrichedCross.questions,
-            enrichedTutor.cross,
-            enrichedAnswerKey.cross,
-            "cross"
-          );
-          if (!practiceAligned) {
-            throw new Error("Tutor/Answer misalignment in PRACTICE mode");
-          }
-          if (!crossAligned) {
-            throw new Error("Tutor/Answer misalignment in CROSS mode");
-          }
-          currentData = {
-            ...currentData,
-            cross: {
-              passage: enrichData?.cross?.passage || currentData.cross.passage,
-              questions: Array.isArray(enrichData?.cross?.questions) ? enrichData.cross.questions.slice(0, 5) : currentData.cross.questions
-            },
-            tutor: enrichedTutor,
-            answerKey: enrichedAnswerKey
-          };
-          validateSupportIntegrity(currentData);
-
-          if (enrichedCross?.questions?.length) {
-            renderCrossSection(currentData.cross, currentData.cross.passage);
-          }
-
-          renderActivePanels();
-
-          await new Promise((resolve) => requestAnimationFrame(() => resolve()));
-          renderTab(currentMode);
-          const modeStatusAfter = document.getElementById("mode-status");
-          if (modeStatusAfter) {
-            modeStatusAfter.textContent = "Mode: Practice Mode ON • Cross/Tutor ready";
-          }
-        } catch (enrichErr) {
-          if (enrichErr?.name !== "AbortError") {
-            console.error("❌ Enrichment failed HARD:", enrichErr);
-            throw new Error("Enrichment failed — support data incomplete");
-          }
-        }
       } catch (err) {
         const message = err?.message || String(err || "");
         if (message === "HALT") {
@@ -2827,8 +2679,6 @@
           outputDiv.innerHTML = "A required form field is missing. Refresh and try again.";
         } else if (message === "HALT_MISSING_DOM") {
           console.error("Critical UI element missing.");
-        } else if (message === "HALT_STALE_RUN" || message === "HALT_MISSING_ENRICH_DATA") {
-          console.warn("⚠️ Generate halted safely:", message);
         } else if (err?.name !== "AbortError" && message !== "HALT") {
           outputDiv.innerHTML = "Something went wrong. Try again.";
         }
@@ -2838,7 +2688,6 @@
         progressTimers.forEach((timer) => clearTimeout(timer));
         isGenerating = false;
         currentController = null;
-        enrichController = null;
         const btn = document.getElementById("generate-btn");
         if (btn) {
           btn.disabled = false;
