@@ -1121,11 +1121,22 @@ function normalizeChoices(choices: unknown): [string, string, string, string] {
 
  while (clean.length < 4) clean.push("Placeholder answer choice");   
 
-  return clean.map((c) =>
+  return clean.map((c) => cleanChoice(
     String(c || "")
       .replace(/^[A-D]\.\s*/i, "")
       .trim()
-  ) as [string, string, string, string];
+  )) as [string, string, string, string];
+}
+
+function cleanChoice(text: string): string {
+  const cleaned = String(text || "").trim();
+  if (!cleaned) return cleaned;
+
+  if (!cleaned.endsWith(".") && cleaned.split(/\s+/).length >= 8) {
+    return `${cleaned}.`;
+  }
+
+  return cleaned;
 }
 
 function normalizeAnswer(letter: unknown): ChoiceLetter {
