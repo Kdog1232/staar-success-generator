@@ -1118,9 +1118,10 @@ function normalizeAnswer(letter: unknown): ChoiceLetter {
 }
 
 function safeCorrectAnswer(value: unknown): ChoiceLetter {
-  const v = String(value || "").trim().toUpperCase();
+  const v = String(value ?? "").trim().toUpperCase();
   if (v === "A" || v === "B" || v === "C" || v === "D") return v;
-  return "A";
+  console.error("❌ INVALID ANSWER DETECTED:", value);
+  throw new Error("Invalid correct_answer — preventing silent corruption");
 }
 
 function parseAnswerLetter(value: unknown): ChoiceLetter | null {
