@@ -330,6 +330,27 @@ function getRelevantSnippet(
   return best;
 }
 
+function supportsMeaning(snippet: string, answer: string): boolean {
+  const normalizedSnippet = String(snippet || "").toLowerCase();
+  const normalizedAnswer = String(answer || "").toLowerCase();
+  if (!normalizedSnippet || !normalizedAnswer) return false;
+
+  const hasSnippetNegation = /\b(not|never|no|none|without|can't|cannot|won't|isn't|aren't|didn't|doesn't|don't)\b/.test(
+    normalizedSnippet,
+  );
+  const hasAnswerNegation = /\b(not|never|no|none|without|can't|cannot|won't|isn't|aren't|didn't|doesn't|don't)\b/.test(
+    normalizedAnswer,
+  );
+  if (hasSnippetNegation !== hasAnswerNegation) return false;
+
+  const overlap = normalizedAnswer
+    .split(/\W+/)
+    .filter((word) => word.length > 3 && normalizedSnippet.includes(word))
+    .length;
+
+  return overlap >= 2;
+}
+
 function teacherExplain(question: string, answer: string, subject: string): string {
   void question;
   void subject;
@@ -348,7 +369,7 @@ Final Answer: ${correctAnswer}`;
 
 function teacherStyleExplanation(passage: PassageContent | string, question: string, correctChoice = ""): string {
   const snippet = getRelevantSnippet(passage, question, correctChoice);
-  if (!snippet) {
+  if (!snippet || !supportsMeaning(snippet, correctChoice)) {
     return "This answer requires combining multiple details from the passage. Re-read carefully to identify supporting evidence.";
   }
   return `${getExplanationStarter()}: "${snippet}". This detail helps explain why the correct choice is the strongest answer when compared to the other options.`;
@@ -2069,6 +2090,7 @@ function validateMCQuestion(
       ...String(q.question || "").split(/\s+/).slice(0, 5),
       ...finalChoice.split(/\s+/).slice(0, 6),
     ],
+    finalChoice,
   );
   const syncedExplanation = finalChoice
     ? evidenceSnippet
@@ -2244,7 +2266,7 @@ function detectThinkingType(question: string): "inference" | "evidence" | "main_
   return "general";
 }
 
-function extractEvidenceSnippet(passage: string, keywords: string[]): string | null {
+function extractEvidenceSnippet(passage: string, keywords: string[], answer = ""): string | null {
   const sentences = String(passage || "")
     .split(/[.?!\n]/)
     .map((sentence) => sentence.trim())
@@ -2262,6 +2284,7 @@ function extractEvidenceSnippet(passage: string, keywords: string[]): string | n
   }
 
   if (!best || bestScore < 2 || isBlockedEvidenceSnippet(best)) return null;
+  if (answer && !supportsMeaning(best, answer)) return null;
   return best;
 }
 
@@ -2561,10 +2584,14 @@ function buildSupportContent(
   const passageText = shouldUsePassage ? getPassageText(passage) : "";
   const keywords = questionText.split(/\s+/).slice(0, 5);
   const { letter: correctLetter, choice: correctChoice } = getQuestionCorrectPair(q);
-  const snippet = extractEvidenceSnippet(passageText, [...keywords, ...String(correctChoice || "").split(/\s+/).slice(0, 5)]);
+  const snippet = extractEvidenceSnippet(
+    passageText,
+    [...keywords, ...String(correctChoice || "").split(/\s+/).slice(0, 5)],
+    String(correctChoice || ""),
+  );
   const distractorAnalysis = buildSubjectDistractors(q, passageText, subject);
   const thinkingType = detectThinkingType(questionText);
-  const hasEvidence = Boolean(snippet);
+  const hasEvidence = Boolean(snippet) && supportsMeaning(String(snippet || ""), String(correctChoice || ""));
   const noEvidenceMessage = "This answer requires combining multiple details from the passage. Re-read carefully to identify supporting evidence.";
   const safeGenericExplanation = noEvidenceMessage;
   if (shouldUsePassage && !hasLooseSupport(passageText, String(correctChoice || ""))) {
