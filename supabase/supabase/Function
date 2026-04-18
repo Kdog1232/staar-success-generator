@@ -77,6 +77,17 @@ REQUIREMENTS:
 - Use strong distractors
 - Include reasoning-based questions
 - Mix DOK 1–3
+- Each answer choice MUST be a complete sentence.
+- Do NOT generate fragments or cut-off responses.
+- Each answer choice must be at least 8–12 words long.
+- All 4 answer choices must follow a similar grammatical structure.
+- Avoid sentence fragments like:
+  - "A combo pack cost $6 and included..."
+  - "The student council planned..."
+- Every answer must clearly express a full idea.
+- If an answer choice is cut off or incomplete, rewrite it fully before returning.
+- Incorrect answers must still be complete, realistic, and based on the passage.
+- Do NOT generate vague or generic wrong answers.
 
 READING:
 
@@ -113,6 +124,12 @@ FORMAT:
 ### PARENT HELP:
 
 ...
+
+SELF-CHECK BEFORE RETURNING:
+- Are all answer choices complete sentences?
+- Are any answers cut off or unfinished?
+- Do all choices clearly express a full idea?
+If not, fix them before returning.
 
 TUTOR MODE UPGRADE (APPLY ONLY IF tutorMode = true):
 ${tutorMode ? `- Add a section titled "### TUTOR MODE:"
