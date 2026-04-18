@@ -316,7 +316,8 @@ function scoreEvidenceSentence(sentence: string, keywords: string[]): number {
 }
 
 function getBetterSnippet(passage: PassageContent | string, answer: string): string | null {
-  const sentences = getPassageText(passage)
+  const passageText = getPassageText(passage);
+  const sentences = passageText
     .split(/[.!?\n]+/)
     .map((s) => s.trim())
     .filter((s) => Boolean(s) && !isBlockedEvidenceSnippet(s));
@@ -349,7 +350,8 @@ function getRelevantSnippet(
   question: string,
   correctChoice: string = "",
 ): string | null {
-  const sentences = getPassageText(passage)
+  const passageText = getPassageText(passage);
+  const sentences = passageText
     .split(/[.!?\n]+/)
     .map((s) => s.trim())
     .filter((s) => Boolean(s) && !isBlockedEvidenceSnippet(s));
@@ -373,7 +375,7 @@ function getRelevantSnippet(
   }
 
   if (!best || bestScore < 1 || isBlockedEvidenceSnippet(best)) {
-    return getBetterSnippet(passage, correctChoice || question);
+    return getBetterSnippet(passageText, correctChoice || question);
   }
   return best;
 }
