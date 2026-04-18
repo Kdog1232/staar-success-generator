@@ -2191,8 +2191,7 @@ function validateMCQuestion(
   };
 
   if (q.choices.some(badPattern)) {
-    console.warn("🚨 BAD ANSWERS — FORCING PASSAGE CHOICES");
-    q.choices = forcePassageChoices(passageText);
+    console.warn("🚨 Bad answers detected — keeping AI output");
   }
 
   let normalizedQuestion = String(q.question || "").trim();
@@ -2202,8 +2201,7 @@ function validateMCQuestion(
   };
 
   if (q.choices.some((c) => isCopied(String(c || ""), passageText))) {
-    q.choices = forcePassageChoices(passageText);
-    choices = normalizeChoices(q.choices).map(cleanAnswerChoice) as [string, string, string, string];
+    console.warn("⚠️ Choices copy passage verbatim — keeping AI output");
   }
   let safeAnswer = safeCorrectAnswer(q.correct_answer);
   if (choices.some((choice) => containsBanned(choice))) {
@@ -3798,6 +3796,13 @@ function isGenericAnswer(choice: string): boolean {
     GENERIC_ANSWER_PATTERNS.some((pattern) => pattern.test(lowered));
 }
 
+function isClearlyGenericChoices(choices: [string, string, string, string]): boolean {
+  return choices.every((choice) => {
+    const lowered = String(choice || "").toLowerCase();
+    return lowered.includes("one detail") || lowered.includes("another clue");
+  });
+}
+
 function rewriteChoicesFromPassage(passage: string): [string, string, string, string] {
   const sentences = String(passage || "")
     .split(/[.!?]/)
@@ -4036,8 +4041,8 @@ function sanitizeQuestions(
 
     const passageText = getPassageText(passage);
     let normalizedChoices = normalizeChoices(q.choices).map(cleanAnswerChoice) as [string, string, string, string];
-    if (normalizedChoices.some((choice) => isGenericAnswer(choice))) {
-      console.warn("🚨 Generic answers detected — rewriting choices");
+    if (isClearlyGenericChoices(normalizedChoices)) {
+      console.warn("🚨 Clearly generic answers detected — rewriting choices");
       q.choices = rewriteChoicesFromPassage(passageText);
       normalizedChoices = normalizeChoices(q.choices).map(cleanAnswerChoice) as [string, string, string, string];
     }
@@ -4162,11 +4167,10 @@ function sanitizeQuestions(
       if (typeof q.correct_answer !== "string") continue;
       verifyAnswerWithAI(q.question, q.choices as [string, string, string, string]).then((verified) => {
         if (verified && verified !== q.correct_answer) {
-          console.warn("🔄 Async answer correction", {
+          console.warn("🔄 Async answer verification mismatch — keeping AI output", {
             from: q.correct_answer,
-            to: verified,
+            suggested: verified,
           });
-          q.correct_answer = verified;
         }
       });
     }
