@@ -1300,7 +1300,7 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
   const isSupported = hasLooseSupport(passageText, correctText) || hasPassageSupportForChoice(passageText, correctText);
   let resolvedCorrectLetter: ChoiceLetter = startingLetter;
 
-  if (!isSupported) {
+  if (!TRUST_AI_ANSWER_KEY && !isSupported) {
     const replacementIndex = choices.findIndex((choice) =>
       hasLooseSupport(passageText, choice) || hasPassageSupportForChoice(passageText, choice)
     );
