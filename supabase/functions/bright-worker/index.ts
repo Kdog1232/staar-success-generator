@@ -136,6 +136,7 @@ const SUBJECT_SKILLS = {
 } as const;
 
 const LETTERS: ChoiceLetter[] = ["A", "B", "C", "D"];
+const TRUST_AI_ANSWER_KEY = true;
 
 function resolveTeks(subject: CanonicalSubject, skill: string, grade: number): string {
   const skillAliases: Record<string, string> = {
@@ -3587,25 +3588,40 @@ function generateTutor(
   level: Level = "On Level",
   passageText = "",
 ): TutorExplanation[] {
+  void subject;
+  void level;
+  void passageText;
   return questions.slice(0, 5).map((q, index) => {
     try {
-      const support = buildSupportContent(
-        subject,
-        q,
-        index,
-        level,
-        mode === "cross" ? "Cross-Curricular" : "Practice",
-        passageText,
-        "Tutor",
-      );
+      const { letter, choice } = getQuestionCorrectPair(q);
+      const normalizedChoices = normalizeChoices(q.choices);
+      const correctAnswer = letter ? `${letter}. ${choice}` : "";
+      const wrongChoiceGuidance = letter
+        ? normalizedChoices
+          .map((candidate, candidateIndex) => ({ letter: LETTERS[candidateIndex], candidate }))
+          .filter((entry) => entry.letter !== letter)
+          .map((entry) =>
+            `❌ ${entry.letter}. ${entry.candidate} — This option does not match the validated correct answer (${correctAnswer}).`
+          )
+          .join("\n")
+        : "";
+      const baseExplanation = String(q.explanation || "").trim() ||
+        (correctAnswer ? `The validated correct answer is ${correctAnswer}.` : "Use the validated question answer and supporting evidence.");
+      const explanation = wrongChoiceGuidance ? `${baseExplanation}\n\n${wrongChoiceGuidance}` : baseExplanation;
+
       return {
         question_id: ensureQuestionId(q, index, mode),
         question: String(q.question || "").trim(),
-        explanation: support.explanation || "",
-        common_mistake: support.common_mistake || "",
-        hint: support.hint || "",
-        think: support.think || "",
-        step_by_step: support.step_by_step || "",
+        explanation,
+        common_mistake: String(q.common_mistake || "").trim() || "Choosing an option without matching it to the validated answer and passage evidence.",
+        hint: String(q.hint || "").trim() ||
+          (correctAnswer ? `Use the validated answer: ${correctAnswer}.` : "Read the validated answer and match it to passage evidence."),
+        think: String(q.think || "").trim() ||
+          (correctAnswer ? `How does the passage support ${correctAnswer}?` : "Which passage detail supports the validated answer?"),
+        step_by_step: String(q.step_by_step || "").trim() ||
+          (correctAnswer
+            ? `1. Read the question.\n2. Identify the validated answer (${correctAnswer}).\n3. Confirm passage evidence supports it.\n4. Eliminate choices that do not match that evidence.`
+            : "1. Read the question.\n2. Locate the validated answer.\n3. Match it to passage evidence."),
       };
     } catch (err) {
       console.error("Tutor build failed:", err);
