@@ -680,6 +680,24 @@ function buildCorePrompt(params: {
   const rigor = applyRigor(level);
   const rigorEngineRules = getRigorEngineRules(level, subject);
   const constraints = getGradeConstraints(grade);
+  const dokProgressionRequirement = `DOK PROGRESSION REQUIREMENT (MANDATORY):
+- You must structure the 5 questions as follows:
+  - Question 1: Easy (DOK 1–2)
+  - Question 2–3: Medium (DOK 2–3)
+  - Question 4–5: Hard (DOK 3–4)
+- Difficulty must increase across the set.
+- Do NOT make all 5 questions the same level.`;
+  const levelAdjustmentRequirement = `LEVEL ADJUSTMENT (MANDATORY):
+- Below Level:
+  - Q1–2 easy
+  - Q3–5 medium
+- On Level:
+  - Q1 easy
+  - Q2–3 medium
+  - Q4–5 hard
+- Advanced:
+  - Q1 medium
+  - Q2–5 hard`;
   if (subject === "Reading") {
     const readingRange = readingPracticeWordRange(level);
     const mainIdeaStemRule = isMainIdeaSkill(skill)
@@ -770,6 +788,8 @@ Rules:
   - abstract language allowance: ${String(constraints.allowAbstract)}
   - passage length signal: ${constraints.passageLength}
 - Generate exactly 5 STAAR-style reading questions tied directly to that passage.
+- ${dokProgressionRequirement}
+- ${levelAdjustmentRequirement}
 - Vary passage topic and structure across generations; use a different scenario, setting, and context each time.
 - Questions should typically require inference or combining details when appropriate.
 - No “why did X happen?” when the answer is explicitly stated in the passage.
@@ -851,6 +871,8 @@ Rules:
   - vocabulary band: ${constraints.vocab}
   - abstract language allowance: ${String(constraints.allowAbstract)}
 - Generate exactly 5 standalone STAAR-style ${subject} questions.
+- ${dokProgressionRequirement}
+- ${levelAdjustmentRequirement}
 - Vary scenario, setting, and context across generations to avoid repeated output patterns.
 - Use multi-step reasoning where appropriate.
 - Questions should typically require inference or combining details when appropriate.
@@ -1222,6 +1244,219 @@ function getFallbackChoices(subject: CanonicalSubject, skill: string): [string, 
   return buildReadingChoices(safePassage, safeQuestion, "On Level");
 }
 
+function buildFallbackExplanation(passage: string, correctChoice: string): string {
+  const sentences = String(passage || "")
+    .split(/[.!?]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (!sentences.length) {
+    return `The correct answer is supported by the passage details.`;
+  }
+
+  const choiceWords = String(correctChoice || "")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length > 3);
+
+  let bestMatch = sentences[0];
+  let bestScore = 0;
+
+  for (const sentence of sentences) {
+    const lower = sentence.toLowerCase();
+
+    const score = choiceWords.reduce((acc, word) => {
+      return acc + (lower.includes(word) ? 1 : 0);
+    }, 0);
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = sentence;
+    }
+  }
+
+  return `The correct answer is supported by the passage detail: "${bestMatch}." This shows that ${correctChoice}`;
+}
+
+function getDOKLevel(
+  index: number,
+  level: "Below Level" | "On Level" | "Advanced" | Level,
+): "easy" | "medium" | "hard" {
+  const normalizedLevel = level === "Below" ? "Below Level" : level;
+
+  if (normalizedLevel === "Below Level") {
+    if (index <= 1) return "easy";
+    if (index <= 3) return "medium";
+    return "medium";
+  }
+
+  if (normalizedLevel === "On Level") {
+    if (index === 0) return "easy";
+    if (index <= 2) return "medium";
+    return "hard";
+  }
+
+  if (index === 0) return "medium";
+  if (index <= 2) return "hard";
+  return "hard";
+}
+
+function getUniversalQuestion(
+  subject: CanonicalSubject,
+  skill: string,
+  index: number,
+  level: Level = "On Level",
+): string {
+  const s = String(skill || "").toLowerCase();
+  const dok = getDOKLevel(index, level);
+  const selectByDOK = (stems: [string, string, string, string, string]) => {
+    if (dok === "easy") return stems[0];
+    if (dok === "medium") return stems[1 + (index % 2)];
+    return stems[3 + (index % 2)];
+  };
+
+  if (subject === "Reading") {
+    if (s.includes("theme")) {
+      return selectByDOK([
+        "What is the central message of the passage?",
+        "Which statement best expresses the theme?",
+        "What lesson does the passage convey?",
+        "Which idea best reflects the author’s message?",
+        "What is the main message developed in the passage?",
+      ]);
+    }
+
+    if (s.includes("infer")) {
+      return selectByDOK([
+        "What can the reader infer from the passage?",
+        "Which conclusion is best supported?",
+        "What is most likely true based on the passage?",
+        "Which idea can be inferred?",
+        "What does the passage suggest?",
+      ]);
+    }
+
+    return selectByDOK([
+      "Which idea is BEST supported by the passage?",
+      "What is the main idea of the passage?",
+      "Which detail best supports a key idea?",
+      "What can the reader conclude?",
+      "Which statement accurately reflects the passage?",
+    ]);
+  }
+
+  if (subject === "Math") {
+    return selectByDOK([
+      "Which answer correctly solves the problem?",
+      "What is the correct value based on the information?",
+      "Which calculation leads to the correct result?",
+      "What is the final answer after solving?",
+      "Which method produces the correct solution?",
+    ]);
+  }
+
+  if (subject === "Science") {
+    return selectByDOK([
+      "What is the most likely outcome based on the information?",
+      "Which statement best explains the relationship shown?",
+      "What is the cause of the result described?",
+      "Which conclusion is supported by the data?",
+      "What does the passage suggest about the process?",
+    ]);
+  }
+
+  if (subject === "Social Studies") {
+    return selectByDOK([
+      "Which statement is best supported by the passage?",
+      "What is the most likely reason for the event described?",
+      "Which conclusion can be drawn from the information?",
+      "What does the passage suggest about the situation?",
+      "Which idea best explains the outcome described?",
+    ]);
+  }
+
+  return "Which answer is best supported by the information provided?";
+}
+
+function buildUniversalChoices(
+  subject: CanonicalSubject,
+  passage: string,
+  level: Level = "On Level",
+): [string, string, string, string] {
+  const sentences = String(passage || "")
+    .split(/[.!?]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const base = sentences.slice(0, 4);
+
+  while (base.length < 4) base.push(sentences[0] || String(passage || "").trim() || "The passage provides supporting information.");
+
+  const correct = base[0];
+  let distractors: string[];
+  const normalizedLevel = level === "Below" ? "Below Level" : level;
+
+  if (normalizedLevel === "Below Level") {
+    distractors = [
+      "This answer is not supported by the passage.",
+      "This idea is incorrect based on the text.",
+      "This does not match what is stated.",
+    ];
+  } else if (normalizedLevel === "Advanced") {
+    distractors = [
+      "This reflects a partial but incomplete interpretation of the passage.",
+      "This conclusion misinterprets the relationship between key details.",
+      "This reasoning appears valid but does not fully align with the passage.",
+    ];
+  } else if (subject === "Math") {
+    distractors = [
+      "An incorrect calculation leads to a different result.",
+      "A step is skipped, causing an inaccurate answer.",
+      "The numbers are used incorrectly in the operation.",
+    ];
+  } else if (subject === "Science") {
+    distractors = [
+      "The relationship between variables is misunderstood.",
+      "The cause and effect are reversed.",
+      "The conclusion does not match the data provided.",
+    ];
+  } else if (subject === "Social Studies") {
+    distractors = [
+      "The event is explained without using evidence.",
+      "The reasoning does not match the historical context.",
+      "The conclusion ignores key details from the passage.",
+    ];
+  } else {
+    distractors = [
+      correct.replace("because", "even though"),
+      correct.replace("most", "some"),
+      "The passage does not provide enough information to support this idea.",
+    ];
+  }
+
+  const all = shuffleArray([correct, distractors[0], distractors[1], distractors[2]]);
+  return all.map((c) => cleanChoice(String(c || "").trim())) as [string, string, string, string];
+}
+
+function buildUniversalFallbackQuestion(
+  subject: CanonicalSubject,
+  passage: string,
+  skill: string,
+  index: number,
+  level: Level = "On Level",
+): Question {
+  const question = getUniversalQuestion(subject, skill, index, level);
+  const choices = buildUniversalChoices(subject, passage, level);
+  const correctIndex = pickRandom([0, 1, 2, 3]);
+
+  return {
+    type: "mc",
+    question,
+    choices,
+    correct_answer: ["A", "B", "C", "D"][correctIndex] as ChoiceLetter,
+    explanation: buildFallbackExplanation(passage, choices[correctIndex]),
+  };
+}
+
 function normalizeChoices(choices: unknown): [string, string, string, string] {
   if (!Array.isArray(choices) || choices.length !== 4) {
     throw new Error("INVALID_CHOICES_LENGTH");
@@ -1266,7 +1501,7 @@ function safeCorrectAnswer(value: unknown): ChoiceLetter {
     return v;
   }
 
-  const fallback = pickRandom(["A", "B", "C", "D"]);
+  const fallback = pickRandom(["A", "B", "C", "D"] as ChoiceLetter[]);
   console.warn("⚠️ Random fallback answer used:", fallback);
   return fallback;
 }
@@ -3075,7 +3310,6 @@ function sanitizeQuestions(
     explanation: String(explanationText || "").trim(),
   });
   const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
-  void level;
   void grade;
   const sanitized: Question[] = incoming.map((item, i) => {
     const q = item && typeof item === "object" ? item as Record<string, unknown> : {};
@@ -3149,15 +3383,12 @@ function sanitizeQuestions(
     console.warn("⚠️ Not enough valid questions — regenerating weak ones");
 
     while (questions.length < 5) {
-      const fallbackQuestion: Question = {
-        type: "mc",
-        question: `Fallback question ${questions.length + 1}: Which choice is best supported by the passage?`,
-        choices: getFallbackChoices(subject, skill),
-        correct_answer: safeCorrectAnswer(pickRandom(["A", "B", "C", "D"])),
-        explanation: "",
-      };
       questions.push(
-        repairQuestion(fallbackQuestion, subject, passageText),
+        repairQuestion(
+          buildUniversalFallbackQuestion(subject, passageText, skill, questions.length, level),
+          subject,
+          passageText,
+        ),
       );
     }
   }
