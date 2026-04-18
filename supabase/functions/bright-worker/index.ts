@@ -672,10 +672,11 @@ function buildCorePrompt(params: {
   subject: CanonicalSubject;
   skill: string;
   level: Level;
+  textType?: "fiction" | "poem" | "drama";
   teksCode?: string;
   contextType?: string;
 }): string {
-  const { grade, subject, skill, level, teksCode = "Unknown", contextType = "real-world application" } = params;
+  const { grade, subject, skill, level, textType, teksCode = "Unknown", contextType = "real-world application" } = params;
   const rigor = applyRigor(level);
   const rigorEngineRules = getRigorEngineRules(level, subject);
   const constraints = getGradeConstraints(grade);
@@ -691,14 +692,20 @@ function buildCorePrompt(params: {
     - "What lesson did they learn?"`
       : "";
     return `Create JSON only for PRACTICE MODE.
-Grade: ${grade}
-Subject: ${subject}
-Skill: ${skill}
-Level: ${level}
+You are generating a STAAR-aligned passage and multiple-choice questions.
+
+MODE CONTEXT
+- Subject: ${subject}
+- Grade: ${grade}
+- Skill: ${skill}
+- Mode: Practice
+- Text Type: ${textType || "fiction"}
+- Context Type: ${contextType}
+- Level: ${level}
 
 Return exactly:
 {
-  "passage": "REQUIRED informational string (${readingRange.min}–${readingRange.max} words)",
+  "passage": "REQUIRED ${textType || "fiction"} passage (${readingRange.min}–${readingRange.max} words)",
   "practice": { "questions": [5 items with question, choices, correct_answer, explanation] }
 }
 
@@ -708,17 +715,60 @@ Rules:
 - TEKS Alignment Code: ${teksCode}
 - Instruction: Design the question to match how this TEKS is assessed on STAAR.
 - TEKS alignment: skill "${skill}" at grade ${grade} must be assessed through application (analyze/infer/compare/explain), not definition recall.
-- Subject is Reading, so include a new informational passage only (${readingRange.min}–${readingRange.max} words).
+- ELAR PRACTICE MODE RULE:
+  - The passage MUST be ${textType || "fiction"}.
+  - Allowed ELAR practice passage types: fiction, poem, drama.
+  - DO NOT generate informational or nonfiction passages in Practice mode.
+- Passage structure guide by selected Text Type:
+  - FICTION REQUIREMENTS:
+    - Include a clear main character.
+    - Include a setting.
+    - Include a problem or conflict.
+    - Show a sequence of events.
+    - End with a meaningful resolution or reflection.
+  - DRAMA REQUIREMENTS:
+    - Format as dialogue (script style).
+    - Use character names before lines.
+    - Include at least 2 characters.
+    - Show interaction or conflict through dialogue.
+  - POETRY REQUIREMENTS (HIGH PRIORITY):
+    - Use line breaks (NOT paragraphs).
+    - Keep poem length to 8–20 lines.
+    - Maintain a natural rhythm or flow.
+    - Focus on one central idea or theme.
+    - Include at least TWO figurative language devices:
+      - simile
+      - metaphor
+      - personification
+      - imagery (sensory language)
+      - alliteration or repetition
+    - Figurative language must be meaningful and support meaning.
+    - Each line must contribute to the overall meaning.
+    - DO NOT write poetry as a paragraph.
+    - DO NOT use incomplete or fragmented lines.
+- Subject is Reading, so include a new ${textType || "fiction"} passage only (${readingRange.min}–${readingRange.max} words).
 - If any instruction conflicts with the required passage length, follow ${readingRange.min}–${readingRange.max} words only.
 - Do NOT explicitly state key conclusions in the passage.
 - Include details that REQUIRE inference (imply cause, include competing details, delay explanation).
+- QUESTION TYPE RULES (ELAR Practice):
+  - If Text Type is fiction, questions should focus on character actions/motivations, theme or message, event inference, cause and effect, and key details that impact the story.
+  - If Text Type is fiction, avoid overly factual recall questions.
+  - If Text Type is poem, questions MUST include figurative language meaning, imagery, tone or mood, theme/central idea, and word meaning in context.
+  - If Text Type is poem, at least ONE question must ask about figurative language meaning.
+  - If Text Type is poem, avoid plot-based questions.
+  - If Text Type is drama, questions should focus on dialogue meaning, character relationships, inference from dialogue, conflict, and how dialogue reveals theme or mood.
+  - If Text Type is drama, at least ONE question must require interpreting a line of dialogue.
+- Across the 5 questions, include a mix of inference, evidence-based reasoning, vocabulary in context, and central idea/theme.
+- Do NOT make all 5 questions the same type.
+- Each question must require thinking, not simple recall.
+- Students should need to combine information from the passage.
+- Avoid questions that can be answered by copying one sentence.
 - Grade readability lock (must override level language changes):
   - max words per sentence: ${constraints.maxWordsPerSentence}
   - max sentence count target: ${constraints.maxSentences}
   - vocabulary band: ${constraints.vocab}
   - abstract language allowance: ${String(constraints.allowAbstract)}
   - passage length signal: ${constraints.passageLength}
-- Passage genre lock: informational text ONLY. No stories, no characters, no narrative events, no character names.
 - Generate exactly 5 STAAR-style reading questions tied directly to that passage.
 - Vary passage topic and structure across generations; use a different scenario, setting, and context each time.
 - Questions should typically require inference or combining details when appropriate.
@@ -760,6 +810,21 @@ ${mainIdeaStemRule}
 - RIGOR ENGINE: ${rigorEngineRules}
 - Use clear, student-friendly STAAR language.
 - Every question has 4 distinct, specific answer choices.
+- FINAL SELF-CHECK (REQUIRED):
+  1) Passage Check:
+     - Does the passage match ${textType || "fiction"} requirements?
+     - If poem: does it include line breaks AND figurative language?
+  2) Answer Check:
+     - Are all answer choices complete sentences?
+     - Are any answers cut off or incomplete?
+  3) Quality Check:
+     - Do questions require thinking (not just recall)?
+     - Do distractors feel realistic and challenging?
+  4) Question-Type Check:
+     - Do the questions match the selected text type?
+     - Does at least one question target the key skill for that text type?
+     - Are questions varied and rigorous?
+  - If anything fails, revise before returning.
 - No markdown. JSON only.`;
   }
 
@@ -972,6 +1037,9 @@ ${JSON.stringify(practiceQuestions.slice(0, 5))}
 
 Rules:
 - CROSS-CURRICULAR MODE ONLY.
+- CROSS MODE RULE (LOCK THIS):
+  - ALWAYS generate a nonfiction/informational passage.
+  - Focus on real-world, scientific, or social studies context.
 - Context Type: ${contextType}
 - CRITICAL: Generate a NEW passage (250–300 words).
 - Passage MUST be different from practice passage.
@@ -985,6 +1053,12 @@ Rules:
 - Cross questions must be different from practice questions.
 - ALL questions in BOTH practice and cross must assess the selected skill exactly: ${skill}.
 - Cross questions MUST be subject-driven for ${subject}.
+- Cross-Curricular question focus (nonfiction):
+  - central idea
+  - supporting evidence
+  - cause and effect
+  - academic vocabulary in context
+  - logical reasoning based on data or details
 - DO NOT force question variety.
 - Generate the BEST 5 questions for the passage.
 - Prioritize inference and evidence-based reasoning.
@@ -1034,6 +1108,8 @@ function buildGenerationPrompt(params: {
     "scientific investigation",
   ];
   const selectedSeed = pickRandom(variationSeed);
+  const elarTextTypes: Array<"fiction" | "poem" | "drama"> = ["fiction", "poem", "drama"];
+  const selectedTextType = pickRandom(elarTextTypes);
 
   if (params.mode === "core") {
     return buildCorePrompt({
@@ -1041,6 +1117,7 @@ function buildGenerationPrompt(params: {
       subject: params.subject,
       skill: params.skill,
       level: params.level,
+      textType: params.subject === "Reading" ? selectedTextType : undefined,
       teksCode: params.teksCode,
       contextType: selectedSeed,
     });
@@ -4297,12 +4374,6 @@ serve(async (req) => {
             if (violatesGradeLevel(rawPassage, grade)) {
               console.warn("⚠️ Passage too advanced — retrying AI generation for grade:", grade);
               markRetry("grade_violation");
-              continue;
-            }
-            if (hasNarrativeReadingSignals(rawPassage)) {
-              console.log("🧪 Narrative detected preview:", rawPassage.slice(0, 100));
-              console.warn("⚠️ Narrative reading passage detected; regenerating once with informational lock.");
-              markRetry("narrative_output_filtered");
               continue;
             }
             safePassage = enforceSentenceLength(rawPassage, constraints.maxWordsPerSentence);
