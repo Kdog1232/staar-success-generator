@@ -3924,24 +3924,33 @@ serve(async (req) => {
     };
   };
   const returnCore = async (data: CoreResponse) => {
-    let practiceQuestions = data?.practice?.questions || [];
-    practiceQuestions = practiceQuestions.filter((q) => {
-      const valid = isValidQuestion(q, data?.passage || "");
+    const practice = {
+      questions: [...(data?.practice?.questions || [])],
+    };
+    const practicePassage = data?.passage || "";
+
+    practice.questions = practice.questions.filter((q) => {
+      const valid = isValidQuestion(q, practicePassage);
+
       if (!valid) {
-        console.warn("❌ Dropping bad question:", q.question);
+        console.warn("❌ Dropping bad practice question:", q.question);
       }
+
       return valid;
     });
-    if (practiceQuestions.length < 5) {
-      console.warn("⚠️ Not enough valid questions — filling fallback");
-      const needed = 5 - practiceQuestions.length;
+
+    if (practice.questions.length < 5) {
+      console.warn("⚠️ Filling missing practice questions");
+
+      const needed = 5 - practice.questions.length;
+
       for (let i = 0; i < needed; i++) {
-        practiceQuestions.push({
+        practice.questions.push({
           type: "mc",
           question: "Which idea is BEST supported by the passage?",
           choices: getFallbackChoices(subject, skill),
           correct_answer: "A",
-          explanation: "Review the passage and identify the strongest supporting detail.",
+          explanation: "Use details from the passage to determine the best answer.",
         });
       }
     }
@@ -3950,22 +3959,33 @@ serve(async (req) => {
       subject,
       skill,
       level,
-      practiceQuestions,
+      practiceQuestions: practice.questions,
     });
     cross.questions = cross.questions.map((q) => validateMCQuestion(q, cross.passage));
-    cross.questions = cross.questions.filter((q) =>
-      isValidQuestion(q, cross.passage)
-    );
+    const crossPassage = cross?.passage || "";
+
+    cross.questions = cross.questions.filter((q) => {
+      const valid = isValidQuestion(q, crossPassage);
+
+      if (!valid) {
+        console.warn("❌ Dropping bad cross question:", q.question);
+      }
+
+      return valid;
+    });
+
     if (cross.questions.length < 5) {
       console.warn("⚠️ Filling missing cross questions");
+
       const needed = 5 - cross.questions.length;
+
       for (let i = 0; i < needed; i++) {
         cross.questions.push({
           type: "mc",
           question: "Which idea is BEST supported by the passage?",
           choices: getFallbackChoices(subject, skill),
           correct_answer: "A",
-          explanation: "Use details from the passage to determine the best answer.",
+          explanation: "Use passage evidence to determine the best answer.",
         });
       }
     }
@@ -3987,15 +4007,15 @@ serve(async (req) => {
         }
         : {}),
       practice: {
-        questions: practiceQuestions,
+        questions: practice.questions,
       },
       cross,
       tutor: {
-        practice: sanitizeTutorExplanations([], practiceQuestions, subject, "practice"),
+        practice: sanitizeTutorExplanations([], practice.questions, subject, "practice"),
         cross: sanitizeTutorExplanations([], cross.questions, subject, "cross", cross.passage),
       },
       answerKey: {
-        practice: sanitizeAnswerKey([], practiceQuestions, subject, sanitizeTutorExplanations([], practiceQuestions, subject, "practice"), "practice"),
+        practice: sanitizeAnswerKey([], practice.questions, subject, sanitizeTutorExplanations([], practice.questions, subject, "practice"), "practice"),
         cross: sanitizeAnswerKey(
           [],
           cross.questions,
@@ -4012,9 +4032,15 @@ serve(async (req) => {
       const practiceQuestions = (data as Partial<WorkerAttempt>)?.practice?.questions || [];
       const crossPassage = String(data?.cross?.passage || "");
       let crossQuestions = (data?.cross?.questions || []).map((q) => validateMCQuestion(q, crossPassage));
-      crossQuestions = crossQuestions.filter((q) =>
-        isValidQuestion(q, crossPassage)
-      );
+      crossQuestions = crossQuestions.filter((q) => {
+        const valid = isValidQuestion(q, crossPassage);
+
+        if (!valid) {
+          console.warn("❌ Dropping bad cross question:", q.question);
+        }
+
+        return valid;
+      });
       if (crossQuestions.length < 5) {
         console.warn("⚠️ Filling missing cross questions");
         const needed = 5 - crossQuestions.length;
