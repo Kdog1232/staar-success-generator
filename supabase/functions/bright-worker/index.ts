@@ -298,6 +298,35 @@ function scoreEvidenceSentence(sentence: string, keywords: string[]): number {
   return score;
 }
 
+function getBetterSnippet(passage: PassageContent | string, answer: string): string | null {
+  const sentences = getPassageText(passage)
+    .split(/[.!?\n]+/)
+    .map((s) => s.trim())
+    .filter((s) => Boolean(s) && !isBlockedEvidenceSnippet(s));
+  const answerTokens = String(answer || "")
+    .toLowerCase()
+    .split(/\s+/)
+    .map((word) => word.replace(/[^a-z0-9-]/g, ""))
+    .filter((word) => word.length > 4);
+
+  return sentences.find((sentence) =>
+    answerTokens.some((word) => sentence.toLowerCase().includes(word))
+  ) || null;
+}
+
+function extractKeyConcept(answer: string): string {
+  const concepts = String(answer || "")
+    .replace(/[^a-zA-Z0-9\s-]/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 4)
+    .slice(0, 3);
+  return concepts.join(" ") || "the key details";
+}
+
+function buildGuidedFallbackExplanation(correctChoice: string): string {
+  return `The correct answer is supported by the passage’s overall idea. The details about ${extractKeyConcept(correctChoice)} show why this choice is correct.`;
+}
+
 function getRelevantSnippet(
   passage: PassageContent | string,
   question: string,
@@ -326,7 +355,9 @@ function getRelevantSnippet(
     }
   }
 
-  if (!best || bestScore < 2 || isBlockedEvidenceSnippet(best)) return null;
+  if (!best || bestScore < 1 || isBlockedEvidenceSnippet(best)) {
+    return getBetterSnippet(passage, correctChoice || question);
+  }
   return best;
 }
 
@@ -369,10 +400,14 @@ Final Answer: ${correctAnswer}`;
 
 function teacherStyleExplanation(passage: PassageContent | string, question: string, correctChoice = ""): string {
   const snippet = getRelevantSnippet(passage, question, correctChoice);
-  if (!snippet || !supportsMeaning(snippet, correctChoice)) {
-    return "This answer requires combining multiple details from the passage. Re-read carefully to identify supporting evidence.";
+  const hasStrongSnippet = Boolean(snippet) && supportsMeaning(String(snippet || ""), correctChoice);
+  if (hasStrongSnippet) {
+    return `${getExplanationStarter()}: "${snippet}". This detail helps explain why the correct choice is the strongest answer when compared to the other options.`;
   }
-  return `${getExplanationStarter()}: "${snippet}". This detail helps explain why the correct choice is the strongest answer when compared to the other options.`;
+  if (snippet) {
+    return `The passage states: "${snippet}." This clue points to ${extractKeyConcept(correctChoice)}, which helps confirm the best answer.`;
+  }
+  return buildGuidedFallbackExplanation(correctChoice);
 }
 
 function buildCrossExplanation(passage: PassageContent | string, question: string, correctChoice = ""): string {
@@ -471,6 +506,72 @@ function routeBySkill(skill: string): "vocab" | "main_idea" | "inference" | "the
   if (normalized.includes("infer")) return "inference";
   if (normalized.includes("theme")) return "theme";
   return "generic";
+}
+
+type UniversalSkillType = "theme" | "inference" | "author_purpose" | "character" | "central_idea" | "general";
+
+type SkillContract = {
+  mustAsk: string[];
+  banned: string[];
+};
+
+const SKILL_CONTRACTS: Record<UniversalSkillType, SkillContract> = {
+  theme: {
+    mustAsk: ["message", "lesson", "theme"],
+    banned: ["what happened", "who", "when"],
+  },
+  inference: {
+    mustAsk: ["conclude", "infer", "suggest"],
+    banned: ["directly stated", "according to paragraph"],
+  },
+  author_purpose: {
+    mustAsk: ["why did the author", "purpose", "include"],
+    banned: ["what happened", "who did"],
+  },
+  character: {
+    mustAsk: ["trait", "character", "behavior"],
+    banned: ["main idea", "theme"],
+  },
+  central_idea: {
+    mustAsk: ["central idea", "main idea", "best summary"],
+    banned: ["character trait", "line of dialogue"],
+  },
+  general: {
+    mustAsk: [],
+    banned: [],
+  },
+};
+
+function getSkillType(skill: string): UniversalSkillType {
+  const s = String(skill || "").toLowerCase();
+  if (s.includes("theme")) return "theme";
+  if (s.includes("inference")) return "inference";
+  if (s.includes("author")) return "author_purpose";
+  if (s.includes("character")) return "character";
+  if (s.includes("central idea")) return "central_idea";
+  return "general";
+}
+
+function validateQuestionAlignment(question: string, skill: string): boolean {
+  const type = getSkillType(skill);
+  const contract = SKILL_CONTRACTS[type];
+  const q = String(question || "").toLowerCase();
+
+  const hasRequired = contract.mustAsk.length === 0 ||
+    contract.mustAsk.some((term) => q.includes(term));
+  const hasBanned = contract.banned.some((term) => q.includes(term));
+  return hasRequired && !hasBanned;
+}
+
+function validateChoiceAlignment(choice: string, skillType: UniversalSkillType): boolean {
+  const c = String(choice || "").toLowerCase();
+  if (skillType === "author_purpose") {
+    return c.includes("author") || c.includes("purpose") || c.includes("show");
+  }
+  if (skillType === "theme") {
+    return c.includes("message") || c.includes("lesson") || c.includes("shows");
+  }
+  return true;
 }
 
 type SkillType = ReturnType<typeof routeBySkill>;
@@ -1403,12 +1504,12 @@ function buildSubjectPassage(subject: CanonicalSubject, level: Level = "On Level
   }
 
   if (rigor.passage === "simple") {
-    return "A school newspaper team read interviews and survey notes. Some students liked short articles. Others liked longer stories with more examples. Editors checked details to make sure claims matched evidence. They revised headlines to fit what sources actually said.";
+    return "A class reading team compared two articles about free-time reading. Some students preferred short texts for quick facts. Others preferred longer pieces with more examples. Students checked details to make sure each claim matched the text evidence. They revised their summary to reflect the strongest support.";
   }
   if (rigor.passage === "complex") {
-    return "A school newspaper team analyzed interviews, survey data, and meeting notes to explain why students preferred different reading formats. Some readers valued short articles for quick access to key points, while others favored long-form features that developed ideas through examples and context.\n\nAs editors compared quotations across sources, they noticed how wording choices could shift meaning and create apparent disagreement. They revised claims, reorganized evidence, and adjusted headlines to better reflect what the strongest sources supported. Their final publication argued that careful comparison of language and evidence leads to more reliable conclusions, especially when two reports seem to conflict at first glance.";
+    return "A class reading team analyzed two reports to explain why students preferred different reading formats. Some readers valued short passages for quick access to key points, while others favored long-form pieces that developed ideas through examples and context.\n\nAs students compared quotations across the reports, they noticed how wording choices could shift meaning and create apparent disagreement. They revised claims, reorganized evidence, and adjusted conclusions to better reflect what the strongest details supported. Their final write-up argued that careful comparison of language and evidence leads to more reliable conclusions, especially when two texts seem to conflict at first glance.";
   }
-  return "A school newspaper team reviewed interviews, survey results, and meeting notes to understand why students preferred different reading formats. Some students said short articles helped them find key ideas quickly, while others preferred longer features with more examples and context. Editors compared quotations, checked which claims were supported by multiple sources, and revised headlines to match the evidence in each story. When two reports appeared to conflict, the team re-read the original statements and identified how word choice changed the meaning. Their final publication explained how careful reading and evidence-based reasoning led to clearer conclusions.";
+  return "A class reading team reviewed two text sets to understand why students preferred different reading formats. Some students said shorter pieces helped them find key ideas quickly, while others preferred longer selections with more examples and context. Students compared quotations, checked which claims were supported by multiple details, and revised conclusions to match the strongest evidence in each text. When two sources appeared to conflict, the team re-read the original lines and identified how word choice changed meaning. Their final report explained how careful reading and evidence-based reasoning led to clearer conclusions.";
 }
 
 function buildMathFallbackChoices(): [string, string, string, string] {
@@ -1742,11 +1843,7 @@ function isVocabStyleQuestion(questionText: string): boolean {
 function cleanChoice(text: string): string {
   const cleaned = String(text || "").trim();
   if (!cleaned) return cleaned;
-  if (cleaned.split(/\s+/).length < 8) {
-    return `${cleaned} which is supported by details in the passage.`;
-  }
-
-  if (!cleaned.endsWith(".") && cleaned.split(/\s+/).length >= 8) {
+  if (!cleaned.endsWith(".") && cleaned.split(/\s+/).length >= 4) {
     return `${cleaned}.`;
   }
 
@@ -1958,6 +2055,25 @@ function isWeakQuestion(q: Question): boolean {
   });
 }
 
+function finalValidation(question: Question, passageText: string, subject: CanonicalSubject): boolean {
+  if (!question || !Array.isArray(question.choices) || question.choices.length !== 4) return false;
+  const combined = `${question.question || ""} ${question.choices.join(" ")}`.toLowerCase();
+  const blockedTerms = ["newspaper", "interview", "survey", "meeting"];
+  if (subject === "Reading" && blockedTerms.some((term) => combined.includes(term))) {
+    return false;
+  }
+
+  if (new Set(question.choices.map((choice) => String(choice || "").trim().toLowerCase())).size < 4) {
+    return false;
+  }
+
+  if (passageText.trim().length > 0 && !hasLooseSupport(passageText, combined)) {
+    return false;
+  }
+
+  return true;
+}
+
 function repairQuestion(q: Question, subject: CanonicalSubject, passage: PassageContent | string): Question {
   if (isValidQuestion(q, passage)) return q;
 
@@ -2095,7 +2211,7 @@ function validateMCQuestion(
   const syncedExplanation = finalChoice
     ? evidenceSnippet
       ? `The correct answer is ${resolvedCorrectLetter} because the passage states: "${evidenceSnippet}." This supports "${finalChoice}".`
-      : "This answer requires combining multiple details from the passage. Re-read carefully to identify supporting evidence."
+      : buildGuidedFallbackExplanation(finalChoice)
     : String(q.explanation || "").trim();
 
   return {
@@ -2283,8 +2399,12 @@ function extractEvidenceSnippet(passage: string, keywords: string[], answer = ""
     }
   }
 
-  if (!best || bestScore < 2 || isBlockedEvidenceSnippet(best)) return null;
-  if (answer && !supportsMeaning(best, answer)) return null;
+  if (!best || bestScore < 1 || isBlockedEvidenceSnippet(best)) {
+    return getBetterSnippet(passage, answer || keywords.join(" "));
+  }
+  if (answer && !supportsMeaning(best, answer)) {
+    return getBetterSnippet(passage, answer);
+  }
   return best;
 }
 
@@ -2591,8 +2711,12 @@ function buildSupportContent(
   );
   const distractorAnalysis = buildSubjectDistractors(q, passageText, subject);
   const thinkingType = detectThinkingType(questionText);
-  const hasEvidence = Boolean(snippet) && supportsMeaning(String(snippet || ""), String(correctChoice || ""));
-  const noEvidenceMessage = "This answer requires combining multiple details from the passage. Re-read carefully to identify supporting evidence.";
+  const hasStrongEvidence = Boolean(snippet) && supportsMeaning(String(snippet || ""), String(correctChoice || ""));
+  const hasWeakEvidence = Boolean(snippet) && !hasStrongEvidence;
+  const noEvidenceMessage = buildGuidedFallbackExplanation(String(correctChoice || ""));
+  const semiSpecificMessage = snippet
+    ? `The passage states: "${snippet}." This clue supports ${extractKeyConcept(String(correctChoice || ""))}, which leads to the correct answer.`
+    : noEvidenceMessage;
   const safeGenericExplanation = noEvidenceMessage;
   if (shouldUsePassage && !hasLooseSupport(passageText, String(correctChoice || ""))) {
     console.warn("🚨 BAD EXPLANATION BLOCKED");
@@ -2616,12 +2740,16 @@ function buildSupportContent(
   let explanation = subject === "Math"
     ? "Start by identifying what the problem is asking. Then solve step by step by choosing the correct operation, calculating carefully, and checking whether the result is reasonable."
     : subject === "Science"
-    ? hasEvidence
+    ? hasStrongEvidence
       ? `This question requires understanding cause and effect in a system. The data or details show a relationship that leads to the best-supported conclusion, especially in: "${snippet}."`
+      : hasWeakEvidence
+      ? semiSpecificMessage
       : noEvidenceMessage
     : subject === "Social Studies"
-    ? hasEvidence
+    ? hasStrongEvidence
       ? `This question asks you to reason through historical context and decisions. Use the situation described in the source to identify the most supported outcome, such as: "${snippet}."`
+      : hasWeakEvidence
+      ? semiSpecificMessage
       : noEvidenceMessage
     : `
 The correct answer is supported by the passage. For example, the text states:
@@ -2630,8 +2758,12 @@ The correct answer is supported by the passage. For example, the text states:
 A strong reader uses this evidence to connect directly to the question. This detail helps confirm why the correct answer is the best choice.
 `.trim();
 
-  if ((subject === "Reading" || shouldUsePassage) && !hasEvidence) {
-    explanation = noEvidenceMessage;
+  if (subject === "Reading" || shouldUsePassage) {
+    if (!hasStrongEvidence && hasWeakEvidence) {
+      explanation = semiSpecificMessage;
+    } else if (!hasStrongEvidence) {
+      explanation = noEvidenceMessage;
+    }
   }
 
   if (thinkingType === "inference") {
@@ -3816,6 +3948,7 @@ function sanitizeQuestions(
   });
   const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
   void grade;
+  const requestedSkillType = getSkillType(skill);
   const sanitized: Question[] = incoming.map((item, i) => {
     const q = item && typeof item === "object" ? item as Record<string, unknown> : {};
     if (
@@ -3870,6 +4003,15 @@ function sanitizeQuestions(
       }
     }
 
+    if (!validateQuestionAlignment(normalizedQuestionText, skill)) {
+      const rebuilt = buildUniversalFallbackQuestion(subject, getPassageText(passage), skill, i, level);
+      normalizedQuestionText = rebuilt.question;
+      normalizedChoices = rebuilt.choices.map(cleanAnswerChoice) as [string, string, string, string];
+    }
+    if (!normalizedChoices.every((choice) => validateChoiceAlignment(choice, requestedSkillType))) {
+      normalizedChoices = getFallbackChoices(subject, skill).map(cleanAnswerChoice) as [string, string, string, string];
+    }
+
     const base: Question = {
       type,
       question: normalizedQuestionText,
@@ -3902,6 +4044,29 @@ function sanitizeQuestions(
       if (q.choices.some((c) => String(c || "").toLowerCase().includes("proves that"))) return false;
       return true;
     });
+
+  questions = questions.map((q, idx) => {
+    if (validateQuestionAlignment(q.question, skill)) return q;
+    console.warn("🚨 Skill misalignment — rebuilding question", { index: idx, skill });
+    return repairQuestion(
+      buildUniversalFallbackQuestion(subject, passageText, skill, idx, level),
+      subject,
+      passageText,
+    );
+  });
+
+  questions = questions.map((q) => {
+    if (finalValidation(q, passageText, subject)) return q;
+    console.warn("🚨 FINAL VALIDATION FAILED — rebuilding question");
+    const rebuilt = rebuildQuestionFromPassage(q, subject, passageText, level);
+    if (finalValidation(rebuilt, passageText, subject)) return rebuilt;
+    return repairQuestion(
+      buildUniversalFallbackQuestion(subject, passageText, skill, 0, level),
+      subject,
+      passageText,
+    );
+  });
+
   if (questions.length < 5) {
     console.warn("⚠️ Not enough valid questions — regenerating weak ones");
 
@@ -3948,22 +4113,71 @@ function sanitizeQuestions(
 
 function validateSkillAlignment(skill: string, questions: Question[]): boolean {
   if (!skill || !Array.isArray(questions) || questions.length === 0) return false;
-  const tokens = String(skill)
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((token) => token.length > 3);
+  const requestedSkillType = getSkillType(skill);
   return questions.every((q) => {
-    const text = `${q?.question || ""} ${(q?.choices || []).join(" ")}`.toLowerCase();
-    const overlap = tokens.filter((token) => text.includes(token)).length;
-    if (tokens.length <= 2) return overlap >= 1;
-    return overlap >= 2;
+    const questionAligned = validateQuestionAlignment(q?.question || "", skill);
+    const choicesAligned = Array.isArray(q?.choices) &&
+      q.choices.every((choice) => validateChoiceAlignment(String(choice || ""), requestedSkillType));
+    return questionAligned && choicesAligned;
   });
 }
 
 function getPassageText(passage: PassageContent | string): string {
   if (typeof passage === "string") return passage;
   return `${passage?.text_1 || ""} ${passage?.text_2 || ""}`.trim();
+}
+
+function looksLikeDramaPassage(passage: string): boolean {
+  const text = String(passage || "").trim();
+  if (!text) return false;
+  if (/^characters\s*:/im.test(text) || /^setting\s*:/im.test(text)) return true;
+  const speakerLines = text.match(/^[A-Z][a-zA-Z]{1,20}\s*:/gm) || [];
+  return speakerLines.length >= 2;
+}
+
+function ensureDramaScriptFormat(passage: string): string {
+  const raw = String(passage || "").replace(/\r\n/g, "\n").trim();
+  if (!raw) return raw;
+  const lines = raw.split("\n").map((line) => line.trim()).filter(Boolean);
+  const title = lines[0] && !/:/.test(lines[0]) ? lines[0] : "The Choice";
+
+  const existingCharacters = raw.match(/^[A-Z][a-zA-Z]{1,20}\s*:/gm) || [];
+  const characterNames = Array.from(new Set(
+    existingCharacters.map((line) => line.replace(/:.*/, "").trim()),
+  ));
+  const defaultCharacters = characterNames.length >= 2 ? characterNames : ["Max", "Lila"];
+
+  const settingMatch = raw.match(/setting\s*:\s*(.+)/i);
+  const setting = settingMatch?.[1]?.trim() || "A school cafeteria during lunch";
+
+  const dialogueLines = lines
+    .filter((line) => /:/.test(line))
+    .map((line) => {
+      const [speakerRaw, ...rest] = line.split(":");
+      const speaker = speakerRaw.trim();
+      const dialogue = rest.join(":").trim();
+      if (!speaker || !dialogue) return "";
+      if (/^\(.+\)\s*$/.test(dialogue)) return `${speaker}: ${dialogue}\n...`;
+      return `${speaker}: ${dialogue}`;
+    })
+    .filter(Boolean);
+
+  if (dialogueLines.length === 0) {
+    dialogueLines.push(
+      `${defaultCharacters[0]}: (sitting at a table, looking worried) I can’t believe I have to choose.`,
+      `${defaultCharacters[1]}: (sipping juice) Why not do both?`,
+    );
+  }
+
+  return `${title}
+
+Characters:
+${defaultCharacters.join("\n")}
+
+Setting:
+${setting}
+
+${dialogueLines.join("\n\n")}`.trim();
 }
 
 function validatePassageComplexity(level: Level, passage: PassageContent | string): boolean {
@@ -5212,6 +5426,9 @@ serve(async (req) => {
               continue;
             }
             safePassage = enforceSentenceLength(rawPassage, constraints.maxWordsPerSentence);
+            if (looksLikeDramaPassage(safePassage)) {
+              safePassage = ensureDramaScriptFormat(safePassage);
+            }
           }
 
           const parsedPractice = parsed?.practice && typeof parsed.practice === "object"
