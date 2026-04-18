@@ -1320,7 +1320,8 @@ GRADE-LEVEL ADAPTATION
 
 ANSWER CHOICE RULES
 - Each answer choice MUST fully answer the question.
-- ALL 4 choices must reference the passage explicitly.
+- All answer choices should be plausible based on the passage,
+  but do not need to directly quote or explicitly reference passage details.
 - Include real details, events, or outcomes in each choice.
 - Answer choices should:
   - be grounded in the passage
