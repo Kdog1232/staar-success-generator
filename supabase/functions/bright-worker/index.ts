@@ -1818,9 +1818,10 @@ function normalizeVocabChoices(choices: string[]): [string, string, string, stri
   return cleaned.slice(0, 4) as [string, string, string, string];
 }
 
-function isValidVocabTarget(passage: string, word: string): boolean {
-  if (!passage || !word) return false;
-  return passage.toLowerCase().includes(word.toLowerCase());
+function isValidVocabTarget(passage: PassageContent | string, word: string): boolean {
+  const passageText = getPassageText(passage);
+  if (!passageText || !word) return false;
+  return passageText.toLowerCase().includes(word.toLowerCase());
 }
 
 function cleanAnswerChoice(choice: string): string {
@@ -4521,8 +4522,8 @@ function validateChoiceSubjectAlignment(subject: CanonicalSubject, questions: Qu
   });
 }
 
-function validateCrossPassage(passage: string): boolean {
-  const text = passage.toLowerCase();
+function validateCrossPassage(passage: PassageContent | string): boolean {
+  const text = getPassageText(passage).toLowerCase();
   return !text.includes("students read an informational text");
 }
 
@@ -4538,8 +4539,8 @@ function ensureQuestionId(question: Question, index: number, mode: "practice" | 
   return `${mode}_q${index + 1}`;
 }
 
-function extractKeyTopic(passage: string): string {
-  const keys = passageKeywords(String(passage || ""));
+function extractKeyTopic(passage: PassageContent | string): string {
+  const keys = passageKeywords(getPassageText(passage));
   return keys[0] || "the passage topic";
 }
 
