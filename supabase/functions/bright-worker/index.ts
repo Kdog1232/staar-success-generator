@@ -1100,7 +1100,7 @@ function getFallbackChoices(subject: CanonicalSubject, skill: string): [string, 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
   const clean = Array.isArray(choices) ? choices.slice(0, 4) : [];
 
-  while (clean.length < 4) clean.push("");
+ while (clean.length < 4) clean.push("Placeholder answer choice");   
 
   return clean.map((c) =>
     String(c || "")
@@ -1109,19 +1109,25 @@ function normalizeChoices(choices: unknown): [string, string, string, string] {
   ) as [string, string, string, string];
 }
 
-function normalizeAnswer(letter: unknown): ChoiceLetter {
-  const v = String(letter ?? "A").trim().toUpperCase();
-  if (v.startsWith("B")) return "B";
-  if (v.startsWith("C")) return "C";
-  if (v.startsWith("D")) return "D";
+function normalizeAnswer(letter: unknown): ChoiceLetter | null {function normalizeAnswer(letter: unknown): ChoiceLetter {
+  const v = String(letter ?? "").trim().toUpperCase()
+
+  if (v === "A" || v === "B" || v === "C" || v === "D") return v;
+
+  console.warn("⚠️ normalizeAnswer invalid:", letter);
   return "A";
 }
 
 function safeCorrectAnswer(value: unknown): ChoiceLetter {
   const v = String(value ?? "").trim().toUpperCase();
-  if (v === "A" || v === "B" || v === "C" || v === "D") return v;
-  console.error("❌ INVALID ANSWER DETECTED:", value);
-  throw new Error("Invalid correct_answer — preventing silent corruption");
+
+  if (v === "A" || v === "B" || v === "C" || v === "D") {
+    return v;
+  }
+
+  console.error("❌ Invalid correct_answer:", value);
+
+  return "A"; // HARD FALLBACK (prevents crashes)
 }
 
 function parseAnswerLetter(value: unknown): ChoiceLetter | null {
@@ -1142,7 +1148,12 @@ function getCorrectChoice(q: Question): string {
   const letters: ChoiceLetter[] = ["A", "B", "C", "D"];
   if (!Array.isArray(q.choices) || q.choices.length !== 4) return "";
   const answer = q.correct_answer;
-  if (typeof answer !== "string") return "";
+  if (typeof answer !== "string") {
+  if (typeof answer === "object" && answer !== null) {
+    if ("partA" in answer) return answer.partA;
+  }
+  return "";
+}
   const idx = letters.indexOf(answer as ChoiceLetter);
   return idx >= 0 ? String(q.choices[idx] || "").trim() : "";
 }
@@ -1201,15 +1212,36 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
   }
 
   const choices = normalizeChoices(q.choices);
-  const { letter: originalLetter } = getQuestionCorrectPair({ ...q, choices });
-  const startingLetter = originalLetter || "A";
-  const correctText = String(choices[LETTERS.indexOf(startingLetter)] || "").trim();
+  const safeAnswer = safeCorrectAnswer(q.correct_answer);
+const { letter: originalLetter } = getQuestionCorrectPair({
+  ...q,
+  choices,
+  correct_answer: safeAnswer,
+});
+
+if (!originalLetter){
+  console.warn("⚠️ Invalid correct_answer — forcing fallback to A");
+
+  return {
+  ...q,
+  choices,
+  correct_answer: safeCorrectAnswer(q.correct_answer),
+  explanation: String(q.explanation || "Answer corrected due to invalid response."),
+};
+}
+
+const startingLetter = originalLetter || "A";
+
+const correctText = String(
+  choices[LETTERS.indexOf(startingLetter)] || ""
+).trim();
 
   const passageText = String(getPassageText(passage) || "");
   const isSupported = hasLooseSupport(passageText, correctText) || hasPassageSupportForChoice(passageText, correctText);
   void isSupported;
   // 🔒 DO NOT TOUCH AI ANSWERS — EVER
-  const resolvedCorrectLetter: ChoiceLetter = startingLetter;
+  const resolvedCorrectLetter: ChoiceLetter =
+  startingLetter || shuffledLetters()[0];
 
   const finalChoice = String(choices[LETTERS.indexOf(resolvedCorrectLetter)] || "").trim();
   const evidenceSnippet = extractEvidenceSnippet(
@@ -1232,23 +1264,26 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
     explanation: syncedExplanation,
   };
 }
-
-function normalizeMultiSelectAnswer(value: unknown): [ChoiceLetter, ChoiceLetter] {
+function normalizeMultiSelectAnswer(value: unknown): ChoiceLetter[] {
   const raw = Array.isArray(value) ? value : [];
-  const normalized = raw
-    .map((entry) => normalizeAnswer(entry))
-    .filter((entry, index, list) => list.indexOf(entry) === index);
 
-  if (normalized.length >= 2) return [normalized[0], normalized[1]];
-  if (normalized.length === 1) return [normalized[0], normalized[0] === "A" ? "C" : "A"];
-  return ["A", "C"];
+  return raw
+    .map((entry) => normalizeAnswer(entry))
+    .filter((v): v is ChoiceLetter => v !== null);
 }
 
 function normalizePartABAnswer(value: unknown): PartABAnswer {
-  const entry = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const entry =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
+
+  const partA = normalizeAnswer(entry.partA);
+  const partB = normalizeAnswer(entry.partB);
+
   return {
-    partA: normalizeAnswer(entry.partA || "A"),
-    partB: normalizeAnswer(entry.partB || "B"),
+    partA: partA || "A",
+    partB: partB || "B",
   };
 }
 
@@ -3014,12 +3049,12 @@ function sanitizeQuestions(
   grade = 5,
 ): Question[] {
   const buildSafeMC = (questionText = "", explanationText = ""): Question => ({
-    type: "mc",
-    question: String(questionText || "").trim() || "Placeholder",
-    choices: ["Option A", "Option B", "Option C", "Option D"],
-    correct_answer: "A",
-    explanation: String(explanationText || "").trim(),
-  });
+  type: "mc",
+  question: String(questionText || "").trim() || "Placeholder",
+  choices: ["Option A", "Option B", "Option C", "Option D"],
+  correct_answer: safeCorrectAnswer(q.correct_answer),
+  explanation: String(explanationText || "").trim(),
+});
   const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
   void level;
   void grade;
