@@ -2344,7 +2344,7 @@ function validateMCQuestion(
   };
 
   if (q.choices.some((c) => isCopied(String(c || ""), passageText))) {
-    console.warn("⚠️ Choices copy passage verbatim — filtering question");
+    console.warn("⚠️ Choices copy passage verbatim — keeping question");
   }
   let safeAnswer = safeCorrectAnswer(q.correct_answer);
   const hasBrokenChoices = !Array.isArray(choices) || choices.length !== 4;
@@ -4257,27 +4257,28 @@ function sanitizeQuestions(
 
   let weakCount = 0;
   let skillWarningCount = 0;
-  const filteredQuestions = questions.filter((q) => {
+  questions = questions.map((q) => {
     if (!matchesSkill(q, skill)) {
       skillWarningCount += 1;
+      console.warn("⚠️ Skill misalignment — keeping question");
     }
     const valid = isValidQuestion(q, passageText) && hasReasonableAlignment(q, passageText);
     if (!valid) {
       weakCount += 1;
+      console.warn("⚠️ Bad answers detected — keeping question");
+      return repairQuestion(q, subject, passageText);
     }
-    return valid;
+    return q;
   });
   if (weakCount > 0) {
-    console.warn(`Filtered out ${weakCount} weak questions`);
+    console.warn(`⚠️ Weak question warnings on ${weakCount} questions — kept and repaired`);
   }
   if (skillWarningCount > 0) {
-    console.warn(`⚠️ Skill warnings on ${skillWarningCount} questions — keeping usable items`);
+    console.warn(`⚠️ Skill warnings on ${skillWarningCount} questions — keeping all questions`);
   }
-  if (filteredQuestions.length === 0) {
-    console.warn("No strong questions — using original AI output");
+  if (questions.length === 0 && originalQuestions.length > 0) {
+    console.warn("No questions after validation pass — restoring original AI output");
     questions = originalQuestions;
-  } else {
-    questions = filteredQuestions;
   }
 
   let attempts = 0;
@@ -4306,19 +4307,11 @@ function sanitizeQuestions(
   });
 
   if (questions.length < 5) {
-    console.warn("⚠️ Not enough valid questions — regenerating weak ones");
-
-    while (questions.length < 5) {
-      const lastQuestion = questions[questions.length - 1];
-      if (!lastQuestion) break;
-      questions.push({
-        ...lastQuestion,
-        choices: [...lastQuestion.choices],
-      });
-    }
+    console.warn("⚠️ Fewer than 5 questions after validation — keeping available questions without regeneration");
   }
-  console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", questions.length);
-  const alignedSet = questions;
+  const finalQuestions = questions.slice(0, 5);
+  console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", finalQuestions.length);
+  const alignedSet = finalQuestions;
   if (!isPassageBased(mode, subject)) {
     for (const q of alignedSet) {
       if (!Array.isArray(q.choices) || q.choices.length !== 4) continue;
@@ -4335,12 +4328,21 @@ function sanitizeQuestions(
   }
 
   if (mode === "Cross-Curricular") {
-    const validatedCross = alignedSet.filter((question) => {
-      if (!Array.isArray(question.choices) || question.choices.length !== 4) return false;
-      if (typeof question.correct_answer !== "string") return false;
-      if (!["A", "B", "C", "D"].includes(question.correct_answer)) return false;
-      if (!String(question.explanation || "").trim()) return false;
-      return true;
+    const validatedCross = alignedSet.map((question) => {
+      const needsChoiceRepair = !Array.isArray(question.choices) || question.choices.length !== 4;
+      const needsAnswerRepair = typeof question.correct_answer !== "string"
+        || !["A", "B", "C", "D"].includes(question.correct_answer);
+      const needsExplanationRepair = !String(question.explanation || "").trim();
+      if (!needsChoiceRepair && !needsAnswerRepair && !needsExplanationRepair) {
+        return question;
+      }
+      console.warn("⚠️ Cross-curricular validation warning — keeping and repairing question");
+      const repaired = repairQuestion(question, subject, passageText);
+      return {
+        ...repaired,
+        explanation: String(repaired.explanation || "").trim()
+          || "The correct answer is best supported by details in the passage.",
+      };
     });
     return enforceCrossReadingOnly(validatedCross, passageText);
   }
