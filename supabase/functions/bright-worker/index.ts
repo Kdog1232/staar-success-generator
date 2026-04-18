@@ -5410,9 +5410,7 @@ serve(async (req) => {
               continue;
             }
             if (isWeakPassage(rawPassage, grade)) {
-              console.warn("⚠️ Weak generation — retrying AI generation");
-              markRetry("weak_passage");
-              continue;
+              console.warn("⚠️ Weak generation — keeping output");
             }
             if (violatesGradeLevel(rawPassage, grade)) {
               console.warn("⚠️ Passage too advanced — retrying AI generation for grade:", grade);
@@ -5897,9 +5895,10 @@ serve(async (req) => {
       logReturnMetrics();
       return safeFallback(retryFailureReason);
     }
-    returnType = "NO_RESULT";
+    console.warn("⚠️ NO RESULT — returning safe fallback");
+    returnType = "SAFE_FALLBACK";
     logReturnMetrics();
-    return jsonResponse({ error: "no_usable_output", retryFailureReason }, 500);
+    return safeFallback(retryFailureReason);
   } catch (err) {
     console.error("🔥 EDGE FUNCTION ERROR:", err);
     return safeFallback("no_questions_returned");
