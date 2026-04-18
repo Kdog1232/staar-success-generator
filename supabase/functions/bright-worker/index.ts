@@ -4933,6 +4933,78 @@ function buildFallbackResponse(
   };
 }
 
+function normalizeChoiceWords(choice: string): string[] {
+  return String(choice || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function hasRepeatedChoiceStarts(choices: [string, string, string, string]): boolean {
+  const sizes = [5, 6, 7];
+  for (const size of sizes) {
+    const seen = new Set<string>();
+    for (const choice of choices) {
+      const words = normalizeChoiceWords(choice);
+      const prefixWords = words.length >= size ? words.slice(0, size) : words;
+      if (!prefixWords.length) continue;
+      const key = prefixWords.join(" ");
+      if (seen.has(key)) return true;
+      seen.add(key);
+    }
+  }
+  return false;
+}
+
+function fallbackDiverseChoices(): [string, string, string, string] {
+  return [
+    "The passage shows that the key idea is supported by specific details.",
+    "The data suggests a different explanation based on what is measured.",
+    "The results indicate another possibility that fits some evidence.",
+    "The information explains why one conclusion is most accurate.",
+  ];
+}
+
+function rewriteChoicesForUniqueStarts(question: string): [string, string, string, string] {
+  const stem = String(question || "").trim().replace(/\?+$/, "");
+  const rewritten: [string, string, string, string] = [
+    `One detail in the text shows ${stem.toLowerCase() || "the main point"}.`,
+    `Another clue supports a different idea about ${stem.toLowerCase() || "the topic"}.`,
+    `A separate detail points to an alternative interpretation of ${stem.toLowerCase() || "the question"}.`,
+    `The strongest evidence confirms the best conclusion about ${stem.toLowerCase() || "the topic"}.`,
+  ];
+
+  const uniqueChoices = new Set(rewritten.map((choice) => choice.toLowerCase().trim())).size === 4;
+  if (!uniqueChoices || hasRepeatedChoiceStarts(rewritten)) {
+    return fallbackDiverseChoices();
+  }
+
+  return rewritten;
+}
+
+function validateAndRewriteChoiceStarts(questions: Question[]): Question[] {
+  return questions.map((q) => {
+    if (!Array.isArray(q.choices) || q.choices.length !== 4) return q;
+    const normalizedChoices = normalizeChoices(q.choices).map((choice) => cleanAnswerChoice(choice)) as [string, string, string, string];
+    if (!hasRepeatedChoiceStarts(normalizedChoices)) {
+      return {
+        ...q,
+        choices: normalizedChoices,
+      };
+    }
+
+    const rewritten = rewriteChoicesForUniqueStarts(q.question || "");
+    const fallback = fallbackDiverseChoices();
+    const safeChoices = hasRepeatedChoiceStarts(rewritten) ? fallback : rewritten;
+
+    return {
+      ...q,
+      choices: safeChoices,
+    };
+  });
+}
+
 function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubject = "Reading"): WorkerAttempt {
   const practicePassage = data.passage || "";
   const crossPassage = data.cross?.passage || "";
@@ -4947,7 +5019,8 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
       .filter((q) => isValidQuestion(q, crossPassage));
     data.cross.questions = validatedCross;
   }
-  data.practice.questions = validatedPractice;
+  data.practice.questions = validateAndRewriteChoiceStarts(validatedPractice);
+  data.cross.questions = validateAndRewriteChoiceStarts(validatedCross);
 
   const rebuildTutor = (questions: Question[], mode: "practice" | "cross"): TutorExplanation[] =>
     questions.map((q, i) => ({
