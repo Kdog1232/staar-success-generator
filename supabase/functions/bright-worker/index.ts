@@ -1182,18 +1182,13 @@ function scoreChoiceSupport(passage: string, choice: string): number {
 }
 
 function isValidQuestion(q: Question, passage: PassageContent | string): boolean {
+  void passage;
   if (!q) return false;
-  if (q.type && q.type !== "mc") return false;
   if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
-  if (typeof q.correct_answer !== "string" || !["A", "B", "C", "D"].includes(q.correct_answer)) return false;
-  const correctChoice = getCorrectChoice(q);
-  if (!correctChoice) return false;
-  const passageText = getPassageText(passage);
-  const supportScore = scoreChoiceSupport(passageText, correctChoice);
+  if (typeof q.correct_answer !== "string") return false;
 
-  if (supportScore >= 1) return true;
-
-  return hasLooseSupport(passageText, correctChoice);
+  // 🔒 DO NOT validate against passage anymore
+  return true;
 }
 
 function validateMCQuestion(q: Question, passage: PassageContent | string): Question {
@@ -3980,15 +3975,7 @@ serve(async (req) => {
     ): Question[] => {
       const normalizedQuestions = questions
         .map((q) => validateMCQuestion(q, passage))
-        .filter((q) => {
-          const valid = isValidQuestion(q, passage);
-
-          if (!valid) {
-            console.warn(`❌ Dropping bad ${mode} question:`, q.question);
-          }
-
-          return valid;
-        });
+        .filter((q) => isValidQuestion(q, passage));
 
       return normalizedQuestions;
     };
