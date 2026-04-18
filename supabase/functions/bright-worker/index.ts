@@ -2183,18 +2183,20 @@ function isValidQuestion(q: Question, passage: PassageContent | string): boolean
   if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
   if (typeof q.correct_answer !== "string") return false;
   if (!["A", "B", "C", "D"].includes(String(q.correct_answer).toUpperCase())) return false;
-  if (isWeakQuestion(q)) {
-    console.warn("⚠️ Weak question detected", {
-      question: String(q.question || "").slice(0, 80),
-    });
-    return false;
-  }
+  if (!String(q.question || "").trim()) return false;
   return true;
 }
 
-function hasStrongAlignment(q: Question, passage: PassageContent | string): boolean {
+function hasReasonableAlignment(q: Question, passage: PassageContent | string): boolean {
   const passageText = getPassageText(passage);
-  return finalValidation(q, passageText, "");
+  if (!passageText.trim()) return true;
+  const questionText = String(q.question || "").toLowerCase();
+  const passageKeywords = getTopicKeywords(passageText);
+  if (passageKeywords.some((keyword) => keyword && questionText.includes(keyword))) {
+    return true;
+  }
+  return (Array.isArray(q.choices) ? q.choices : [])
+    .some((choice) => relatesToPassage(String(choice || ""), passageText));
 }
 
 function matchesSkill(q: Question, skill: string): boolean {
@@ -2209,6 +2211,30 @@ function isWeakQuestion(q: Question): boolean {
     const text = String(choice || "").trim();
     return !text || text.length < 12;
   });
+}
+
+function getTopicKeywords(text: string): string[] {
+  const stopWords = new Set([
+    "the", "and", "with", "that", "this", "from", "have", "were", "their", "they", "about", "into", "there",
+    "after", "before", "because", "could", "would", "should", "which", "where", "when", "while", "than",
+  ]);
+  const tokens = String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length >= 4 && !stopWords.has(token));
+  return Array.from(new Set(tokens)).slice(0, 14);
+}
+
+function relatesToPassage(choice: string, passage: string): boolean {
+  const choiceTokens = String(choice || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length >= 4);
+  if (!choiceTokens.length) return false;
+  const passageText = String(passage || "").toLowerCase();
+  return choiceTokens.some((token) => passageText.includes(token));
 }
 
 function enforceSkill(question: string, skill: string): boolean {
@@ -2241,11 +2267,6 @@ function finalValidation(q: Question, passage: string, skill: string): boolean {
   const text = `${q.question || ""} ${q.choices.join(" ")}`.toLowerCase();
   if (text.includes("newspaper") || text.includes("interview")) return false;
   if (new Set(q.choices.map((choice) => String(choice || "").trim().toLowerCase())).size < 4) return false;
-  const passageText = String(passage || "").trim();
-  if (passageText) {
-    const allAnchored = q.choices.every((choice) => isPassageAnchoredChoice(String(choice || ""), passageText));
-    if (!allAnchored) return false;
-  }
   return true;
 }
 
@@ -2309,20 +2330,12 @@ function validateMCQuestion(
   }
 
   const passageText = String(getPassageText(passage) || "");
-  const badPattern = (c: string): boolean => {
-    const t = String(c || "").toLowerCase();
-    return (
-      t.includes("students") ||
-      t.includes("class") ||
-      t.includes("text") ||
-      t.includes("reading") ||
-      t.includes("compared")
-    );
-  };
-
-  if (q.choices.some(badPattern)) {
-    console.warn("🚨 Bad answers detected — filtering question");
-  }
+  const bannedTemplates = new Set([
+    "all of the above",
+    "none of the above",
+    "both a and c",
+    "both b and d",
+  ]);
 
   let normalizedQuestion = String(q.question || "").trim();
   let choices = normalizeChoices(q.choices).map(cleanAnswerChoice) as [string, string, string, string];
@@ -2334,7 +2347,11 @@ function validateMCQuestion(
     console.warn("⚠️ Choices copy passage verbatim — filtering question");
   }
   let safeAnswer = safeCorrectAnswer(q.correct_answer);
-  if (choices.some((choice) => containsBanned(choice))) {
+  const hasBrokenChoices = !Array.isArray(choices) || choices.length !== 4;
+  const uniqueChoiceCount = new Set(choices.map((choice) => String(choice || "").trim().toLowerCase())).size;
+  const allChoicesIdentical = uniqueChoiceCount <= 1;
+  const hasExactBannedTemplate = choices.some((choice) => bannedTemplates.has(String(choice || "").trim().toLowerCase()));
+  if (hasBrokenChoices || allChoicesIdentical || hasExactBannedTemplate) {
     return rebuildQuestionFromPassage(q, subject, passageText);
   }
 
@@ -4207,7 +4224,7 @@ function sanitizeQuestions(
     }
 
     if (!validateQuestionAlignment(normalizedQuestionText, skill)) {
-      console.warn("🚨 Skill misalignment during normalization — filtering question", { index: i, skill });
+      console.warn("⚠️ Skill misalignment during normalization — keeping question", { index: i, skill });
     }
     if (!normalizedChoices.every((choice) => validateChoiceAlignment(choice, requestedSkillType))) {
       normalizedChoices = getFallbackChoices(subject, skill).map(cleanAnswerChoice) as [string, string, string, string];
@@ -4232,30 +4249,36 @@ function sanitizeQuestions(
   });
 
   let questions = sanitized.slice(0, 5);
+  const originalQuestions = questions.slice();
 
   const passageText = getPassageText(passage);
   questions = questions.map((q) => repairQuestion(q, subject, passageText));
-  const validatedQuestions = validateOnce(questions, passageText);
-  questions = validatedQuestions
-    .filter((q) => isValidQuestion(q, passageText))
-    .filter((q) => {
-      if (!q.question || q.question.length < 10) return false;
-      if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
-      if (!["A", "B", "C", "D"].includes(String(q.correct_answer))) return false;
-      if (q.choices.some((c) => String(c || "").toLowerCase().includes("proves that"))) return false;
-      return true;
-    });
+  questions = validateOnce(questions, passageText);
 
   let weakCount = 0;
+  let skillWarningCount = 0;
   const filteredQuestions = questions.filter((q) => {
-    const valid = isValidQuestion(q, passageText) && hasStrongAlignment(q, passageText) && matchesSkill(q, skill);
-    if (!valid) weakCount += 1;
+    if (!matchesSkill(q, skill)) {
+      skillWarningCount += 1;
+    }
+    const valid = isValidQuestion(q, passageText) && hasReasonableAlignment(q, passageText);
+    if (!valid) {
+      weakCount += 1;
+    }
     return valid;
   });
   if (weakCount > 0) {
     console.warn(`Filtered out ${weakCount} weak questions`);
   }
-  questions = filteredQuestions;
+  if (skillWarningCount > 0) {
+    console.warn(`⚠️ Skill warnings on ${skillWarningCount} questions — keeping usable items`);
+  }
+  if (filteredQuestions.length === 0) {
+    console.warn("No strong questions — using original AI output");
+    questions = originalQuestions;
+  } else {
+    questions = filteredQuestions;
+  }
 
   let attempts = 0;
   const MAX_ATTEMPTS = 2;
@@ -5475,7 +5498,7 @@ serve(async (req) => {
     const practicePassage = data?.passage || "";
 
     practice.questions = sanitizeAndValidateQuestions(practice.questions, practicePassage, "practice");
-    if (practice.questions.length < 3) {
+    if (practice.questions.length < 2) {
       throw new Error("INSUFFICIENT_QUALITY_QUESTIONS");
     }
 
@@ -5903,7 +5926,7 @@ serve(async (req) => {
             subject === "Reading" ? safePassage : "",
             grade,
           );
-          if (practiceQuestions.length < 3) {
+          if (practiceQuestions.length < 2) {
             console.warn("Too many weak questions — retrying generation");
             markRetry("bad_question");
             continue;
@@ -5947,7 +5970,7 @@ serve(async (req) => {
             subject === "Reading" ? safePassage : "",
             grade,
           );
-          if (pipelineQuestions.length < 3) {
+          if (pipelineQuestions.length < 2) {
             console.warn("Too many weak questions — retrying generation");
             markRetry("bad_question");
             continue;
