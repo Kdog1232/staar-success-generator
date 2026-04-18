@@ -2192,6 +2192,15 @@ function isValidQuestion(q: Question, passage: PassageContent | string): boolean
   return true;
 }
 
+function hasStrongAlignment(q: Question, passage: PassageContent | string): boolean {
+  const passageText = getPassageText(passage);
+  return finalValidation(q, passageText, "");
+}
+
+function matchesSkill(q: Question, skill: string): boolean {
+  return validateQuestionAlignment(String(q.question || ""), skill) && enforceSkill(String(q.question || ""), skill);
+}
+
 function isWeakQuestion(q: Question): boolean {
   const choices = Array.isArray(q.choices) ? q.choices : [];
   if (choices.length !== 4) return true;
@@ -2312,7 +2321,7 @@ function validateMCQuestion(
   };
 
   if (q.choices.some(badPattern)) {
-    console.warn("🚨 Bad answers detected — keeping AI output");
+    console.warn("🚨 Bad answers detected — filtering question");
   }
 
   let normalizedQuestion = String(q.question || "").trim();
@@ -2322,7 +2331,7 @@ function validateMCQuestion(
   };
 
   if (q.choices.some((c) => isCopied(String(c || ""), passageText))) {
-    console.warn("⚠️ Choices copy passage verbatim — keeping AI output");
+    console.warn("⚠️ Choices copy passage verbatim — filtering question");
   }
   let safeAnswer = safeCorrectAnswer(q.correct_answer);
   if (choices.some((choice) => containsBanned(choice))) {
@@ -4198,7 +4207,7 @@ function sanitizeQuestions(
     }
 
     if (!validateQuestionAlignment(normalizedQuestionText, skill)) {
-      console.warn("🚨 Skill misalignment during normalization — keeping original question", { index: i, skill });
+      console.warn("🚨 Skill misalignment during normalization — filtering question", { index: i, skill });
     }
     if (!normalizedChoices.every((choice) => validateChoiceAlignment(choice, requestedSkillType))) {
       normalizedChoices = getFallbackChoices(subject, skill).map(cleanAnswerChoice) as [string, string, string, string];
@@ -4237,11 +4246,16 @@ function sanitizeQuestions(
       return true;
     });
 
-  questions = questions.map((q, idx) => {
-    if (validateQuestionAlignment(q.question, skill)) return q;
-    console.warn("⚠️ Skill misalignment — keeping original", { index: idx, skill });
-    return q;
+  let weakCount = 0;
+  const filteredQuestions = questions.filter((q) => {
+    const valid = isValidQuestion(q, passageText) && hasStrongAlignment(q, passageText) && matchesSkill(q, skill);
+    if (!valid) weakCount += 1;
+    return valid;
   });
+  if (weakCount > 0) {
+    console.warn(`Filtered out ${weakCount} weak questions`);
+  }
+  questions = filteredQuestions;
 
   let attempts = 0;
   const MAX_ATTEMPTS = 2;
@@ -4288,7 +4302,7 @@ function sanitizeQuestions(
       if (typeof q.correct_answer !== "string") continue;
       verifyAnswerWithAI(q.question, q.choices as [string, string, string, string]).then((verified) => {
         if (verified && verified !== q.correct_answer) {
-          console.warn("🔄 Async answer verification mismatch — keeping AI output", {
+          console.warn("🔄 Async answer verification mismatch — question flagged for next regeneration cycle", {
             from: q.correct_answer,
             suggested: verified,
           });
@@ -4308,7 +4322,7 @@ function sanitizeQuestions(
     return enforceCrossReadingOnly(validatedCross, passageText);
   }
 
-  return alignedSet;
+  return alignedSet.slice(0, 5);
 }
 
 const CROSS_READING_ANGLE_STEMS = [
@@ -5255,7 +5269,7 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
       .filter((q) => isValidQuestion(q, crossPassage));
     data.cross.questions = validatedCross;
   }
-  data.practice.questions = validateAndRewriteChoiceStarts(validatedPractice);
+  data.practice.questions = validateAndRewriteChoiceStarts(validatedPractice).slice(0, 5);
   data.cross.questions = validateAndRewriteChoiceStarts(validatedCross);
 
   const buildBoundSupport = (
@@ -5452,7 +5466,7 @@ serve(async (req) => {
           return true;
         });
 
-      return normalizedQuestions;
+      return normalizedQuestions.slice(0, 5);
     };
 
     const practice = {
@@ -5461,6 +5475,9 @@ serve(async (req) => {
     const practicePassage = data?.passage || "";
 
     practice.questions = sanitizeAndValidateQuestions(practice.questions, practicePassage, "practice");
+    if (practice.questions.length < 3) {
+      throw new Error("INSUFFICIENT_QUALITY_QUESTIONS");
+    }
 
     const cross = await generateCross({
       grade,
@@ -5711,7 +5728,7 @@ serve(async (req) => {
     const range = subject === "Reading" ? readingRange : { min: 250, max: 300 };
 
     let attempts = 0;
-    const MAX_ATTEMPTS = 1;
+    const MAX_ATTEMPTS = 2;
     const start = Date.now();
     const MAX_TIMEOUT_MS = 20000;
     const isTimedOut = () => Date.now() - start > MAX_TIMEOUT_MS;
@@ -5855,7 +5872,9 @@ serve(async (req) => {
               continue;
             }
             if (isWeakPassage(rawPassage, grade)) {
-              console.warn("⚠️ Weak generation — keeping output");
+              console.warn("⚠️ Weak generation detected — retrying AI generation");
+              markRetry("weak_passage");
+              continue;
             }
             if (violatesGradeLevel(rawPassage, grade)) {
               console.warn("⚠️ Passage too advanced — retrying AI generation for grade:", grade);
@@ -5884,7 +5903,8 @@ serve(async (req) => {
             subject === "Reading" ? safePassage : "",
             grade,
           );
-          if (practiceQuestions.length < 5 && attempts === 1) {
+          if (practiceQuestions.length < 3) {
+            console.warn("Too many weak questions — retrying generation");
             markRetry("bad_question");
             continue;
           }
@@ -5927,7 +5947,8 @@ serve(async (req) => {
             subject === "Reading" ? safePassage : "",
             grade,
           );
-          if (pipelineQuestions.length < 5 && attempts === 1) {
+          if (pipelineQuestions.length < 3) {
+            console.warn("Too many weak questions — retrying generation");
             markRetry("bad_question");
             continue;
           }
