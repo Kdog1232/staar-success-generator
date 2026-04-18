@@ -1109,8 +1109,8 @@ function normalizeChoices(choices: unknown): [string, string, string, string] {
   ) as [string, string, string, string];
 }
 
-function normalizeAnswer(letter: unknown): ChoiceLetter | null {function normalizeAnswer(letter: unknown): ChoiceLetter {
-  const v = String(letter ?? "").trim().toUpperCase()
+function normalizeAnswer(letter: unknown): ChoiceLetter {
+  const v = String(letter ?? "").trim().toUpperCase();
 
   if (v === "A" || v === "B" || v === "C" || v === "D") return v;
 
@@ -1225,7 +1225,7 @@ if (!originalLetter){
   return {
   ...q,
   choices,
-  correct_answer: safeCorrectAnswer(q.correct_answer),
+  correct_answer: "A",
   explanation: String(q.explanation || "Answer corrected due to invalid response."),
 };
 }
@@ -1237,11 +1237,11 @@ const correctText = String(
 ).trim();
 
   const passageText = String(getPassageText(passage) || "");
-  const isSupported = hasLooseSupport(passageText, correctText) || hasPassageSupportForChoice(passageText, correctText);
-  void isSupported;
   // 🔒 DO NOT TOUCH AI ANSWERS — EVER
   const resolvedCorrectLetter: ChoiceLetter =
-  startingLetter || shuffledLetters()[0];
+    LETTERS.includes(startingLetter as ChoiceLetter)
+      ? (startingLetter as ChoiceLetter)
+      : "A";
 
   const finalChoice = String(choices[LETTERS.indexOf(resolvedCorrectLetter)] || "").trim();
   const evidenceSnippet = extractEvidenceSnippet(
@@ -1269,7 +1269,7 @@ function normalizeMultiSelectAnswer(value: unknown): ChoiceLetter[] {
 
   return raw
     .map((entry) => normalizeAnswer(entry))
-    .filter((v): v is ChoiceLetter => v !== null);
+    .filter(Boolean);
 }
 
 function normalizePartABAnswer(value: unknown): PartABAnswer {
