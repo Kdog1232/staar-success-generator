@@ -698,6 +698,42 @@ function buildCorePrompt(params: {
 - Advanced:
   - Q1 medium
   - Q2–5 hard`;
+  const variationLock = `VARIATION LOCK (MANDATORY):
+- Each generation MUST use a DIFFERENT narrative structure from previous runs.
+- Rotate across these REQUIRED structures:
+  1. Problem → Failed attempts → Unexpected solution
+  2. Mistake → Consequence → Reflection
+  3. Two characters with opposing choices
+  4. Internal conflict (no external danger)
+  5. Decision with trade-off (no clear "good" choice)
+  6. Misleading situation where first assumption is wrong
+- DO NOT repeat:
+  - helping an animal
+  - simple kindness lesson
+  - "learned a lesson" endings
+- If the story resembles a previous structure, REWRITE it.`;
+  const themeDiversityRule = `THEME DIVERSITY RULE:
+- Themes must rotate across:
+  - responsibility
+  - honesty
+  - courage under pressure
+  - unintended consequences
+  - perspective-taking
+  - fairness vs selfishness
+  - growth from failure
+- DO NOT reuse:
+  - kindness
+  - helping others
+more than once every 5 generations.`;
+  const settingRotationRule = `SETTING ROTATION (MANDATORY):
+- Rotate settings across:
+  - urban
+  - rural
+  - school-based
+  - historical
+  - futuristic
+  - cultural/tradition-based
+- DO NOT repeat the same setting twice in a row.`;
   if (subject === "Reading") {
     const readingRange = readingPracticeWordRange(level);
     const mainIdeaStemRule = isMainIdeaSkill(skill)
@@ -791,6 +827,9 @@ Rules:
 - ${dokProgressionRequirement}
 - ${levelAdjustmentRequirement}
 - Vary passage topic and structure across generations; use a different scenario, setting, and context each time.
+- ${variationLock}
+- ${themeDiversityRule}
+- ${settingRotationRule}
 - Questions should typically require inference or combining details when appropriate.
 - No “why did X happen?” when the answer is explicitly stated in the passage.
 - Prefer stems such as:
@@ -874,6 +913,8 @@ Rules:
 - ${dokProgressionRequirement}
 - ${levelAdjustmentRequirement}
 - Vary scenario, setting, and context across generations to avoid repeated output patterns.
+- ${variationLock}
+- ${settingRotationRule}
 - Use multi-step reasoning where appropriate.
 - Questions should typically require inference or combining details when appropriate.
 - No “why did X happen?” when the answer is explicitly stated.
@@ -925,6 +966,29 @@ function buildEnrichmentPrompt(params: {
   const rigor = applyRigor(level);
   const rigorEngineRules = getRigorEngineRules(level, subject);
   const constraints = getGradeConstraints(grade);
+  const variationLock = `VARIATION LOCK (MANDATORY):
+- Each generation MUST use a DIFFERENT narrative or informational structure from previous runs.
+- Rotate across these REQUIRED structures:
+  1. Problem → Failed attempts → Unexpected solution
+  2. Mistake → Consequence → Reflection
+  3. Two stakeholders with opposing choices
+  4. Internal conflict (no external danger)
+  5. Decision with trade-off (no clear "good" choice)
+  6. Misleading situation where first assumption is wrong
+- DO NOT repeat:
+  - helping an animal
+  - simple kindness lesson
+  - "learned a lesson" endings
+- If output resembles a previous structure, REWRITE it.`;
+  const settingRotationRule = `SETTING ROTATION (MANDATORY):
+- Rotate settings across:
+  - urban
+  - rural
+  - school-based
+  - historical
+  - futuristic
+  - cultural/tradition-based
+- DO NOT repeat the same setting twice in a row.`;
   const subjectFocus = subject === "Math"
     ? [
       "Math passage must include numbers, quantities, rates, or comparisons.",
@@ -1076,6 +1140,8 @@ Rules:
 - Passage MUST be different from practice passage.
 - Passage MUST be aligned to ${subject}.
 - Vary passage topic and structure; each generation must use a different scenario, setting, and context.
+- ${variationLock}
+- ${settingRotationRule}
 - Do NOT explicitly state key conclusions.
 - Include details that require inference (imply cause, include competing details, delay explanations).
 - Questions MUST be based ONLY on this new passage.
@@ -1244,13 +1310,52 @@ function getFallbackChoices(subject: CanonicalSubject, skill: string): [string, 
   return buildReadingChoices(safePassage, safeQuestion, "On Level");
 }
 
-function buildFallbackExplanation(passage: string, correctChoice: string): string {
+function buildFallbackExplanation(
+  passage: string,
+  question: string,
+  correctChoice: string,
+): string {
   const sentences = String(passage || "")
     .split(/[.!?]/)
     .map((s) => s.trim())
     .filter(Boolean);
-  const anchor = sentences[0] || "the key detail in the passage";
-  return `The best answer is supported by this passage detail: "${anchor}." This evidence directly supports: ${correctChoice}`;
+
+  if (!sentences.length) {
+    return "The correct answer is supported by the passage.";
+  }
+
+  const questionWords = String(question || "")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length > 3);
+
+  const choiceWords = String(correctChoice || "")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length > 3);
+
+  let bestSentence = sentences[0];
+  let bestScore = 0;
+
+  for (const sentence of sentences) {
+    const lower = sentence.toLowerCase();
+    let score = 0;
+
+    for (const word of questionWords) {
+      if (lower.includes(word)) score += 2;
+    }
+
+    for (const word of choiceWords) {
+      if (lower.includes(word)) score += 1;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestSentence = sentence;
+    }
+  }
+
+  return `The correct answer is ${correctChoice} because the passage states: "${bestSentence}." This shows that ${correctChoice}`;
 }
 
 function getDOKLevel(
@@ -1428,7 +1533,7 @@ function buildUniversalFallbackQuestion(
     question,
     choices,
     correct_answer: ["A", "B", "C", "D"][correctIndex] as ChoiceLetter,
-    explanation: buildFallbackExplanation(passage, choices[correctIndex]),
+    explanation: buildFallbackExplanation(passage, question, choices[correctIndex]),
   };
 }
 
@@ -1444,6 +1549,56 @@ function normalizeChoices(choices: unknown): [string, string, string, string] {
       .replace(/^[A-D]\.\s*/i, "")
       .trim()
   )) as [string, string, string, string];
+}
+
+function normalizeVocabChoices(choices: string[]): [string, string, string, string] {
+  const cleaned = choices.map((c) =>
+    String(c || "")
+      .replace(/[^a-zA-Z0-9\s\-]/g, "")
+      .trim()
+  );
+
+  while (cleaned.length < 4) cleaned.push("No valid meaning provided");
+
+  return cleaned.slice(0, 4) as [string, string, string, string];
+}
+
+function isValidVocabTarget(passage: string, word: string): boolean {
+  if (!passage || !word) return false;
+  return passage.toLowerCase().includes(word.toLowerCase());
+}
+
+function cleanAnswerChoice(choice: string): string {
+  let c = String(choice || "").trim();
+
+  c = c.replace(/proves that.*$/i, "");
+  c = c.replace(/is true.*$/i, "");
+  c = c.replace(/was a result.*$/i, "");
+  c = c.replace(/this happened.*$/i, "");
+  c = c.replace(/\s+(because|which|that)$/i, "");
+  c = c.replace(/\s+/g, " ").trim();
+
+  if (c.length < 10) {
+    c = "This answer is not supported by the passage.";
+  }
+
+  return c;
+}
+
+function extractVocabTargetWord(questionText: string): string {
+  const text = String(questionText || "");
+  const quoted = text.match(/["“”']([^"“”']{2,30})["“”']/);
+  if (quoted?.[1]) return quoted[1].trim();
+  const afterWord = text.match(/\bword\s+([a-zA-Z\-]{2,30})\b/i);
+  if (afterWord?.[1]) return afterWord[1].trim();
+  const beforeMean = text.match(/\b([a-zA-Z\-]{2,30})\b(?=\s+most nearly mean|\s+mean)/i);
+  if (beforeMean?.[1]) return beforeMean[1].trim();
+  return "";
+}
+
+function isVocabStyleQuestion(questionText: string): boolean {
+  const normalized = String(questionText || "").toLowerCase();
+  return normalized.includes("word") || normalized.includes("mean") || normalized.includes("most nearly");
 }
 
 function cleanChoice(text: string): string {
@@ -1470,14 +1625,11 @@ function normalizeAnswer(letter: unknown): ChoiceLetter {
 }
 
 function safeCorrectAnswer(value: unknown): ChoiceLetter {
-  const v = String(value ?? "").trim().toUpperCase();
-
-  if (v === "A" || v === "B" || v === "C" || v === "D") {
-    return v;
-  }
+  const parsed = parseAnswerLetter(value);
+  if (parsed) return parsed;
 
   const fallback = pickRandom(["A", "B", "C", "D"] as ChoiceLetter[]);
-  console.warn("⚠️ Random fallback answer used:", fallback);
+  console.warn("⚠️ TRUE fallback used (invalid answer):", value);
   return fallback;
 }
 
@@ -1565,12 +1717,12 @@ function isWeakQuestion(q: Question): boolean {
   if (!String(q.question || "").trim()) return true;
   return choices.some((choice) => {
     const text = String(choice || "").trim();
-    return !text || /placeholder/i.test(text) || text.length < 20;
+    return !text || text.length < 12;
   });
 }
 
 function repairQuestion(q: Question, subject: CanonicalSubject, passage: PassageContent | string): Question {
-  if (!isWeakQuestion(q)) return q;
+  if (isValidQuestion(q, passage)) return q;
 
   console.warn("🔧 Repairing weak question...");
   const safeChoices = getFallbackChoices(subject, String(q.question || "").trim());
@@ -1592,10 +1744,24 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
     q.type = "mc";
   }
 
-  const choices = normalizeChoices(q.choices);
-  const safeAnswer = safeCorrectAnswer(q.correct_answer);
+  const passageText = String(getPassageText(passage) || "");
+  let normalizedQuestion = String(q.question || "").trim();
+  let choices = normalizeChoices(q.choices).map(cleanAnswerChoice) as [string, string, string, string];
+  let safeAnswer = safeCorrectAnswer(q.correct_answer);
+
+  if (isVocabStyleQuestion(normalizedQuestion)) {
+    const targetWord = extractVocabTargetWord(normalizedQuestion);
+    choices = normalizeVocabChoices(choices) as [string, string, string, string];
+    if (!isValidVocabTarget(passageText, targetWord)) {
+      normalizedQuestion = "Which idea is BEST supported by the passage?";
+      choices = getFallbackChoices("Reading", "general").map(cleanAnswerChoice) as [string, string, string, string];
+      safeAnswer = pickRandom(["A", "B", "C", "D"] as ChoiceLetter[]);
+    }
+  }
+
   const { letter: originalLetter } = getQuestionCorrectPair({
     ...q,
+    question: normalizedQuestion,
     choices,
     correct_answer: safeAnswer,
   });
@@ -1615,7 +1781,6 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
 
   const startingLetter = originalLetter;
 
-  const passageText = String(getPassageText(passage) || "");
   const resolvedCorrectLetter = startingLetter as ChoiceLetter;
 
   const finalChoice = String(choices[LETTERS.indexOf(resolvedCorrectLetter)] || "").trim();
@@ -1634,10 +1799,24 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
 
   return {
     ...q,
+    question: normalizedQuestion,
     choices,
     correct_answer: resolvedCorrectLetter,
     explanation: syncedExplanation,
   };
+}
+
+function normalizeAndValidate(q: Question, passage: PassageContent | string): Question {
+  const normalized = {
+    ...q,
+    choices: normalizeChoices(q.choices),
+    correct_answer: safeCorrectAnswer(q.correct_answer),
+  } as Question;
+  return validateMCQuestion(normalized, passage);
+}
+
+function validateOnce(questions: Question[], passage: PassageContent | string): Question[] {
+  return questions.map((q) => normalizeAndValidate(q, passage));
 }
 function normalizeMultiSelectAnswer(value: unknown): ChoiceLetter[] {
   const raw = Array.isArray(value) ? value : [];
@@ -3309,7 +3488,7 @@ function sanitizeQuestions(
       ? `${rawQuestion.replace(/\s+$/g, "")} Select TWO answers.`
       : rawQuestion;
 
-    let normalizedChoices = normalizeChoices(q.choices);
+    let normalizedChoices = normalizeChoices(q.choices).map(cleanAnswerChoice) as [string, string, string, string];
     const normalizedCorrectAnswer = type === "multi_select"
       ? normalizeMultiSelectAnswer(q.correct_answer || "")
       : safeCorrectAnswer(q.correct_answer);
@@ -3328,6 +3507,16 @@ function sanitizeQuestions(
       normalizedQuestionText = i % 2 === 0
         ? "What is the main idea of the passage?"
         : "Which statement best describes the main idea?";
+    }
+
+    if (type === "mc" && isVocabStyleQuestion(normalizedQuestionText)) {
+      const targetWord = extractVocabTargetWord(normalizedQuestionText);
+      normalizedChoices = normalizeVocabChoices(normalizedChoices) as [string, string, string, string];
+      if (!isValidVocabTarget(getPassageText(passage), targetWord)) {
+        normalizedQuestionText = "Which idea is BEST supported by the passage?";
+        normalizedChoices = getFallbackChoices(subject, "general")
+          .map(cleanAnswerChoice) as [string, string, string, string];
+      }
     }
 
     const base: Question = {
@@ -3352,8 +3541,16 @@ function sanitizeQuestions(
 
   const passageText = getPassageText(passage);
   questions = questions.map((q) => repairQuestion(q, subject, passageText));
-  const validatedQuestions = questions.map((q) => validateMCQuestion(q, passageText));
-  questions = validatedQuestions.filter((q) => isValidQuestion(q, passageText));
+  const validatedQuestions = validateOnce(questions, passageText);
+  questions = validatedQuestions
+    .filter((q) => isValidQuestion(q, passageText))
+    .filter((q) => {
+      if (!q.question || q.question.length < 10) return false;
+      if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
+      if (!["A", "B", "C", "D"].includes(String(q.correct_answer))) return false;
+      if (q.choices.some((c) => String(c || "").toLowerCase().includes("proves that"))) return false;
+      return true;
+    });
   if (questions.length < 5) {
     console.warn("⚠️ Not enough valid questions — regenerating weak ones");
 
@@ -4074,16 +4271,13 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
   const practicePassage = data.passage || "";
   const crossPassage = data.cross?.passage || "";
 
-  const validatedPractice = data.practice.questions
-    .map((q) => repairQuestion(q, subject, practicePassage))
-    .map((q) => validateMCQuestion(q, practicePassage))
+  void subject;
+  const validatedPractice = [...(data.practice.questions || [])]
     .filter((q) => isValidQuestion(q, practicePassage));
 
   let validatedCross: Question[] = [];
   if (data.cross?.questions) {
-    validatedCross = data.cross.questions
-      .map((q) => repairQuestion(q, subject, crossPassage))
-      .map((q) => validateMCQuestion(q, crossPassage))
+    validatedCross = [...data.cross.questions]
       .filter((q) => isValidQuestion(q, crossPassage));
     data.cross.questions = validatedCross;
   }
@@ -4220,7 +4414,7 @@ serve(async (req) => {
       void mode;
       const normalizedQuestions = questions
         .map((q) => repairQuestion(q, subject, passage))
-        .map((q) => validateMCQuestion(q, passage))
+        .map((q) => normalizeAndValidate(q, passage))
         .filter((q) => isValidQuestion(q, passage));
 
       return normalizedQuestions;
@@ -4423,7 +4617,7 @@ serve(async (req) => {
             level,
             crossContent.passage,
             grade,
-          ).map((q) => validateMCQuestion(q, crossContent.passage)),
+          ),
         },
       });
     }
@@ -4527,6 +4721,8 @@ serve(async (req) => {
             },
             body: JSON.stringify({
               model: "gpt-4o-mini",
+              temperature: 0.8,
+              top_p: 0.9,
               input: buildGenerationPrompt({
                 mode: "core",
                 grade,
@@ -4818,7 +5014,7 @@ serve(async (req) => {
           const payload = {
             cross: {
               passage: gradeSafeCrossPassage,
-              questions: pipelineCrossQuestions.map((q) => validateMCQuestion(q, gradeSafeCrossPassage)),
+              questions: pipelineCrossQuestions,
             },
           };
           bestAttempt = {
@@ -4913,6 +5109,8 @@ serve(async (req) => {
           },
           body: JSON.stringify({
             model: "gpt-4o-mini",
+            temperature: 0.8,
+            top_p: 0.9,
             input: buildGenerationPrompt({
               mode: "enrichment",
               grade,
@@ -5054,7 +5252,7 @@ serve(async (req) => {
         const payload = {
           cross: {
             passage: subjectCrossPassage,
-            questions: crossQuestions.map((q) => validateMCQuestion(q, subjectCrossPassage)),
+            questions: crossQuestions,
           },
           tutor: { practice: tutorPractice, cross: tutorCross },
           answerKey: { practice: answerKeyPractice, cross: answerKeyCross },
