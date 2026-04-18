@@ -2569,11 +2569,21 @@ function buildSupportContent(
   const safeGenericExplanation = noEvidenceMessage;
   if (shouldUsePassage && !hasLooseSupport(passageText, String(correctChoice || ""))) {
     console.warn("🚨 BAD EXPLANATION BLOCKED");
+    const normalizedChoices = normalizeChoices(q.choices);
+    const wrongChoices = normalizedChoices.filter((_, i) => LETTERS[i] !== correctLetter);
+    const sampleWrong =
+      wrongChoices.find((choice) => classifyErrorType(subject, questionText, choice) === "wrong_operation") ||
+      wrongChoices[0] ||
+      "";
+    const mt = buildMistakeAndTip(subject, questionText, sampleWrong);
+    const strategy = buildTargetedStrategy(subject, questionText, passageText, thinkingType);
     return {
       explanation: safeGenericExplanation,
-      common_mistake: buildCommonMistake(subject, q, mode),
-      parent_tip: buildParentTip(subject),
-      ...buildGuidedSupport(subject, questionText, thinkingType, passageText),
+      common_mistake: mt.mistake,
+      parent_tip: `👨‍👩‍👧 Parent Tip: Ask your child: ${mt.tip}`,
+      hint: buildTargetedHint(questionText),
+      think: strategy.think,
+      step_by_step: strategy.step_by_step,
     };
   }
   let explanation = subject === "Math"
