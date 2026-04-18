@@ -6,6 +6,7 @@ type ChoiceLetter = "A" | "B" | "C" | "D";
 type AnswerLetter = "A" | "B" | "C" | "D";
 type CanonicalSubject = "Reading" | "Math" | "Science" | "Social Studies";
 type CanonicalMode = "Practice" | "Cross-Curricular" | "Tutor" | "Answer Key";
+type TutorBuildMode = "practice" | "cross";
 
 type CrossConnection = {
   subject: "Science" | "Math" | "Social Studies";
@@ -163,6 +164,11 @@ function canonicalizeSubject(subject: unknown): CanonicalSubject {
   return "Reading";
 }
 
+function isPassageBased(mode: CanonicalMode | TutorBuildMode, subject: CanonicalSubject): boolean {
+  const normalizedMode = String(mode || "").toLowerCase();
+  return normalizedMode === "cross-curricular" || normalizedMode === "cross" || subject === "Reading";
+}
+
 function normalizeLevel(level: unknown): Level {
   const value = String(level || "");
   if (value === "Below" || value === "Advanced") return value;
@@ -275,23 +281,44 @@ function enforceSentenceLength(text: string, maxWords: number): string {
     .join(". ");
 }
 
-function getRelevantSnippet(passage: PassageContent | string, question: string): string | null {
+function isBlockedEvidenceSnippet(text: string): boolean {
+  const normalized = String(text || "").toLowerCase();
+  return normalized.includes("title:") ||
+    normalized.includes("characters:") ||
+    normalized.includes("setting:");
+}
+
+function scoreEvidenceSentence(sentence: string, keywords: string[]): number {
+  const lower = sentence.toLowerCase();
+  let score = 0;
+  for (const word of keywords) {
+    if (word.length < 4) continue;
+    if (lower.includes(word)) score++;
+  }
+  return score;
+}
+
+function getRelevantSnippet(
+  passage: PassageContent | string,
+  question: string,
+  correctChoice: string = "",
+): string | null {
   const sentences = getPassageText(passage)
-    .split(/[.!?]+/)
+    .split(/[.!?\n]+/)
     .map((s) => s.trim())
-    .filter(Boolean);
-  const keywords = question.toLowerCase().split(" ").filter((w) => w.length > 4);
+    .filter((s) => Boolean(s) && !isBlockedEvidenceSnippet(s));
+  const source = String(correctChoice || "").trim() || String(question || "").trim();
+  const keywords = source
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => w.replace(/[^a-z0-9-]/g, ""))
+    .filter((w) => w.length > 3);
 
   let best: string | null = null;
   let bestScore = 0;
 
   for (const sentence of sentences) {
-    const lower = sentence.toLowerCase();
-    let score = 0;
-
-    for (const word of keywords) {
-      if (lower.includes(word)) score++;
-    }
+    const score = scoreEvidenceSentence(sentence, keywords);
 
     if (score > bestScore) {
       bestScore = score;
@@ -299,7 +326,8 @@ function getRelevantSnippet(passage: PassageContent | string, question: string):
     }
   }
 
-  return bestScore > 0 ? best : null;
+  if (!best || bestScore < 2 || isBlockedEvidenceSnippet(best)) return null;
+  return best;
 }
 
 function teacherExplain(question: string, answer: string, subject: string): string {
@@ -318,16 +346,16 @@ Step 4: Check that your answer makes sense.
 Final Answer: ${correctAnswer}`;
 }
 
-function teacherStyleExplanation(passage: PassageContent | string, question: string): string {
-  const snippet = getRelevantSnippet(passage, question);
+function teacherStyleExplanation(passage: PassageContent | string, question: string, correctChoice = ""): string {
+  const snippet = getRelevantSnippet(passage, question, correctChoice);
   if (!snippet) {
     return "This answer requires combining multiple details from the passage. Re-read carefully to identify supporting evidence.";
   }
   return `${getExplanationStarter()}: "${snippet}". This detail helps explain why the correct choice is the strongest answer when compared to the other options.`;
 }
 
-function buildCrossExplanation(passage: PassageContent | string, question: string): string {
-  return teacherStyleExplanation(passage, question);
+function buildCrossExplanation(passage: PassageContent | string, question: string, correctChoice = ""): string {
+  return teacherStyleExplanation(passage, question, correctChoice);
 }
 
 function buildParentTip(subject: string): string {
@@ -422,6 +450,48 @@ function routeBySkill(skill: string): "vocab" | "main_idea" | "inference" | "the
   if (normalized.includes("infer")) return "inference";
   if (normalized.includes("theme")) return "theme";
   return "generic";
+}
+
+type SkillType = ReturnType<typeof routeBySkill>;
+
+const QUESTION_STRUCTURE_BANK: Record<SkillType, [string, string, string, string, string][]> = {
+  theme: [
+    ["theme", "detail", "detail", "impact", "evidence"],
+    ["inference", "theme", "decision", "impact", "evidence"],
+    ["conflict", "theme", "character", "shift", "evidence"],
+  ],
+  inference: [
+    ["inference", "clue", "clue", "reasoning", "evidence"],
+    ["prediction", "detail", "inference", "impact", "evidence"],
+    ["hidden meaning", "detail", "reasoning", "conclusion", "evidence"],
+  ],
+  main_idea: [
+    ["main_idea", "detail", "detail", "development", "evidence"],
+    ["summary", "key_point", "support", "organization", "evidence"],
+  ],
+  vocab: [
+    ["vocab", "context", "context", "meaning", "usage"],
+    ["word meaning", "clue", "clue", "replacement", "application"],
+  ],
+  generic: [
+    ["skill", "detail", "detail", "reasoning", "evidence"],
+    ["application", "analysis", "support", "logic", "evidence"],
+  ],
+};
+
+function buildQuestionStructurePrompt(structure: string[]): string {
+  return `QUESTION STRUCTURE (MANDATORY):
+
+Follow this sequence for the 5 questions:
+
+Q1: ${structure[0]}
+Q2: ${structure[1]}
+Q3: ${structure[2]}
+Q4: ${structure[3]}
+Q5: ${structure[4]}
+
+Each question MUST match its role.
+Do NOT default to the same order as previous generations.`;
 }
 
 function getDifficultyInstructions(level: Level): string {
@@ -679,6 +749,9 @@ function buildCorePrompt(params: {
   const { grade, subject, skill, level, textType, teksCode = "Unknown", contextType = "real-world application" } = params;
   const rigor = applyRigor(level);
   const rigorEngineRules = getRigorEngineRules(level, subject);
+  const skillType = routeBySkill(skill);
+  const selectedStructure = pickRandom(QUESTION_STRUCTURE_BANK[skillType] || QUESTION_STRUCTURE_BANK.generic);
+  const structurePrompt = buildQuestionStructurePrompt(selectedStructure);
   const constraints = getGradeConstraints(grade);
   const dokProgressionRequirement = `DOK PROGRESSION REQUIREMENT (MANDATORY):
 - You must structure the 5 questions as follows:
@@ -785,6 +858,19 @@ Rules:
     - Use character names before lines.
     - Include at least 2 characters.
     - Show interaction or conflict through dialogue.
+    - DRAMA FORMAT LOCK (MANDATORY):
+      - Title must be on its own line at the top.
+      - Include a clearly labeled "Characters:" section, with each character on its own line.
+      - Include a clearly labeled "Setting:" line.
+      - Character lines must follow script format:
+        - Character Name: (stage direction if needed)
+        - Dialogue on the next line OR on the same line if short
+      - Each new speaker must start on a new line.
+      - Never write dialogue in paragraph form.
+      - Stage directions must be in parentheses and separated from dialogue.
+      - Include spacing between speaker turns for readability.
+      - Visual structure is required: the drama must look like a play script, not a paragraph.
+      - If the drama resembles a paragraph, rewrite it as a script before returning.
   - POETRY REQUIREMENTS (HIGH PRIORITY):
     - Use line breaks (NOT paragraphs).
     - Keep poem length to 8–20 lines.
@@ -800,6 +886,33 @@ Rules:
     - Each line must contribute to the overall meaning.
     - DO NOT write poetry as a paragraph.
     - DO NOT use incomplete or fragmented lines.
+    - POETRY FORMAT LOCK (MANDATORY):
+      - The poem must be written in lines, not paragraphs.
+      - Each line must appear on its own line.
+      - Total lines must be between 8 and 20 lines only.
+      - Do not combine poetic lines into paragraph blocks.
+      - Do not use run-on sentences stretched across many lines.
+    - STRUCTURE REQUIREMENTS:
+      - Each line must be meaningful; avoid filler lines.
+      - Line lengths should vary naturally.
+      - Use line breaks intentionally to control meaning, pacing, or emphasis.
+    - VISUAL RULE:
+      - The passage must look like a poem on the page.
+      - If it looks like a paragraph, rewrite it as a poem before returning.
+    - CONTENT REQUIREMENTS:
+      - Keep one clear central idea or theme throughout.
+      - Include at least TWO of these devices:
+        - simile
+        - metaphor
+        - imagery (sensory details)
+        - personification
+        - repetition or sound device
+    - STAAR ALIGNMENT:
+      - The poem should support questions about:
+        - figurative language meaning
+        - imagery
+        - tone or mood
+        - theme or message
 - Subject is Reading, so include a new ${textType || "fiction"} passage only (${readingRange.min}–${readingRange.max} words).
 - If any instruction conflicts with the required passage length, follow ${readingRange.min}–${readingRange.max} words only.
 - Do NOT explicitly state key conclusions in the passage.
@@ -826,6 +939,7 @@ Rules:
 - Generate exactly 5 STAAR-style reading questions tied directly to that passage.
 - ${dokProgressionRequirement}
 - ${levelAdjustmentRequirement}
+- ${structurePrompt}
 - Vary passage topic and structure across generations; use a different scenario, setting, and context each time.
 - ${variationLock}
 - ${themeDiversityRule}
@@ -873,6 +987,8 @@ ${mainIdeaStemRule}
   1) Passage Check:
      - Does the passage match ${textType || "fiction"} requirements?
      - If poem: does it include line breaks AND figurative language?
+     - If poem: is it 8–20 lines, line-by-line formatted, visually poem-like, and focused on one central idea?
+     - If drama: does it include Title, Characters, Setting, and line-by-line speaker turns (not paragraph dialogue)?
   2) Answer Check:
      - Are all answer choices complete sentences?
      - Are any answers cut off or incomplete?
@@ -912,6 +1028,7 @@ Rules:
 - Generate exactly 5 standalone STAAR-style ${subject} questions.
 - ${dokProgressionRequirement}
 - ${levelAdjustmentRequirement}
+- ${structurePrompt}
 - Vary scenario, setting, and context across generations to avoid repeated output patterns.
 - ${variationLock}
 - ${settingRotationRule}
@@ -1696,6 +1813,105 @@ function scoreChoiceSupport(passage: string, choice: string): number {
   return uniqueWords.reduce((score, word) => score + (normalizedPassage.includes(word) ? 1 : 0), 0);
 }
 
+function verifyNonPassageAnswer(
+  question: string,
+  choices: [string, string, string, string],
+  subject: CanonicalSubject,
+): ChoiceLetter {
+  const subjectSignals: Record<CanonicalSubject, string[]> = {
+    Reading: ["theme", "evidence", "infer", "main idea", "author", "detail"],
+    Math: ["sum", "difference", "product", "quotient", "equation", "value", "solve", "calculate"],
+    Science: ["variable", "experiment", "data", "result", "cause", "effect", "system", "observation"],
+    "Social Studies": ["event", "policy", "decision", "impact", "economy", "history", "government", "timeline"],
+  };
+
+  const questionText = String(question || "").toLowerCase();
+  const normalizedChoices = normalizeChoices(choices).map((choice) => String(choice || "").toLowerCase()) as [string, string, string, string];
+  const scored = LETTERS.map((letter, index) => {
+    const choice = normalizedChoices[index] || "";
+    const questionOverlap = scoreChoiceSupport(questionText, choice);
+    const signalScore = (subjectSignals[subject] || []).reduce((acc, signal) => acc + (choice.includes(signal) ? 1 : 0), 0);
+    const lengthScore = Math.min(choice.split(/\s+/).filter(Boolean).length / 20, 1);
+    return { letter, score: questionOverlap + signalScore + lengthScore };
+  }).sort((a, b) => b.score - a.score);
+
+  return (scored[0]?.letter || "A") as ChoiceLetter;
+}
+
+function lockAnswerToPassage(
+  passageText: string,
+  choices: [string, string, string, string],
+  currentAnswer: ChoiceLetter,
+): ChoiceLetter {
+  const ranked = LETTERS
+    .map((letter, index) => ({
+      letter,
+      score: scoreChoiceSupport(passageText, choices[index] || ""),
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  const best = ranked[0];
+  if (!best || best.score === 0) return currentAnswer;
+
+  if (best.letter !== currentAnswer) {
+    console.warn("🔄 Answer overridden (passage evidence)", {
+      from: currentAnswer,
+      to: best.letter,
+    });
+  }
+  return best.letter as ChoiceLetter;
+}
+
+async function verifyAnswerWithAI(
+  question: string,
+  choices: [string, string, string, string],
+): Promise<ChoiceLetter | null> {
+  try {
+    const apiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!apiKey) return null;
+    const prompt = `
+Question: ${question}
+
+Choices:
+A. ${choices[0]}
+B. ${choices[1]}
+C. ${choices[2]}
+D. ${choices[3]}
+
+Select the correct answer.
+Return ONLY one letter: A, B, C, or D.
+`;
+    const res = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0,
+        max_output_tokens: 10,
+        input: prompt,
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const json = await res.json() as {
+      output?: Array<{ content?: Array<{ text?: string }> }>;
+      output_text?: string;
+    };
+    const raw = String(json.output?.[0]?.content?.[0]?.text || json.output_text || "").trim();
+    const parsed = normalizeAnswer(raw);
+    if (["A", "B", "C", "D"].includes(parsed)) {
+      return parsed as ChoiceLetter;
+    }
+    return null;
+  } catch (err) {
+    console.warn("⚠️ Verification failed", err);
+    return null;
+  }
+}
+
 function isValidQuestion(q: Question, passage: PassageContent | string): boolean {
   void passage;
   if (!q) return false;
@@ -1728,6 +1944,11 @@ function repairQuestion(q: Question, subject: CanonicalSubject, passage: Passage
   const safeChoices = getFallbackChoices(subject, String(q.question || "").trim());
   const fallbackLetter = pickRandom(["A", "B", "C", "D"]) as ChoiceLetter;
   const passageText = getPassageText(passage);
+  const isRelevant = hasLooseSupport(passageText, safeChoices.join(" "));
+  if (!isRelevant) {
+    console.warn("🚨 REJECTED fallback — not passage aligned");
+    return q;
+  }
   const safeExplanation = String(q.explanation || "").trim() ||
     "This question was adjusted to maintain quality and alignment.";
 
@@ -1736,10 +1957,41 @@ function repairQuestion(q: Question, subject: CanonicalSubject, passage: Passage
     choices: safeChoices,
     correct_answer: fallbackLetter,
     explanation: safeExplanation,
-  }, passageText);
+  }, passageText, subject);
 }
 
-function validateMCQuestion(q: Question, passage: PassageContent | string): Question {
+function rebuildQuestionFromPassage(
+  q: Question,
+  subject: CanonicalSubject,
+  passageText: string,
+  level: Level = "On Level",
+): Question {
+  const fallbackQuestion = String(q.question || "").trim() || getUniversalQuestion(subject, "general", 0, level);
+  const rebuiltChoices = subject === "Reading"
+    ? buildReadingChoices(passageText, fallbackQuestion, level)
+    : buildUniversalChoices(subject, passageText, level);
+  const ranked = LETTERS
+    .map((letter, index) => ({
+      letter,
+      score: scoreChoiceSupport(passageText, rebuiltChoices[index] || ""),
+    }))
+    .sort((a, b) => b.score - a.score);
+  const rebuiltCorrect = (ranked[0]?.score || 0) > 0 ? ranked[0].letter : "A";
+  const rebuiltCorrectChoice = String(rebuiltChoices[LETTERS.indexOf(rebuiltCorrect)] || "");
+  return {
+    ...q,
+    question: fallbackQuestion,
+    choices: rebuiltChoices,
+    correct_answer: rebuiltCorrect,
+    explanation: buildFallbackExplanation(passageText, fallbackQuestion, rebuiltCorrectChoice),
+  };
+}
+
+function validateMCQuestion(
+  q: Question,
+  passage: PassageContent | string,
+  subject: CanonicalSubject = "Reading",
+): Question {
   if (!q.type || q.type !== "mc") {
     q.type = "mc";
   }
@@ -1754,7 +2006,7 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
     choices = normalizeVocabChoices(choices) as [string, string, string, string];
     if (!isValidVocabTarget(passageText, targetWord)) {
       normalizedQuestion = "Which idea is BEST supported by the passage?";
-      choices = getFallbackChoices("Reading", "general").map(cleanAnswerChoice) as [string, string, string, string];
+      choices = getFallbackChoices(subject, "general").map(cleanAnswerChoice) as [string, string, string, string];
       safeAnswer = pickRandom(["A", "B", "C", "D"] as ChoiceLetter[]);
     }
   }
@@ -1780,10 +2032,37 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
   }
 
   const startingLetter = originalLetter;
-
-  const resolvedCorrectLetter = startingLetter as ChoiceLetter;
+  let resolvedCorrectLetter = startingLetter as ChoiceLetter;
+  const isPassageFlow = passageText.trim().length > 0;
+  if (isPassageFlow) {
+    resolvedCorrectLetter = lockAnswerToPassage(
+      passageText,
+      choices,
+      resolvedCorrectLetter,
+    );
+  } else {
+    const verified = verifyNonPassageAnswer(normalizedQuestion, choices, subject);
+    if (verified && verified !== resolvedCorrectLetter) {
+      console.warn("🔄 AI answer corrected via verification");
+      resolvedCorrectLetter = verified;
+    }
+  }
 
   const finalChoice = String(choices[LETTERS.indexOf(resolvedCorrectLetter)] || "").trim();
+  const hasSupport = hasLooseSupport(passageText, finalChoice) || hasPassageSupportForChoice(passageText, finalChoice);
+  if (!hasSupport) {
+    console.warn("🚨 INVALID QUESTION — no passage support");
+    return rebuildQuestionFromPassage(
+      {
+        ...q,
+        question: normalizedQuestion,
+        choices,
+        correct_answer: resolvedCorrectLetter,
+      },
+      subject,
+      passageText,
+    );
+  }
   const evidenceSnippet = extractEvidenceSnippet(
     passageText,
     [
@@ -1794,7 +2073,7 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
   const syncedExplanation = finalChoice
     ? evidenceSnippet
       ? `The correct answer is ${resolvedCorrectLetter} because the passage states: "${evidenceSnippet}." This supports "${finalChoice}".`
-      : `The correct answer is ${resolvedCorrectLetter} because "${finalChoice}" best matches the passage details and question focus.`
+      : "This answer requires combining multiple details from the passage. Re-read carefully to identify supporting evidence."
     : String(q.explanation || "").trim();
 
   return {
@@ -1812,7 +2091,7 @@ function normalizeAndValidate(q: Question, passage: PassageContent | string): Qu
     choices: normalizeChoices(q.choices),
     correct_answer: safeCorrectAnswer(q.correct_answer),
   } as Question;
-  return validateMCQuestion(normalized, passage);
+  return validateMCQuestion(normalized, passage, "Reading");
 }
 
 function validateOnce(questions: Question[], passage: PassageContent | string): Question[] {
@@ -1967,19 +2246,23 @@ function detectThinkingType(question: string): "inference" | "evidence" | "main_
 
 function extractEvidenceSnippet(passage: string, keywords: string[]): string | null {
   const sentences = String(passage || "")
-    .split(/[.?!]/)
+    .split(/[.?!\n]/)
     .map((sentence) => sentence.trim())
-    .filter(Boolean);
+    .filter((sentence) => Boolean(sentence) && !isBlockedEvidenceSnippet(sentence));
+
+  let best: string | null = null;
+  let bestScore = 0;
 
   for (const sentence of sentences) {
-    for (const keyword of keywords) {
-      if (sentence.toLowerCase().includes(keyword.toLowerCase())) {
-        return sentence.trim();
-      }
+    const score = scoreEvidenceSentence(sentence, keywords);
+    if (score > bestScore) {
+      bestScore = score;
+      best = sentence.trim();
     }
   }
 
-  return null;
+  if (!best || bestScore < 2 || isBlockedEvidenceSnippet(best)) return null;
+  return best;
 }
 
 function extractEvidence(passage: string, keywords: string[]): string | null {
@@ -2274,7 +2557,7 @@ function buildSupportContent(
   void supportMode;
   const questionText = String(q.question || "").trim();
   const isCross = mode === "Cross-Curricular";
-  const shouldUsePassage = mode === "Cross-Curricular" || subject === "Reading";
+  const shouldUsePassage = isPassageBased(mode, subject);
   const passageText = shouldUsePassage ? getPassageText(passage) : "";
   const keywords = questionText.split(/\s+/).slice(0, 5);
   const { letter: correctLetter, choice: correctChoice } = getQuestionCorrectPair(q);
@@ -2283,6 +2566,16 @@ function buildSupportContent(
   const thinkingType = detectThinkingType(questionText);
   const hasEvidence = Boolean(snippet);
   const noEvidenceMessage = "This answer requires combining multiple details from the passage. Re-read carefully to identify supporting evidence.";
+  const safeGenericExplanation = noEvidenceMessage;
+  if (shouldUsePassage && !hasLooseSupport(passageText, String(correctChoice || ""))) {
+    console.warn("🚨 BAD EXPLANATION BLOCKED");
+    return {
+      explanation: safeGenericExplanation,
+      common_mistake: buildCommonMistake(subject, q, mode),
+      parent_tip: buildParentTip(subject),
+      ...buildGuidedSupport(subject, questionText, thinkingType, passageText),
+    };
+  }
   let explanation = subject === "Math"
     ? "Start by identifying what the problem is asking. Then solve step by step by choosing the correct operation, calculating carefully, and checking whether the result is reasonable."
     : subject === "Science"
@@ -2664,6 +2957,7 @@ function buildAlignedExplanation(
   q: Question,
   passage: PassageContent | string = "",
   usedEvidence: Set<string> = new Set(),
+  passageBased = true,
 ): { why: string; mistake: string; tip: string } {
   const passageText = getPassageText(passage);
   const passageSnippet = passageText ? selectEvidenceSnippet(q, passageText, usedEvidence) : "";
@@ -2679,6 +2973,16 @@ function buildAlignedExplanation(
     ? `${correctLabel} (${correctChoiceText})`
     : correctLabel;
   const focus = extractQuestionFocus(String(q.question || ""));
+  if (!passageBased) {
+    return {
+      why:
+        `The correct answer is ${correctLabel} because ${answerReference} best matches the concept tested in the question.`,
+      mistake:
+        `A common mistake on "${q.question}" is choosing an option that sounds familiar but does not match the concept requirements.`,
+      tip:
+        `Focus on what the question is asking, then eliminate options that do not satisfy the required concept.`,
+    };
+  }
   return {
     why:
       `The correct answer is ${correctLabel} because the passage states: "${snippet}."\n` +
@@ -3084,7 +3388,17 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
     );
 
     if (!hasConnection) {
-      q.choices = buildReadingChoices(crossPassage, q.question, "On Level");
+      const subjectSafeFallback = getFallbackChoices(crossSubject, q.question);
+      if (hasLooseSupport(passageText, subjectSafeFallback.join(" "))) {
+        q.choices = subjectSafeFallback;
+      } else {
+        const rebuilt = buildUniversalChoices(crossSubject, getPassageText(crossPassage), "On Level");
+        if (hasLooseSupport(passageText, rebuilt.join(" "))) {
+          q.choices = rebuilt;
+        } else {
+          console.warn("🚨 REJECTED cross fallback — preserving original choices");
+        }
+      }
     }
   });
 
@@ -3566,6 +3880,21 @@ function sanitizeQuestions(
   }
   console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", questions.length);
   const alignedSet = questions;
+  if (!isPassageBased(mode, subject)) {
+    for (const q of alignedSet) {
+      if (!Array.isArray(q.choices) || q.choices.length !== 4) continue;
+      if (typeof q.correct_answer !== "string") continue;
+      verifyAnswerWithAI(q.question, q.choices as [string, string, string, string]).then((verified) => {
+        if (verified && verified !== q.correct_answer) {
+          console.warn("🔄 Async answer correction", {
+            from: q.correct_answer,
+            to: verified,
+          });
+          q.correct_answer = verified;
+        }
+      });
+    }
+  }
 
   if (mode === "Cross-Curricular") {
     return alignedSet.filter((question) => {
@@ -3787,7 +4116,7 @@ function extractKeyTopic(passage: string): string {
 
 function buildPracticeTutorFallback(subject: CanonicalSubject, question: Question): TutorExplanation {
   const promptFocus = String(question.question || "").trim();
-  const aligned = buildAlignedExplanation(question);
+  const aligned = buildAlignedExplanation(question, "", new Set<string>(), subject === "Reading");
   const distractorFeedback = buildDistractorFeedback(question);
   const think = buildThinkPrompt(question);
   if (subject === "Math") {
@@ -3835,7 +4164,7 @@ function buildPracticeTutorFallback(subject: CanonicalSubject, question: Questio
 }
 
 function buildCrossTutorFallback(subject: CanonicalSubject, question: Question, passage: string): TutorExplanation {
-  const aligned = buildAlignedExplanation(question, passage);
+  const aligned = buildAlignedExplanation(question, passage, new Set<string>(), true);
   const distractorFeedback = buildDistractorFeedback(question);
   return {
     question_id: "",
@@ -3859,7 +4188,7 @@ function getTutorFallback(
 }
 
 function buildPracticeAnswerFallback(subject: CanonicalSubject, question: Question): Pick<AnswerKeyEntry, "explanation" | "common_mistake" | "parent_tip"> {
-  const aligned = buildAlignedExplanation(question);
+  const aligned = buildAlignedExplanation(question, "", new Set<string>(), subject === "Reading");
   const distractorFeedback = buildDistractorFeedback(question);
   if (subject === "Math") {
     return {
@@ -3895,7 +4224,7 @@ function buildCrossAnswerFallback(
   passage: string,
 ): Pick<AnswerKeyEntry, "explanation" | "common_mistake" | "parent_tip"> {
   void subject;
-  const aligned = buildAlignedExplanation(question, passage);
+  const aligned = buildAlignedExplanation(question, passage, new Set<string>(), true);
   const distractorFeedback = buildDistractorFeedback(question);
   return {
     explanation: `${aligned.why} ${distractorFeedback}`.trim(),
@@ -3923,6 +4252,8 @@ function generateTutor(
 ): TutorExplanation[] {
   void subject;
   void level;
+  const shouldUsePassage = isPassageBased(mode, subject);
+  const scopedPassageText = shouldUsePassage ? passageText : "";
   const usedEvidence = new Set<string>();
   return questions.slice(0, 5).map((q, index) => {
     try {
@@ -3938,8 +4269,8 @@ function generateTutor(
           )
           .join("\n")
         : "";
-      const aligned = buildAlignedExplanation(q, passageText, usedEvidence);
-      const baseExplanation = passageText
+      const aligned = buildAlignedExplanation(q, scopedPassageText, usedEvidence, shouldUsePassage);
+      const baseExplanation = shouldUsePassage
         ? aligned.why
         : (String(q.explanation || "").trim() ||
           (correctAnswer ? `The validated correct answer is ${correctAnswer}.` : "Use the validated question answer and supporting evidence."));
@@ -3981,13 +4312,23 @@ function generateAnswerKey(
   level: Level = "On Level",
   passageText = "",
 ): AnswerKeyEntry[] {
+  const shouldUsePassage = isPassageBased(mode, subject);
+  const scopedPassageText = shouldUsePassage ? passageText : "";
   const usedEvidence = new Set<string>();
   return questions.slice(0, 5).map((q, index) => {
     try {
-      const support = buildSupportContent(subject, q, index, level, mode === "cross" ? "Cross-Curricular" : "Practice", passageText, "Answer Key");
+      const support = buildSupportContent(
+        subject,
+        q,
+        index,
+        level,
+        mode === "cross" ? "Cross-Curricular" : "Practice",
+        scopedPassageText,
+        "Answer Key",
+      );
       const { letter } = getQuestionCorrectPair(q);
-      const aligned = buildAlignedExplanation(q, passageText, usedEvidence);
-      const explanation = passageText
+      const aligned = buildAlignedExplanation(q, scopedPassageText, usedEvidence, shouldUsePassage);
+      const explanation = shouldUsePassage
         ? aligned.why
         : (String(q.explanation || "").trim() || support.explanation || "");
       return {
