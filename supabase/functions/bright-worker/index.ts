@@ -1668,11 +1668,11 @@ function getUniversalQuestion(
   level: Level = "On Level",
 ): string {
   const s = String(skill || "").toLowerCase();
-  const dok = getDOKLevel(index, level);
   const selectByDOK = (stems: [string, string, string, string, string]) => {
-    if (dok === "easy") return stems[0];
-    if (dok === "medium") return stems[1 + (index % 2)];
-    return stems[3 + (index % 2)];
+    void index;
+    void level;
+    const randomIndex = Math.floor(Math.random() * stems.length);
+    return stems[randomIndex];
   };
 
   if (subject === "Reading") {
@@ -2197,6 +2197,14 @@ function validateMCQuestion(
 
   let normalizedQuestion = String(q.question || "").trim();
   let choices = normalizeChoices(q.choices).map(cleanAnswerChoice) as [string, string, string, string];
+  const isCopied = (choice: string, sourcePassage: string) => {
+    return sourcePassage.includes(choice.trim());
+  };
+
+  if (q.choices.some((c) => isCopied(String(c || ""), passageText))) {
+    q.choices = forcePassageChoices(passageText);
+    choices = normalizeChoices(q.choices).map(cleanAnswerChoice) as [string, string, string, string];
+  }
   let safeAnswer = safeCorrectAnswer(q.correct_answer);
   if (choices.some((choice) => containsBanned(choice))) {
     return rebuildQuestionFromPassage(q, subject, passageText);
@@ -3012,23 +3020,21 @@ function buildPracticeFallback(
 }
 
 function forcePassageChoices(passage: PassageContent | string): [string, string, string, string] {
-  const passageText = getPassageText(passage);
-  const sentences = passageText
+  const text = typeof passage === "string" ? passage : (passage?.text_1 || "");
+
+  const sentences = text
     .split(/[.!?]/)
     .map((s) => s.trim())
-    .filter((s) => s.length > 20)
-    .slice(0, 4);
+    .filter((s) => s.length > 25);
 
-  if (sentences.length < 4) {
-    return [
-      passageText.slice(0, 80),
-      passageText.slice(80, 160),
-      passageText.slice(160, 240),
-      passageText.slice(240, 320),
-    ];
-  }
+  const base = sentences[0] || text.slice(0, 120);
 
-  return sentences as [string, string, string, string];
+  return [
+    `${base} because it explains the main idea or outcome in the passage.`,
+    `${base} but it only describes part of the situation and misses the main point.`,
+    `${base} even though it focuses on a detail that is not the most important.`,
+    `${base} which shows an event but does not fully explain the overall meaning.`,
+  ];
 }
 
 function buildStudentMistakeDistractors(
