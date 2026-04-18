@@ -3829,39 +3829,22 @@ function buildFallbackResponse(
   };
 }
 
-function finalizeOutput(data: WorkerAttempt, subject: CanonicalSubject, skill: string): WorkerAttempt {
+function enforceSingleSourceOfTruth(data: WorkerAttempt): WorkerAttempt {
   const practicePassage = data.passage || "";
   const crossPassage = data.cross?.passage || "";
 
-  data.practice.questions = data.practice.questions
+  const validatedPractice = data.practice.questions
     .map((q) => validateMCQuestion(q, practicePassage))
     .filter((q) => isValidQuestion(q, practicePassage));
 
-  while (data.practice.questions.length < 5) {
-    data.practice.questions.push({
-      type: "mc",
-      question: "Which idea is BEST supported by the passage?",
-      choices: getFallbackChoices(subject, skill),
-      correct_answer: "A",
-      explanation: "Use evidence from the passage to determine the best answer.",
-    });
-  }
-
+  let validatedCross: Question[] = [];
   if (data.cross?.questions) {
-    data.cross.questions = data.cross.questions
+    validatedCross = data.cross.questions
       .map((q) => validateMCQuestion(q, crossPassage))
       .filter((q) => isValidQuestion(q, crossPassage));
-
-    while (data.cross.questions.length < 5) {
-      data.cross.questions.push({
-        type: "mc",
-        question: "Which idea is BEST supported by the passage?",
-        choices: getFallbackChoices(subject, skill),
-        correct_answer: "A",
-        explanation: "Use passage evidence to determine the best answer.",
-      });
-    }
+    data.cross.questions = validatedCross;
   }
+  data.practice.questions = validatedPractice;
 
   const rebuildTutor = (questions: Question[], mode: "practice" | "cross"): TutorExplanation[] =>
     questions.map((q, i) => ({
@@ -3884,13 +3867,13 @@ function finalizeOutput(data: WorkerAttempt, subject: CanonicalSubject, skill: s
     }));
 
   data.tutor = {
-    practice: rebuildTutor(data.practice.questions, "practice"),
-    cross: rebuildTutor(data.cross?.questions || [], "cross"),
+    practice: rebuildTutor(validatedPractice, "practice"),
+    cross: rebuildTutor(validatedCross, "cross"),
   };
 
   data.answerKey = {
-    practice: rebuildAnswerKey(data.practice.questions, "practice"),
-    cross: rebuildAnswerKey(data.cross?.questions || [], "cross"),
+    practice: rebuildAnswerKey(validatedPractice, "practice"),
+    cross: rebuildAnswerKey(validatedCross, "cross"),
   };
 
   return data;
@@ -3992,7 +3975,7 @@ serve(async (req) => {
     };
   };
   const returnCore = async (data: CoreResponse) => {
-    const sanitizeAndFillQuestions = (
+    const sanitizeAndValidateQuestions = (
       questions: Question[],
       passage: PassageContent | string,
       mode: "practice" | "cross",
@@ -4009,22 +3992,6 @@ serve(async (req) => {
           return valid;
         });
 
-      if (normalizedQuestions.length < 5) {
-        console.warn(`⚠️ Filling missing ${mode} questions`);
-
-        const needed = 5 - normalizedQuestions.length;
-
-        for (let i = 0; i < needed; i++) {
-          normalizedQuestions.push({
-            type: "mc",
-            question: "Which idea is BEST supported by the passage?",
-            choices: getFallbackChoices(subject, skill),
-            correct_answer: "A",
-            explanation: "Use passage evidence to determine the best answer.",
-          });
-        }
-      }
-
       return normalizedQuestions;
     };
 
@@ -4033,7 +4000,7 @@ serve(async (req) => {
     };
     const practicePassage = data?.passage || "";
 
-    practice.questions = sanitizeAndFillQuestions(practice.questions, practicePassage, "practice");
+    practice.questions = sanitizeAndValidateQuestions(practice.questions, practicePassage, "practice");
 
     const cross = await generateCross({
       grade,
@@ -4043,8 +4010,8 @@ serve(async (req) => {
       practiceQuestions: practice.questions,
     });
     const crossPassage = cross?.passage || "";
-    cross.questions = sanitizeAndFillQuestions(cross.questions, crossPassage, "cross");
-    const finalized = finalizeOutput({
+    cross.questions = sanitizeAndValidateQuestions(cross.questions, crossPassage, "cross");
+    const finalized = enforceSingleSourceOfTruth({
       passage: subject === "Reading"
         ? ensurePassageLength(
           getPassageText(data.passage || ""),
@@ -4062,7 +4029,7 @@ serve(async (req) => {
       cross,
       tutor: { practice: [], cross: [] },
       answerKey: { practice: [], cross: [] },
-    }, subject, skill);
+    });
 
     return jsonResponse({
       teks: teksCode,
@@ -4077,7 +4044,7 @@ serve(async (req) => {
   };
   const returnEnrichment = (data: EnrichmentResponse) =>
     {
-      const finalized = finalizeOutput({
+      const finalized = enforceSingleSourceOfTruth({
         passage: String((data as Partial<WorkerAttempt>)?.passage || ""),
         practice: {
           questions: ((data as Partial<WorkerAttempt>)?.practice?.questions || []).map((q) => ({
@@ -4090,7 +4057,7 @@ serve(async (req) => {
         },
         tutor: { practice: [], cross: [] },
         answerKey: { practice: [], cross: [] },
-      }, subject, skill);
+      });
       assertSupportIntegrity({
         practice: { questions: [] },
         cross: { questions: finalized.cross.questions },
@@ -4259,13 +4226,13 @@ serve(async (req) => {
         crossPassage,
         grade,
       );
-      const supportFinalized = finalizeOutput({
+      const supportFinalized = enforceSingleSourceOfTruth({
         passage: getPassageText(core.passage || ""),
         practice: { questions: practiceQuestionSet },
         cross: { passage: crossPassage, questions: crossQuestionSet },
         tutor: { practice: [], cross: [] },
         answerKey: { practice: [], cross: [] },
-      }, subject, effectiveSkill);
+      });
 
       return jsonResponse({
         teks: teksCode,
