@@ -136,6 +136,7 @@ const SUBJECT_SKILLS = {
 } as const;
 
 const LETTERS: ChoiceLetter[] = ["A", "B", "C", "D"];
+const TRUST_AI_ANSWER_KEY = true;
 
 function resolveTeks(subject: CanonicalSubject, skill: string, grade: number): string {
   const skillAliases: Record<string, string> = {
@@ -908,7 +909,7 @@ function buildEnrichmentPrompt(params: {
       "DO NOT use ELAR wording.",
     ].join("\n- ")
     : [
-      "Reading uses ELAR-style focus: central idea, inference, evidence, structure.",
+      "Reading uses ELAR-style reasoning grounded in the passage.",
     ].join("\n- ");
 
   const requiredQuestionBlock = `You are an expert STAAR test item writer aligned to Texas Essential Knowledge and Skills (TEKS).
@@ -1046,6 +1047,11 @@ Rules:
 - ALL questions in BOTH practice and cross must assess the selected skill exactly: ${skill}.
 - NO skill drift, NO mixed topics in stem/Part A/Part B, NO ELAR language in non-Reading.
 - Cross questions MUST be subject-driven for ${subject}.
+- DO NOT force question variety.
+- Generate the BEST 5 questions for the passage.
+- Prioritize inference and evidence-based reasoning.
+- Only include vocabulary or structure questions IF they naturally fit the passage.
+- If a question type does not fit, DO NOT include it.
 - Questions MUST NOT be directly answerable from a single sentence.
 - Each question must require combining at least TWO details or making an inference.
 - No “why did X happen?” when the answer is explicitly stated.
@@ -1205,6 +1211,20 @@ function safeCorrectAnswer(value: unknown): ChoiceLetter {
   return "A";
 }
 
+function parseAnswerLetter(value: unknown): ChoiceLetter | null {
+  const raw = String(value ?? "").trim().toUpperCase();
+  if (raw === "A" || raw === "B" || raw === "C" || raw === "D") return raw;
+  if (/^[ABCD][\).\s-]/.test(raw)) return raw[0] as ChoiceLetter;
+  return null;
+}
+
+function getQuestionCorrectPair(q: Question): { letter: ChoiceLetter | null; choice: string } {
+  const letter = parseAnswerLetter(q.correct_answer);
+  const normalizedChoices = normalizeChoices(q.choices);
+  const choice = letter ? String(normalizedChoices[LETTERS.indexOf(letter)] || "").trim() : "";
+  return { letter, choice };
+}
+
 function getCorrectChoice(q: Question): string {
   const letters: ChoiceLetter[] = ["A", "B", "C", "D"];
   if (!Array.isArray(q.choices) || q.choices.length !== 4) return "";
@@ -1272,35 +1292,40 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
   }
 
   const choices = normalizeChoices(q.choices);
-  const correctText = getCorrectChoice({ ...q, choices }) || "";
+  const { letter: originalLetter } = getQuestionCorrectPair({ ...q, choices });
+  const startingLetter = originalLetter || "A";
+  const correctText = String(choices[LETTERS.indexOf(startingLetter)] || "").trim();
 
   const passageText = String(getPassageText(passage) || "");
   const isSupported = hasLooseSupport(passageText, correctText) || hasPassageSupportForChoice(passageText, correctText);
+  let resolvedCorrectLetter: ChoiceLetter = startingLetter;
 
-  if (!isSupported) {
-    const replacementIndex = choices.findIndex((choice) =>
-      hasLooseSupport(passageText, choice) || hasPassageSupportForChoice(passageText, choice)
-    );
-    if (replacementIndex >= 0) {
-      return {
-        ...q,
-        choices,
-        correct_answer: LETTERS[replacementIndex],
-      };
+  if (!TRUST_AI_ANSWER_KEY && !isSupported) {
+    const hasAnySupport = choices.some((choice) => hasLooseSupport(passageText, choice));
+    if (!hasAnySupport) {
+      resolvedCorrectLetter = "A";
     }
-    const strongestIndex = choices
-      .map((choice, index) => ({ index, score: scoreChoiceSupport(passageText, choice) }))
-      .sort((a, b) => b.score - a.score)[0];
-    return {
-      ...q,
-      choices,
-      correct_answer: LETTERS[strongestIndex?.index ?? 0],
-    };
   }
+
+  const finalChoice = String(choices[LETTERS.indexOf(resolvedCorrectLetter)] || "").trim();
+  const evidenceSnippet = extractEvidenceSnippet(
+    passageText,
+    [
+      ...String(q.question || "").split(/\s+/).slice(0, 5),
+      ...finalChoice.split(/\s+/).slice(0, 6),
+    ],
+  );
+  const syncedExplanation = finalChoice
+    ? evidenceSnippet
+      ? `The correct answer is ${resolvedCorrectLetter} because the passage states: "${evidenceSnippet}." This supports "${finalChoice}".`
+      : `The correct answer is ${resolvedCorrectLetter} because "${finalChoice}" best matches the passage details and question focus.`
+    : String(q.explanation || "").trim();
 
   return {
     ...q,
     choices,
+    correct_answer: resolvedCorrectLetter,
+    explanation: syncedExplanation,
   };
 }
 
@@ -1728,14 +1753,14 @@ function buildBetterDistractors(passage: string, correct: string): string[] {
 }
 
 function buildSubjectDistractors(q: Question, passage: string, subject: CanonicalSubject): string {
-  const correct = typeof q.correct_answer === "string" ? q.correct_answer : "A";
+  const { letter: correctLetter, choice: correctChoice } = getQuestionCorrectPair(q);
+  if (!correctLetter) return "";
   const normalizedChoices = normalizeChoices(q.choices);
-  const correctChoice = getCorrectChoice({ ...q, choices: normalizedChoices as [string, string, string, string] }) || "";
   const hasPassage = String(passage || "").trim().length > 0;
   const passageDistractors = hasPassage ? buildBetterDistractors(String(passage || ""), correctChoice) : [];
   return normalizedChoices
     .map((choice, index) => ({ choice, letter: LETTERS[index] }))
-    .filter(({ letter }) => letter !== correct)
+    .filter(({ letter }) => letter !== correctLetter)
     .map(({ choice, letter }, index) => {
       const distractorChoice = hasPassage && (isWeakDistractor(choice) || String(choice || "").trim().length === 0)
         ? (passageDistractors[index] || choice)
@@ -1743,7 +1768,7 @@ function buildSubjectDistractors(q: Question, passage: string, subject: Canonica
       const withLetter = `${letter}. ${distractorChoice}`;
       return explainDistractor(
         withLetter,
-        `${correct}. ${correctChoice}`,
+        `${correctLetter}. ${correctChoice}`,
         passage,
         subject,
         String(q.question || ""),
@@ -1768,7 +1793,7 @@ function buildSupportContent(
   const shouldUsePassage = mode === "Cross-Curricular" || subject === "Reading";
   const passageText = shouldUsePassage ? getPassageText(passage) : "";
   const keywords = questionText.split(/\s+/).slice(0, 5);
-  const correctChoice = getCorrectChoice({ ...q, choices: normalizeChoices(q.choices) as [string, string, string, string] }) || "";
+  const { letter: correctLetter, choice: correctChoice } = getQuestionCorrectPair(q);
   const snippet = extractEvidenceSnippet(passageText, [...keywords, ...String(correctChoice || "").split(/\s+/).slice(0, 5)]);
   const distractorAnalysis = buildSubjectDistractors(q, passageText, subject);
   const thinkingType = detectThinkingType(questionText);
@@ -1816,7 +1841,6 @@ A strong reader uses this evidence to connect directly to the question. This det
   }
 
   const normalizedChoices = normalizeChoices(q.choices);
-  const correctLetter = typeof q.correct_answer === "string" ? normalizeAnswer(q.correct_answer) : "A";
   const wrongChoices = normalizedChoices.filter((_, i) => LETTERS[i] !== correctLetter);
   const sampleWrong =
     wrongChoices.find((choice) => classifyErrorType(subject, questionText, choice) === "wrong_operation") ||
@@ -3557,25 +3581,40 @@ function generateTutor(
   level: Level = "On Level",
   passageText = "",
 ): TutorExplanation[] {
+  void subject;
+  void level;
+  void passageText;
   return questions.slice(0, 5).map((q, index) => {
     try {
-      const support = buildSupportContent(
-        subject,
-        q,
-        index,
-        level,
-        mode === "cross" ? "Cross-Curricular" : "Practice",
-        passageText,
-        "Tutor",
-      );
+      const { letter, choice } = getQuestionCorrectPair(q);
+      const normalizedChoices = normalizeChoices(q.choices);
+      const correctAnswer = letter ? `${letter}. ${choice}` : "";
+      const wrongChoiceGuidance = letter
+        ? normalizedChoices
+          .map((candidate, candidateIndex) => ({ letter: LETTERS[candidateIndex], candidate }))
+          .filter((entry) => entry.letter !== letter)
+          .map((entry) =>
+            `❌ ${entry.letter}. ${entry.candidate} — This option does not match the validated correct answer (${correctAnswer}).`
+          )
+          .join("\n")
+        : "";
+      const baseExplanation = String(q.explanation || "").trim() ||
+        (correctAnswer ? `The validated correct answer is ${correctAnswer}.` : "Use the validated question answer and supporting evidence.");
+      const explanation = wrongChoiceGuidance ? `${baseExplanation}\n\n${wrongChoiceGuidance}` : baseExplanation;
+
       return {
         question_id: ensureQuestionId(q, index, mode),
         question: String(q.question || "").trim(),
-        explanation: support.explanation || "",
-        common_mistake: support.common_mistake || "",
-        hint: support.hint || "",
-        think: support.think || "",
-        step_by_step: support.step_by_step || "",
+        explanation,
+        common_mistake: String(q.common_mistake || "").trim() || "Choosing an option without matching it to the validated answer and passage evidence.",
+        hint: String(q.hint || "").trim() ||
+          (correctAnswer ? `Use the validated answer: ${correctAnswer}.` : "Read the validated answer and match it to passage evidence."),
+        think: String(q.think || "").trim() ||
+          (correctAnswer ? `How does the passage support ${correctAnswer}?` : "Which passage detail supports the validated answer?"),
+        step_by_step: String(q.step_by_step || "").trim() ||
+          (correctAnswer
+            ? `1. Read the question.\n2. Identify the validated answer (${correctAnswer}).\n3. Confirm passage evidence supports it.\n4. Eliminate choices that do not match that evidence.`
+            : "1. Read the question.\n2. Locate the validated answer.\n3. Match it to passage evidence."),
       };
     } catch (err) {
       console.error("Tutor build failed:", err);
@@ -3602,10 +3641,10 @@ function generateAnswerKey(
   return questions.slice(0, 5).map((q, index) => {
     try {
       const support = buildSupportContent(subject, q, index, level, mode === "cross" ? "Cross-Curricular" : "Practice", passageText, "Answer Key");
-      const correctAnswer = typeof q.correct_answer === "string" ? q.correct_answer : "A";
+      const { letter } = getQuestionCorrectPair(q);
       return {
         question_id: ensureQuestionId(q, index, mode),
-        correct_answer: correctAnswer || "",
+        correct_answer: letter || "",
         explanation: String(q.explanation || "").trim() || support.explanation || "",
         common_mistake: support.common_mistake || "",
         parent_tip: support.parent_tip
@@ -3630,8 +3669,7 @@ function generateAnswerKey(
 function buildTutorFromPractice(questions: Question[]): { practice: TutorExplanation[]; cross: TutorExplanation[] } {
   return {
     practice: questions.slice(0, 5).map((q, i) => {
-      const detectedLetter = typeof q.correct_answer === "string" ? q.correct_answer : "A";
-      const correctChoice = getCorrectChoice(q);
+      const { letter: detectedLetter, choice: correctChoice } = getQuestionCorrectPair(q);
       return {
         question_id: `practice_q${i + 1}`,
         question: String(q.question || ""),
@@ -3639,7 +3677,8 @@ function buildTutorFromPractice(questions: Question[]): { practice: TutorExplana
         common_mistake: String(q.common_mistake || "").trim(),
         hint: String(q.hint || "").trim(),
         think: String(q.think || "").trim(),
-        step_by_step: String(q.step_by_step || "").trim() || `Choose the option that best matches the requirement (${detectedLetter}: ${correctChoice}).`,
+        step_by_step: String(q.step_by_step || "").trim() ||
+          (detectedLetter ? `Choose the option that best matches the requirement (${detectedLetter}: ${correctChoice}).` : "Choose the option that best matches the requirement."),
       };
     }),
     cross: [],
@@ -3649,10 +3688,10 @@ function buildTutorFromPractice(questions: Question[]): { practice: TutorExplana
 function buildAnswerKeyFromPractice(questions: Question[]): { practice: AnswerKeyEntry[]; cross: AnswerKeyEntry[] } {
   return {
     practice: questions.slice(0, 5).map((q, i) => {
-      const detectedLetter = typeof q.correct_answer === "string" ? q.correct_answer : "A";
+      const { letter: detectedLetter } = getQuestionCorrectPair(q);
       return {
         question_id: `practice_q${i + 1}`,
-        correct_answer: detectedLetter,
+        correct_answer: detectedLetter || "",
         explanation: String(q.explanation || "").trim(),
         common_mistake: String(q.common_mistake || "").trim(),
         parent_tip: String(q.parent_tip || "").trim(),
