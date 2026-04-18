@@ -584,12 +584,15 @@ function isGenericChoice(choice: string): boolean {
   return GENERIC_ANSWER_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
-function rewriteWithPassageDetail(choice: string, passage: string): string {
-  const snippet = extractEvidenceSnippet(passage, extractPassageKeywords(passage), choice);
+function rewriteWithPassageDetail(questionOrChoice: string, passage: string, choiceIndex?: number): string {
+  const promptSeed = typeof choiceIndex === "number"
+    ? `${String(questionOrChoice || "").trim()} option ${choiceIndex + 1}`
+    : String(questionOrChoice || "").trim();
+  const snippet = extractEvidenceSnippet(passage, extractPassageKeywords(passage), promptSeed);
   if (snippet) {
     return `The passage explains that ${snippet.toLowerCase()}.`;
   }
-  return String(choice || "").trim() || "The passage provides details that support this idea.";
+  return promptSeed || "The passage provides details that support this idea.";
 }
 
 function strengthenChoices(choices: [string, string, string, string], passage: string): [string, string, string, string] {
@@ -597,6 +600,57 @@ function strengthenChoices(choices: [string, string, string, string], passage: s
     isGenericChoice(choice) ? rewriteWithPassageDetail(choice, passage) : String(choice || "").trim()
   );
   return normalizeChoices(strengthened);
+}
+
+function sanitizeChoices(questions: Question[], passage: PassageContent | string): Question[] {
+  const passageText = getPassageText(passage);
+  return questions.map((q) => {
+    const baseChoices = Array.isArray(q?.choices) ? q.choices : [];
+    const seededChoices = [...baseChoices];
+    while (seededChoices.length < 4) {
+      seededChoices.push(rewriteWithPassageDetail(q.question || "", passageText, seededChoices.length));
+    }
+    const rawChoices = seededChoices.slice(0, 4);
+
+    let fixedChoices = rawChoices.map((choice, i) => {
+      const text = String(choice || "").trim();
+
+      if (isGenericChoice(text)) {
+        return rewriteWithPassageDetail(q.question || "", passageText, i);
+      }
+
+      if (text.split(/\s+/).filter(Boolean).length < 8) {
+        return rewriteWithPassageDetail(q.question || "", passageText, i);
+      }
+
+      if (containsBanned(text)) {
+        return rewriteWithPassageDetail(q.question || "", passageText, i);
+      }
+
+      return text;
+    });
+
+    fixedChoices = normalizeChoices(fixedChoices);
+
+    return {
+      ...q,
+      choices: fixedChoices,
+    };
+  });
+}
+
+function sanitizeExplanations(questions: Question[], passage: PassageContent | string): Question[] {
+  return questions.map((q) => {
+    const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
+    const correctChoice = getChoiceByLetter(q, correctLetter);
+    const fallbackExplanation = teacherStyleExplanation(passage, q.question, correctChoice);
+    return {
+      ...q,
+      explanation: ensureUsableExplanation(
+        q.explanation || fallbackExplanation,
+      ),
+    };
+  });
 }
 
 function validateChoiceAlignment(choice: string, skillType: UniversalSkillType): boolean {
@@ -5540,6 +5594,17 @@ serve(async (req) => {
     });
     const crossPassage = cross?.passage || "";
     cross.questions = sanitizeAndValidateQuestions(cross.questions, crossPassage, "cross");
+    practice.questions = sanitizeChoices(
+      practice.questions,
+      getPassageText(practicePassage),
+    );
+    cross.questions = sanitizeChoices(
+      cross.questions,
+      cross.passage,
+    );
+    practice.questions = sanitizeExplanations(practice.questions, practicePassage);
+    cross.questions = sanitizeExplanations(cross.questions, cross.passage);
+
     const finalized = enforceSingleSourceOfTruth({
       passage: subject === "Reading"
         ? ensurePassageLength(
@@ -5573,16 +5638,28 @@ serve(async (req) => {
   };
   const returnEnrichment = (data: EnrichmentResponse) =>
     {
+      const sanitizedPracticeQuestions = sanitizeExplanations(
+        sanitizeChoices(
+          ((data as Partial<WorkerAttempt>)?.practice?.questions || []).map((q) => ({ ...q })),
+          getPassageText(String((data as Partial<WorkerAttempt>)?.passage || "")),
+        ),
+        String((data as Partial<WorkerAttempt>)?.passage || ""),
+      );
+      const sanitizedCrossQuestions = sanitizeExplanations(
+        sanitizeChoices(
+          (data?.cross?.questions || []).map((q) => ({ ...q })),
+          String(data?.cross?.passage || ""),
+        ),
+        String(data?.cross?.passage || ""),
+      );
       const finalized = enforceSingleSourceOfTruth({
         passage: String((data as Partial<WorkerAttempt>)?.passage || ""),
         practice: {
-          questions: ((data as Partial<WorkerAttempt>)?.practice?.questions || []).map((q) => ({
-            ...q,
-          })),
+          questions: sanitizedPracticeQuestions,
         },
         cross: {
           passage: String(data?.cross?.passage || ""),
-          questions: (data?.cross?.questions || []).map((q) => ({ ...q })),
+          questions: sanitizedCrossQuestions,
         },
         tutor: { practice: [], cross: [] },
         answerKey: { practice: [], cross: [] },
