@@ -1952,13 +1952,22 @@ function lockAnswerToPassage(
   const best = ranked[0];
   if (!best || best.score === 0) return currentAnswer;
 
-  if (best.letter !== currentAnswer) {
-    console.warn("🔄 Answer overridden (passage evidence)", {
+  if (!LETTERS.includes(currentAnswer)) {
+    console.warn("🔄 Answer repaired (invalid answer format)", {
       from: currentAnswer,
       to: best.letter,
     });
+    return best.letter as ChoiceLetter;
   }
-  return best.letter as ChoiceLetter;
+
+  if (best.letter !== currentAnswer) {
+    console.warn("⚠️ Weak passage alignment — keeping answer", {
+      from: currentAnswer,
+      suggested: best.letter,
+    });
+    return currentAnswer;
+  }
+  return currentAnswer;
 }
 
 async function verifyAnswerWithAI(
@@ -2190,17 +2199,14 @@ function validateMCQuestion(
   const finalChoice = String(choices[LETTERS.indexOf(resolvedCorrectLetter)] || "").trim();
   const hasSupport = hasLooseSupport(passageText, finalChoice) || hasPassageSupportForChoice(passageText, finalChoice);
   if (!hasSupport) {
-    console.warn("🚨 INVALID QUESTION — no passage support");
-    return rebuildQuestionFromPassage(
-      {
-        ...q,
-        question: normalizedQuestion,
-        choices,
-        correct_answer: resolvedCorrectLetter,
-      },
-      subject,
-      passageText,
-    );
+    console.warn("⚠️ Weak passage alignment — keeping question");
+    return {
+      ...q,
+      question: normalizedQuestion,
+      choices,
+      correct_answer: resolvedCorrectLetter,
+      explanation: String(q.explanation || "").trim(),
+    };
   }
   const evidenceSnippet = extractEvidenceSnippet(
     passageText,
@@ -4037,7 +4043,7 @@ function sanitizeQuestions(
 
   questions = questions.map((q, idx) => {
     if (validateQuestionAlignment(q.question, skill)) return q;
-    console.warn("🚨 Skill misalignment — rebuilding question", { index: idx, skill });
+    console.warn("⚠️ Skill misalignment — keeping original", { index: idx, skill });
     return q;
   });
 
