@@ -5135,10 +5135,11 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
 
   const buildBoundSupport = (
     q: Question,
-    passage: string,
+    passage: PassageContent | string,
     usedEvidence: Set<string>,
     variant = 0,
   ): { explanation: string; commonMistake: string; hint: string; think: string; stepByStep: string; parentTip: string } => {
+    const passageText = getPassageText(passage);
     const normalizedChoices = normalizeChoices(q.choices);
     const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
     const correctIndex = LETTERS.indexOf(correctLetter);
@@ -5146,8 +5147,8 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
     const wrongOption = normalizedChoices
       .map((choice, idx) => ({ letter: LETTERS[idx], choice: String(choice || "").trim() }))
       .find((entry) => entry.letter !== correctLetter && entry.choice);
-    const evidenceSnippet = selectEvidenceSnippet(q, passage, usedEvidence) ||
-      getRelevantSnippet(passage, q.question, correctChoice) ||
+    const evidenceSnippet = selectEvidenceSnippet(q, passageText, usedEvidence) ||
+      getRelevantSnippet(passageText, q.question, correctChoice) ||
       "the strongest details in the passage";
 
     const explanationVariants = [
