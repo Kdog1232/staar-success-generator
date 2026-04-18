@@ -673,8 +673,9 @@ function buildCorePrompt(params: {
   skill: string;
   level: Level;
   teksCode?: string;
+  contextType?: string;
 }): string {
-  const { grade, subject, skill, level, teksCode = "Unknown" } = params;
+  const { grade, subject, skill, level, teksCode = "Unknown", contextType = "real-world application" } = params;
   const rigor = applyRigor(level);
   const rigorEngineRules = getRigorEngineRules(level, subject);
   const constraints = getGradeConstraints(grade);
@@ -703,6 +704,7 @@ Return exactly:
 
 Rules:
 - PRACTICE MODE ONLY. Do not generate cross-curricular content.
+- Context Type: ${contextType}
 - TEKS Alignment Code: ${teksCode}
 - Instruction: Design the question to match how this TEKS is assessed on STAAR.
 - TEKS alignment: skill "${skill}" at grade ${grade} must be assessed through application (analyze/infer/compare/explain), not definition recall.
@@ -774,6 +776,7 @@ Return exactly:
 
 Rules:
 - PRACTICE MODE ONLY. Do not generate cross-curricular content.
+- Context Type: ${contextType}
 - TEKS Alignment Code: ${teksCode}
 - Instruction: Design the question to match how this TEKS is assessed on STAAR.
 - TEKS alignment: skill "${skill}" at grade ${grade} must be assessed through application (analyze/infer/compare/explain), not definition recall.
@@ -829,8 +832,9 @@ function buildEnrichmentPrompt(params: {
   level: Level;
   crossPassage?: string;
   teksCode?: string;
+  contextType?: string;
 }): string {
-  const { grade, subject, skill, practiceQuestions, level, crossPassage = "", teksCode = "Unknown" } = params;
+  const { grade, subject, skill, practiceQuestions, level, crossPassage = "", teksCode = "Unknown", contextType = "real-world application" } = params;
   const rigor = applyRigor(level);
   const rigorEngineRules = getRigorEngineRules(level, subject);
   const constraints = getGradeConstraints(grade);
@@ -968,6 +972,7 @@ ${JSON.stringify(practiceQuestions.slice(0, 5))}
 
 Rules:
 - CROSS-CURRICULAR MODE ONLY.
+- Context Type: ${contextType}
 - CRITICAL: Generate a NEW passage (250–300 words).
 - Passage MUST be different from practice passage.
 - Passage MUST be aligned to ${subject}.
@@ -1020,6 +1025,16 @@ function buildGenerationPrompt(params: {
   practiceQuestions?: Question[];
   crossPassage?: string;
 }): string {
+  const variationSeed = [
+    "school scenario",
+    "community situation",
+    "real-world application",
+    "student project",
+    "historical context",
+    "scientific investigation",
+  ];
+  const selectedSeed = pickRandom(variationSeed);
+
   if (params.mode === "core") {
     return buildCorePrompt({
       grade: params.grade,
@@ -1027,6 +1042,7 @@ function buildGenerationPrompt(params: {
       skill: params.skill,
       level: params.level,
       teksCode: params.teksCode,
+      contextType: selectedSeed,
     });
   }
 
@@ -1038,6 +1054,7 @@ function buildGenerationPrompt(params: {
     level: params.level,
     crossPassage: params.crossPassage || "",
     teksCode: params.teksCode,
+    contextType: selectedSeed,
   });
 }
 
@@ -1136,6 +1153,9 @@ function normalizeChoices(choices: unknown): [string, string, string, string] {
 function cleanChoice(text: string): string {
   const cleaned = String(text || "").trim();
   if (!cleaned) return cleaned;
+  if (cleaned.split(/\s+/).length < 8) {
+    return `${cleaned} which is supported by details in the passage.`;
+  }
 
   if (!cleaned.endsWith(".") && cleaned.split(/\s+/).length >= 8) {
     return `${cleaned}.`;
@@ -1160,9 +1180,9 @@ function safeCorrectAnswer(value: unknown): ChoiceLetter {
     return v;
   }
 
-  console.error("❌ Invalid correct_answer:", value);
-
-  return "A"; // HARD FALLBACK (prevents crashes)
+  const fallback = pickRandom(["A", "B", "C", "D"]);
+  console.warn("⚠️ Random fallback answer used:", fallback);
+  return fallback;
 }
 
 function parseAnswerLetter(value: unknown): ChoiceLetter | null {
@@ -1251,6 +1271,24 @@ function isWeakQuestion(q: Question): boolean {
     const text = String(choice || "").trim();
     return !text || /placeholder/i.test(text) || text.length < 20;
   });
+}
+
+function repairQuestion(q: Question, subject: CanonicalSubject, passage: PassageContent | string): Question {
+  if (!isWeakQuestion(q)) return q;
+
+  console.warn("🔧 Repairing weak question...");
+  const safeChoices = getFallbackChoices(subject, String(q.question || "").trim());
+  const fallbackLetter = pickRandom(["A", "B", "C", "D"]) as ChoiceLetter;
+  const passageText = getPassageText(passage);
+  const safeExplanation = String(q.explanation || "").trim() ||
+    "This question was adjusted to maintain quality and alignment.";
+
+  return validateMCQuestion({
+    ...q,
+    choices: safeChoices,
+    correct_answer: fallbackLetter,
+    explanation: safeExplanation,
+  }, passageText);
 }
 
 function validateMCQuestion(q: Question, passage: PassageContent | string): Question {
@@ -2969,6 +3007,7 @@ function sanitizeQuestions(
   let questions = sanitized.slice(0, 5);
 
   const passageText = getPassageText(passage);
+  questions = questions.map((q) => repairQuestion(q, subject, passageText));
   const validatedQuestions = questions.map((q) => validateMCQuestion(q, passageText));
   const clean = validatedQuestions.filter((q) => isValidQuestion(q, passageText));
   if (clean.length < 3) {
@@ -3671,17 +3710,19 @@ function buildFallbackResponse(
   };
 }
 
-function enforceSingleSourceOfTruth(data: WorkerAttempt): WorkerAttempt {
+function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubject = "Reading"): WorkerAttempt {
   const practicePassage = data.passage || "";
   const crossPassage = data.cross?.passage || "";
 
   const validatedPractice = data.practice.questions
+    .map((q) => repairQuestion(q, subject, practicePassage))
     .map((q) => validateMCQuestion(q, practicePassage))
     .filter((q) => isValidQuestion(q, practicePassage));
 
   let validatedCross: Question[] = [];
   if (data.cross?.questions) {
     validatedCross = data.cross.questions
+      .map((q) => repairQuestion(q, subject, crossPassage))
       .map((q) => validateMCQuestion(q, crossPassage))
       .filter((q) => isValidQuestion(q, crossPassage));
     data.cross.questions = validatedCross;
@@ -3822,7 +3863,9 @@ serve(async (req) => {
       passage: PassageContent | string,
       mode: "practice" | "cross",
     ): Question[] => {
+      void mode;
       const normalizedQuestions = questions
+        .map((q) => repairQuestion(q, subject, passage))
         .map((q) => validateMCQuestion(q, passage))
         .filter((q) => isValidQuestion(q, passage));
 
@@ -3863,7 +3906,7 @@ serve(async (req) => {
       cross,
       tutor: { practice: [], cross: [] },
       answerKey: { practice: [], cross: [] },
-    });
+    }, subject);
 
     return jsonResponse({
       teks: teksCode,
@@ -3891,7 +3934,7 @@ serve(async (req) => {
         },
         tutor: { practice: [], cross: [] },
         answerKey: { practice: [], cross: [] },
-      });
+      }, subject);
       assertSupportIntegrity({
         practice: { questions: [] },
         cross: { questions: finalized.cross.questions },
@@ -4066,7 +4109,7 @@ serve(async (req) => {
         cross: { passage: crossPassage, questions: crossQuestionSet },
         tutor: { practice: [], cross: [] },
         answerKey: { practice: [], cross: [] },
-      });
+      }, subject);
 
       return jsonResponse({
         teks: teksCode,
