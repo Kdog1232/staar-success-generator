@@ -1090,22 +1090,22 @@ Rules:
   - "Which idea is BEST supported..."
   - "What is most likely..."
   - "Which detail suggests..."
-- All 4 answer choices must explicitly reference passage details (events/actions/outcomes).
-- PASSAGE ANCHOR LOCK (REQUIRED)
-- All answer choices MUST reference the passage.
-- If an answer choice does NOT include:
-  - a character from the passage OR
-  - a number, object, or event from the passage OR
-  - a clearly stated idea from the passage
-  → DO NOT USE IT
-- Rewrite until all 4 answer choices are grounded in the passage.
-- DO NOT use generic academic statements such as:
+- PASSAGE ANCHOR LOCK (NON-NEGOTIABLE)
+- Every answer choice MUST include a SPECIFIC detail from the passage.
+- VALID answers MUST contain at least one:
+  - character name
+  - number or quantity
+  - specific event or action
+  - concrete outcome from the passage
+- If an answer could apply to ANY passage:
+  → REWRITE IT
+- BANNED ANSWERS (NEVER ALLOWED):
   - "students compared..."
   - "a class reviewed..."
-  - "text sets"
-  - "reading team"
-  - "quotations"
-- These are NEVER valid unless they appear in the passage.
+  - "text sets..."
+  - "reading team..."
+  - "which statement best..."
+- These are INVALID unless explicitly in the passage.
 - Keep all 4 choices similar in structure and length to avoid obvious answer patterns.
 - Each answer choice MUST be a complete sentence.
 - Do NOT generate fragments or cut-off responses.
@@ -1323,21 +1323,22 @@ ANSWER CHOICE RULES
 - Each answer choice MUST fully answer the question.
 - ALL 4 choices must reference the passage explicitly.
 - Include real details, events, or outcomes in each choice.
-- PASSAGE ANCHOR LOCK (REQUIRED)
-- All answer choices MUST reference the passage.
-- If an answer choice does NOT include:
-  - a character from the passage OR
-  - a number, object, or event from the passage OR
-  - a clearly stated idea from the passage
-  → DO NOT USE IT
-- Rewrite until all 4 answer choices are grounded in the passage.
-- DO NOT use generic academic statements such as:
+- PASSAGE ANCHOR LOCK (NON-NEGOTIABLE)
+- Every answer choice MUST include a SPECIFIC detail from the passage.
+- VALID answers MUST contain at least one:
+  - character name
+  - number or quantity
+  - specific event or action
+  - concrete outcome from the passage
+- If an answer could apply to ANY passage:
+  → REWRITE IT
+- BANNED ANSWERS (NEVER ALLOWED):
   - "students compared..."
   - "a class reviewed..."
-  - "text sets"
-  - "reading team"
-  - "quotations"
-- These are NEVER valid unless they appear in the passage.
+  - "text sets..."
+  - "reading team..."
+  - "which statement best..."
+- These are INVALID unless explicitly in the passage.
 - Keep choices similar in structure and length.
 - Each answer choice MUST be a complete sentence.
 - Do NOT generate fragments or cut-off responses.
@@ -1612,9 +1613,7 @@ function getFallbackChoices(subject: CanonicalSubject, skill: string): [string, 
   if (subject === "Science") return buildScienceFallbackChoices();
   if (subject === "Social Studies") return buildSSFallbackChoices();
   const safePassage = buildSubjectPassage("Reading", "On Level");
-  const safeQuestion = "Which event in the passage led to a later decision or outcome?";
-  const safeCorrect = safeQuestion;
-  return buildReadingChoices(safePassage, safeCorrect);
+  return forcePassageChoices(safePassage);
 }
 
 function buildExplanation(answer: string, question: string): string {
@@ -2150,11 +2149,8 @@ function rebuildQuestionFromPassage(
   level: Level = "On Level",
 ): Question {
   const fallbackQuestion = String(q.question || "").trim() || getUniversalQuestion(subject, "general", 0, level);
-  const seededCorrect = subject === "Reading"
-    ? getReadingCorrectAnswerFromPassage(passageText, fallbackQuestion)
-    : fallbackQuestion;
   const rebuiltChoices = subject === "Reading"
-    ? buildReadingChoices(passageText, seededCorrect)
+    ? forcePassageChoices(passageText)
     : buildUniversalChoices(subject, passageText, level);
   const ranked = LETTERS
     .map((letter, index) => ({
@@ -2183,6 +2179,22 @@ function validateMCQuestion(
   }
 
   const passageText = String(getPassageText(passage) || "");
+  const badPattern = (c: string): boolean => {
+    const t = String(c || "").toLowerCase();
+    return (
+      t.includes("students") ||
+      t.includes("class") ||
+      t.includes("text") ||
+      t.includes("reading") ||
+      t.includes("compared")
+    );
+  };
+
+  if (q.choices.some(badPattern)) {
+    console.warn("🚨 BAD ANSWERS — FORCING PASSAGE CHOICES");
+    q.choices = forcePassageChoices(passageText);
+  }
+
   let normalizedQuestion = String(q.question || "").trim();
   let choices = normalizeChoices(q.choices).map(cleanAnswerChoice) as [string, string, string, string];
   let safeAnswer = safeCorrectAnswer(q.correct_answer);
@@ -2962,7 +2974,7 @@ function buildPracticeFallback(
         "Voters approved the bridge bond first, and rail improvements were added only after that success.",
         "Population growth reduced cross-river travel demand, so no major transportation decision was necessary.",
       ]
-      : buildReadingChoices(safePassage, getReadingCorrectAnswerFromPassage(safePassage, leveledStem));
+      : forcePassageChoices(safePassage);
     const correctAnswer = String(sourceChoices[0] || "").trim();
     const distractors = buildStudentMistakeDistractors(safePassage, String(correctAnswer || "").trim(), leveledStem);
     const choices = [correctAnswer, ...distractors];
@@ -2999,51 +3011,24 @@ function buildPracticeFallback(
   });
 }
 
-function getReadingCorrectAnswerFromPassage(passage: PassageContent | string, questionText: string): string {
-  const sentences = getPassageText(passage)
+function forcePassageChoices(passage: PassageContent | string): [string, string, string, string] {
+  const passageText = getPassageText(passage);
+  const sentences = passageText
     .split(/[.!?]/)
     .map((s) => s.trim())
-    .filter((s) => s.length > 20 && !containsBanned(s));
-  if (!sentences.length) return String(questionText || "").trim();
-  const tokens = String(questionText || "").toLowerCase().split(/\s+/).filter((w) => w.length > 3);
-  const ranked = sentences
-    .map((s) => ({
-      s,
-      score: tokens.filter((t) => s.toLowerCase().includes(t)).length,
-    }))
-    .sort((a, b) => b.score - a.score);
-  return (ranked[0]?.s || sentences[0]).slice(0, 120).trim();
-}
+    .filter((s) => s.length > 20)
+    .slice(0, 4);
 
-function buildReadingChoices(passage: PassageContent | string, correctAnswer: string): [string, string, string, string] {
-  const text = getPassageText(passage);
-  const sentences = text.split(/[.!?]/).map((s) => s.trim()).filter((s) => s.length > 20);
-  const toChoiceSentence = (raw: string): string => {
-    const cleaned = String(raw || "").replace(/\s+/g, " ").trim().replace(/[.]+$/, "");
-    return `${cleaned.charAt(0).toUpperCase()}${cleaned.slice(1)}.`;
-  };
-  const mutate = (raw: string, idx: number): string => {
-    const cleaned = String(raw || "").trim();
-    if (idx % 3 === 0) return cleaned.replace(/\bbecause\b/gi, "even though").replace(/\bso\b/gi, "because");
-    if (idx % 3 === 1) return cleaned.replace(/\bsometimes\b/gi, "always").replace(/\bmay\b/gi, "must");
-    return cleaned.replace(/\bafter\b/gi, "before").replace(/\bbefore\b/gi, "after");
-  };
-  const correct = toChoiceSentence(String(correctAnswer || "").trim());
-  const distractors = sentences
-    .slice(0, 8)
-    .map((s, idx) => toChoiceSentence(mutate(s, idx)));
-  const filtered = distractors.filter((d) => d !== correct && !containsBanned(d) && d.length > 24);
-  const rebuilt = shuffleArray([correct, ...filtered.slice(0, 3)].filter(Boolean).map((c) => c.trim()));
-  while (rebuilt.length < 4) {
-    const fallback = filtered.find((d) => !rebuilt.includes(d)) ||
-      toChoiceSentence(`${correct.split(" ").slice(0, 10).join(" ")} based on details in the passage`);
-    rebuilt.push(fallback.trim());
+  if (sentences.length < 4) {
+    return [
+      passageText.slice(0, 80),
+      passageText.slice(80, 160),
+      passageText.slice(160, 240),
+      passageText.slice(240, 320),
+    ];
   }
-  const deduped = Array.from(new Set(rebuilt.map((c) => c.trim())));
-  while (deduped.length < 4) {
-    deduped.push(toChoiceSentence(`${correct.split(" ").slice(0, 9).join(" ")} using a detail from the passage`));
-  }
-  return normalizeChoices(deduped.slice(0, 4) as [string, string, string, string]);
+
+  return sentences as [string, string, string, string];
 }
 
 function buildStudentMistakeDistractors(
