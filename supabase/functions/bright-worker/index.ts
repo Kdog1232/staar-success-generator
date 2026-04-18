@@ -1620,18 +1620,6 @@ function buildTargetedHint(question: string): string {
   return "Start with what the question is asking, then match it to the strongest evidence.";
 }
 
-function extractQuestionFocus(question: string): string {
-  const filtered = String(question || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((token) =>
-      token.length > 3 &&
-      !["which", "what", "best", "most", "from", "with", "that", "this", "does", "into", "than", "because"].includes(token)
-    );
-  return filtered.slice(0, 3).join(", ");
-}
-
 function buildTargetedStrategy(
   subject: CanonicalSubject,
   question: string,
@@ -2237,14 +2225,16 @@ function splitPassageSentences(passage: PassageContent | string): string[] {
 }
 
 function extractQuestionFocus(question: string): string {
-  const focus = String(question || "")
+  const filtered = String(question || "")
     .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .filter((token) => token.length >= 4)
-    .slice(0, 6)
-    .join(" ");
-  return focus || "the question prompt";
+    .filter((token) =>
+      token.length > 3 &&
+      !["which", "what", "best", "most", "from", "with", "that", "this", "does", "into", "than", "because"].includes(token)
+    );
+
+  return filtered.slice(0, 3).join(", ");
 }
 
 function selectEvidenceSnippet(
@@ -3921,13 +3911,7 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json",
-      },
-    });
+    return new Response("ok", { headers: corsHeaders });
   }
 
   let grade = 5;
