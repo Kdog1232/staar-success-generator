@@ -948,6 +948,34 @@ more than once every 5 generations.`;
   - futuristic
   - cultural/tradition-based
 - DO NOT repeat the same setting twice in a row.`;
+  const globalBannedPhraseRules = `GLOBAL BANNED PHRASES (ALL SUBJECTS):
+- DO NOT use:
+  - "one detail shows"
+  - "another clue suggests"
+  - "a separate detail"
+  - "the strongest evidence"
+  - "this shows that"
+  - "the passage explains"
+- These are ALWAYS invalid in answer choices.`;
+  const subjectSpecificAnswerLogic = subject === "Math"
+    ? `SUBJECT-SPECIFIC ANSWER LOGIC (MATH):
+- Answers must represent a valid computation/result or a realistic incorrect reasoning path.
+- Correct answers must connect the operation to what the quantity represents.
+- Distractors should reflect common mistakes (wrong operation, skipped step, or misread quantity).`
+    : subject === "Science"
+    ? `SUBJECT-SPECIFIC ANSWER LOGIC (SCIENCE):
+- Answers must explain a concept, cause/effect, or system relationship.
+- Correct answers must reflect scientific reasoning tied to the scenario.
+- Distractors should reflect realistic scientific misconceptions.`
+    : subject === "Social Studies"
+    ? `SUBJECT-SPECIFIC ANSWER LOGIC (SOCIAL STUDIES):
+- Answers must explain historical reasoning, cause/effect, or significance.
+- Correct answers must connect actions, policies, or events to outcomes.
+- Distractors should reflect realistic misinterpretations of events or significance.`
+    : `SUBJECT-SPECIFIC ANSWER LOGIC (READING):
+- Answers must interpret meaning, inference, purpose, or development.
+- Answers should reference passage ideas naturally, not copy lines.
+- Correct answers must explain reasoning, not merely restate text.`;
   if (subject === "Reading") {
     const readingRange = readingPracticeWordRange(level);
     const mainIdeaStemRule = isMainIdeaSkill(skill)
@@ -1112,6 +1140,20 @@ Rules:
 - Do NOT generate fragments or cut-off responses.
 - Each answer choice must be at least 8–12 words long.
 - Answer choices can vary in sentence structure when it improves naturalness.
+- ANSWER CHOICE REQUIREMENTS (NON-NEGOTIABLE):
+  - Each answer must be a SPECIFIC claim about the passage.
+  - Each answer must include a clear idea, not a generic phrase.
+  - Each answer must be a COMPLETE thought with a clear reasoning path.
+  - Every answer must sound like something a student would genuinely think is correct.
+${globalBannedPhraseRules}
+${subjectSpecificAnswerLogic}
+- DISTRACTOR RULE (ALL SUBJECTS):
+  - Incorrect answers must be plausible and reflect realistic mistakes.
+  - Incorrect answers must differ by reasoning, not just wording.
+- VARIATION RULE (ALL SUBJECTS):
+  - All four choices must start differently.
+  - Use varied sentence structures.
+  - Each option must express a different reasoning path or interpretation.
 - Avoid sentence fragments like:
   - "A combo pack cost $6 and included..."
   - "The student council planned..."
@@ -1126,6 +1168,12 @@ Rules:
 - Include passage details in answers when they help clarity, but do not force every choice to repeat explicit passage details.
 - Avoid overly obvious or unrelated distractors.
 - Keep reasoning clear and student-friendly.
+- OUTPUT WORKFLOW (REQUIRED):
+  1) Generate a strong first draft.
+  2) Self-correct weak, generic, or unnatural choices.
+  3) Refine wording for specificity, plausibility, and student realism.
+  3.5) If any answer sounds templated or generic, rewrite it with a specific idea.
+  4) Output only after revision is complete.
 - Difficulty behavior lock:
   - Below: shorter passage, explicit main idea, direct identification questions, clearly incorrect but plausible distractors.
   - On Level: moderate passage length, some inference required, realistic distractors.
@@ -1203,6 +1251,20 @@ Rules:
 - Do NOT generate fragments or cut-off responses.
 - Each answer choice must be at least 8–12 words long.
 - Answer choices should be similar in length but may vary in structure to sound natural.
+- ANSWER CHOICE REQUIREMENTS (NON-NEGOTIABLE):
+  - Each answer must be a SPECIFIC claim about the question context.
+  - Each answer must include a clear idea, not a generic phrase.
+  - Each answer must be a COMPLETE thought with a clear reasoning path.
+  - Every answer must sound like something a student would genuinely think is correct.
+${globalBannedPhraseRules}
+${subjectSpecificAnswerLogic}
+- DISTRACTOR RULE (ALL SUBJECTS):
+  - Incorrect answers must be plausible and reflect realistic mistakes.
+  - Incorrect answers must differ by reasoning, not just wording.
+- VARIATION RULE (ALL SUBJECTS):
+  - All four choices must start differently.
+  - Use varied sentence structures.
+  - Each option must express a different reasoning path or interpretation.
 - Avoid sentence fragments like:
   - "A combo pack cost $6 and included..."
   - "The student council planned..."
@@ -1211,6 +1273,12 @@ Rules:
 - Incorrect answers must still be complete, realistic, and based on the passage.
 - Do NOT generate vague or generic wrong answers.
 - Forbidden wording in questions/choices: "main idea", "central idea", "author", "theme", "reader", "claim".
+- OUTPUT WORKFLOW (REQUIRED):
+  1) Generate a strong first draft.
+  2) Self-correct weak, generic, or unnatural choices.
+  3) Refine wording for specificity, plausibility, and student realism.
+  3.5) If any answer sounds templated or generic, rewrite it with a specific idea.
+  4) Output only after revision is complete.
 - Rigor profile:
   - question depth: ${rigor.questionDepth}
   - distractor quality: ${rigor.distractorQuality}
@@ -1220,6 +1288,8 @@ Rules:
 - Are all answer choices complete sentences?
 - Are any answers cut off or unfinished?
 - Do all choices clearly express a full idea?
+- Are answers specific and free of banned phrases?
+- Are choices non-templated and aligned to ${subject} logic?
 - If not, fix them before returning.
 - No markdown. JSON only.`;
 }
@@ -1285,6 +1355,34 @@ function buildEnrichmentPrompt(params: {
     : [
       "Reading uses ELAR-style reasoning grounded in the passage.",
     ].join("\n- ");
+  const globalBannedPhraseRules = `GLOBAL BANNED PHRASES (ALL SUBJECTS):
+- DO NOT use:
+  - "one detail shows"
+  - "another clue suggests"
+  - "a separate detail"
+  - "the strongest evidence"
+  - "this shows that"
+  - "the passage explains"
+- These are ALWAYS invalid in answer choices.`;
+  const subjectSpecificAnswerLogic = subject === "Math"
+    ? `SUBJECT-SPECIFIC ANSWER LOGIC (MATH):
+- Answers must represent valid computation/results or realistic incorrect reasoning paths.
+- Correct answers must connect the calculation to what the quantity represents.
+- Distractors should reflect common mistakes (wrong operation, skipped step, or misreading).`
+    : subject === "Science"
+    ? `SUBJECT-SPECIFIC ANSWER LOGIC (SCIENCE):
+- Answers must explain a concept, cause/effect relationship, or system interaction.
+- Correct answers must reflect scientific reasoning tied to the scenario.
+- Distractors should reflect realistic scientific misconceptions.`
+    : subject === "Social Studies"
+    ? `SUBJECT-SPECIFIC ANSWER LOGIC (SOCIAL STUDIES):
+- Answers must explain historical reasoning, cause/effect, or significance.
+- Correct answers must connect events, decisions, or policies to outcomes.
+- Distractors should reflect realistic misinterpretations of significance or impact.`
+    : `SUBJECT-SPECIFIC ANSWER LOGIC (READING):
+- Answers must interpret meaning, inference, purpose, or development.
+- Answers should reference passage ideas naturally, not copy lines.
+- Correct answers must explain reasoning, not merely restate text.`;
 
   const requiredQuestionBlock = `You are an expert STAAR test item writer aligned to Texas Essential Knowledge and Skills (TEKS).
 
@@ -1343,6 +1441,20 @@ ANSWER CHOICE RULES
 - Do NOT generate fragments or cut-off responses.
 - Each answer choice must be at least 8–12 words long.
 - Answer choices should be similar in length but may vary in structure to sound natural.
+- ANSWER CHOICE REQUIREMENTS (NON-NEGOTIABLE):
+  - Each answer must be a SPECIFIC claim about the cross passage.
+  - Each answer must include a clear idea, not a generic phrase.
+  - Each answer must be a COMPLETE thought with a clear reasoning path.
+  - Every answer must sound like something a student would genuinely think is correct.
+${globalBannedPhraseRules}
+${subjectSpecificAnswerLogic}
+- DISTRACTOR RULE (ALL SUBJECTS):
+  - Incorrect answers must be plausible and reflect realistic mistakes.
+  - Incorrect answers must differ in reasoning, not wording only.
+- VARIATION RULE (ALL SUBJECTS):
+  - All four answer choices must start differently.
+  - Use varied sentence structures.
+  - Each answer must represent different reasoning.
 - Avoid sentence fragments like:
   - "A combo pack cost $6 and included..."
   - "The student council planned..."
@@ -1369,6 +1481,12 @@ DISTRACTOR DESIGN (TEKS-ALIGNED)
 - Incorrect answers must still be complete, realistic, and based on the passage.
 - Do NOT generate vague or generic wrong answers.
 - DO NOT create unrelated or vague distractors.
+- OUTPUT WORKFLOW (REQUIRED):
+  1) Generate a strong first draft.
+  2) Self-correct weak, generic, or unnatural choices.
+  3) Refine wording for specificity, plausibility, and student realism.
+  3.5) If an answer sounds generic or templated, rewrite it with a specific idea.
+  4) Output only after revision is complete.
 
 CORRECT ANSWER RULE
 - The correct answer must use specific passage evidence.
@@ -1385,6 +1503,9 @@ SELF-CHECK (MANDATORY)
 - Are all answer choices complete sentences?
 - Are any answers cut off or unfinished?
 - Do all choices clearly express a full idea?
+- Are answers specific and free of banned phrases?
+- Are choices non-templated and aligned to ${subject} logic?
+- If any answer sounds generic, rewrite it before returning.
 - If not, fix them before returning.
 
 OUTPUT FORMAT FOR EACH cross.questions ITEM:
