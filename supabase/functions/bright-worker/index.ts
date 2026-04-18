@@ -1090,15 +1090,14 @@ Rules:
   - "Which idea is BEST supported..."
   - "What is most likely..."
   - "Which detail suggests..."
-- PASSAGE ANCHOR LOCK (NON-NEGOTIABLE)
-- Every answer choice MUST include a SPECIFIC detail from the passage.
-- VALID answers MUST contain at least one:
-  - character name
-  - number or quantity
-  - specific event or action
-  - concrete outcome from the passage
-- If an answer could apply to ANY passage:
-  → REWRITE IT
+- TWO-PHASE GENERATION FLOW (HIGH PRIORITY):
+  - PHASE 1 — THINK:
+    - First, internally draft a short passage and 5 strong multiple-choice questions.
+    - Prioritize clear ideas, natural language, realistic answer choices, one clearly correct answer, and three plausible distractors.
+    - Do not force rigid formatting during this phase.
+  - PHASE 2 — FORMAT:
+    - Convert your Phase 1 draft into the required strict JSON structure.
+    - Ensure final output is valid JSON and matches the required schema exactly.
 - BANNED ANSWERS (NEVER ALLOWED):
   - "students compared..."
   - "a class reviewed..."
@@ -1106,15 +1105,15 @@ Rules:
   - "reading team..."
   - "which statement best..."
 - These are INVALID unless explicitly in the passage.
-- Keep all 4 choices similar in structure and length to avoid obvious answer patterns.
+- Keep all 4 choices reasonably parallel and balanced in length to avoid obvious patterns.
 - Each answer choice MUST be a complete sentence.
 - Do NOT generate fragments or cut-off responses.
 - Each answer choice must be at least 8–12 words long.
-- All 4 answer choices must follow a similar grammatical structure.
+- Answer choices can vary in sentence structure when it improves naturalness.
 - Avoid sentence fragments like:
   - "A combo pack cost $6 and included..."
   - "The student council planned..."
-- Every answer must clearly express a full idea.
+- Answers should be clear and natural, represent different ideas, and be plausible without sounding repetitive.
 - If an answer choice is cut off or incomplete, rewrite it fully before returning.
 - Never use: "best explains", "this shows", "the answer is supported", "it can be inferred".
 - Correct answers must include a specific event plus cause/effect OR decision/result reasoning.
@@ -1122,7 +1121,7 @@ Rules:
 - Incorrect answers must still be complete, realistic, and based on the passage.
 - Do NOT generate vague or generic wrong answers.
 - If any choice feels generic or easy, rewrite it with more specific passage evidence.
-- Ensure answers are supported by the passage.
+- Include passage details in answers when they help clarity, but do not force every choice to repeat explicit passage details.
 - Avoid overly obvious or unrelated distractors.
 - Keep reasoning clear and student-friendly.
 - Difficulty behavior lock:
