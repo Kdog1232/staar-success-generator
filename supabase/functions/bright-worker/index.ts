@@ -1191,9 +1191,9 @@ function isValidQuestion(q: Question, passage: PassageContent | string): boolean
   const passageText = getPassageText(passage);
   const supportScore = scoreChoiceSupport(passageText, correctChoice);
 
-  if (supportScore >= 2) return true;
+  if (supportScore >= 1) return true;
 
-  return false;
+  return hasLooseSupport(passageText, correctChoice);
 }
 
 function validateMCQuestion(q: Question, passage: PassageContent | string): Question {
