@@ -3149,8 +3149,15 @@ function sanitizeQuestions(
     console.warn("⚠️ Not enough valid questions — regenerating weak ones");
 
     while (questions.length < 5) {
+      const fallbackQuestion: Question = {
+        type: "mc",
+        question: `Fallback question ${questions.length + 1}: Which choice is best supported by the passage?`,
+        choices: getFallbackChoices(subject, skill),
+        correct_answer: safeCorrectAnswer(pickRandom(["A", "B", "C", "D"])),
+        explanation: "",
+      };
       questions.push(
-        repairQuestion(generateFallbackQuestion(subject, mode, questions.length, passageText), subject, passageText),
+        repairQuestion(fallbackQuestion, subject, passageText),
       );
     }
   }
