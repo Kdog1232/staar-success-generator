@@ -3924,36 +3924,49 @@ serve(async (req) => {
     };
   };
   const returnCore = async (data: CoreResponse) => {
+    const sanitizeAndFillQuestions = (
+      questions: Question[],
+      passage: PassageContent | string,
+      mode: "practice" | "cross",
+    ): Question[] => {
+      const normalizedQuestions = questions
+        .map((q) => validateMCQuestion(q, passage))
+        .filter((q) => {
+          const valid = isValidQuestion(q, passage);
+
+          if (!valid) {
+            console.warn(`❌ Dropping bad ${mode} question:`, q.question);
+          }
+
+          return valid;
+        });
+
+      if (normalizedQuestions.length < 5) {
+        console.warn(`⚠️ Filling missing ${mode} questions`);
+
+        const needed = 5 - normalizedQuestions.length;
+
+        for (let i = 0; i < needed; i++) {
+          normalizedQuestions.push({
+            type: "mc",
+            question: "Which idea is BEST supported by the passage?",
+            choices: getFallbackChoices(subject, skill),
+            correct_answer: "A",
+            explanation: "Use passage evidence to determine the best answer.",
+          });
+        }
+      }
+
+      return normalizedQuestions;
+    };
+
     const practice = {
       questions: [...(data?.practice?.questions || [])],
     };
     const practicePassage = data?.passage || "";
 
-    practice.questions = practice.questions.filter((q) => {
-      const valid = isValidQuestion(q, practicePassage);
+    practice.questions = sanitizeAndFillQuestions(practice.questions, practicePassage, "practice");
 
-      if (!valid) {
-        console.warn("❌ Dropping bad practice question:", q.question);
-      }
-
-      return valid;
-    });
-
-    if (practice.questions.length < 5) {
-      console.warn("⚠️ Filling missing practice questions");
-
-      const needed = 5 - practice.questions.length;
-
-      for (let i = 0; i < needed; i++) {
-        practice.questions.push({
-          type: "mc",
-          question: "Which idea is BEST supported by the passage?",
-          choices: getFallbackChoices(subject, skill),
-          correct_answer: "A",
-          explanation: "Use details from the passage to determine the best answer.",
-        });
-      }
-    }
     const cross = await generateCross({
       grade,
       subject,
@@ -3961,34 +3974,8 @@ serve(async (req) => {
       level,
       practiceQuestions: practice.questions,
     });
-    cross.questions = cross.questions.map((q) => validateMCQuestion(q, cross.passage));
     const crossPassage = cross?.passage || "";
-
-    cross.questions = cross.questions.filter((q) => {
-      const valid = isValidQuestion(q, crossPassage);
-
-      if (!valid) {
-        console.warn("❌ Dropping bad cross question:", q.question);
-      }
-
-      return valid;
-    });
-
-    if (cross.questions.length < 5) {
-      console.warn("⚠️ Filling missing cross questions");
-
-      const needed = 5 - cross.questions.length;
-
-      for (let i = 0; i < needed; i++) {
-        cross.questions.push({
-          type: "mc",
-          question: "Which idea is BEST supported by the passage?",
-          choices: getFallbackChoices(subject, skill),
-          correct_answer: "A",
-          explanation: "Use passage evidence to determine the best answer.",
-        });
-      }
-    }
+    cross.questions = sanitizeAndFillQuestions(cross.questions, crossPassage, "cross");
     return jsonResponse({
       teks: teksCode,
       skill,
@@ -4029,7 +4016,31 @@ serve(async (req) => {
   };
   const returnEnrichment = (data: EnrichmentResponse) =>
     {
-      const practiceQuestions = (data as Partial<WorkerAttempt>)?.practice?.questions || [];
+      const practicePassage = String((data as Partial<WorkerAttempt>)?.passage || "");
+      const practiceQuestions = ((data as Partial<WorkerAttempt>)?.practice?.questions || [])
+        .map((q) => validateMCQuestion(q, practicePassage))
+        .filter((q) => {
+          const valid = isValidQuestion(q, practicePassage);
+
+          if (!valid) {
+            console.warn("❌ Dropping bad practice question:", q.question);
+          }
+
+          return valid;
+        });
+      if (practiceQuestions.length < 5) {
+        console.warn("⚠️ Filling missing practice questions");
+        const needed = 5 - practiceQuestions.length;
+        for (let i = 0; i < needed; i++) {
+          practiceQuestions.push({
+            type: "mc",
+            question: "Which idea is BEST supported by the passage?",
+            choices: getFallbackChoices(subject, skill),
+            correct_answer: "A",
+            explanation: "Use passage evidence to determine the best answer.",
+          });
+        }
+      }
       const crossPassage = String(data?.cross?.passage || "");
       let crossQuestions = (data?.cross?.questions || []).map((q) => validateMCQuestion(q, crossPassage));
       crossQuestions = crossQuestions.filter((q) => {
