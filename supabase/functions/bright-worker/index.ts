@@ -3584,11 +3584,11 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
     );
 
     if (!hasConnection) {
-      const subjectSafeFallback = getFallbackChoices(crossSubject, q.question);
+      const subjectSafeFallback = getFallbackChoices("Reading", q.question);
       if (hasLooseSupport(passageText, subjectSafeFallback.join(" "))) {
         q.choices = subjectSafeFallback;
       } else {
-        const rebuilt = buildUniversalChoices(crossSubject, getPassageText(crossPassage), "On Level");
+        const rebuilt = buildUniversalChoices("Reading", getPassageText(crossPassage), "On Level");
         if (hasLooseSupport(passageText, rebuilt.join(" "))) {
           q.choices = rebuilt;
         } else {
@@ -4170,16 +4170,123 @@ function sanitizeQuestions(
   }
 
   if (mode === "Cross-Curricular") {
-    return alignedSet.filter((question) => {
+    const validatedCross = alignedSet.filter((question) => {
       if (!Array.isArray(question.choices) || question.choices.length !== 4) return false;
       if (typeof question.correct_answer !== "string") return false;
       if (!["A", "B", "C", "D"].includes(question.correct_answer)) return false;
       if (!String(question.explanation || "").trim()) return false;
       return true;
     });
+    return enforceCrossReadingOnly(validatedCross, passageText);
   }
 
   return alignedSet;
+}
+
+const CROSS_READING_ANGLE_STEMS = [
+  "Which statement best captures the central idea developed in the passage?",
+  "Which detail from the passage best supports the author’s reasoning?",
+  "What can the reader infer about the decision-making process described in the passage?",
+  "How does the author organize information to develop the main point?",
+  "What is the author’s purpose for including these specific details in the passage?",
+] as const;
+
+function hasCrossComputationLeak(text: string): boolean {
+  const t = String(text || "").toLowerCase();
+  const hasForbiddenWord = /\b(calculate|solve|total|sum|multiply|product|quotient|equation|formula|compute|evaluate expression)\b/i.test(t);
+  const hasNumbersAndOps = /\d/.test(t) && /(\+|\-|\*|\/|=|\badd\b|\bsubtract\b|\bdivide\b|\bmultiply\b)/i.test(t);
+  return hasForbiddenWord || hasNumbersAndOps;
+}
+
+function rewriteCrossQuestionStem(index: number): string {
+  return CROSS_READING_ANGLE_STEMS[index % CROSS_READING_ANGLE_STEMS.length];
+}
+
+function buildCrossReadingChoices(
+  passage: PassageContent | string,
+  priorChoices: [string, string, string, string],
+): [string, string, string, string] {
+  const passageText = getPassageText(passage);
+  const rebuilt = buildUniversalChoices("Reading", passageText, "On Level");
+  const cleanedRebuilt = normalizeChoices(rebuilt).map((choice) => cleanAnswerChoice(choice)) as [string, string, string, string];
+  const rebuiltUnique = new Set(cleanedRebuilt.map((c) => c.toLowerCase().trim())).size === 4;
+  if (rebuiltUnique && cleanedRebuilt.every((choice) => !hasCrossComputationLeak(choice))) {
+    return cleanedRebuilt;
+  }
+  const safePrior = normalizeChoices(priorChoices).map((choice) => cleanAnswerChoice(choice)) as [string, string, string, string];
+  return safePrior.every((choice) => !hasCrossComputationLeak(choice))
+    ? safePrior
+    : forcePassageChoices(passageText);
+}
+
+function questionSemanticKey(question: string): string {
+  const stop = new Set(["the", "a", "an", "is", "does", "what", "which", "how", "why", "in", "of", "to", "for"]);
+  return String(question || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((word) => word && !stop.has(word))
+    .slice(0, 8)
+    .join(" ");
+}
+
+function enforceCrossReadingOnly(
+  questions: Question[],
+  passage: PassageContent | string,
+): Question[] {
+  const seen = new Set<string>();
+  const output: Question[] = [];
+
+  for (const q of questions) {
+    const combined = `${q.question} ${(q.choices || []).join(" ")}`;
+    const needsRewrite = hasCrossComputationLeak(combined);
+    const fallbackStem = rewriteCrossQuestionStem(output.length);
+    const rewritten: Question = needsRewrite
+      ? {
+        ...q,
+        type: "mc",
+        question: fallbackStem,
+        choices: buildCrossReadingChoices(passage, normalizeChoices(q.choices)),
+        correct_answer: "A",
+      }
+      : {
+        ...q,
+        question: String(q.question || "").trim() || fallbackStem,
+        choices: normalizeChoices(q.choices).map((choice) => cleanAnswerChoice(choice)) as [string, string, string, string],
+      };
+
+    const semantic = questionSemanticKey(rewritten.question);
+    if (!semantic || seen.has(semantic)) continue;
+    seen.add(semantic);
+    output.push(rewritten);
+    if (output.length === 5) break;
+  }
+
+  let angleIndex = 0;
+  while (output.length < 5) {
+    const stem = rewriteCrossQuestionStem(angleIndex);
+    angleIndex += 1;
+    const semantic = questionSemanticKey(stem);
+    if (seen.has(semantic)) continue;
+    seen.add(semantic);
+    output.push({
+      type: "mc",
+      question: stem,
+      choices: buildCrossReadingChoices(passage, forcePassageChoices(getPassageText(passage))),
+      correct_answer: "A",
+      explanation: "The best answer is supported by details in the passage.",
+      hint: "Find which option is most strongly supported by passage evidence.",
+      think: "Eliminate choices that include unsupported or exaggerated claims.",
+      step_by_step: "Read the question, locate key evidence, compare choices, and select the most supported answer.",
+      common_mistake: "Choosing an option that sounds logical but is not directly supported by the text.",
+      parent_tip: "Ask your child to point to specific text evidence before finalizing an answer.",
+    });
+  }
+
+  return output.slice(0, 5).map((q, idx) => ({
+    ...q,
+    question: rewriteCrossQuestionStem(idx),
+  }));
 }
 
 function validateSkillAlignment(skill: string, questions: Question[]): boolean {
@@ -4634,35 +4741,46 @@ function generateAnswerKey(
   level: Level = "On Level",
   passageText = "",
 ): AnswerKeyEntry[] {
+  void level;
   const shouldUsePassage = isPassageBased(mode, subject);
   const scopedPassageText = shouldUsePassage ? passageText : "";
   const usedEvidence = new Set<string>();
   return questions.slice(0, 5).map((q, index) => {
     try {
-      const support = buildSupportContent(
-        subject,
-        q,
-        index,
-        level,
-        mode === "cross" ? "Cross-Curricular" : "Practice",
-        scopedPassageText,
-        "Answer Key",
-      );
-      const { letter } = getQuestionCorrectPair(q);
-      const aligned = buildAlignedExplanation(q, scopedPassageText, usedEvidence, shouldUsePassage);
-      const explanation = shouldUsePassage
-        ? aligned.why
-        : (String(q.explanation || "").trim() || support.explanation || "");
+      const normalizedChoices = normalizeChoices(q.choices);
+      const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
+      const correctIndex = LETTERS.indexOf(correctLetter);
+      const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
+      const distractor = normalizedChoices
+        .map((choice, idx) => ({ letter: LETTERS[idx], choice: String(choice || "").trim() }))
+        .find((entry) => entry.letter !== correctLetter && entry.choice);
+      const evidence = shouldUsePassage
+        ? (selectEvidenceSnippet(q, scopedPassageText, usedEvidence) ||
+          getRelevantSnippet(scopedPassageText, q.question, correctChoice) ||
+          "the strongest supporting detail in the passage")
+        : "the strongest detail provided in the question";
+      const explanationStyles = [
+        `For "${String(q.question || "").trim()}", the correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because the evidence "${evidence}" supports that choice most directly.`,
+        `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is correct for "${String(q.question || "").trim()}" since "${evidence}" aligns with that reasoning better than the other options.`,
+        `The best answer to "${String(q.question || "").trim()}" is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}; the passage detail "${evidence}" confirms this interpretation.`,
+      ];
+      const explanationLead = explanationStyles[index % explanationStyles.length];
+      const explanation = distractor
+        ? `${explanationLead} ${distractor.letter} (${distractor.choice}) is incorrect because it does not match the same evidence as precisely.`
+        : explanationLead;
+      const commonMistake = distractor
+        ? `A common mistake is choosing ${distractor.letter} because it seems related, but it is not the best-supported interpretation of the passage evidence.`
+        : "A common mistake is selecting an answer that sounds plausible without checking passage evidence.";
+
+      const parentTip = subject === "Reading"
+        ? "👨‍👩‍👧 Parent Tip:\nHave your child cite one line from the passage that proves the correct answer and one line that disproves a distractor."
+        : "👨‍👩‍👧 Parent Tip:\nAsk your child to explain why the correct choice is better supported than at least one distractor.";
       return {
         question_id: ensureQuestionId(q, index, mode),
-        correct_answer: letter || "",
+        correct_answer: correctLetter || "",
         explanation,
-        common_mistake: support.common_mistake || "",
-        parent_tip: support.parent_tip
-          ? (String(support.parent_tip).startsWith("👨‍👩‍👧 Parent Tip")
-            ? String(support.parent_tip)
-            : `👨‍👩‍👧 Parent Tip:\n${support.parent_tip}`)
-          : "",
+        common_mistake: commonMistake,
+        parent_tip: parentTip,
       };
     } catch (err) {
       console.error("Answer build failed:", err);
@@ -4930,28 +5048,21 @@ function buildFallbackResponse(
   };
 }
 
-function normalizeChoiceWords(choice: string): string[] {
-  return String(choice || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean);
-}
+function shouldRewrite(choices: string[]): boolean {
+  const starts = choices.map((c) =>
+    String(c || "").toLowerCase().split(" ").slice(0, 5).join(" ")
+  );
 
-function hasRepeatedChoiceStarts(choices: [string, string, string, string]): boolean {
-  const sizes = [5, 6, 7];
-  for (const size of sizes) {
-    const seen = new Set<string>();
-    for (const choice of choices) {
-      const words = normalizeChoiceWords(choice);
-      const prefixWords = words.length >= size ? words.slice(0, size) : words;
-      if (!prefixWords.length) continue;
-      const key = prefixWords.join(" ");
-      if (seen.has(key)) return true;
-      seen.add(key);
-    }
+  const counts: Record<string, number> = {};
+  for (const s of starts) {
+    counts[s] = (counts[s] || 0) + 1;
   }
-  return false;
+
+  const values = Object.values(counts);
+  const maxRepeat = values.length ? Math.max(...values) : 0;
+
+  // ONLY rewrite if 3+ answers start the same
+  return maxRepeat >= 3;
 }
 
 function fallbackDiverseChoices(): [string, string, string, string] {
@@ -4973,7 +5084,7 @@ function rewriteChoicesForUniqueStarts(question: string): [string, string, strin
   ];
 
   const uniqueChoices = new Set(rewritten.map((choice) => choice.toLowerCase().trim())).size === 4;
-  if (!uniqueChoices || hasRepeatedChoiceStarts(rewritten)) {
+  if (!uniqueChoices || shouldRewrite(rewritten)) {
     return fallbackDiverseChoices();
   }
 
@@ -4984,7 +5095,7 @@ function validateAndRewriteChoiceStarts(questions: Question[]): Question[] {
   return questions.map((q) => {
     if (!Array.isArray(q.choices) || q.choices.length !== 4) return q;
     const normalizedChoices = normalizeChoices(q.choices).map((choice) => cleanAnswerChoice(choice)) as [string, string, string, string];
-    if (!hasRepeatedChoiceStarts(normalizedChoices)) {
+    if (!shouldRewrite(normalizedChoices)) {
       return {
         ...q,
         choices: normalizedChoices,
@@ -4993,7 +5104,7 @@ function validateAndRewriteChoiceStarts(questions: Question[]): Question[] {
 
     const rewritten = rewriteChoicesForUniqueStarts(q.question || "");
     const fallback = fallbackDiverseChoices();
-    const safeChoices = hasRepeatedChoiceStarts(rewritten) ? fallback : rewritten;
+    const safeChoices = shouldRewrite(rewritten) ? fallback : rewritten;
 
     return {
       ...q,
@@ -5019,25 +5130,77 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
   data.practice.questions = validateAndRewriteChoiceStarts(validatedPractice);
   data.cross.questions = validateAndRewriteChoiceStarts(validatedCross);
 
-  const rebuildTutor = (questions: Question[], mode: "practice" | "cross"): TutorExplanation[] =>
-    questions.map((q, i) => ({
-      question_id: ensureQuestionId(q, i, mode),
-      question: q.question,
-      explanation: q.explanation || "Review the passage details and justify the best answer choice.",
-      common_mistake: q.common_mistake || "Students misread the passage.",
-      hint: q.hint || "Find evidence in the passage that directly supports one choice.",
-      think: q.think || "Eliminate unsupported choices before selecting the strongest answer.",
-      step_by_step: q.step_by_step || "Read the question, scan key details, remove wrong answers, then select the best supported choice.",
-    }));
+  const buildBoundSupport = (
+    q: Question,
+    passage: string,
+    usedEvidence: Set<string>,
+    variant = 0,
+  ): { explanation: string; commonMistake: string; hint: string; think: string; stepByStep: string; parentTip: string } => {
+    const normalizedChoices = normalizeChoices(q.choices);
+    const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
+    const correctIndex = LETTERS.indexOf(correctLetter);
+    const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
+    const wrongOption = normalizedChoices
+      .map((choice, idx) => ({ letter: LETTERS[idx], choice: String(choice || "").trim() }))
+      .find((entry) => entry.letter !== correctLetter && entry.choice);
+    const evidenceSnippet = selectEvidenceSnippet(q, passage, usedEvidence) ||
+      getRelevantSnippet(passage, q.question, correctChoice) ||
+      "the strongest details in the passage";
 
-  const rebuildAnswerKey = (questions: Question[], mode: "practice" | "cross"): AnswerKeyEntry[] =>
-    questions.map((q, i) => ({
-      question_id: ensureQuestionId(q, i, mode),
-      correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
-      explanation: q.explanation || "Use text evidence to confirm the correct answer.",
-      common_mistake: q.common_mistake || "Students misread the passage.",
-      parent_tip: q.parent_tip || "👨‍👩‍👧 Parent Tip:\nAsk your student to cite one line from the passage as proof.",
-    }));
+    const explanationVariants = [
+      `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it directly answers "${String(q.question || "").trim()}" and is supported by this passage detail: "${evidenceSnippet}".`,
+      `For "${String(q.question || "").trim()}", ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is correct since the passage states "${evidenceSnippet}", which supports that reasoning.`,
+      `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is the best answer to "${String(q.question || "").trim()}" because the evidence "${evidenceSnippet}" confirms that interpretation.`,
+    ];
+    const explanationLead = explanationVariants[Math.abs(variant) % explanationVariants.length];
+    const explanationTail = wrongOption
+      ? ` ${wrongOption.letter} (${wrongOption.choice}) is a common trap because it sounds related but is not supported as strongly by the same evidence.`
+      : " The distractors are weaker because they are not directly supported by the cited passage detail.";
+    const explanation = `${explanationLead}${explanationTail}`;
+
+    const commonMistake = wrongOption
+      ? `A common mistake is selecting ${wrongOption.letter} because it sounds plausible, but it does not match the strongest passage evidence for the question.`
+      : "A common mistake is choosing an option that sounds familiar instead of proving it with passage evidence.";
+
+    const hint = `Match each choice to the evidence, then keep the option that best answers: "${String(q.question || "").trim()}".`;
+    const think = `Which exact words in the passage prove ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}?`;
+    const stepByStep = `1. Read the question carefully.\n2. Locate evidence in the passage.\n3. Compare all four choices.\n4. Keep ${correctLetter} only if it is best supported.\n5. Eliminate choices that are only partly true.`;
+    const parentTip = "👨‍👩‍👧 Parent Tip:\nAsk your child to point to one sentence in the passage that proves the correct answer and one sentence that disproves a distractor.";
+
+    return { explanation, commonMistake, hint, think, stepByStep, parentTip };
+  };
+
+  const rebuildTutor = (questions: Question[], mode: "practice" | "cross"): TutorExplanation[] => {
+    const sourcePassage = mode === "cross" ? crossPassage : practicePassage;
+    const usedEvidence = new Set<string>();
+    return questions.map((q, i) => {
+      const support = buildBoundSupport(q, sourcePassage, usedEvidence, i);
+      return {
+        question_id: ensureQuestionId(q, i, mode),
+        question: String(q.question || "").trim(),
+        explanation: support.explanation,
+        common_mistake: support.commonMistake,
+        hint: support.hint,
+        think: support.think,
+        step_by_step: support.stepByStep,
+      };
+    });
+  };
+
+  const rebuildAnswerKey = (questions: Question[], mode: "practice" | "cross"): AnswerKeyEntry[] => {
+    const sourcePassage = mode === "cross" ? crossPassage : practicePassage;
+    const usedEvidence = new Set<string>();
+    return questions.map((q, i) => {
+      const support = buildBoundSupport(q, sourcePassage, usedEvidence, i);
+      return {
+        question_id: ensureQuestionId(q, i, mode),
+        correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
+        explanation: support.explanation,
+        common_mistake: support.commonMistake,
+        parent_tip: support.parentTip,
+      };
+    });
+  };
 
   data.tutor = {
     practice: rebuildTutor(validatedPractice, "practice"),
@@ -5148,10 +5311,17 @@ serve(async (req) => {
       mode: "practice" | "cross",
     ): Question[] => {
       void mode;
+      const seen = new Set<string>();
       const normalizedQuestions = questions
         .map((q) => repairQuestion(q, subject, passage))
         .map((q) => normalizeAndValidate(q, passage))
-        .filter((q) => isValidQuestion(q, passage));
+        .filter((q) => isValidQuestion(q, passage))
+        .filter((q) => {
+          const key = String(q.question || "").trim().toLowerCase();
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
 
       return normalizedQuestions;
     };
