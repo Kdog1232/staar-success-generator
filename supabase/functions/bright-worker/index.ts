@@ -1394,6 +1394,7 @@ OUTPUT FORMAT FOR EACH cross.questions ITEM:
   "choices": ["...", "...", "...", "..."],
   "correct_answer": "A"
 }
+- `choices` entries must be raw option text only (no "A.", "B.", "C.", or "D." prefixes).
 
 FINAL RULE
 Do NOT write a generic question.
@@ -1513,6 +1514,7 @@ Rules:
 - Include exactly 5 questions.
 - Each question must have exactly 4 choices.
 - Choices must be concise, complete, and plausible.
+- Choices must be raw option text only (no leading "A.", "B.", "C.", or "D.").
 - Keep explanations short (1 sentence).
 - No commentary, markdown, or extra keys.`;
   }
@@ -1535,6 +1537,7 @@ Rules:
 Create cross-curricular content for ${params.subject}, grade ${params.grade}, skill ${params.skill}.
 Use exactly 1 passage and exactly 5 questions.
 Each question must have exactly 4 choices.
+Choices must be raw option text only (never include "A.", "B.", "C.", or "D." in the `choices` array).
 Keep explanations short (1 sentence).
 No extra commentary.`;
 }
@@ -1804,7 +1807,7 @@ function normalizeChoices(choices: unknown): [string, string, string, string] {
 
   return clean.map((c) => cleanChoice(
     String(c || "")
-      .replace(/^[A-D]\.\s*/i, "")
+      .replace(/^\s*[\(\[]?\s*[A-Da-d]\s*[\)\].:-]\s*/g, "")
       .trim()
   )) as [string, string, string, string];
 }
