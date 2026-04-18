@@ -138,6 +138,13 @@ const BANNED_PHRASES = [
   "this conclusion",
   "this interpretation",
 ];
+const GENERIC_ANSWER_PATTERNS: RegExp[] = [
+  /\bstudents?\s+compared\b/i,
+  /\ba\s+class\s+reviewed\b/i,
+  /\bwhich statement best\b/i,
+  /\bwhich answer best\b/i,
+  /\bstatement best\b/i,
+];
 
 function containsBanned(choice: string): boolean {
   return BANNED_PHRASES.some((p) => String(choice || "").toLowerCase().includes(p));
@@ -1084,6 +1091,21 @@ Rules:
   - "What is most likely..."
   - "Which detail suggests..."
 - All 4 answer choices must explicitly reference passage details (events/actions/outcomes).
+- PASSAGE ANCHOR LOCK (REQUIRED)
+- All answer choices MUST reference the passage.
+- If an answer choice does NOT include:
+  - a character from the passage OR
+  - a number, object, or event from the passage OR
+  - a clearly stated idea from the passage
+  → DO NOT USE IT
+- Rewrite until all 4 answer choices are grounded in the passage.
+- DO NOT use generic academic statements such as:
+  - "students compared..."
+  - "a class reviewed..."
+  - "text sets"
+  - "reading team"
+  - "quotations"
+- These are NEVER valid unless they appear in the passage.
 - Keep all 4 choices similar in structure and length to avoid obvious answer patterns.
 - Each answer choice MUST be a complete sentence.
 - Do NOT generate fragments or cut-off responses.
@@ -1301,6 +1323,21 @@ ANSWER CHOICE RULES
 - Each answer choice MUST fully answer the question.
 - ALL 4 choices must reference the passage explicitly.
 - Include real details, events, or outcomes in each choice.
+- PASSAGE ANCHOR LOCK (REQUIRED)
+- All answer choices MUST reference the passage.
+- If an answer choice does NOT include:
+  - a character from the passage OR
+  - a number, object, or event from the passage OR
+  - a clearly stated idea from the passage
+  → DO NOT USE IT
+- Rewrite until all 4 answer choices are grounded in the passage.
+- DO NOT use generic academic statements such as:
+  - "students compared..."
+  - "a class reviewed..."
+  - "text sets"
+  - "reading team"
+  - "quotations"
+- These are NEVER valid unless they appear in the passage.
 - Keep choices similar in structure and length.
 - Each answer choice MUST be a complete sentence.
 - Do NOT generate fragments or cut-off responses.
@@ -1534,12 +1571,12 @@ function buildSubjectPassage(subject: CanonicalSubject, level: Level = "On Level
   }
 
   if (rigor.passage === "simple") {
-    return "A class reading team compared two articles about free-time reading. Some students preferred short texts for quick facts. Others preferred longer pieces with more examples. Students checked details to make sure each claim matched the text evidence. They revised their summary to reflect the strongest support.";
+    return "Two groups discussed two articles about free-time reading. Some readers preferred short texts for quick facts. Others preferred longer pieces with more examples. The groups checked details to make sure each claim matched the evidence. They revised their summary to reflect the strongest support.";
   }
   if (rigor.passage === "complex") {
-    return "A class reading team analyzed two reports to explain why students preferred different reading formats. Some readers valued short passages for quick access to key points, while others favored long-form pieces that developed ideas through examples and context.\n\nAs students compared quotations across the reports, they noticed how wording choices could shift meaning and create apparent disagreement. They revised claims, reorganized evidence, and adjusted conclusions to better reflect what the strongest details supported. Their final write-up argued that careful comparison of language and evidence leads to more reliable conclusions, especially when two texts seem to conflict at first glance.";
+    return "Two groups analyzed two reports to explain why readers preferred different reading formats. Some readers valued short passages for quick access to key points, while others favored long-form pieces that developed ideas through examples and context.\n\nAs the groups compared exact lines across the reports, they noticed how wording choices could shift meaning and create apparent disagreement. They revised claims, reorganized evidence, and adjusted conclusions to better reflect what the strongest details supported. Their final write-up argued that careful comparison of language and evidence leads to more reliable conclusions, especially when two sources seem to conflict at first glance.";
   }
-  return "A class reading team reviewed two text sets to understand why students preferred different reading formats. Some students said shorter pieces helped them find key ideas quickly, while others preferred longer selections with more examples and context. Students compared quotations, checked which claims were supported by multiple details, and revised conclusions to match the strongest evidence in each text. When two sources appeared to conflict, the team re-read the original lines and identified how word choice changed meaning. Their final report explained how careful reading and evidence-based reasoning led to clearer conclusions.";
+  return "Two groups reviewed two article collections to understand why readers preferred different reading formats. Some readers said shorter pieces helped them find key ideas quickly, while others preferred longer selections with more examples and context. The groups compared exact lines, checked which claims were supported by multiple details, and revised conclusions to match the strongest evidence in each source. When two sources appeared to conflict, they re-read the original lines and identified how word choice changed meaning. Their final report explained how careful reading and evidence-based reasoning led to clearer conclusions.";
 }
 
 function buildMathFallbackChoices(): [string, string, string, string] {
@@ -2070,12 +2107,16 @@ function hasBalancedReadingChoices(choices: [string, string, string, string]): b
 }
 
 function finalValidation(q: Question, passage: string, skill: string): boolean {
-  void passage;
   void skill;
   if (!q || !Array.isArray(q.choices) || q.choices.length !== 4) return false;
   const text = `${q.question || ""} ${q.choices.join(" ")}`.toLowerCase();
   if (text.includes("newspaper") || text.includes("interview")) return false;
   if (new Set(q.choices.map((choice) => String(choice || "").trim().toLowerCase())).size < 4) return false;
+  const passageText = String(passage || "").trim();
+  if (passageText) {
+    const allAnchored = q.choices.every((choice) => isPassageAnchoredChoice(String(choice || ""), passageText));
+    if (!allAnchored) return false;
+  }
   return true;
 }
 
@@ -3751,8 +3792,40 @@ function sanitizeVisual(value: unknown): Question["visual"] | undefined {
 }
 
 function isGenericAnswerChoice(choice: string): boolean {
+  return isGenericAnswer(choice);
+}
+
+function isGenericAnswer(choice: string): boolean {
   const text = String(choice || "").trim();
-  return !text;
+  const lowered = text.toLowerCase();
+  if (!lowered) return true;
+  return lowered.includes("students") ||
+    lowered.includes("class") ||
+    lowered.includes("text sets") ||
+    lowered.includes("reading team") ||
+    lowered.includes("quotations") ||
+    GENERIC_ANSWER_PATTERNS.some((pattern) => pattern.test(lowered));
+}
+
+function rewriteChoicesFromPassage(passage: string): [string, string, string, string] {
+  const sentences = String(passage || "")
+    .split(/[.!?]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 4);
+  const seed = sentences[0] || "the passage includes an important detail";
+  return Array.from({ length: 4 }, (_, index) => {
+    const sentence = String(sentences[index] || seed).replace(/\s+/g, " ").trim().replace(/[.]+$/, "");
+    return `Based on the passage, ${sentence.charAt(0).toLowerCase() + sentence.slice(1)}.`;
+  }) as [string, string, string, string];
+}
+
+function isPassageAnchoredChoice(choice: string, passage: string): boolean {
+  const text = String(choice || "").trim();
+  const source = String(passage || "").trim();
+  if (!text || !source) return false;
+  if (isGenericAnswerChoice(text) && !source.toLowerCase().includes(text.toLowerCase())) return false;
+  return hasPassageSupportForChoice(source, text) || hasLooseSupport(source, text);
 }
 
 function validateChoices(choices: string[], passage: string): boolean {
@@ -3970,7 +4043,13 @@ function sanitizeQuestions(
       ? `${rawQuestion.replace(/\s+$/g, "")} Select TWO answers.`
       : rawQuestion;
 
+    const passageText = getPassageText(passage);
     let normalizedChoices = normalizeChoices(q.choices).map(cleanAnswerChoice) as [string, string, string, string];
+    if (normalizedChoices.some((choice) => isGenericAnswer(choice))) {
+      console.warn("🚨 Generic answers detected — rewriting choices");
+      q.choices = rewriteChoicesFromPassage(passageText);
+      normalizedChoices = normalizeChoices(q.choices).map(cleanAnswerChoice) as [string, string, string, string];
+    }
     const normalizedCorrectAnswer = type === "multi_select"
       ? normalizeMultiSelectAnswer(q.correct_answer || "")
       : safeCorrectAnswer(q.correct_answer);
