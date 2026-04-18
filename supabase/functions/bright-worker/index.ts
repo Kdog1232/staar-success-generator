@@ -1300,10 +1300,17 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
   const isSupported = hasLooseSupport(passageText, correctText) || hasPassageSupportForChoice(passageText, correctText);
   let resolvedCorrectLetter: ChoiceLetter = startingLetter;
 
-  if (!TRUST_AI_ANSWER_KEY && !isSupported) {
-    const hasAnySupport = choices.some((choice) => hasLooseSupport(passageText, choice));
-    if (!hasAnySupport) {
-      resolvedCorrectLetter = "A";
+  if (!isSupported) {
+    const replacementIndex = choices.findIndex((choice) =>
+      hasLooseSupport(passageText, choice) || hasPassageSupportForChoice(passageText, choice)
+    );
+    if (replacementIndex >= 0) {
+      resolvedCorrectLetter = LETTERS[replacementIndex];
+    } else {
+      const strongestIndex = choices
+        .map((choice, index) => ({ index, score: scoreChoiceSupport(passageText, choice) }))
+        .sort((a, b) => b.score - a.score)[0];
+      resolvedCorrectLetter = LETTERS[strongestIndex?.index ?? 0];
     }
   }
 
