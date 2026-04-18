@@ -1249,33 +1249,8 @@ function buildFallbackExplanation(passage: string, correctChoice: string): strin
     .split(/[.!?]/)
     .map((s) => s.trim())
     .filter(Boolean);
-
-  if (!sentences.length) {
-    return `The correct answer is supported by the passage details.`;
-  }
-
-  const choiceWords = String(correctChoice || "")
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((w) => w.length > 3);
-
-  let bestMatch = sentences[0];
-  let bestScore = 0;
-
-  for (const sentence of sentences) {
-    const lower = sentence.toLowerCase();
-
-    const score = choiceWords.reduce((acc, word) => {
-      return acc + (lower.includes(word) ? 1 : 0);
-    }, 0);
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestMatch = sentence;
-    }
-  }
-
-  return `The correct answer is supported by the passage detail: "${bestMatch}." This shows that ${correctChoice}`;
+  const anchor = sentences[0] || "the key detail in the passage";
+  return `The best answer is supported by this passage detail: "${anchor}." This evidence directly supports: ${correctChoice}`;
 }
 
 function getDOKLevel(
