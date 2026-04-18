@@ -1182,7 +1182,8 @@ function scoreChoiceSupport(passage: string, choice: string): number {
 }
 
 function isValidQuestion(q: Question, passage: PassageContent | string): boolean {
-  if (!q || q.type === "part_a_b") return true;
+  if (!q) return false;
+  if (q.type && q.type !== "mc") return false;
   if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
   if (typeof q.correct_answer !== "string" || !["A", "B", "C", "D"].includes(q.correct_answer)) return false;
   const correctChoice = getCorrectChoice(q);
@@ -4258,21 +4259,20 @@ serve(async (req) => {
         crossPassage,
         grade,
       );
-      const tutor = {
-        practice: generateTutor(practiceQuestionSet, subject, "practice", level, getPassageText(core.passage || "")),
-        cross: generateTutor(crossQuestionSet, subject, "cross", level, crossPassage),
-      };
-      const answerKey = {
-        practice: generateAnswerKey(practiceQuestionSet, subject, "practice", level, getPassageText(core.passage || "")),
-        cross: generateAnswerKey(crossQuestionSet, subject, "cross", level, crossPassage),
-      };
+      const supportFinalized = finalizeOutput({
+        passage: getPassageText(core.passage || ""),
+        practice: { questions: practiceQuestionSet },
+        cross: { passage: crossPassage, questions: crossQuestionSet },
+        tutor: { practice: [], cross: [] },
+        answerKey: { practice: [], cross: [] },
+      }, subject, effectiveSkill);
 
       return jsonResponse({
         teks: teksCode,
         skill,
         grade,
-        tutor,
-        answerKey,
+        tutor: supportFinalized.tutor,
+        answerKey: supportFinalized.answerKey,
       });
     }
     console.log("🔥 RAW MODE:", normalizedMode);
