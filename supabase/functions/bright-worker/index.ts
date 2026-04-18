@@ -718,6 +718,7 @@ Rules:
   - passage length signal: ${constraints.passageLength}
 - Passage genre lock: informational text ONLY. No stories, no characters, no narrative events, no character names.
 - Generate exactly 5 STAAR-style reading questions tied directly to that passage.
+- Vary passage topic and structure across generations; use a different scenario, setting, and context each time.
 - Questions should typically require inference or combining details when appropriate.
 - No “why did X happen?” when the answer is explicitly stated in the passage.
 - Prefer stems such as:
@@ -782,6 +783,7 @@ Rules:
   - vocabulary band: ${constraints.vocab}
   - abstract language allowance: ${String(constraints.allowAbstract)}
 - Generate exactly 5 standalone STAAR-style ${subject} questions.
+- Vary scenario, setting, and context across generations to avoid repeated output patterns.
 - Use multi-step reasoning where appropriate.
 - Questions should typically require inference or combining details when appropriate.
 - No “why did X happen?” when the answer is explicitly stated.
@@ -969,6 +971,7 @@ Rules:
 - CRITICAL: Generate a NEW passage (250–300 words).
 - Passage MUST be different from practice passage.
 - Passage MUST be aligned to ${subject}.
+- Vary passage topic and structure; each generation must use a different scenario, setting, and context.
 - Do NOT explicitly state key conclusions.
 - Include details that require inference (imply cause, include competing details, delay explanations).
 - Questions MUST be based ONLY on this new passage.
@@ -1117,9 +1120,11 @@ function getFallbackChoices(subject: CanonicalSubject, skill: string): [string, 
 }
 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
-  const clean = Array.isArray(choices) ? choices.slice(0, 4) : [];
+  if (!Array.isArray(choices) || choices.length !== 4) {
+    throw new Error("INVALID_CHOICES_LENGTH");
+  }
 
- while (clean.length < 4) clean.push("Placeholder answer choice");   
+  const clean = choices.slice(0, 4);
 
   return clean.map((c) => cleanChoice(
     String(c || "")
@@ -1228,9 +1233,24 @@ function isValidQuestion(q: Question, passage: PassageContent | string): boolean
   if (!q) return false;
   if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
   if (typeof q.correct_answer !== "string") return false;
-
-  // 🔒 DO NOT validate against passage anymore
+  if (!["A", "B", "C", "D"].includes(String(q.correct_answer).toUpperCase())) return false;
+  if (isWeakQuestion(q)) {
+    console.warn("⚠️ Weak question detected", {
+      question: String(q.question || "").slice(0, 80),
+    });
+    return false;
+  }
   return true;
+}
+
+function isWeakQuestion(q: Question): boolean {
+  const choices = Array.isArray(q.choices) ? q.choices : [];
+  if (choices.length !== 4) return true;
+  if (!String(q.question || "").trim()) return true;
+  return choices.some((choice) => {
+    const text = String(choice || "").trim();
+    return !text || /placeholder/i.test(text) || text.length < 20;
+  });
 }
 
 function validateMCQuestion(q: Question, passage: PassageContent | string): Question {
@@ -2886,7 +2906,16 @@ function sanitizeQuestions(
   void grade;
   const sanitized: Question[] = incoming.map((item, i) => {
     const q = item && typeof item === "object" ? item as Record<string, unknown> : {};
-    if (!q.choices || !Array.isArray(q.choices) || q.choices.length === 0 || q.choices.every((choice) => !String(choice || "").trim())) {
+    if (
+      !q.choices ||
+      !Array.isArray(q.choices) ||
+      q.choices.length !== 4 ||
+      q.choices.every((choice) => !String(choice || "").trim())
+    ) {
+      console.warn("⚠️ INVALID_CHOICES_LENGTH in sanitizeQuestions", {
+        question: String(q.question || "").slice(0, 80),
+        length: Array.isArray(q.choices) ? q.choices.length : null,
+      });
       return buildSafeMC(String(q.question || ""), String(q.explanation || ""));
     }
     const expectedType = (q.type === "multi_select" || q.type === "scr")
