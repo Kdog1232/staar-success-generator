@@ -1445,40 +1445,60 @@ function buildGenerationPrompt(params: {
   practiceQuestions?: Question[];
   crossPassage?: string;
 }): string {
-  const variationSeed = [
-    "school scenario",
-    "community situation",
-    "real-world application",
-    "student project",
-    "historical context",
-    "scientific investigation",
-  ];
-  const selectedSeed = pickRandom(variationSeed);
-  const elarTextTypes: Array<"fiction" | "poem" | "drama"> = ["fiction", "poem", "drama"];
-  const selectedTextType = pickRandom(elarTextTypes);
-
   if (params.mode === "core") {
-    return buildCorePrompt({
-      grade: params.grade,
-      subject: params.subject,
-      skill: params.skill,
-      level: params.level,
-      textType: params.subject === "Reading" ? selectedTextType : undefined,
-      teksCode: params.teksCode,
-      contextType: selectedSeed,
-    });
+    const readingDirective = params.subject === "Reading"
+      ? `Include exactly 1 passage (complete, no truncation).`
+      : `Do not include a passage.`;
+    return `Return JSON only:
+{
+  "passage": "string (required for Reading only)",
+  "practice": {
+    "questions": [
+      {
+        "question": "string",
+        "choices": ["string","string","string","string"],
+        "correct_answer": "A|B|C|D",
+        "explanation": "short explanation"
+      }
+    ]
+  }
+}
+
+Task: Create STAAR-style ${params.subject} practice content.
+Grade: ${params.grade}
+Skill: ${params.skill}
+Level: ${params.level}
+TEKS: ${params.teksCode || "Unknown"}
+
+Rules:
+- ${readingDirective}
+- Include exactly 5 questions.
+- Each question must have exactly 4 choices.
+- Choices must be concise, complete, and plausible.
+- Keep explanations short (1 sentence).
+- No commentary, markdown, or extra keys.`;
   }
 
-  return buildEnrichmentPrompt({
-    grade: params.grade,
-    subject: params.subject,
-    skill: params.skill,
-    practiceQuestions: params.practiceQuestions || [],
-    level: params.level,
-    crossPassage: params.crossPassage || "",
-    teksCode: params.teksCode,
-    contextType: selectedSeed,
-  });
+  return `Return JSON only:
+{
+  "cross": {
+    "passage": "string",
+    "questions": [
+      {
+        "question": "string",
+        "choices": ["string","string","string","string"],
+        "correct_answer": "A|B|C|D",
+        "explanation": "short explanation"
+      }
+    ]
+  }
+}
+
+Create cross-curricular content for ${params.subject}, grade ${params.grade}, skill ${params.skill}.
+Use exactly 1 passage and exactly 5 questions.
+Each question must have exactly 4 choices.
+Keep explanations short (1 sentence).
+No extra commentary.`;
 }
 
 function buildSubjectPassage(subject: CanonicalSubject, level: Level = "On Level"): string {
@@ -5246,9 +5266,9 @@ serve(async (req) => {
     const range = subject === "Reading" ? readingRange : { min: 250, max: 300 };
 
     let attempts = 0;
-    const MAX_ATTEMPTS = 2;
+    const MAX_ATTEMPTS = 1;
     const start = Date.now();
-    const MAX_TIMEOUT_MS = 45000;
+    const MAX_TIMEOUT_MS = 20000;
     const isTimedOut = () => Date.now() - start > MAX_TIMEOUT_MS;
     let retryFailureReason = "no_questions_returned";
     let bestAttempt: WorkerAttempt | null = null;
@@ -5274,10 +5294,6 @@ serve(async (req) => {
         console.warn("⚠️ FALLBACK TRIGGERED: exceeded max time");
         break;
       }
-      if (attempts > 0 && Date.now() - start > 20000) {
-        console.warn("⚠️ Skipping retry due to time limit");
-        break;
-      }
       attempts++;
       try {
         if (effectiveMode === "core") {
@@ -5291,8 +5307,8 @@ serve(async (req) => {
             },
             body: JSON.stringify({
               model: "gpt-4o-mini",
-              temperature: 0.8,
-              top_p: 0.9,
+              temperature: 0.7,
+              top_p: 1,
               input: buildGenerationPrompt({
                 mode: "core",
                 grade,
@@ -5301,7 +5317,7 @@ serve(async (req) => {
                 level,
                 teksCode,
               }),
-              max_output_tokens: 1800,
+              max_output_tokens: 1400,
             }),
             signal: AbortSignal.timeout(MAX_TIMEOUT_MS),
           });
@@ -5682,8 +5698,8 @@ serve(async (req) => {
           },
           body: JSON.stringify({
             model: "gpt-4o-mini",
-            temperature: 0.8,
-            top_p: 0.9,
+            temperature: 0.7,
+            top_p: 1,
             input: buildGenerationPrompt({
               mode: "enrichment",
               grade,
@@ -5694,7 +5710,7 @@ serve(async (req) => {
               crossPassage: baseCrossPassage,
               teksCode,
             }),
-            max_output_tokens: 2200,
+            max_output_tokens: 1400,
           }),
           signal: AbortSignal.timeout(MAX_TIMEOUT_MS),
         });
@@ -5848,10 +5864,25 @@ serve(async (req) => {
         return returnEnrichment(payload);
       } catch (err) {
         console.error("BACKEND ERROR:", err);
-        markRetry("no_questions_returned");
         if (isTimedOut()) {
-          console.warn("⚠️ FALLBACK TRIGGERED: exceeded max time");
+          const partial = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, level);
+          const partialPayload: CoreResponse = {
+            passage: subject === "Reading" ? getPassageText(partial.passage || "") : undefined,
+            practice: { questions: sanitizeQuestions(
+              partial.practice.questions || [],
+              effectiveSubject,
+              "Practice",
+              effectiveSkill,
+              level,
+              getPassageText(partial.passage || ""),
+              grade,
+            ).slice(0, 5) },
+          };
+          returnType = "PARTIAL_TIMEOUT";
+          logReturnMetrics();
+          return returnCore(partialPayload);
         }
+        markRetry("no_questions_returned");
       }
     }
 
