@@ -132,6 +132,16 @@ const SUBJECT_SKILLS = {
 
 const LETTERS: ChoiceLetter[] = ["A", "B", "C", "D"];
 const TRUST_AI_ANSWER_KEY = true;
+const BANNED_PHRASES = [
+  "this reflects",
+  "this reasoning",
+  "this conclusion",
+  "this interpretation",
+];
+
+function containsBanned(choice: string): boolean {
+  return BANNED_PHRASES.some((p) => String(choice || "").toLowerCase().includes(p));
+}
 
 function resolveTeks(subject: CanonicalSubject, skill: string, grade: number): string {
   const skillAliases: Record<string, string> = {
@@ -1546,55 +1556,22 @@ function getFallbackChoices(subject: CanonicalSubject, skill: string): [string, 
   if (subject === "Social Studies") return buildSSFallbackChoices();
   const safePassage = buildSubjectPassage("Reading", "On Level");
   const safeQuestion = "Which event in the passage led to a later decision or outcome?";
-  return buildReadingChoices(safePassage, safeQuestion, "On Level");
+  const safeCorrect = safeQuestion;
+  return buildReadingChoices(safePassage, safeCorrect);
 }
 
-function buildFallbackExplanation(
-  passage: string,
-  question: string,
-  correctChoice: string,
-): string {
-  const sentences = String(passage || "")
-    .split(/[.!?]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  if (!sentences.length) {
-    return "The correct answer is supported by the passage.";
+function buildExplanation(answer: string, question: string): string {
+  if (String(question || "").toLowerCase().includes("purpose")) {
+    return `The author includes this to show ${answer}.`;
   }
-
-  const questionWords = String(question || "")
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((w) => w.length > 3);
-
-  const choiceWords = String(correctChoice || "")
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((w) => w.length > 3);
-
-  let bestSentence = sentences[0];
-  let bestScore = 0;
-
-  for (const sentence of sentences) {
-    const lower = sentence.toLowerCase();
-    let score = 0;
-
-    for (const word of questionWords) {
-      if (lower.includes(word)) score += 2;
-    }
-
-    for (const word of choiceWords) {
-      if (lower.includes(word)) score += 1;
-    }
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestSentence = sentence;
-    }
+  if (String(question || "").toLowerCase().includes("infer")) {
+    return `This can be inferred from details that show ${answer}.`;
   }
+  return `The passage supports ${answer} through specific details.`;
+}
 
-  return `The correct answer is ${correctChoice} because the passage states: "${bestSentence}." This shows that ${correctChoice}`;
+function buildFallbackExplanation(_passage: string, question: string, correctChoice: string): string {
+  return buildExplanation(correctChoice, question);
 }
 
 function getDOKLevel(
@@ -2055,22 +2032,40 @@ function isWeakQuestion(q: Question): boolean {
   });
 }
 
-function finalValidation(question: Question, passageText: string, subject: CanonicalSubject): boolean {
-  if (!question || !Array.isArray(question.choices) || question.choices.length !== 4) return false;
-  const combined = `${question.question || ""} ${question.choices.join(" ")}`.toLowerCase();
-  const blockedTerms = ["newspaper", "interview", "survey", "meeting"];
-  if (subject === "Reading" && blockedTerms.some((term) => combined.includes(term))) {
-    return false;
+function enforceSkill(question: string, skill: string): boolean {
+  const q = String(question || "").toLowerCase();
+  const s = String(skill || "").toLowerCase();
+  if (s.includes("author")) {
+    return q.includes("author") || q.includes("purpose") || q.includes("include");
   }
-
-  if (new Set(question.choices.map((choice) => String(choice || "").trim().toLowerCase())).size < 4) {
-    return false;
+  if (s.includes("infer")) {
+    return q.includes("infer") || q.includes("conclude") || q.includes("suggest");
   }
-
-  if (passageText.trim().length > 0 && !hasLooseSupport(passageText, combined)) {
-    return false;
+  if (s.includes("theme")) {
+    return q.includes("theme") || q.includes("message") || q.includes("lesson");
   }
+  return true;
+}
 
+function hasBalancedReadingChoices(choices: [string, string, string, string]): boolean {
+  const words = choices.map((c) => String(c || "").trim().split(/\s+/).filter(Boolean).length);
+  const max = Math.max(...words);
+  const min = Math.min(...words);
+  if (max - min > 10) return false;
+  const leadWords = choices.map((c) => String(c || "").trim().split(/\s+/)[0]?.toLowerCase() || "");
+  return leadWords.every(Boolean);
+}
+
+function finalValidation(q: Question, passage: string, skill: string): boolean {
+  if (!q || !Array.isArray(q.choices) || q.choices.length !== 4) return false;
+  const text = `${q.question || ""} ${q.choices.join(" ")}`.toLowerCase();
+  if (containsBanned(text)) return false;
+  if (new Set(q.choices.map((choice) => String(choice || "").trim().toLowerCase())).size < 4) return false;
+  if (!enforceSkill(q.question, skill)) return false;
+  const firstWord = String(q.choices[0] || "").split(/\s+/).find(Boolean)?.toLowerCase() || "";
+  if (!firstWord || !String(passage || "").toLowerCase().includes(firstWord)) return false;
+  if (!hasBalancedReadingChoices(normalizeChoices(q.choices))) return false;
+  if (q.choices.some((choice) => containsBanned(choice) || !hasLooseSupport(passage, String(choice || "")))) return false;
   return true;
 }
 
@@ -2104,8 +2099,11 @@ function rebuildQuestionFromPassage(
   level: Level = "On Level",
 ): Question {
   const fallbackQuestion = String(q.question || "").trim() || getUniversalQuestion(subject, "general", 0, level);
+  const seededCorrect = subject === "Reading"
+    ? getReadingCorrectAnswerFromPassage(passageText, fallbackQuestion)
+    : fallbackQuestion;
   const rebuiltChoices = subject === "Reading"
-    ? buildReadingChoices(passageText, fallbackQuestion, level)
+    ? buildReadingChoices(passageText, seededCorrect)
     : buildUniversalChoices(subject, passageText, level);
   const ranked = LETTERS
     .map((letter, index) => ({
@@ -2137,6 +2135,9 @@ function validateMCQuestion(
   let normalizedQuestion = String(q.question || "").trim();
   let choices = normalizeChoices(q.choices).map(cleanAnswerChoice) as [string, string, string, string];
   let safeAnswer = safeCorrectAnswer(q.correct_answer);
+  if (choices.some((choice) => containsBanned(choice))) {
+    return rebuildQuestionFromPassage(q, subject, passageText);
+  }
 
   if (isVocabStyleQuestion(normalizedQuestion)) {
     const targetWord = extractVocabTargetWord(normalizedQuestion);
@@ -2913,7 +2914,7 @@ function buildPracticeFallback(
         "Voters approved the bridge bond first, and rail improvements were added only after that success.",
         "Population growth reduced cross-river travel demand, so no major transportation decision was necessary.",
       ]
-      : buildReadingChoices(safePassage, leveledStem, level);
+      : buildReadingChoices(safePassage, getReadingCorrectAnswerFromPassage(safePassage, leveledStem));
     const correctAnswer = String(sourceChoices[0] || "").trim();
     const distractors = buildStudentMistakeDistractors(safePassage, String(correctAnswer || "").trim(), leveledStem);
     const choices = [correctAnswer, ...distractors];
@@ -2950,61 +2951,47 @@ function buildPracticeFallback(
   });
 }
 
-function buildReadingChoices(
-  passage: PassageContent | string,
-  questionText: string,
-  level: Level = "On Level",
-): [string, string, string, string] {
-  void level;
-  const text = getPassageText(passage).trim();
-  const cleanSentence = (value: string): string =>
-    String(value || "")
-      .replace(/\s+/g, " ")
-      .replace(/^[^a-zA-Z0-9]+/, "")
+function getReadingCorrectAnswerFromPassage(passage: PassageContent | string, questionText: string): string {
+  const sentences = getPassageText(passage)
+    .split(/[.!?]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 20 && !containsBanned(s));
+  if (!sentences.length) return String(questionText || "").trim();
+  const tokens = String(questionText || "").toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+  const ranked = sentences
+    .map((s) => ({
+      s,
+      score: tokens.filter((t) => s.toLowerCase().includes(t)).length,
+    }))
+    .sort((a, b) => b.score - a.score);
+  return (ranked[0]?.s || sentences[0]).slice(0, 120).trim();
+}
+
+function buildReadingChoices(passage: PassageContent | string, correctAnswer: string): [string, string, string, string] {
+  const text = getPassageText(passage);
+  const sentences = text.split(/[.!?]/).filter(Boolean);
+  const correct = String(correctAnswer || "").trim();
+  const distractors = sentences.slice(0, 6).map((s) => {
+    return String(s || "")
       .trim()
-      .replace(/\.$/, "");
-  const sentences = text
-    .split(/[.!?]+/)
-    .map((s) => cleanSentence(s))
-    .filter((s) => s.split(/\s+/).length >= 8);
-  const keywords = passageKeywords(text).filter((token) => token.length >= 4);
-  const questionTokens = String(questionText || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((token) => token.length >= 4);
-  const baseSentence = (sentences.length
-    ? sentences
-      .slice()
-      .sort((a, b) => {
-        const aLower = a.toLowerCase();
-        const bLower = b.toLowerCase();
-        const score = (candidate: string) =>
-          questionTokens.filter((token) => candidate.includes(token)).length +
-          keywords.slice(0, 8).filter((token) => candidate.includes(token)).length;
-        return score(bLower) - score(aLower);
-      })[0]
-    : cleanSentence(text)) || "Community members changed decisions after events in the town affected daily routines";
-  const baseWords = baseSentence.split(/\s+/).filter(Boolean);
-  const subject = baseWords.slice(0, 3).join(" ") || "Community leaders";
-  const action = baseWords.slice(3, 8).join(" ") || "reviewed records and changed plans";
-  const outcome = baseWords.slice(8, 15).join(" ") || "after new results changed local priorities";
-
-  const correct = `${subject} ${action} ${outcome}`.replace(/\s+/g, " ").trim();
-  const distractors = buildStudentMistakeDistractors(text, correct, questionText);
-  const choices = [correct, ...distractors];
-  const finalChoices = shuffleArray(choices.map((choice) => String(choice).trim()).filter(Boolean));
-
-  while (finalChoices.length < 4) {
-    finalChoices.push(`Option ${finalChoices.length + 1}`);
+      .replace(/always|never|all|only/gi, "")
+      .slice(0, 120);
+  });
+  const filtered = distractors.filter((d) =>
+    d !== correct &&
+    !containsBanned(d) &&
+    d.length > 20
+  );
+  const rebuilt = shuffleArray([correct, ...filtered.slice(0, 3)].filter(Boolean).map((c) => c.trim()));
+  while (rebuilt.length < 4) {
+    const fallback = filtered.find((d) => !rebuilt.includes(d)) || `${correct.split(" ").slice(0, 8).join(" ")} from the passage details.`;
+    rebuilt.push(fallback.trim());
   }
-
-  const correctIndex = finalChoices.findIndex((c) => String(c) === String(correct));
-  if (correctIndex === -1) {
-    finalChoices[0] = correct;
+  const deduped = Array.from(new Set(rebuilt.map((c) => c.trim())));
+  while (deduped.length < 4) {
+    deduped.push(`${correct.split(" ").slice(0, 7).join(" ")} in the passage.`);
   }
-
-  return normalizeChoices(finalChoices as [string, string, string, string]);
+  return normalizeChoices(deduped.slice(0, 4) as [string, string, string, string]);
 }
 
 function buildStudentMistakeDistractors(
@@ -4056,10 +4043,10 @@ function sanitizeQuestions(
   });
 
   questions = questions.map((q) => {
-    if (finalValidation(q, passageText, subject)) return q;
+    if (finalValidation(q, passageText, skill)) return q;
     console.warn("🚨 FINAL VALIDATION FAILED — rebuilding question");
     const rebuilt = rebuildQuestionFromPassage(q, subject, passageText, level);
-    if (finalValidation(rebuilt, passageText, subject)) return rebuilt;
+    if (finalValidation(rebuilt, passageText, skill)) return rebuilt;
     return repairQuestion(
       buildUniversalFallbackQuestion(subject, passageText, skill, 0, level),
       subject,
