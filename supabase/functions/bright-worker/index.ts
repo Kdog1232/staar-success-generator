@@ -1212,18 +1212,8 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
   const isSupported = hasLooseSupport(passageText, correctText) || hasPassageSupportForChoice(passageText, correctText);
   let resolvedCorrectLetter: ChoiceLetter = startingLetter;
 
-  if (!TRUST_AI_ANSWER_KEY && !isSupported) {
-    const replacementIndex = choices.findIndex((choice) =>
-      hasLooseSupport(passageText, choice) || hasPassageSupportForChoice(passageText, choice)
-    );
-    if (replacementIndex >= 0) {
-      resolvedCorrectLetter = LETTERS[replacementIndex];
-    } else {
-      const strongestIndex = choices
-        .map((choice, index) => ({ index, score: scoreChoiceSupport(passageText, choice) }))
-        .sort((a, b) => b.score - a.score)[0];
-      resolvedCorrectLetter = LETTERS[strongestIndex?.index ?? 0];
-    }
+  if (!isSupported) {
+    console.warn("⚠️ Weak support for answer, keeping AI answer");
   }
 
   const finalChoice = String(choices[LETTERS.indexOf(resolvedCorrectLetter)] || "").trim();
