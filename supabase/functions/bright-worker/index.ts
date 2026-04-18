@@ -727,9 +727,20 @@ Rules:
   - "Which detail suggests..."
 - All 4 answer choices must explicitly reference passage details (events/actions/outcomes).
 - Keep all 4 choices similar in structure and length to avoid obvious answer patterns.
+- Each answer choice MUST be a complete sentence.
+- Do NOT generate fragments or cut-off responses.
+- Each answer choice must be at least 8–12 words long.
+- All 4 answer choices must follow a similar grammatical structure.
+- Avoid sentence fragments like:
+  - "A combo pack cost $6 and included..."
+  - "The student council planned..."
+- Every answer must clearly express a full idea.
+- If an answer choice is cut off or incomplete, rewrite it fully before returning.
 - Never use: "best explains", "this shows", "the answer is supported", "it can be inferred".
 - Correct answers must include a specific event plus cause/effect OR decision/result reasoning.
 - Distractors must use one of: misinterpretation, partial-truth wrong conclusion, overgeneralization, or cause/effect confusion.
+- Incorrect answers must still be complete, realistic, and based on the passage.
+- Do NOT generate vague or generic wrong answers.
 - If any choice feels generic or easy, rewrite it with more specific passage evidence.
 - Ensure answers are supported by the passage.
 - Avoid overly obvious or unrelated distractors.
@@ -783,12 +794,28 @@ Rules:
 - Ensure answers are supported by the provided content.
 - Avoid overly obvious or unrelated distractors.
 - Keep reasoning clear and student-friendly.
+- Each answer choice MUST be a complete sentence.
+- Do NOT generate fragments or cut-off responses.
+- Each answer choice must be at least 8–12 words long.
+- All 4 answer choices must follow a similar grammatical structure.
+- Avoid sentence fragments like:
+  - "A combo pack cost $6 and included..."
+  - "The student council planned..."
+- Every answer must clearly express a full idea.
+- If an answer choice is cut off or incomplete, rewrite it fully before returning.
+- Incorrect answers must still be complete, realistic, and based on the passage.
+- Do NOT generate vague or generic wrong answers.
 - Forbidden wording in questions/choices: "main idea", "central idea", "author", "theme", "reader", "claim".
 - Rigor profile:
   - question depth: ${rigor.questionDepth}
   - distractor quality: ${rigor.distractorQuality}
 - RIGOR ENGINE: ${rigorEngineRules}
 - Every question has 4 distinct, specific answer choices.
+- SELF-CHECK BEFORE RETURNING:
+- Are all answer choices complete sentences?
+- Are any answers cut off or unfinished?
+- Do all choices clearly express a full idea?
+- If not, fix them before returning.
 - No markdown. JSON only.`;
 }
 
@@ -868,6 +895,15 @@ ANSWER CHOICE RULES
 - ALL 4 choices must reference the passage explicitly.
 - Include real details, events, or outcomes in each choice.
 - Keep choices similar in structure and length.
+- Each answer choice MUST be a complete sentence.
+- Do NOT generate fragments or cut-off responses.
+- Each answer choice must be at least 8–12 words long.
+- All 4 answer choices must follow a similar grammatical structure.
+- Avoid sentence fragments like:
+  - "A combo pack cost $6 and included..."
+  - "The student council planned..."
+- Every answer must clearly express a full idea.
+- If an answer choice is cut off or incomplete, rewrite it fully before returning.
 - Avoid obvious wrong answers.
 - Avoid meta-language: "main idea", "this shows", "best explains".
 
@@ -878,6 +914,8 @@ DISTRACTOR DESIGN (TEKS-ALIGNED)
   - incorrect inference
   - cause/effect confusion
 - Wrong answers must use real cross passage details with misinterpretation OR partial truth with wrong conclusion.
+- Incorrect answers must still be complete, realistic, and based on the passage.
+- Do NOT generate vague or generic wrong answers.
 - DO NOT create unrelated or vague distractors.
 
 CORRECT ANSWER RULE
@@ -891,6 +929,11 @@ SELF-CHECK (MANDATORY)
 - Are distractors based on realistic student mistakes?
 - Is the answer supported by passage evidence?
 - If not, revise before returning.
+- SELF-CHECK BEFORE RETURNING:
+- Are all answer choices complete sentences?
+- Are any answers cut off or unfinished?
+- Do all choices clearly express a full idea?
+- If not, fix them before returning.
 
 OUTPUT FORMAT FOR EACH cross.questions ITEM:
 {
