@@ -1200,7 +1200,7 @@ Rules:
 - Each answer choice MUST be a complete sentence.
 - Do NOT generate fragments or cut-off responses.
 - Each answer choice must be at least 8–12 words long.
-- All 4 answer choices must follow a similar grammatical structure.
+- Answer choices should be similar in length but may vary in structure to sound natural.
 - Avoid sentence fragments like:
   - "A combo pack cost $6 and included..."
   - "The student council planned..."
@@ -1322,15 +1322,12 @@ ANSWER CHOICE RULES
 - Each answer choice MUST fully answer the question.
 - ALL 4 choices must reference the passage explicitly.
 - Include real details, events, or outcomes in each choice.
-- PASSAGE ANCHOR LOCK (NON-NEGOTIABLE)
-- Every answer choice MUST include a SPECIFIC detail from the passage.
-- VALID answers MUST contain at least one:
-  - character name
-  - number or quantity
-  - specific event or action
-  - concrete outcome from the passage
-- If an answer could apply to ANY passage:
-  → REWRITE IT
+- Answer choices should:
+  - be grounded in the passage
+  - include passage details when helpful
+  - NOT force every choice to repeat exact passage language
+- At least ONE correct answer and ONE distractor should clearly connect to passage evidence.
+- Other choices may paraphrase or generalize as long as they are plausible.
 - BANNED ANSWERS (NEVER ALLOWED):
   - "students compared..."
   - "a class reviewed..."
@@ -1342,7 +1339,7 @@ ANSWER CHOICE RULES
 - Each answer choice MUST be a complete sentence.
 - Do NOT generate fragments or cut-off responses.
 - Each answer choice must be at least 8–12 words long.
-- All 4 answer choices must follow a similar grammatical structure.
+- Answer choices should be similar in length but may vary in structure to sound natural.
 - Avoid sentence fragments like:
   - "A combo pack cost $6 and included..."
   - "The student council planned..."
