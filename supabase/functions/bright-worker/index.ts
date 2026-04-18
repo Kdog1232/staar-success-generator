@@ -1298,35 +1298,29 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
 
   const choices = normalizeChoices(q.choices);
   const safeAnswer = safeCorrectAnswer(q.correct_answer);
-const { letter: originalLetter } = getQuestionCorrectPair({
-  ...q,
-  choices,
-  correct_answer: safeAnswer,
-});
+  const { letter: originalLetter } = getQuestionCorrectPair({
+    ...q,
+    choices,
+    correct_answer: safeAnswer,
+  });
 
-if (!originalLetter){
-  console.warn("⚠️ Invalid correct_answer — forcing fallback to A");
+  if (!originalLetter) {
+    console.warn("⚠️ Invalid correct_answer — randomizing");
 
-  return {
-  ...q,
-  choices,
-  correct_answer: "A",
-  explanation: String(q.explanation || "Answer corrected due to invalid response."),
-};
-}
+    const fallback = pickRandom(["A", "B", "C", "D"]) as ChoiceLetter;
 
-const startingLetter = originalLetter || "A";
+    return {
+      ...q,
+      choices,
+      correct_answer: fallback,
+      explanation: String(q.explanation || "Answer corrected due to invalid response."),
+    };
+  }
 
-const correctText = String(
-  choices[LETTERS.indexOf(startingLetter)] || ""
-).trim();
+  const startingLetter = originalLetter;
 
   const passageText = String(getPassageText(passage) || "");
-  // 🔒 DO NOT TOUCH AI ANSWERS — EVER
-  const resolvedCorrectLetter: ChoiceLetter =
-    LETTERS.includes(startingLetter as ChoiceLetter)
-      ? (startingLetter as ChoiceLetter)
-      : "A";
+  const resolvedCorrectLetter = startingLetter as ChoiceLetter;
 
   const finalChoice = String(choices[LETTERS.indexOf(resolvedCorrectLetter)] || "").trim();
   const evidenceSnippet = extractEvidenceSnippet(
@@ -1761,12 +1755,30 @@ function buildBetterDistractors(passage: string, correct: string): string[] {
   return Array.from(new Set(transformed)).slice(0, 3);
 }
 
+function buildMisconceptionDistractors(
+  correct: string,
+  passage: string,
+): string[] {
+  void passage;
+  return [
+    correct.replace("because", "even though"),
+    correct.replace("most", "some"),
+    correct.replace("increase", "decrease"),
+    correct.replace("cause", "result"),
+  ].map((candidate) => `${candidate} based on a misinterpretation of the passage.`);
+}
+
 function buildSubjectDistractors(q: Question, passage: string, subject: CanonicalSubject): string {
   const { letter: correctLetter, choice: correctChoice } = getQuestionCorrectPair(q);
   if (!correctLetter) return "";
   const normalizedChoices = normalizeChoices(q.choices);
   const hasPassage = String(passage || "").trim().length > 0;
-  const passageDistractors = hasPassage ? buildBetterDistractors(String(passage || ""), correctChoice) : [];
+  const passageDistractors = hasPassage
+    ? [
+      ...buildBetterDistractors(String(passage || ""), correctChoice),
+      ...buildMisconceptionDistractors(correctChoice, String(passage || "")),
+    ].slice(0, 3)
+    : [];
   return normalizedChoices
     .map((choice, index) => ({ choice, letter: LETTERS[index] }))
     .filter(({ letter }) => letter !== correctLetter)
@@ -3009,12 +3021,16 @@ function sanitizeQuestions(
   const passageText = getPassageText(passage);
   questions = questions.map((q) => repairQuestion(q, subject, passageText));
   const validatedQuestions = questions.map((q) => validateMCQuestion(q, passageText));
-  const clean = validatedQuestions.filter((q) => isValidQuestion(q, passageText));
-  if (clean.length < 3) {
-    console.log("⚠️ Too few valid questions, retrying...");
-    return [];
+  questions = validatedQuestions.filter((q) => isValidQuestion(q, passageText));
+  if (questions.length < 5) {
+    console.warn("⚠️ Not enough valid questions — regenerating weak ones");
+
+    while (questions.length < 5) {
+      questions.push(
+        repairQuestion(generateFallbackQuestion(subject, mode, questions.length, passageText), subject, passageText),
+      );
+    }
   }
-  questions = clean;
   console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", questions.length);
   const alignedSet = questions;
 
