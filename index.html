@@ -1242,6 +1242,7 @@
     let isRedirectingToLogin = false;
     let upgradeChecked = false;
     let isGenerating = false;
+    let pendingRegenerate = false;
     let isStudentView = false;
     let currentController = null;
     let hasRenderedThisRun = false;
@@ -2518,6 +2519,11 @@
         outputDiv.innerHTML = message;
       }
 
+      function queueRegenerate(message = "Regenerating better version...") {
+        outputDiv.innerHTML = `<p class="muted-note">${message}</p>`;
+        pendingRegenerate = true;
+      }
+
       try {
         outputDiv.innerHTML = "Step 1: Generating practice...";
 
@@ -2679,16 +2685,16 @@
         if (data.meta?.fallback) {
           console.log("⚠️ FALLBACK MODE:", data.meta.reason || "unknown");
           if (Array.isArray(data?.practice?.questions) && data.practice.questions.length > 0) {
-            showFallback(subject === "Reading" ? (data.passage || "") : "", data.practice.questions);
+            console.warn("Validation issue — keeping question");
           } else {
-            console.log("❌ FALLBACK WITH NO QUESTIONS", data);
-            halt("Fallback triggered but no questions.");
+            queueRegenerate();
+            return;
           }
         }
 
         const questions = data?.practice?.questions || [];
         if (!questions.length) {
-          showError("No questions generated. Try again.");
+          queueRegenerate();
           return;
         }
         if (Array.isArray(questions) && questions.length > 0) {
@@ -2758,6 +2764,12 @@
         if (btn) {
           btn.disabled = false;
           btn.textContent = "Generate STAAR Pack";
+        }
+        if (pendingRegenerate) {
+          pendingRegenerate = false;
+          setTimeout(() => {
+            generate().catch((err) => console.error("Auto-regenerate failed:", err));
+          }, 250);
         }
         console.log("✅ GENERATE FULLY COMPLETE");
       }
