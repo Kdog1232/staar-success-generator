@@ -680,6 +680,24 @@ function buildCorePrompt(params: {
   const rigor = applyRigor(level);
   const rigorEngineRules = getRigorEngineRules(level, subject);
   const constraints = getGradeConstraints(grade);
+  const dokProgressionRequirement = `DOK PROGRESSION REQUIREMENT (MANDATORY):
+- You must structure the 5 questions as follows:
+  - Question 1: Easy (DOK 1–2)
+  - Question 2–3: Medium (DOK 2–3)
+  - Question 4–5: Hard (DOK 3–4)
+- Difficulty must increase across the set.
+- Do NOT make all 5 questions the same level.`;
+  const levelAdjustmentRequirement = `LEVEL ADJUSTMENT (MANDATORY):
+- Below Level:
+  - Q1–2 easy
+  - Q3–5 medium
+- On Level:
+  - Q1 easy
+  - Q2–3 medium
+  - Q4–5 hard
+- Advanced:
+  - Q1 medium
+  - Q2–5 hard`;
   if (subject === "Reading") {
     const readingRange = readingPracticeWordRange(level);
     const mainIdeaStemRule = isMainIdeaSkill(skill)
@@ -770,6 +788,8 @@ Rules:
   - abstract language allowance: ${String(constraints.allowAbstract)}
   - passage length signal: ${constraints.passageLength}
 - Generate exactly 5 STAAR-style reading questions tied directly to that passage.
+- ${dokProgressionRequirement}
+- ${levelAdjustmentRequirement}
 - Vary passage topic and structure across generations; use a different scenario, setting, and context each time.
 - Questions should typically require inference or combining details when appropriate.
 - No “why did X happen?” when the answer is explicitly stated in the passage.
@@ -851,6 +871,8 @@ Rules:
   - vocabulary band: ${constraints.vocab}
   - abstract language allowance: ${String(constraints.allowAbstract)}
 - Generate exactly 5 standalone STAAR-style ${subject} questions.
+- ${dokProgressionRequirement}
+- ${levelAdjustmentRequirement}
 - Vary scenario, setting, and context across generations to avoid repeated output patterns.
 - Use multi-step reasoning where appropriate.
 - Questions should typically require inference or combining details when appropriate.
@@ -1454,7 +1476,7 @@ function safeCorrectAnswer(value: unknown): ChoiceLetter {
     return v;
   }
 
-  const fallback = pickRandom(["A", "B", "C", "D"]);
+  const fallback = pickRandom(["A", "B", "C", "D"] as ChoiceLetter[]);
   console.warn("⚠️ Random fallback answer used:", fallback);
   return fallback;
 }
