@@ -1211,11 +1211,9 @@ function validateMCQuestion(q: Question, passage: PassageContent | string): Ques
 
   const passageText = String(getPassageText(passage) || "");
   const isSupported = hasLooseSupport(passageText, correctText) || hasPassageSupportForChoice(passageText, correctText);
-  let resolvedCorrectLetter: ChoiceLetter = startingLetter;
-
-  if (!isSupported) {
-    console.warn("⚠️ Weak support for answer, keeping AI answer");
-  }
+  void isSupported;
+  // 🔒 DO NOT TOUCH AI ANSWERS — EVER
+  const resolvedCorrectLetter: ChoiceLetter = startingLetter;
 
   const finalChoice = String(choices[LETTERS.indexOf(resolvedCorrectLetter)] || "").trim();
   const evidenceSnippet = extractEvidenceSnippet(
