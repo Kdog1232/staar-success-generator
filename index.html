@@ -2514,6 +2514,10 @@
         throw new Error("HALT");
       }
 
+      function showError(message) {
+        outputDiv.innerHTML = message;
+      }
+
       try {
         outputDiv.innerHTML = "Step 1: Generating practice...";
 
@@ -2610,19 +2614,25 @@
         };
         console.log("🚀 PAYLOAD SENT TO BACKEND:", payload);
         console.log("📡 BEFORE FETCH");
-        const res = await fetch(
-          "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-              apikey: SUPABASE_ANON_KEY
-            },
-            body: JSON.stringify(payload),
-            signal: currentController.signal
-          }
-        );
+        const timeoutId = setTimeout(() => currentController?.abort(), 20000);
+        let res;
+        try {
+          res = await fetch(
+            "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+                apikey: SUPABASE_ANON_KEY
+              },
+              body: JSON.stringify(payload),
+              signal: currentController.signal
+            }
+          );
+        } finally {
+          clearTimeout(timeoutId);
+        }
         console.log("📡 AFTER FETCH");
         console.log("STEP 4: fetch response");
         console.log("🟢 Fetch sent");
@@ -2644,13 +2654,13 @@
         console.log("🟢 Data received");
         console.log("🔥 FRONTEND RECEIVED:", data);
 
-        if (!res.ok) {
-          throw new Error("Generation request failed");
+        if (!data || (!data.practice && !data.cross)) {
+          throw new Error("Invalid response shape");
         }
 
         if (subject === "Reading" && !data.passage) {
           console.log("❌ INVALID RESPONSE SHAPE", data);
-          halt(`<div class="locked"><strong>Something went wrong. Please try again.</strong></div>`);
+          halt(`<div class="locked"><strong>Temporary issue. Try again.</strong></div>`);
         }
 
         if (plan !== "paid") {
@@ -2676,12 +2686,14 @@
           }
         }
 
-        if (Array.isArray(data?.practice?.questions) && data.practice.questions.length > 0) {
+        const questions = data?.practice?.questions || [];
+        if (!questions.length) {
+          showError("No questions generated. Try again.");
+          return;
+        }
+        if (Array.isArray(questions) && questions.length > 0) {
           console.log("✅ RENDERING QUESTIONS");
-          structuredQuestions = data.practice.questions.slice(0, 5);
-        } else {
-          console.log("❌ NO QUESTIONS IN RESPONSE", data);
-          halt("No questions returned from server.");
+          structuredQuestions = questions.slice(0, 5);
         }
 
         validateSupportIntegrity(data);
@@ -2701,7 +2713,13 @@
 
         if (hasRendered) return;
         hasRendered = true;
-        renderAll(currentData, { progressCount, skill, level, currentModeValue: currentMode });
+        try {
+          renderAll(currentData, { progressCount, skill, level, currentModeValue: currentMode });
+        } catch (renderErr) {
+          console.error("RENDER ERROR:", renderErr);
+          showError("Display issue. Try again.");
+          return;
+        }
         await new Promise((resolve) => requestAnimationFrame(() => resolve()));
         console.log("STEP 6: render complete");
       } catch (err) {
@@ -2727,7 +2745,8 @@
         } else if (message === "HALT_MISSING_DOM") {
           console.error("Critical UI element missing.");
         } else if (err?.name !== "AbortError" && message !== "HALT") {
-          outputDiv.innerHTML = "Something went wrong. Try again.";
+          console.error("GENERATION ERROR:", err);
+          showError("Temporary issue. Try again.");
         }
         console.error("❌ GENERATE ERROR:", err);
       } finally {
