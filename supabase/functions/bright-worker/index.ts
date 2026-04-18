@@ -963,6 +963,7 @@ GRADE-LEVEL ADAPTATION
   - abstract language allowance: ${String(constraints.allowAbstract)}
 
 ANSWER CHOICE RULES
+- Each answer choice MUST fully answer the question.
 - ALL 4 choices must reference the passage explicitly.
 - Include real details, events, or outcomes in each choice.
 - Keep choices similar in structure and length.
@@ -975,8 +976,16 @@ ANSWER CHOICE RULES
   - "The student council planned..."
 - Every answer must clearly express a full idea.
 - If an answer choice is cut off or incomplete, rewrite it fully before returning.
+- Do NOT repeat phrases from the passage without explaining what those details mean.
+- Every answer must include reasoning, not just a copied detail.
 - Avoid obvious wrong answers.
-- Avoid meta-language: "main idea", "this shows", "best explains".
+- Avoid meta-language: "main idea", "this shows", "best explains", "this proves".
+
+REASONING QUESTION RULES (WHY / PURPOSE / IMPACT)
+- Answers must explain cause, reasoning, or impact.
+- Answers must connect multiple details from the passage or context.
+- Do not copy a full sentence from the passage as an answer.
+- Do not use generic phrasing without explanation.
 
 DISTRACTOR DESIGN (TEKS-ALIGNED)
 - Each wrong answer must model a realistic student mistake:
@@ -2220,34 +2229,81 @@ function buildDistractorFeedback(q: Question): string {
   return `${wrongReasons.join(" ")} Other choices are incorrect because they either include incomplete information or are not supported by the passage/problem details.`;
 }
 
-function buildAlignedExplanation(q: Question, passage: PassageContent | string = ""): { why: string; mistake: string; tip: string } {
-  const passageText = getPassageText(passage);
-  const rawSnippet = getRelevantSnippet(
-    passageText && passageText.length > 50
-      ? passageText
-      : (q.explanation || q.question),
-    q.question,
+function splitPassageSentences(passage: PassageContent | string): string[] {
+  return getPassageText(passage)
+    .split(/[.!?]+/)
+    .map((sentence) => sentence.trim().replace(/\s+/g, " "))
+    .filter((sentence) => sentence.split(/\s+/).filter(Boolean).length >= 5);
+}
+
+function extractQuestionFocus(question: string): string {
+  const focus = String(question || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length >= 4)
+    .slice(0, 6)
+    .join(" ");
+  return focus || "the question prompt";
+}
+
+function selectEvidenceSnippet(
+  q: Question,
+  passage: PassageContent | string,
+  usedEvidence: Set<string> = new Set(),
+): string {
+  const sentences = splitPassageSentences(passage);
+  if (!sentences.length) return "";
+  const { choice: correctChoice } = getQuestionCorrectPair(q);
+  const questionKeywords = String(q.question || "")
+    .toLowerCase()
+    .split(/[^a-z0-9-]+/)
+    .filter((token) => token.length >= 4);
+  const answerKeywords = String(correctChoice || "")
+    .toLowerCase()
+    .split(/[^a-z0-9-]+/)
+    .filter((token) => token.length >= 4);
+  const uniqueQuestionKeywords = Array.from(new Set(questionKeywords));
+  const uniqueAnswerKeywords = Array.from(new Set(answerKeywords));
+  const scored = sentences.map((sentence, index) => {
+    const lower = sentence.toLowerCase();
+    const answerScore = uniqueAnswerKeywords.reduce((acc, token) => acc + (lower.includes(token) ? 2 : 0), 0);
+    const questionScore = uniqueQuestionKeywords.reduce((acc, token) => acc + (lower.includes(token) ? 1 : 0), 0);
+    return { sentence, score: answerScore + questionScore, answerScore, index };
+  }).sort((a, b) =>
+    b.score - a.score ||
+    b.answerScore - a.answerScore ||
+    b.sentence.length - a.sentence.length ||
+    a.index - b.index
   );
-  const cleanedSnippet = String(rawSnippet || "")
-    .replace(/\s+/g, " ")
-    .replace(/^(This shows how evidence|These examples make it easier|Each detail builds)\b.*$/i, "")
-    .trim();
+
+  const bestUnused = scored.find((entry) => !usedEvidence.has(entry.sentence.toLowerCase()));
+  return bestUnused?.sentence || "";
+}
+
+function buildAlignedExplanation(
+  q: Question,
+  passage: PassageContent | string = "",
+  usedEvidence: Set<string> = new Set(),
+): { why: string; mistake: string; tip: string } {
+  const passageText = getPassageText(passage);
+  const passageSnippet = passageText ? selectEvidenceSnippet(q, passageText, usedEvidence) : "";
   const backupSnippet = String(q.explanation || q.question)
     .split(/[.!?]+/)
-    .map((sentence) => sentence.trim())
+    .map((sentence) => sentence.trim().replace(/\s+/g, " "))
     .find((sentence) => sentence.split(/\s+/).filter(Boolean).length >= 8) || String(q.question || "");
-  const snippet = cleanedSnippet.split(/\s+/).filter(Boolean).length >= 8
-    ? cleanedSnippet
-    : backupSnippet;
+  const snippet = passageSnippet || backupSnippet;
+  if (passageSnippet) usedEvidence.add(passageSnippet.toLowerCase());
   const correctLabel = normalizeAnswerKeyEntry(q.correct_answer);
   const correctChoiceText = resolveCorrectChoiceText(q);
   const answerReference = correctChoiceText
     ? `${correctLabel} (${correctChoiceText})`
     : correctLabel;
+  const focus = extractQuestionFocus(String(q.question || ""));
   return {
     why:
-      `For "${q.question}", the correct answer is ${answerReference} because "${snippet}" directly answers what the question is asking. ` +
-      "Choices that are only partially correct or not supported by the passage should be eliminated.",
+      `The correct answer is ${correctLabel} because the passage states: "${snippet}."\n` +
+      `This shows that ${answerReference} best matches ${focus} and is supported by the passage evidence.`,
     mistake:
       `A common mistake on "${q.question}" is choosing an option that sounds related but does not match the evidence for ${answerReference}.`,
     tip:
@@ -3467,7 +3523,7 @@ function generateTutor(
 ): TutorExplanation[] {
   void subject;
   void level;
-  void passageText;
+  const usedEvidence = new Set<string>();
   return questions.slice(0, 5).map((q, index) => {
     try {
       const { letter, choice } = getQuestionCorrectPair(q);
@@ -3482,8 +3538,11 @@ function generateTutor(
           )
           .join("\n")
         : "";
-      const baseExplanation = String(q.explanation || "").trim() ||
-        (correctAnswer ? `The validated correct answer is ${correctAnswer}.` : "Use the validated question answer and supporting evidence.");
+      const aligned = buildAlignedExplanation(q, passageText, usedEvidence);
+      const baseExplanation = passageText
+        ? aligned.why
+        : (String(q.explanation || "").trim() ||
+          (correctAnswer ? `The validated correct answer is ${correctAnswer}.` : "Use the validated question answer and supporting evidence."));
       const explanation = wrongChoiceGuidance ? `${baseExplanation}\n\n${wrongChoiceGuidance}` : baseExplanation;
 
       return {
@@ -3522,14 +3581,19 @@ function generateAnswerKey(
   level: Level = "On Level",
   passageText = "",
 ): AnswerKeyEntry[] {
+  const usedEvidence = new Set<string>();
   return questions.slice(0, 5).map((q, index) => {
     try {
       const support = buildSupportContent(subject, q, index, level, mode === "cross" ? "Cross-Curricular" : "Practice", passageText, "Answer Key");
       const { letter } = getQuestionCorrectPair(q);
+      const aligned = buildAlignedExplanation(q, passageText, usedEvidence);
+      const explanation = passageText
+        ? aligned.why
+        : (String(q.explanation || "").trim() || support.explanation || "");
       return {
         question_id: ensureQuestionId(q, index, mode),
         correct_answer: letter || "",
-        explanation: String(q.explanation || "").trim() || support.explanation || "",
+        explanation,
         common_mistake: support.common_mistake || "",
         parent_tip: support.parent_tip
           ? (String(support.parent_tip).startsWith("👨‍👩‍👧 Parent Tip")
