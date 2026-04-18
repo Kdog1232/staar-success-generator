@@ -1391,7 +1391,7 @@ SELF-CHECK (MANDATORY)
 OUTPUT FORMAT FOR EACH cross.questions ITEM:
 {
   "question": "...",
-  "choices": ["A. ...", "B. ...", "C. ...", "D. ..."],
+  "choices": ["...", "...", "...", "..."],
   "correct_answer": "A"
 }
 
