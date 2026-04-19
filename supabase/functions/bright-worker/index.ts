@@ -580,8 +580,17 @@ function validateQuestionAlignment(question: string, skill: string): boolean {
 
 function isGenericChoice(choice: string): boolean {
   const normalized = String(choice || "").trim().toLowerCase();
+
   if (!normalized) return true;
-  return GENERIC_ANSWER_PATTERNS.some((pattern) => pattern.test(normalized));
+
+  // ONLY flag truly empty or placeholder-like responses
+  if (normalized.length < 25) return true;
+
+  // Keep ONLY the most obvious generic patterns
+  return [
+    /\bwhich statement\b/i,
+    /\bwhich answer\b/i,
+  ].some((pattern) => pattern.test(normalized));
 }
 
 function generateFallbackChoice(question: string, choiceIndex = 0): string {
@@ -662,13 +671,14 @@ function rewriteWithPassageDetail(question: string, passage: string, choiceIndex
   if (!cleanedSnippet) {
     return generateFallbackChoice(question, choiceIndex);
   }
-  return buildNaturalAnswer(question, cleanedSnippet, choiceIndex);
+  return Math.random() > 0.5
+    ? buildNaturalAnswer(question, cleanedSnippet, choiceIndex)
+    : generateFallbackChoice(question, choiceIndex);
 }
 
 function strengthenChoices(choices: [string, string, string, string], passage: string): [string, string, string, string] {
-  const strengthened = choices.map((choice) =>
-    isGenericChoice(choice) ? rewriteWithPassageDetail(choice, passage) : String(choice || "").trim()
-  );
+  void passage;
+  const strengthened = choices.map((choice) => String(choice || "").trim());
   return normalizeChoices(strengthened);
 }
 
@@ -685,12 +695,20 @@ function sanitizeChoices(questions: Question[], passage: PassageContent | string
 
     const fixedChoices = choices.map((choice, i) => {
       const text = String(choice || "").trim();
-      const wordCount = text.split(/\s+/).filter(Boolean).length;
 
       const isWeak =
-        isGenericChoice(text) ||
+        !text ||
         containsBanned(text) ||
-        wordCount < 6;
+        text.split(/\s+/).length < 5;
+
+      const looksStrong =
+        text.length > 60 &&
+        !isGenericChoice(text) &&
+        !containsBanned(text);
+
+      if (looksStrong) {
+        return text; // DO NOT TOUCH GOOD ANSWERS
+      }
 
       if (isWeak) {
         return rewriteWithPassageDetail(q.question || "", passageText, i);
