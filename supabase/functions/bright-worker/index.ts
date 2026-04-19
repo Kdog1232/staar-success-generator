@@ -145,27 +145,39 @@ const GENERIC_ANSWER_PATTERNS: RegExp[] = [
   /\bwhich answer best\b/i,
   /\bstatement best\b/i,
 ];
+const PASSAGE_RULES = `
+PASSAGE ALIGNMENT:
+- Every question and answer must be supported by the passage
+- Use evidence-based reasoning
+- Do not introduce outside information
+- Use specific details from the passage
+`.trim();
+const NON_PASSAGE_RULES = `
+PROBLEM ALIGNMENT:
+- Every answer must be derived from the problem
+- Do NOT reference a passage
+- Do NOT use evidence-based language
+- Focus on logic, computation, or reasoning only
+`.trim();
 const QUALITY_ALIGNMENT_RULES = [
   "QUALITY CHECK:",
   "- All writing must be clear and complete.",
   "- All sentences must be complete (no fragments).",
   "- All answer choices must be grammatically correct.",
-  "PASSAGE ALIGNMENT:",
-  "- Every question and answer choice must be directly supported by the passage or problem.",
   "- Do not introduce new characters.",
   "- Do not introduce events not mentioned.",
   "- Do not assume information not stated or clearly implied.",
-  "- Ensure each correct answer is provable using the provided content.",
+  "- Ensure each correct answer is provable using the provided content/problem.",
   "PASSAGE QUALITY:",
   "- Passage must be complete with clear, connected ideas and enough detail for all questions.",
   "- Do not leave unfinished sentences or incomplete paragraphs.",
   "- If the passage is incomplete, regenerate the passage before writing questions.",
   "TUTOR QUALITY:",
   "- Tutor explanations must sound natural, conversational, and varied across questions.",
-  "- Use a specific idea from the passage when explaining why an answer is correct.",
+  "- Use a specific idea from the content/problem when explaining why an answer is correct.",
   "- Avoid repetitive templates and generic phrasing.",
-  "PASSAGE GROUNDING:",
-  "- Use only information that clearly appears in the provided passage or problem.",
+  "CONTENT GROUNDING:",
+  "- Use only information that clearly appears in the provided content or problem.",
   "- Do not introduce outside examples, unrelated scenarios, or new situations.",
   "SUBJECT-SPECIFIC ANSWERS:",
   "- If subject is Math: answer choices must be numerical values or valid expressions only.",
@@ -607,22 +619,25 @@ function isValidPassage(passage: string): boolean {
 
 function isCompletePassage(passage: string): boolean {
   const text = String(passage || "").trim();
-  if (!text) return false;
 
-  const sentenceMatches = text.match(/[^.!?]+[.!?]/g) || [];
-  const sentences = sentenceMatches
+  if (!text || text.length < 120) return false;
+
+  const sentences = text
+    .split(/[.!?]+/)
     .map((s) => s.trim())
-    .filter((s) => s.split(/\s+/).filter(Boolean).length >= 5);
+    .filter(Boolean);
 
+  // Must have at least 3 real sentences
   if (sentences.length < 3) return false;
-  if (!/[.!?]["')\]]?\s*$/.test(text)) return false;
 
-  const coveredLength = sentenceMatches.join("").replace(/\s+/g, "").length;
-  const fullLength = text.replace(/\s+/g, "").length;
-  const hasUnfinishedTail = fullLength - coveredLength > 6;
-  if (hasUnfinishedTail) return false;
+  // No sentence fragments (too short)
+  const hasFragment = sentences.some((s) => s.split(/\s+/).length < 6);
+  if (hasFragment) return false;
 
-  return hasConnectedIdeas(text);
+  // Must end with punctuation
+  if (!/[.!?]$/.test(text)) return false;
+
+  return true;
 }
 
 function hasConnectedIdeas(passage: string): boolean {
@@ -871,6 +886,22 @@ function buildCorePrompt(params: {
 }): string {
   const { grade, subject, skill, level, textType, teksCode = "Unknown", contextType = "real-world application" } = params;
   const levelInstruction = getLevelInstruction(level);
+  const rules = isPassageBased("Practice", subject) ? PASSAGE_RULES : NON_PASSAGE_RULES;
+  const modeLogic = `MODE LOGIC (CRITICAL):
+
+IF subject = Reading:
+→ Use passage-based reasoning
+
+IF subject ≠ Reading AND mode = Practice:
+→ DO NOT reference a passage
+→ DO NOT use phrases like:
+   "the passage shows"
+   "the text suggests"
+→ Answers must be based on logic or problem-solving
+
+IF mode = Cross-Curricular:
+→ Use passage as context
+→ Combine reasoning + content`;
   const scienceReasoningRule = subject === "Science"
     ? "- Science rule: ask reasoning-focused questions (not simple recall) and use realistic scenarios/situations when possible."
     : "";
@@ -905,6 +936,8 @@ Rules:
 - TEKS Alignment Code: ${teksCode}
 - ${scienceReasoningRule || "Use cognitively demanding questions that require reasoning, not simple recall."}
 - Mode rule: Use passage-based reasoning and ensure answers are supported by the passage.
+- ${modeLogic.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${rules.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${QUALITY_ALIGNMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - No markdown. JSON only.`;
   }
@@ -937,6 +970,8 @@ Rules:
 - TEKS Alignment Code: ${teksCode}
 - ${scienceReasoningRule || "Use cognitively demanding questions that require reasoning, not simple recall."}
 - Mode rule: Do not reference a passage. Every choice must be a valid response to the problem.
+- ${modeLogic.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${rules.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${QUALITY_ALIGNMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - No markdown. JSON only.`;
 }
@@ -952,6 +987,7 @@ function buildEnrichmentPrompt(params: {
 }): string {
   const { grade, subject, skill, practiceQuestions, level, crossPassage = "", teksCode = "Unknown", contextType = "real-world application" } = params;
   const levelInstruction = getLevelInstruction(level);
+  const rules = isPassageBased("Cross-Curricular", subject) ? PASSAGE_RULES : NON_PASSAGE_RULES;
   const scienceReasoningRule = subject === "Science"
     ? "- Science rule: emphasize reasoning over recall and frame questions in concrete scenarios when possible."
     : "";
@@ -989,6 +1025,7 @@ Rules:
 - ${scienceReasoningRule || "Use questions that require applied reasoning rather than simple recall."}
 - ${THINKING_OVER_RECALL_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - Mode rule: Answers must be supported by the passage using passage-based reasoning.
+- ${rules.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${QUALITY_ALIGNMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - No markdown. JSON only.`;
 }
@@ -1002,6 +1039,24 @@ function buildGenerationPrompt(params: {
   practiceQuestions?: Question[];
   crossPassage?: string;
 }): string {
+  const rules = isPassageBased(params.mode === "core" ? "Practice" : "Cross-Curricular", params.subject)
+    ? PASSAGE_RULES
+    : NON_PASSAGE_RULES;
+  const modeLogic = `MODE LOGIC (CRITICAL):
+
+IF subject = Reading:
+→ Use passage-based reasoning
+
+IF subject ≠ Reading AND mode = Practice:
+→ DO NOT reference a passage
+→ DO NOT use phrases like:
+   "the passage shows"
+   "the text suggests"
+→ Answers must be based on logic or problem-solving
+
+IF mode = Cross-Curricular:
+→ Use passage as context
+→ Combine reasoning + content`;
   const scienceReasoningRule = params.subject === "Science"
     ? "Science rule: ask reasoning-heavy questions (not simple recall) and use realistic situations where possible."
     : "Use applied reasoning questions rather than simple recall prompts.";
@@ -1038,6 +1093,8 @@ Rules:
 - ${scienceReasoningRule}
 - ${THINKING_OVER_RECALL_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - Mode rule: If no passage is included, do not reference passage-based support language.
+- ${modeLogic.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${rules.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${QUALITY_ALIGNMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - Keep explanations short (1 sentence).
 - No commentary, markdown, or extra keys.`;
@@ -1064,6 +1121,8 @@ Each question must have exactly 4 choices.
 ${scienceReasoningRule}
 ${THINKING_OVER_RECALL_RULES}
 Mode rule: Answers must be supported by the passage with passage-based reasoning.
+${modeLogic}
+${rules}
 ${QUALITY_ALIGNMENT_RULES}
 Keep explanations short (1 sentence).
 No extra commentary.`;
@@ -1118,42 +1177,19 @@ As the groups compared exact lines across the reports, they noticed how wording 
   return "Two groups reviewed two article collections to understand why readers preferred different reading formats. Some readers said shorter pieces helped them find key ideas quickly, while others preferred longer selections with more examples and context. The groups compared exact lines, checked which claims were supported by multiple details, and revised conclusions to match the strongest evidence in each source. When two sources appeared to conflict, they re-read the original lines and identified how word choice changed meaning. Their final report explained how careful reading and evidence-based reasoning led to clearer conclusions.";
 }
 
+function enforceValidPassage(
+  passage: string,
+  subject: string,
+  level: string,
+): string {
+  if (isCompletePassage(passage)) return passage;
 
-function buildMathFallbackChoices(): [string, string, string, string] {
-  return [
-    "126",
-    "120",
-    "132",
-    "42",
-  ];
+  console.warn("🚨 INVALID PASSAGE — regenerating once");
+
+  const regenerated = buildSubjectPassage(subject as CanonicalSubject, level as Level);
+  return regenerated || passage;
 }
 
-function buildScienceFallbackChoices(): [string, string, string, string] {
-  return [
-    "Changing light intensity changed photosynthesis rate, causing different growth outcomes.",
-    "The independent variable was water amount, so observations compare response changes.",
-    "A controlled experiment isolates one variable to explain the observed relationship.",
-    "The conclusion should be based on repeated observations, not a single trial.",
-  ];
-}
-
-function buildSSFallbackChoices(): [string, string, string, string] {
-  return [
-    "Flood delays increased prices, so voters later supported a bridge policy change.",
-    "Council decisions in the early 1900s shifted trade routes and migration patterns.",
-    "Population growth changed public priorities, affecting election outcomes over time.",
-    "A transportation policy can reshape jobs, markets, and settlement across a town.",
-  ];
-}
-
-function getFallbackChoices(subject: CanonicalSubject, skill: string): [string, string, string, string] {
-  void skill;
-  if (subject === "Math") return buildMathFallbackChoices();
-  if (subject === "Science") return buildScienceFallbackChoices();
-  if (subject === "Social Studies") return buildSSFallbackChoices();
-  const safePassage = buildSubjectPassage("Reading", "On Level");
-  return forcePassageChoices(safePassage);
-}
 
 function buildExplanation(answer: string, question: string): string {
   const cleanAnswer = String(answer || "").trim();
@@ -1347,37 +1383,7 @@ function buildUniversalChoices(
 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
   const raw = Array.isArray(choices) ? choices : [];
-  const padded = raw.slice(0, 4).map((c) =>
-    String(c ?? "")
-      .replace(/^[A-D][\).\s-]+/i, "")
-      .trim()
-  );
-
-  if (padded.length !== 4) {
-    console.warn("⚠️ Invalid choice count from AI:", padded);
-    return padded.slice(0, 4) as [string, string, string, string];
-  }
-
-  const used = new Set<string>();
-  const unique = padded.map((choice, index) => {
-    const fallback = `Alternative answer choice ${index + 1}`;
-    const base = choice || fallback;
-    const lowered = base.toLowerCase();
-
-    if (!used.has(lowered)) {
-      used.add(lowered);
-      return base;
-    }
-
-    let candidate = `${base} (${index + 1})`;
-    while (used.has(candidate.toLowerCase())) {
-      candidate = `${candidate}*`;
-    }
-    used.add(candidate.toLowerCase());
-    return candidate;
-  });
-
-  return unique as [string, string, string, string];
+  return raw.slice(0, 4).map((c) => String(c ?? "").trim()) as [string, string, string, string];
 }
 
 function makeChoicesUnique(
@@ -1385,23 +1391,9 @@ function makeChoicesUnique(
   subject: CanonicalSubject,
   question: string,
 ): [string, string, string, string] {
-  const used = new Set<string>();
-  const fallback = getFallbackChoices(subject, question);
-  const cleanForSubject = (choice: string): string => subject === "Math"
-    ? (sanitizeMathChoice(choice) || "0")
-    : cleanAnswerChoice(choice);
-  const result = choices.map((choice, index) => {
-    const cleaned = cleanForSubject(String(choice || "").trim());
-    const key = cleaned.toLowerCase();
-    if (!cleaned || used.has(key)) {
-      const replacement = cleanForSubject(String(fallback[index] || fallback[0] || "0"));
-      used.add(replacement.toLowerCase());
-      return replacement;
-    }
-    used.add(key);
-    return cleaned;
-  });
-  return normalizeChoices(result);
+  void subject;
+  void question;
+  return choices.map((choice) => String(choice || "").trim()) as [string, string, string, string];
 }
 
 function normalizeVocabChoices(choices: string[]): [string, string, string, string] {
@@ -1423,21 +1415,7 @@ function isValidVocabTarget(passage: PassageContent | string, word: string): boo
 }
 
 function cleanAnswerChoice(choice: string): string {
-  let c = String(choice || "").trim();
-
-  c = c.replace(/proves that.*$/i, "");
-  c = c.replace(/is true.*$/i, "");
-  c = c.replace(/was a result.*$/i, "");
-  c = c.replace(/this happened.*$/i, "");
-  c = c.replace(/\s+(because|which|that)$/i, "");
-  c = c.replace(/\s+/g, " ").trim();
-
-  if (c.length < 10) {
-    c = "This option does not match the problem details.";
-  }
-  c = c.replace(/not supported by the passage/gi, "not supported by the details");
-
-  return c;
+  return String(choice || "").trim();
 }
 
 function enforceThinkingStem(subject: CanonicalSubject, question: string): string {
@@ -1464,6 +1442,13 @@ function normalizeModeLanguage(
       .replace(/\bthe text\b/gi, "the problem");
   }
   return value;
+}
+
+function stripNonPassageLanguage(text: string): string {
+  return String(text || "")
+    .replace(/\bthe passage\b/gi, "the problem")
+    .replace(/\bthe text\b/gi, "the problem")
+    .replace(/\bevidence from\b/gi, "support from");
 }
 
 function isMathLikeChoice(choice: string): boolean {
@@ -1802,7 +1787,7 @@ function repairQuestion(q: Question, subject: CanonicalSubject, passage: Passage
     : cleanAnswerChoice(choice);
   const safeChoices = Array.isArray(q.choices) && q.choices.length === 4
     ? normalizeChoices(q.choices).map(cleanForSubject) as [string, string, string, string]
-    : getFallbackChoices(subject, questionText).map(cleanForSubject) as [string, string, string, string];
+    : normalizeChoices(Array.isArray(q.choices) ? q.choices : []).map(cleanForSubject) as [string, string, string, string];
   const uniqueChoices = makeChoicesUnique(safeChoices, subject, questionText);
   const safeAnswer = typeof q.correct_answer === "string" && LETTERS.includes(q.correct_answer as ChoiceLetter)
     ? q.correct_answer as ChoiceLetter
@@ -1883,8 +1868,8 @@ function validateMCQuestion(
     choices = normalizeVocabChoices(choices) as [string, string, string, string];
     if (!isValidVocabTarget(passageText, targetWord)) {
       normalizedQuestion = "Which idea is BEST supported by the passage?";
-      choices = getFallbackChoices(subject, "general").map(cleanAnswerChoice) as [string, string, string, string];
-      safeAnswer = pickRandom(["A", "B", "C", "D"] as ChoiceLetter[]);
+      choices = makeChoicesUnique(choices, subject, normalizedQuestion);
+      safeAnswer = safeCorrectAnswer(q.correct_answer);
     }
   }
   // if (subject === "Math") {
@@ -2038,7 +2023,9 @@ function fallbackPassage(subject: CanonicalSubject, mode: CanonicalMode, grade: 
   const max = 300;
 
   if (mode === "Cross-Curricular") {
-    return ensurePassageLength(clampPassageWords(buildSubjectPassage(subject, level), min, max), min, max, subject, mode, grade, level, false);
+    let passageText = buildSubjectPassage(subject, level);
+    passageText = enforceValidPassage(passageText, subject, level);
+    return ensurePassageLength(clampPassageWords(passageText, min, max), min, max, subject, mode, grade, level, false);
   }
 
   if (subject === "Math") {
@@ -2850,7 +2837,8 @@ function buildCrossFallback(
   const level: Level = skillOrLevel === "Below" || skillOrLevel === "On Level" || skillOrLevel === "Advanced"
     ? skillOrLevel
     : maybeLevel;
-  const crossPassage = buildSubjectPassage(subject, level);
+  let crossPassage = buildSubjectPassage(subject, level);
+  crossPassage = enforceValidPassage(crossPassage, subject, level);
   const singleAnswerSequence = [...shuffledLetters(), ...shuffledLetters()];
   let singleAnswerIndex = 0;
   const nextSingleAnswer = (): ChoiceLetter => {
@@ -3051,7 +3039,8 @@ function buildShortResponse(): string {
 
 function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
   const subject: CanonicalSubject = "Reading";
-  const crossPassage = buildSubjectPassage(crossSubject, "On Level");
+  let crossPassage = buildSubjectPassage(crossSubject, "On Level");
+  crossPassage = enforceValidPassage(crossPassage, crossSubject, "On Level");
   const stems = [
     buildMainIdeaQuestion(),
     buildEvidenceQuestion(),
@@ -3213,8 +3202,8 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
     .filter((q): q is Question => q !== null);
 
   if (!questions || questions.length === 0) {
-    console.warn("All questions failed → fallback");
-    return buildCrossFallback("Reading", "On Level");
+    console.warn("⚠️ Using AI output despite imperfections");
+    return questions;
   }
 
   const passageText = getPassageText(crossPassage).toLowerCase();
@@ -3225,9 +3214,9 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
     );
 
     if (!hasConnection) {
-      const subjectSafeFallback = getFallbackChoices("Reading", q.question);
-      if (hasLooseSupport(passageText, subjectSafeFallback.join(" "))) {
-        q.choices = subjectSafeFallback;
+      const subjectSafeChoices = normalizeChoices(q.choices);
+      if (hasLooseSupport(passageText, subjectSafeChoices.join(" "))) {
+        q.choices = subjectSafeChoices;
       } else {
         console.warn("🚨 REJECTED cross fallback — preserving original choices");
       }
@@ -3239,38 +3228,58 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
 
 function buildELARFallback(level: Level = "On Level"): { passage: string; questions: Question[] } {
   const crossSubject = randomChoice<CanonicalSubject>(["Science", "Social Studies", "Math"]);
+  let passageText = buildSubjectPassage(crossSubject, level);
+  passageText = enforceValidPassage(passageText, crossSubject, level);
   return {
-    passage: buildSubjectPassage(crossSubject, level),
+    passage: passageText,
     questions: buildELARCrossQuestions(crossSubject),
   };
 }
 
 function buildMathFallback(level: Level = "On Level"): { passage: string; questions: Question[] } {
+  let passageText = buildSubjectPassage("Math", level);
+  passageText = enforceValidPassage(passageText, "Math", level);
   return {
-    passage: buildSubjectPassage("Math", level),
+    passage: passageText,
     questions: buildCrossFallback("Math", level),
   };
 }
 
 function buildScienceFallback(level: Level = "On Level"): { passage: string; questions: Question[] } {
+  let passageText = buildSubjectPassage("Science", level);
+  passageText = enforceValidPassage(passageText, "Science", level);
   return {
-    passage: buildSubjectPassage("Science", level),
+    passage: passageText,
     questions: buildCrossFallback("Science", level),
   };
 }
 
 function buildSSFallback(level: Level = "On Level"): { passage: string; questions: Question[] } {
+  let passageText = buildSubjectPassage("Social Studies", level);
+  passageText = enforceValidPassage(passageText, "Social Studies", level);
   return {
-    passage: buildSubjectPassage("Social Studies", level),
+    passage: passageText,
     questions: buildCrossFallback("Social Studies", level),
   };
 }
 
 function buildSubjectCrossContent(subject: CanonicalSubject, level: Level = "On Level"): { passage: string; questions: Question[] } {
-  if (subject === "Math") return buildMathFallback(level);
-  if (subject === "Science") return buildScienceFallback(level);
-  if (subject === "Social Studies") return buildSSFallback(level);
-  const readingFallback = buildELARFallback(level);
+  if (subject === "Math") {
+    console.warn("⚠️ Using AI output despite imperfections");
+    return { passage: enforceValidPassage(buildSubjectPassage("Math", level), "Math", level), questions: [] };
+  }
+  if (subject === "Science") {
+    console.warn("⚠️ Using AI output despite imperfections");
+    return { passage: enforceValidPassage(buildSubjectPassage("Science", level), "Science", level), questions: [] };
+  }
+  if (subject === "Social Studies") {
+    console.warn("⚠️ Using AI output despite imperfections");
+    return { passage: enforceValidPassage(buildSubjectPassage("Social Studies", level), "Social Studies", level), questions: [] };
+  }
+  const readingFallback = {
+    passage: enforceValidPassage(buildSubjectPassage("Reading", level), "Reading", level),
+    questions: [] as Question[],
+  };
   return {
     passage: readingFallback.passage,
     questions: readingFallback.questions,
@@ -3284,7 +3293,8 @@ function fallbackQuestionSet(subject: CanonicalSubject, mode: CanonicalMode, ski
   if (mode === "Cross-Curricular") {
     // Cross structure is subject-driven (or ELAR-over-content for Reading), not skill-driven.
     if (effectiveSubject === "Reading") {
-      return buildELARFallback(level).questions;
+      console.warn("⚠️ Using AI output despite imperfections");
+      return [];
     }
     return buildSubjectCrossContent(effectiveSubject, level).questions;
   }
@@ -3699,8 +3709,7 @@ function sanitizeQuestions(
       normalizedChoices = normalizeVocabChoices(normalizedChoices) as [string, string, string, string];
       if (!isValidVocabTarget(getPassageText(passage), targetWord)) {
         normalizedQuestionText = "Which idea is BEST supported by the passage?";
-        normalizedChoices = getFallbackChoices(subject, "general")
-          .map(cleanForSubject) as [string, string, string, string];
+        normalizedChoices = makeChoicesUnique(normalizedChoices, subject, normalizedQuestionText);
       }
     }
 
@@ -3808,8 +3817,21 @@ function sanitizeQuestions(
     step_by_step: normalizeModeLanguage(String(q.step_by_step || ""), mode, subject),
     parent_tip: normalizeModeLanguage(String(q.parent_tip || ""), mode, subject),
   }));
+  const cleanedFinalQuestions = (mode === "Practice" && subject !== "Reading")
+    ? finalQuestions.map((q) => ({
+      ...q,
+      question: stripNonPassageLanguage(q.question),
+      choices: normalizeChoices((q.choices || []).map((choice) => stripNonPassageLanguage(String(choice || "")))),
+      explanation: stripNonPassageLanguage(String(q.explanation || "")),
+      common_mistake: stripNonPassageLanguage(String(q.common_mistake || "")),
+      hint: stripNonPassageLanguage(String(q.hint || "")),
+      think: stripNonPassageLanguage(String(q.think || "")),
+      step_by_step: stripNonPassageLanguage(String(q.step_by_step || "")),
+      parent_tip: stripNonPassageLanguage(String(q.parent_tip || "")),
+    }))
+    : finalQuestions;
   console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", finalQuestions.length);
-  const alignedSet = finalQuestions;
+  const alignedSet = cleanedFinalQuestions;
   if (!isPassageBased(mode, subject)) {
     for (const q of alignedSet) {
       if (!Array.isArray(q.choices) || q.choices.length !== 4) continue;
@@ -4495,9 +4517,9 @@ function sanitizeTutorExplanations(
   mode: "practice" | "cross",
   crossPassage = "",
 ): TutorExplanation[] {
-  const defaultQuestions = mode === "cross" ? buildCrossFallback(subject) : buildPracticeFallback("Main Idea", subject);
+  void subject;
   const baseQuestions = sourceQuestions.slice(0, 5);
-  while (baseQuestions.length < 5) baseQuestions.push(defaultQuestions[baseQuestions.length]);
+  if (baseQuestions.length === 0) return [];
   return generateTutor(baseQuestions, subject, mode, "On Level", crossPassage);
 }
 
@@ -4509,9 +4531,9 @@ function sanitizeAnswerKey(
   mode: "practice" | "cross",
   crossPassage = "",
 ): AnswerKeyEntry[] {
-  const defaultQuestions = mode === "cross" ? buildCrossFallback(subject) : buildPracticeFallback("Main Idea", subject);
+  void subject;
   const baseQuestions = sourceQuestions.slice(0, 5);
-  while (baseQuestions.length < 5) baseQuestions.push(defaultQuestions[baseQuestions.length]);
+  if (baseQuestions.length === 0) return [];
   return generateAnswerKey(baseQuestions, subject, mode, "On Level", crossPassage);
 }
 
@@ -5292,6 +5314,18 @@ serve(async (req) => {
             markRetry("malformed_json");
             continue;
           }
+          let passageText = String(parsed.passage || "").trim();
+          if (passageText) {
+            passageText = enforceValidPassage(passageText, subject, level);
+            parsed.passage = passageText;
+          } else if (parsed.passage && typeof parsed.passage === "object" && !Array.isArray(parsed.passage)) {
+            const passageObj = parsed.passage as Record<string, unknown>;
+            const text1 = String(passageObj.text_1 || "").trim();
+            const text2 = String(passageObj.text_2 || "").trim();
+            if (text1) passageObj.text_1 = enforceValidPassage(text1, subject, level);
+            if (text2) passageObj.text_2 = enforceValidPassage(text2, subject, level);
+            parsed.passage = passageObj;
+          }
 
           const constraints = getGradeConstraints(grade);
           const parsedPassage = parsed.passage;
@@ -5686,6 +5720,10 @@ serve(async (req) => {
           ? parsed.cross as Record<string, unknown>
           : {};
         let subjectCrossPassage = String(parsedCross.passage || "").trim() || baseCrossPassage;
+        if (subjectCrossPassage) {
+          subjectCrossPassage = enforceValidPassage(subjectCrossPassage, effectiveSubject, level);
+          parsedCross.passage = subjectCrossPassage;
+        }
         if (!validateCrossPassage(subjectCrossPassage) || subjectCrossPassage === corePassageForChecks) {
           console.warn("⚠️ Invalid or duplicated cross passage, forcing subject passage");
           subjectCrossPassage = baseCrossPassage;
