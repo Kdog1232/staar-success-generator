@@ -2186,6 +2186,23 @@ function parseAnswerLetter(value: unknown): ChoiceLetter | null {
   return null;
 }
 
+function getChoiceByLetter(
+  questionOrChoices: Question | [string, string, string, string] | string[],
+  letter: ChoiceLetter | ChoiceLetter[],
+): string | string[] {
+  const indexMap: Record<ChoiceLetter, number> = { A: 0, B: 1, C: 2, D: 3 };
+  const rawChoices = Array.isArray(questionOrChoices)
+    ? questionOrChoices
+    : questionOrChoices?.choices;
+  const choices = normalizeChoices(rawChoices);
+
+  if (Array.isArray(letter)) {
+    return letter.map((l) => String(choices[indexMap[l]] || "").trim());
+  }
+
+  return String(choices[indexMap[letter]] || "").trim();
+}
+
 function getQuestionCorrectPair(q: Question): { letter: ChoiceLetter | null; choice: string } {
   const letter = parseAnswerLetter(q.correct_answer);
   const normalizedChoices = normalizeChoices(q.choices);
