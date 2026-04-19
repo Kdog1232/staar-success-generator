@@ -670,12 +670,6 @@ function passageSupportsQuestions(passage: string, questions: Question[]): boole
   });
 }
 
-function strengthenChoices(choices: [string, string, string, string], passage: string): [string, string, string, string] {
-  void passage;
-  const strengthened = choices.map((choice) => String(choice || "").trim());
-  return normalizeChoices(strengthened);
-}
-
 function sanitizeChoices(questions: Question[], passage: PassageContent | string): Question[] {
   void passage;
   // TEMPORARY TEST: bypass sanitize logic to inspect raw AI output.
@@ -1793,14 +1787,13 @@ function repairQuestion(q: Question, subject: CanonicalSubject, passage: Passage
     ? q.correct_answer as ChoiceLetter
     : "A";
   const passageText = getPassageText(passage);
-  const strengthenedChoices = strengthenChoices(uniqueChoices, passageText);
   const safeExplanation = String(q.explanation || "").trim() ||
     "This question was adjusted to maintain quality and alignment with the passage.";
 
   return validateMCQuestion({
     ...q,
     question: questionText,
-    choices: strengthenedChoices,
+    choices: uniqueChoices,
     correct_answer: safeAnswer,
     explanation: safeExplanation,
   }, passageText, subject);
@@ -3723,7 +3716,7 @@ function sanitizeQuestions(
     // if (subject === "Math" && type === "mc") {
     //   normalizedChoices = enforceMathChoices(normalizedChoices, normalizedCorrectAnswer);
     // }
-    normalizedChoices = strengthenChoices(normalizedChoices, passageText);
+    normalizedChoices = normalizeChoices(normalizedChoices);
 
     const base: Question = {
       type,
@@ -3806,16 +3799,14 @@ function sanitizeQuestions(
   }
   const finalQuestions = questions.slice(0, 5).map((q) => ({
     ...q,
-    question: normalizeModeLanguage(String(q.question || ""), mode, subject),
-    choices: normalizeChoices((q.choices || []).map((choice) =>
-      normalizeModeLanguage(String(choice || ""), mode, subject).replace(/not supported by the passage/gi, "not supported by the details")
-    )),
-    explanation: normalizeModeLanguage(String(q.explanation || ""), mode, subject),
-    common_mistake: normalizeModeLanguage(String(q.common_mistake || ""), mode, subject),
-    hint: normalizeModeLanguage(String(q.hint || ""), mode, subject),
-    think: normalizeModeLanguage(String(q.think || ""), mode, subject),
-    step_by_step: normalizeModeLanguage(String(q.step_by_step || ""), mode, subject),
-    parent_tip: normalizeModeLanguage(String(q.parent_tip || ""), mode, subject),
+    question: String(q.question || "").trim(),
+    choices: normalizeChoices((q.choices || []).map((choice) => String(choice || "").trim())),
+    explanation: String(q.explanation || "").trim(),
+    common_mistake: String(q.common_mistake || "").trim(),
+    hint: String(q.hint || "").trim(),
+    think: String(q.think || "").trim(),
+    step_by_step: String(q.step_by_step || "").trim(),
+    parent_tip: String(q.parent_tip || "").trim(),
   }));
   const cleanedFinalQuestions = (mode === "Practice" && subject !== "Reading")
     ? finalQuestions.map((q) => ({
