@@ -4730,17 +4730,6 @@ type PipelineInput = {
   answerKey?: { practice: unknown[]; cross: unknown[] };
 };
 
-function safeFallback(reason: string): PipelineResult {
-  console.warn("Pipeline fallback triggered:", reason);
-  const level: Level = "On Level";
-  const passage = fallbackPassageContent("Reading", "Practice", 5, READING_SKILL_DEFAULT, level);
-  return {
-    questions: buildPracticeFallback(READING_SKILL_DEFAULT, "Reading", level, passage),
-    tutor: { practice: [], cross: [] },
-    answerKey: { practice: [], cross: [] },
-  };
-}
-
 function generateQuestions(input: PipelineInput): PipelineResult {
   return {
     questions: Array.isArray(input?.questions) ? input.questions : [],
@@ -4760,15 +4749,6 @@ function normalizeOutput(result: PipelineResult): PipelineResult {
   return { ...result, questions };
 }
 
-function guaranteeOutput(result: PipelineResult): PipelineResult {
-  if (!result.questions || result.questions.length === 0) {
-    console.warn("Empty result → fallback");
-    return safeFallback("pipeline_guard");
-  }
-
-  return result;
-}
-
 function enrichOutput(result: PipelineResult): PipelineResult {
   return {
     questions: result.questions,
@@ -4778,43 +4758,10 @@ function enrichOutput(result: PipelineResult): PipelineResult {
 }
 
 async function runPipeline(input: PipelineInput): Promise<PipelineResult> {
-  const generate = () => generateQuestions(input);
-  let result = generate();
-  if (!result.questions?.length) {
-    console.warn("No questions returned, retrying once...");
-    result = generate(); // retry once
-  }
+  let result = generateQuestions(input);
   result = normalizeOutput(result);
-  result = guaranteeOutput(result);
   result = enrichOutput(result);
   return result;
-}
-
-function buildFallbackResponse(
-  grade: number,
-  subject: CanonicalSubject,
-  skill: string,
-  level: Level = "On Level",
-): WorkerAttempt {
-  const effectiveSubject = subject;
-  const crossContent = effectiveSubject === "Reading"
-    ? buildELARFallback(level)
-    : buildSubjectCrossContent(effectiveSubject, level);
-  console.log("🧠 CROSS SUBJECT:", effectiveSubject);
-  const practicePassage = fallbackPassageContent(effectiveSubject, "Practice", grade, skill, level);
-  const practiceQuestions = buildPracticeFallback(skill, effectiveSubject, level, practicePassage);
-  const crossTutor = sanitizeTutorExplanations([], crossContent.questions, effectiveSubject, "cross", crossContent.passage);
-  const practiceTutor = sanitizeTutorExplanations([], practiceQuestions, effectiveSubject, "practice");
-  return {
-    passage: subject === "Reading" ? practicePassage : "",
-    practice: { questions: practiceQuestions },
-    cross: { passage: crossContent.passage, questions: crossContent.questions },
-    tutor: { practice: practiceTutor, cross: crossTutor },
-    answerKey: {
-      practice: sanitizeAnswerKey([], practiceQuestions, effectiveSubject, practiceTutor, "practice"),
-      cross: sanitizeAnswerKey([], crossContent.questions, effectiveSubject, crossTutor, "cross", crossContent.passage),
-    },
-  };
 }
 
 function shouldRewrite(choices: string[]): boolean {
@@ -5003,7 +4950,7 @@ serve(async (req) => {
   let teksCode = "Unknown";
 
   const jsonResponse = (payload: Record<string, unknown>, status = 200) =>
-    new Response(JSON.stringify(payload), {
+    new Response(JSON.stringify({ ...payload, source: "ai" }), {
       status,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -5042,9 +4989,7 @@ serve(async (req) => {
       grade,
       level,
     );
-    const gradeSafeCrossPassage = violatesGradeLevel(crossPassage, grade)
-      ? getPassageText(fallbackPassageContent(subject, "Cross-Curricular", grade, skill, level))
-      : enforceSentenceLength(crossPassage, constraints.maxWordsPerSentence);
+    const gradeSafeCrossPassage = enforceSentenceLength(crossPassage, constraints.maxWordsPerSentence);
     const crossQuestions = sanitizeQuestions(
       baseCross.questions || [],
       subject,
@@ -5198,15 +5143,8 @@ serve(async (req) => {
       });
     };
 
-  const safeFallback = (reason: string, error?: string) => {
-    console.log("🚨 FALLBACK TRIGGERED:", reason);
-    if (error) console.log("🚨 FALLBACK ERROR:", error);
-    const payload = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, level);
-    if (effectiveMode === "enrichment") {
-      return returnEnrichment(payload);
-    }
-    return returnCore(payload);
-  };
+  const aiErrorResponse = (reason: string, status = 502) =>
+    jsonResponse({ error: reason }, status);
 
   try {
     const supabase = createClient(
@@ -5319,8 +5257,9 @@ serve(async (req) => {
     }
 
     if (effectiveMode === "support") {
-      const core = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, level);
-      const practiceQuestions = core.practice?.questions || [];
+      const practiceQuestions = Array.isArray(body.practiceQuestions)
+        ? body.practiceQuestions as Question[]
+        : [];
       const bodyCross = body?.cross && typeof body.cross === "object"
         ? body.cross as Record<string, unknown>
         : {};
@@ -5335,7 +5274,7 @@ serve(async (req) => {
         "Practice",
         effectiveSkill,
         level,
-        getPassageText(core.passage || ""),
+        getPassageText(String(body.passage || "")),
         grade,
       );
       const crossQuestionSet = sanitizeQuestions(
@@ -5348,7 +5287,7 @@ serve(async (req) => {
         grade,
       );
       const supportFinalized = enforceSingleSourceOfTruth({
-        passage: getPassageText(core.passage || ""),
+        passage: getPassageText(String(body.passage || "")),
         practice: { questions: practiceQuestionSet },
         cross: { passage: crossPassage, questions: crossQuestionSet },
         tutor: { practice: [], cross: [] },
@@ -5372,7 +5311,7 @@ serve(async (req) => {
     const range = subject === "Reading" ? readingRange : { min: 250, max: 300 };
 
     let attempts = 0;
-    const MAX_ATTEMPTS = 2;
+    const MAX_ATTEMPTS = 1;
     const start = Date.now();
     const MAX_TIMEOUT_MS = 20000;
     const isTimedOut = () => Date.now() - start > MAX_TIMEOUT_MS;
@@ -5397,7 +5336,7 @@ serve(async (req) => {
           return returnCore(bestAttempt);
         }
         markRetry("no_questions_returned");
-        console.warn("⚠️ FALLBACK TRIGGERED: exceeded max time");
+        console.warn("⚠️ Timed out before generating questions");
         break;
       }
       attempts++;
@@ -5659,8 +5598,7 @@ serve(async (req) => {
         const corePassageFromRequest = typeof body.passage === "string"
           ? String(body.passage || "").trim()
           : "";
-        const fallbackPracticePassage = fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill, level);
-        const corePassageForChecks = corePassageFromRequest || getPassageText(fallbackPracticePassage);
+        const corePassageForChecks = corePassageFromRequest;
         const normalizedPractice = sanitizeQuestions(
           priorPractice,
           effectiveSubject,
@@ -5675,9 +5613,7 @@ serve(async (req) => {
           continue;
         }
         console.log("🧠 CROSS SUBJECT:", effectiveSubject);
-        const crossContent = effectiveSubject === "Reading"
-          ? buildELARFallback(level)
-          : buildSubjectCrossContent(effectiveSubject, level);
+        const crossContent = buildSubjectCrossContent(effectiveSubject, level);
         const baseCrossPassage = crossContent.passage;
         if (baseCrossPassage === corePassageForChecks) {
           console.log("⚠️ Cross passage duplication detected");
@@ -5694,10 +5630,7 @@ serve(async (req) => {
             grade,
             level,
           );
-          const gradeSafeCrossPassage = violatesGradeLevel(crossPassage, grade)
-            ? (console.warn("⚠️ Passage too advanced for grade:", grade),
-              getPassageText(fallbackPassageContent(effectiveSubject, "Cross-Curricular", grade, effectiveSkill, level)))
-            : enforceSentenceLength(crossPassage, constraints.maxWordsPerSentence);
+          const gradeSafeCrossPassage = enforceSentenceLength(crossPassage, constraints.maxWordsPerSentence);
           const crossQuestions = sanitizeQuestions(
             crossContent.questions || [],
             effectiveSubject,
@@ -5880,8 +5813,7 @@ serve(async (req) => {
         );
         subjectCrossPassage = enforceSentenceLength(subjectCrossPassage, constraints.maxWordsPerSentence);
         if (violatesGradeLevel(subjectCrossPassage, grade)) {
-          console.warn("⚠️ Passage too advanced for grade:", grade);
-          subjectCrossPassage = getPassageText(fallbackPassageContent(effectiveSubject, "Cross-Curricular", grade, effectiveSkill, level));
+          console.warn("⚠️ Passage too advanced for grade, keeping AI output");
         }
 
         let crossQuestions = sanitizeQuestions(
@@ -5934,7 +5866,7 @@ serve(async (req) => {
         const practiceAligned = validateTutorAnswerKeyAlignment(normalizedPractice, tutorPractice, answerKeyPractice, "practice");
         const crossAligned = validateTutorAnswerKeyAlignment(crossQuestions, tutorCross, answerKeyCross, "cross");
         if (!practiceAligned) {
-          console.warn("⚠️ Practice tutor misaligned — using fallback");
+          console.warn("⚠️ Practice tutor misaligned");
         }
 
         if (!crossAligned) {
@@ -5991,22 +5923,9 @@ serve(async (req) => {
       } catch (err) {
         console.error("BACKEND ERROR:", err);
         if (isTimedOut()) {
-          const partial = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, level);
-          const partialPayload: CoreResponse = {
-            passage: subject === "Reading" ? getPassageText(partial.passage || "") : undefined,
-            practice: { questions: sanitizeQuestions(
-              partial.practice.questions || [],
-              effectiveSubject,
-              "Practice",
-              effectiveSkill,
-              level,
-              getPassageText(partial.passage || ""),
-              grade,
-            ).slice(0, 5) },
-          };
-          returnType = "PARTIAL_TIMEOUT";
+          returnType = "TIMEOUT";
           logReturnMetrics();
-          return returnCore(partialPayload);
+          return aiErrorResponse("generation_timeout", 504);
         }
         markRetry("no_questions_returned");
       }
@@ -6017,18 +5936,11 @@ serve(async (req) => {
       logReturnMetrics();
       return returnEnrichment(bestAttempt);
     }
-    if (attempts >= 2) {
-      console.log("🚨 FALLBACK TRIGGERED AFTER ATTEMPTS");
-      returnType = "FALLBACK";
-      logReturnMetrics();
-      return safeFallback(retryFailureReason);
-    }
-    console.warn("⚠️ NO RESULT — returning safe fallback");
-    returnType = "SAFE_FALLBACK";
+    returnType = "NO_RESULT";
     logReturnMetrics();
-    return safeFallback(retryFailureReason);
+    return aiErrorResponse(retryFailureReason);
   } catch (err) {
     console.error("🔥 EDGE FUNCTION ERROR:", err);
-    return safeFallback("no_questions_returned");
+    return aiErrorResponse("no_questions_returned", 500);
   }
 });
