@@ -690,9 +690,7 @@ function sanitizeChoices(questions: Question[], passage: PassageContent | string
       const isWeak =
         isGenericChoice(text) ||
         containsBanned(text) ||
-        wordCount < 8 ||
-        text.length < 40 ||
-        !/[a-zA-Z]/.test(text);
+        wordCount < 6;
 
       if (isWeak) {
         return rewriteWithPassageDetail(q.question || "", passageText, i);
@@ -2050,17 +2048,37 @@ function buildUniversalFallbackQuestion(
 }
 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
-  if (!Array.isArray(choices) || choices.length !== 4) {
-    throw new Error("INVALID_CHOICES_LENGTH");
+  const raw = Array.isArray(choices) ? choices : [];
+  const padded = raw.slice(0, 4).map((c) =>
+    String(c ?? "")
+      .replace(/^[A-D][\).\s-]+/i, "")
+      .trim()
+  );
+
+  while (padded.length < 4) {
+    padded.push("Not enough information is provided to support this answer.");
   }
 
-  const clean = choices.slice(0, 4);
+  const used = new Set<string>();
+  const unique = padded.map((choice, index) => {
+    const fallback = `Alternative answer choice ${index + 1}`;
+    const base = choice || fallback;
+    const lowered = base.toLowerCase();
 
-  return clean.map((c) => cleanChoice(
-    String(c || "")
-      .replace(/^[A-D]\.\s*/i, "")
-      .trim()
-  )) as [string, string, string, string];
+    if (!used.has(lowered)) {
+      used.add(lowered);
+      return base;
+    }
+
+    let candidate = `${base} (${index + 1})`;
+    while (used.has(candidate.toLowerCase())) {
+      candidate = `${candidate}*`;
+    }
+    used.add(candidate.toLowerCase());
+    return candidate;
+  });
+
+  return unique as [string, string, string, string];
 }
 
 function makeChoicesUnique(
