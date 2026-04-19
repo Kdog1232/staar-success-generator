@@ -648,11 +648,16 @@ function buildNaturalAnswer(question: string, snippet: string, index: number): s
 }
 
 function rewriteWithPassageDetail(question: string, passage: string, choiceIndex = 0): string {
-  const snippet = extractEvidenceSnippet(
-    passage,
-    extractPassageKeywords(passage),
-    question,
-  );
+  let snippet = "";
+  try {
+    snippet = extractEvidenceSnippet(
+      passage,
+      extractPassageKeywords(passage),
+      question,
+    ) || "";
+  } catch (_e) {
+    console.warn("Snippet extraction failed, using fallback");
+  }
   const cleanedSnippet = String(snippet || "").trim();
   if (!cleanedSnippet) {
     return generateFallbackChoice(question, choiceIndex);
@@ -669,37 +674,36 @@ function strengthenChoices(choices: [string, string, string, string], passage: s
 
 function sanitizeChoices(questions: Question[], passage: PassageContent | string): Question[] {
   const passageText = getPassageText(passage);
+
   return questions.map((q) => {
-    const baseChoices = Array.isArray(q?.choices) ? q.choices : [];
-    const seededChoices = [...baseChoices];
-    while (seededChoices.length < 4) {
-      seededChoices.push(rewriteWithPassageDetail(q.question || "", passageText, seededChoices.length));
+    let choices = Array.isArray(q?.choices) ? [...q.choices] : [];
+
+    while (choices.length < 4) {
+      choices.push(rewriteWithPassageDetail(q.question || "", passageText, choices.length));
     }
-    const rawChoices = seededChoices.slice(0, 4);
+    choices = choices.slice(0, 4);
 
-    let fixedChoices = rawChoices.map((choice, i) => {
+    const fixedChoices = choices.map((choice, i) => {
       const text = String(choice || "").trim();
+      const wordCount = text.split(/\s+/).filter(Boolean).length;
 
-      if (isGenericChoice(text)) {
-        return rewriteWithPassageDetail(q.question || "", passageText, i);
-      }
+      const isWeak =
+        isGenericChoice(text) ||
+        containsBanned(text) ||
+        wordCount < 8 ||
+        text.length < 40 ||
+        !/[a-zA-Z]/.test(text);
 
-      if (text.split(/\s+/).filter(Boolean).length < 8) {
-        return rewriteWithPassageDetail(q.question || "", passageText, i);
-      }
-
-      if (containsBanned(text)) {
+      if (isWeak) {
         return rewriteWithPassageDetail(q.question || "", passageText, i);
       }
 
       return text;
     });
 
-    fixedChoices = normalizeChoices(fixedChoices);
-
     return {
       ...q,
-      choices: fixedChoices,
+      choices: normalizeChoices(fixedChoices),
     };
   });
 }
@@ -2746,6 +2750,14 @@ function detectThinkingType(question: string): "inference" | "evidence" | "main_
   }
 
   return "general";
+}
+
+function extractPassageKeywords(passage: string): string[] {
+  return String(passage || "")
+    .toLowerCase()
+    .split(/\W+/)
+    .filter((word) => word.length > 4)
+    .slice(0, 20);
 }
 
 function extractEvidenceSnippet(passage: string, keywords: string[], answer = ""): string | null {
