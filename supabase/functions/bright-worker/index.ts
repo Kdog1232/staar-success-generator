@@ -593,15 +593,15 @@ function isGenericChoice(choice: string): boolean {
   ].some((pattern) => pattern.test(normalized));
 }
 
-function generateFallbackChoice(question: string, choiceIndex = 0): string {
-  const stem = String(question || "").trim().replace(/\?+$/, "");
-  const fallbackBank = [
-    `The evidence supports one clear conclusion about ${stem.toLowerCase() || "the topic"} when details are compared carefully.`,
-    `A stronger interpretation connects multiple details about ${stem.toLowerCase() || "the topic"} instead of relying on one line.`,
-    `The best-supported idea about ${stem.toLowerCase() || "the topic"} comes from matching details to the question exactly.`,
-    `A careful reader can infer from the details that ${stem.toLowerCase() || "the topic"} follows a clear evidence pattern.`,
-  ];
-  return fallbackBank[Math.abs(choiceIndex) % fallbackBank.length];
+function isValidPassage(passage: string): boolean {
+  if (!passage) return false;
+
+  const sentences = passage
+    .split(/[.!?]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 40);
+
+  return sentences.length >= 3;
 }
 
 function buildNaturalAnswer(question: string, snippet: string, index: number): string {
@@ -613,15 +613,7 @@ function buildNaturalAnswer(question: string, snippet: string, index: number): s
     return "A detail from the passage supports this idea.";
   }
 
-  // Direct answer styles (NO explanation language)
-  const bank = [
-    cleaned,
-    cleaned.replace(/^the /i, "A "),
-    `The passage shows that ${cleaned.toLowerCase()}.`,
-    `This detail explains that ${cleaned.toLowerCase()}.`,
-  ];
-
-  return bank[Math.floor(Math.random() * bank.length)];
+  return cleaned;
 }
 
 function rewriteWithPassageDetail(question: string, passage: string, choiceIndex = 0): string {
@@ -632,14 +624,25 @@ function rewriteWithPassageDetail(question: string, passage: string, choiceIndex
       extractPassageKeywords(passage),
       question,
     ) || "";
-  } catch (_e) {
-    console.warn("Snippet extraction failed, using fallback");
+  } catch {
+    console.warn("Snippet extraction failed");
   }
-  const cleanedSnippet = String(snippet || "").trim();
-  if (!cleanedSnippet) {
-    return generateFallbackChoice(question, choiceIndex);
+  const cleaned = String(snippet || "").trim();
+
+  if (cleaned.length >= 40) {
+    return cleaned;
   }
-  return buildNaturalAnswer(question, cleanedSnippet, choiceIndex);
+
+  const sentences = passage
+    .split(/[.!?]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 40);
+
+  if (!sentences.length) {
+    return "The passage explains a key idea related to the question.";
+  }
+
+  return sentences[choiceIndex % sentences.length];
 }
 
 function strengthenChoices(choices: [string, string, string, string], passage: string): [string, string, string, string] {
@@ -662,19 +665,9 @@ function sanitizeChoices(questions: Question[], passage: PassageContent | string
     const fixedChoices = choices.map((choice, i) => {
       const text = String(choice || "").trim();
 
-      if (/the information shows|strongest answer|logical interpretation|details indicate/i.test(text)) {
-        return rewriteWithPassageDetail(q.question || "", passageText, i);
-      }
-
       const hasEvidenceSupport = hasPassageSupportForChoice(passageText, text);
       const hasReasoningLanguage =
         /because|therefore|suggests|implies|shows|indicates|leads to|reveals|demonstrates|supports|explains/i.test(text);
-
-      const isWeak =
-        !text ||
-        containsBanned(text) ||
-        text.split(/\s+/).length < 8 ||
-        (!hasEvidenceSupport && !hasReasoningLanguage);
 
       const looksStrong =
         text.split(/\s+/).length >= 8 &&
@@ -686,31 +679,29 @@ function sanitizeChoices(questions: Question[], passage: PassageContent | string
         return text; // DO NOT TOUCH GOOD ANSWERS
       }
 
-      if (isWeak) {
+      if (!text || text.length < 25 || containsBanned(text)) {
         return rewriteWithPassageDetail(q.question || "", passageText, i);
       }
 
       return text;
     });
 
-    const normalized = (s: string) =>
-      s.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 80);
-
-    const seen = new Set<string>();
     const uniqueChoices: string[] = [];
 
     for (const c of fixedChoices) {
-      const key = normalized(c);
-      if (!seen.has(key)) {
-        seen.add(key);
+      if (!uniqueChoices.includes(c)) {
         uniqueChoices.push(c);
       }
     }
 
     while (uniqueChoices.length < 4) {
-      uniqueChoices.push(
-        rewriteWithPassageDetail(q.question || "", passageText, uniqueChoices.length),
-      );
+      const next = rewriteWithPassageDetail(q.question || "", passageText, uniqueChoices.length);
+
+      if (!uniqueChoices.includes(next)) {
+        uniqueChoices.push(next);
+      } else {
+        uniqueChoices.push(next + " (based on another detail)");
+      }
     }
 
     return {
@@ -6120,6 +6111,10 @@ serve(async (req) => {
           if (subject === "Reading") {
             const rawPassage = getPassageText(safePassage).trim();
             const rawWordCount = rawPassage.split(/\s+/).filter(Boolean).length;
+            if (!isValidPassage(rawPassage)) {
+              console.warn("🚨 BAD PASSAGE — REGENERATING");
+              throw new Error("INVALID_PASSAGE");
+            }
             if (!rawPassage || rawWordCount < 20) {
               markRetry("no_questions_returned");
               continue;
