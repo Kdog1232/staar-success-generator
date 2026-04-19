@@ -481,41 +481,12 @@ function ensureUsableExplanation(explanation: string): string {
   return trimmed || "Work through the problem carefully and check each step.";
 }
 
-function rigorInstruction(level: Level): string {
-  if (level === "Below") return "Use direct reasoning with explicit clues and clearer evidence paths.";
-  if (level === "Advanced") return "Increase reasoning depth, abstraction, and evidence precision.";
-  return "Use grade-appropriate reasoning rigor.";
+function getLevelInstruction(level: Level): string {
+  if (level === "Below") return "LOW: simple and direct";
+  if (level === "Advanced") return "ADVANCED: deeper thinking";
+  return "ON LEVEL: moderate reasoning";
 }
 
-type RigorProfile = {
-  passage: "simple" | "grade" | "complex";
-  questionDepth: "low" | "medium" | "high";
-  distractorQuality: "obvious" | "plausible" | "subtle";
-};
-
-function applyRigor(level: Level): RigorProfile {
-  if (level === "Below") {
-    return {
-      passage: "simple",
-      questionDepth: "low",
-      distractorQuality: "obvious",
-    };
-  }
-
-  if (level === "Advanced") {
-    return {
-      passage: "complex",
-      questionDepth: "high",
-      distractorQuality: "subtle",
-    };
-  }
-
-  return {
-    passage: "grade",
-    questionDepth: "medium",
-    distractorQuality: "plausible",
-  };
-}
 
 function routeBySkill(skill: string): "vocab" | "main_idea" | "inference" | "theme" | "generic" {
   const normalized = String(skill || "").toLowerCase();
@@ -527,49 +498,11 @@ function routeBySkill(skill: string): "vocab" | "main_idea" | "inference" | "the
   return "generic";
 }
 
-type UniversalSkillType = "theme" | "inference" | "author_purpose" | "character" | "central_idea" | "general";
-
-type SkillContract = {
-  mustAsk: string[];
-  banned: string[];
-};
-
-const SKILL_CONTRACTS: Record<UniversalSkillType, SkillContract> = {
-  theme: {
-    mustAsk: ["message", "lesson", "theme"],
-    banned: ["what happened", "who", "when"],
-  },
-  inference: {
-    mustAsk: ["conclude", "infer", "suggest"],
-    banned: ["directly stated", "according to paragraph"],
-  },
-  author_purpose: {
-    mustAsk: ["why did the author", "purpose", "include"],
-    banned: ["what happened", "who did"],
-  },
-  character: {
-    mustAsk: ["trait", "character", "behavior"],
-    banned: ["main idea", "theme"],
-  },
-  central_idea: {
-    mustAsk: ["central idea", "main idea", "best summary"],
-    banned: ["character trait", "line of dialogue"],
-  },
-  general: {
-    mustAsk: [],
-    banned: [],
-  },
-};
-
-function getSkillType(skill: string): UniversalSkillType {
-  const s = String(skill || "").toLowerCase();
-  if (s.includes("theme")) return "theme";
-  if (s.includes("inference")) return "inference";
-  if (s.includes("author")) return "author_purpose";
-  if (s.includes("character")) return "character";
-  if (s.includes("central idea")) return "central_idea";
+function getSkillType(skill: string): "general" {
+  void skill;
   return "general";
 }
+
 
 function validateQuestionAlignment(question: string, skill: string): boolean {
   void skill;
@@ -633,84 +566,11 @@ function sanitizeExplanations(questions: Question[], passage: PassageContent | s
   });
 }
 
-function validateChoiceAlignment(choice: string, skillType: UniversalSkillType): boolean {
+function validateChoiceAlignment(choice: string, skillType: "general"): boolean {
   void skillType;
   return !!String(choice || "").trim();
 }
 
-type SkillType = ReturnType<typeof routeBySkill>;
-
-const QUESTION_STRUCTURE_BANK: Record<SkillType, [string, string, string, string, string][]> = {
-  theme: [
-    ["theme", "detail", "detail", "impact", "evidence"],
-    ["inference", "theme", "decision", "impact", "evidence"],
-    ["conflict", "theme", "character", "shift", "evidence"],
-  ],
-  inference: [
-    ["inference", "clue", "clue", "reasoning", "evidence"],
-    ["prediction", "detail", "inference", "impact", "evidence"],
-    ["hidden meaning", "detail", "reasoning", "conclusion", "evidence"],
-  ],
-  main_idea: [
-    ["main_idea", "detail", "detail", "development", "evidence"],
-    ["summary", "key_point", "support", "organization", "evidence"],
-  ],
-  vocab: [
-    ["vocab", "context", "context", "meaning", "usage"],
-    ["word meaning", "clue", "clue", "replacement", "application"],
-  ],
-  generic: [
-    ["skill", "detail", "detail", "reasoning", "evidence"],
-    ["application", "analysis", "support", "logic", "evidence"],
-  ],
-};
-
-function buildQuestionStructurePrompt(structure: string[]): string {
-  return `QUESTION STRUCTURE (MANDATORY):
-
-Follow this sequence for the 5 questions:
-
-Q1: ${structure[0]}
-Q2: ${structure[1]}
-Q3: ${structure[2]}
-Q4: ${structure[3]}
-Q5: ${structure[4]}
-
-Each question MUST match its role.
-Do NOT default to the same order as previous generations.`;
-}
-
-function getDifficultyInstructions(level: Level): string {
-  if (level === "Below") {
-    return "Use explicit main ideas, direct identification questions, and clearly incorrect but plausible distractors.";
-  }
-  if (level === "On Level") {
-    return "Require some inference and include realistic distractors.";
-  }
-  if (level === "Advanced") {
-    return "Use deeper reasoning with multiple ideas or shifts, and subtle distractors close to correct.";
-  }
-  return "";
-}
-
-function getRigorEngineRules(level: Level, subject: CanonicalSubject): string {
-  if (level === "Below") {
-    if (subject === "Math") return "Below: single-step basic computation with short, clear stems and obviously wrong distractors.";
-    if (subject === "Science") return "Below: simple cause/effect with one clear variable and obviously wrong distractors.";
-    if (subject === "Social Studies") return "Below: identify event/outcome directly with short stems and clearly wrong distractors.";
-    return "Below: informational passage with explicit main idea and direct identification questions; distractors are clearly incorrect but plausible.";
-  }
-  if (level === "Advanced") {
-    if (subject === "Math") return "Advanced: multi-step word problems with embedded reasoning and unnecessary info; distractors are plausible misconception traps.";
-    if (subject === "Science") return "Advanced: multi-variable system reasoning; distractors are close alternatives based on common misconceptions.";
-    if (subject === "Social Studies") return "Advanced: evaluate impacts or compare decisions across time/policy; distractors are plausible but flawed.";
-    return "Advanced: informational passage with multiple ideas/shifts, higher-order synthesis, and subtle distractors with close evidence differences.";
-  }
-  if (subject === "Math") return "On Level: two-step word problems that apply computation to a context with moderately plausible distractors.";
-  if (subject === "Science") return "On Level: system relationships and applied cause/effect with moderately plausible distractors.";
-  if (subject === "Social Studies") return "On Level: cause/effect relationship questions with moderate distractor quality.";
-  return "On Level: informational passage with moderate inference demand and realistic distractors.";
-}
 
 function readingPracticeWordRange(level: Level): { min: number; max: number } {
   if (level === "Below") return { min: 170, max: 220 };
@@ -844,85 +704,44 @@ function buildPrompt(params: {
   mode: CanonicalMode;
 }): string {
   const { grade, subject, skill, level, mode } = params;
-  const effectiveSubject: CanonicalSubject = subject;
-  const effectiveSkill: string = skill ?? "Main Idea";
-  const skillType = routeBySkill(effectiveSkill);
-  const difficulty = getDifficultyInstructions(level);
-  const subjectRules = getSubjectInstructions(effectiveSubject);
-  const rigorEngineRules = getRigorEngineRules(level, effectiveSubject);
+  const levelInstruction = getLevelInstruction(level);
 
   if (mode === "Cross-Curricular") {
-    return `
-  Generate CROSS-CURRICULAR content-area literacy practice.
+    return `Generate CROSS-CURRICULAR content.
 
-  REQUIREMENTS:
-
-  PASSAGE:
-  - Must be a reading passage (informational text)
-  - Topic must be based on ${effectiveSubject}
-  - Must feel like a textbook or real-world scenario
-
-  QUESTIONS:
-  - Must be based on ${effectiveSubject} thinking
-  - Must REQUIRE reading the passage to answer
-  - Must NOT be generic reading questions only
-
-  SUBJECT ALIGNMENT:
-
-  If subject is Science:
-  - cause & effect
-  - systems
-  - scientific reasoning
-
-  If subject is Social Studies:
-  - cause & effect
-  - historical decisions
-  - economic/civic reasoning
-
-  If subject is Math:
-  - word problem interpretation
-  - multi-step reasoning
-  - quantitative relationships
-
-  CRITICAL:
-  - Questions MUST depend on the passage
-  - Do NOT generate isolated subject questions
-  - Do NOT generate pure ELAR-only questions
-
-  RETURN:
-  {
-    passage: string,
-    questions: [...]
-  }
-  `;
-  }
-
-  return `Generate STAAR-style ${effectiveSubject} questions.
-
-INPUTS:
-- Grade: ${grade}
-- Subject: ${effectiveSubject}
-- Skill: ${effectiveSkill}
-- Skill Type: ${skillType}
-- Level: ${level}
-- Mode: ${mode}
-
-REQUIREMENTS:
-- Align all questions to the requested skill: ${effectiveSkill}
-- Match level rigor: ${level}
-- Include strong distractors and STAAR format (MC, multi-select, SCR)
-- Avoid placeholder/filler language
-
-${difficulty}
-${subjectRules}
-RIGOR ENGINE RULE: ${rigorEngineRules}
-
-Return strict JSON only with:
-- passage
-- 5 questions
-- explanation, common_mistake, and parent_tip fields per question.`;
+Return JSON only:
+{
+  "passage": "string",
+  "questions": [5 questions]
 }
 
+Rules:
+- Generate a passage.
+- Generate exactly 5 questions.
+- Each question has 4 choices.
+- Each question has 1 correct answer and 3 realistic distractors.
+- Align to skill: ${skill}.
+- Match grade ${grade} and level (${levelInstruction}).
+- Avoid robotic or templated language.`;
+  }
+
+  return `Generate STAAR-style ${subject} practice questions.
+
+Inputs:
+- Grade: ${grade}
+- Subject: ${subject}
+- Skill: ${skill}
+- Level: ${levelInstruction}
+
+Return strict JSON only with:
+- passage (if needed)
+- 5 questions
+- 4 choices per question
+- 1 correct answer + 3 realistic distractors
+- explanation, common_mistake, and parent_tip fields per question
+
+Keep language natural and student-friendly.`;
+}
 function buildCorePrompt(params: {
   grade: number;
   subject: CanonicalSubject;
@@ -933,116 +752,11 @@ function buildCorePrompt(params: {
   contextType?: string;
 }): string {
   const { grade, subject, skill, level, textType, teksCode = "Unknown", contextType = "real-world application" } = params;
-  const rigor = applyRigor(level);
-  const rigorEngineRules = getRigorEngineRules(level, subject);
-  const skillType = routeBySkill(skill);
-  const selectedStructure = pickRandom(QUESTION_STRUCTURE_BANK[skillType] || QUESTION_STRUCTURE_BANK.generic);
-  const structurePrompt = buildQuestionStructurePrompt(selectedStructure);
-  const constraints = getGradeConstraints(grade);
-  const dokProgressionRequirement = `DOK PROGRESSION REQUIREMENT (MANDATORY):
-- You must structure the 5 questions as follows:
-  - Question 1: Easy (DOK 1–2)
-  - Question 2–3: Medium (DOK 2–3)
-  - Question 4–5: Hard (DOK 3–4)
-- Difficulty must increase across the set.
-- Do NOT make all 5 questions the same level.`;
-  const levelAdjustmentRequirement = `LEVEL ADJUSTMENT (MANDATORY):
-- Below Level:
-  - Q1–2 easy
-  - Q3–5 medium
-- On Level:
-  - Q1 easy
-  - Q2–3 medium
-  - Q4–5 hard
-- Advanced:
-  - Q1 medium
-  - Q2–5 hard`;
-  const variationLock = `VARIATION LOCK (MANDATORY):
-- Each generation MUST use a DIFFERENT narrative structure from previous runs.
-- Rotate across these REQUIRED structures:
-  1. Problem → Failed attempts → Unexpected solution
-  2. Mistake → Consequence → Reflection
-  3. Two characters with opposing choices
-  4. Internal conflict (no external danger)
-  5. Decision with trade-off (no clear "good" choice)
-  6. Misleading situation where first assumption is wrong
-- DO NOT repeat:
-  - helping an animal
-  - simple kindness lesson
-  - "learned a lesson" endings
-- If the story resembles a previous structure, REWRITE it.`;
-  const themeDiversityRule = `THEME DIVERSITY RULE:
-- Themes must rotate across:
-  - responsibility
-  - honesty
-  - courage under pressure
-  - unintended consequences
-  - perspective-taking
-  - fairness vs selfishness
-  - growth from failure
-- DO NOT reuse:
-  - kindness
-  - helping others
-more than once every 5 generations.`;
-  const settingRotationRule = `SETTING ROTATION (MANDATORY):
-- Rotate settings across:
-  - urban
-  - rural
-  - school-based
-  - historical
-  - futuristic
-  - cultural/tradition-based
-- DO NOT repeat the same setting twice in a row.`;
-  const globalBannedPhraseRules = `GLOBAL BANNED PHRASES (ALL SUBJECTS):
-- DO NOT use:
-  - "one detail shows"
-  - "another clue suggests"
-  - "a separate detail"
-  - "the strongest evidence"
-  - "this shows that"
-  - "the passage explains"
-- These are ALWAYS invalid in answer choices.`;
-  const subjectSpecificAnswerLogic = subject === "Math"
-    ? `SUBJECT-SPECIFIC ANSWER LOGIC (MATH):
-- Answers must represent a valid computation/result or a realistic incorrect reasoning path.
-- Correct answers must connect the operation to what the quantity represents.
-- Distractors should reflect common mistakes (wrong operation, skipped step, or misread quantity).`
-    : subject === "Science"
-    ? `SUBJECT-SPECIFIC ANSWER LOGIC (SCIENCE):
-- Answers must explain a concept, cause/effect, or system relationship.
-- Correct answers must reflect scientific reasoning tied to the scenario.
-- Distractors should reflect realistic scientific misconceptions.`
-    : subject === "Social Studies"
-    ? `SUBJECT-SPECIFIC ANSWER LOGIC (SOCIAL STUDIES):
-- Answers must explain historical reasoning, cause/effect, or significance.
-- Correct answers must connect actions, policies, or events to outcomes.
-- Distractors should reflect realistic misinterpretations of events or significance.`
-    : `SUBJECT-SPECIFIC ANSWER LOGIC (READING):
-- Answers must interpret meaning, inference, purpose, or development.
-- Answers should reference passage ideas naturally, not copy lines.
-- Correct answers must explain reasoning, not merely restate text.`;
+  const levelInstruction = getLevelInstruction(level);
+
   if (subject === "Reading") {
     const readingRange = readingPracticeWordRange(level);
-    const mainIdeaStemRule = isMainIdeaSkill(skill)
-      ? `- Main Idea question-type lock (5.6A style):
-  - Allowed stems only:
-    - "What is the main idea of the passage?"
-    - "Which statement best describes the main idea?"
-  - Not allowed:
-    - "What did the character do?"
-    - "What lesson did they learn?"`
-      : "";
     return `Create JSON only for PRACTICE MODE.
-You are generating a STAAR-aligned passage and multiple-choice questions.
-
-MODE CONTEXT
-- Subject: ${subject}
-- Grade: ${grade}
-- Skill: ${skill}
-- Mode: Practice
-- Text Type: ${textType || "fiction"}
-- Context Type: ${contextType}
-- Level: ${level}
 
 Return exactly:
 {
@@ -1051,211 +765,18 @@ Return exactly:
 }
 
 Rules:
-- PRACTICE MODE ONLY. Do not generate cross-curricular content.
+- Generate a passage for reading practice.
+- Generate exactly 5 questions aligned to skill ${skill}.
+- Each question must have exactly 4 choices.
+- Each question must have 1 correct answer and 3 realistic distractors.
+- Match grade ${grade} and level (${levelInstruction}).
+- Use natural, non-robotic language.
 - Context Type: ${contextType}
 - TEKS Alignment Code: ${teksCode}
-- Instruction: Design the question to match how this TEKS is assessed on STAAR.
-- TEKS alignment: skill "${skill}" at grade ${grade} must be assessed through application (analyze/infer/compare/explain), not definition recall.
-- ELAR PRACTICE MODE RULE:
-  - The passage MUST be ${textType || "fiction"}.
-  - Allowed ELAR practice passage types: fiction, poem, drama.
-  - DO NOT generate informational or nonfiction passages in Practice mode.
-- Passage structure guide by selected Text Type:
-  - FICTION REQUIREMENTS:
-    - Include a clear main character.
-    - Include a setting.
-    - Include a problem or conflict.
-    - Show a sequence of events.
-    - End with a meaningful resolution or reflection.
-  - DRAMA REQUIREMENTS:
-    - Format as dialogue (script style).
-    - Use character names before lines.
-    - Include at least 2 characters.
-    - Show interaction or conflict through dialogue.
-    - DRAMA FORMAT LOCK (MANDATORY):
-      - Title must be on its own line at the top.
-      - Include a clearly labeled "Characters:" section, with each character on its own line.
-      - Include a clearly labeled "Setting:" line.
-      - Character lines must follow script format:
-        - Character Name: (stage direction if needed)
-        - Dialogue on the next line OR on the same line if short
-      - Each new speaker must start on a new line.
-      - Never write dialogue in paragraph form.
-      - Stage directions must be in parentheses and separated from dialogue.
-      - Include spacing between speaker turns for readability.
-      - Visual structure is required: the drama must look like a play script, not a paragraph.
-      - If the drama resembles a paragraph, rewrite it as a script before returning.
-  - POETRY REQUIREMENTS (HIGH PRIORITY):
-    - Use line breaks (NOT paragraphs).
-    - Keep poem length to 8–20 lines.
-    - Maintain a natural rhythm or flow.
-    - Focus on one central idea or theme.
-    - Include at least TWO figurative language devices:
-      - simile
-      - metaphor
-      - personification
-      - imagery (sensory language)
-      - alliteration or repetition
-    - Figurative language must be meaningful and support meaning.
-    - Each line must contribute to the overall meaning.
-    - DO NOT write poetry as a paragraph.
-    - DO NOT use incomplete or fragmented lines.
-    - POETRY FORMAT LOCK (MANDATORY):
-      - The poem must be written in lines, not paragraphs.
-      - Each line must appear on its own line.
-      - Total lines must be between 8 and 20 lines only.
-      - Do not combine poetic lines into paragraph blocks.
-      - Do not use run-on sentences stretched across many lines.
-    - STRUCTURE REQUIREMENTS:
-      - Each line must be meaningful; avoid filler lines.
-      - Line lengths should vary naturally.
-      - Use line breaks intentionally to control meaning, pacing, or emphasis.
-    - VISUAL RULE:
-      - The passage must look like a poem on the page.
-      - If it looks like a paragraph, rewrite it as a poem before returning.
-    - CONTENT REQUIREMENTS:
-      - Keep one clear central idea or theme throughout.
-      - Include at least TWO of these devices:
-        - simile
-        - metaphor
-        - imagery (sensory details)
-        - personification
-        - repetition or sound device
-    - STAAR ALIGNMENT:
-      - The poem should support questions about:
-        - figurative language meaning
-        - imagery
-        - tone or mood
-        - theme or message
-- Subject is Reading, so include a new ${textType || "fiction"} passage only (${readingRange.min}–${readingRange.max} words).
-- If any instruction conflicts with the required passage length, follow ${readingRange.min}–${readingRange.max} words only.
-- Do NOT explicitly state key conclusions in the passage.
-- Include details that REQUIRE inference (imply cause, include competing details, delay explanation).
-- QUESTION TYPE RULES (ELAR Practice):
-  - If Text Type is fiction, questions should focus on character actions/motivations, theme or message, event inference, cause and effect, and key details that impact the story.
-  - If Text Type is fiction, avoid overly factual recall questions.
-  - If Text Type is poem, questions MUST include figurative language meaning, imagery, tone or mood, theme/central idea, and word meaning in context.
-  - If Text Type is poem, at least ONE question must ask about figurative language meaning.
-  - If Text Type is poem, avoid plot-based questions.
-  - If Text Type is drama, questions should focus on dialogue meaning, character relationships, inference from dialogue, conflict, and how dialogue reveals theme or mood.
-  - If Text Type is drama, at least ONE question must require interpreting a line of dialogue.
-- Across the 5 questions, include a mix of inference, evidence-based reasoning, vocabulary in context, and central idea/theme.
-- Do NOT make all 5 questions the same type.
-- Each question must require thinking, not simple recall.
-- Students should need to combine information from the passage.
-- Avoid questions that can be answered by copying one sentence.
-- Grade readability lock (must override level language changes):
-  - max words per sentence: ${constraints.maxWordsPerSentence}
-  - max sentence count target: ${constraints.maxSentences}
-  - vocabulary band: ${constraints.vocab}
-  - abstract language allowance: ${String(constraints.allowAbstract)}
-  - passage length signal: ${constraints.passageLength}
-- Generate exactly 5 STAAR-style reading questions tied directly to that passage.
-- ${dokProgressionRequirement}
-- ${levelAdjustmentRequirement}
-- ${structurePrompt}
-- Vary passage topic and structure across generations; use a different scenario, setting, and context each time.
-- ${variationLock}
-- ${themeDiversityRule}
-- ${settingRotationRule}
-- Questions should typically require inference or combining details when appropriate.
-- No “why did X happen?” when the answer is explicitly stated in the passage.
-- Prefer stems such as:
-  - "What can the reader conclude..."
-  - "Which idea is BEST supported..."
-  - "What is most likely..."
-  - "Which detail suggests..."
-- TWO-PHASE GENERATION FLOW (HIGH PRIORITY):
-  - PHASE 1 — THINK:
-    - First, internally draft a short passage and 5 strong multiple-choice questions.
-    - Prioritize clear ideas, natural language, realistic answer choices, one clearly correct answer, and three plausible distractors.
-    - Do not force rigid formatting during this phase.
-  - PHASE 2 — FORMAT:
-    - Convert your Phase 1 draft into the required strict JSON structure.
-    - Ensure final output is valid JSON and matches the required schema exactly.
-- BANNED ANSWERS (NEVER ALLOWED):
-  - "students compared..."
-  - "a class reviewed..."
-  - "text sets..."
-  - "reading team..."
-  - "which statement best..."
-- These are INVALID unless explicitly in the passage.
-- Keep all 4 choices reasonably parallel and balanced in length to avoid obvious patterns.
-- Each answer choice MUST be a complete sentence.
-- Do NOT generate fragments or cut-off responses.
-- Each answer choice must be at least 8–12 words long.
-- Answer choices can vary in sentence structure when it improves naturalness.
-- ANSWER CHOICE REQUIREMENTS (NON-NEGOTIABLE):
-  - Each answer must be a SPECIFIC claim about the passage.
-  - Each answer must include a clear idea, not a generic phrase.
-  - Each answer must be a COMPLETE thought with a clear reasoning path.
-  - Every answer must sound like something a student would genuinely think is correct.
-${globalBannedPhraseRules}
-${subjectSpecificAnswerLogic}
-- DISTRACTOR RULE (ALL SUBJECTS):
-  - Incorrect answers must be plausible and reflect realistic mistakes.
-  - Incorrect answers must differ by reasoning, not just wording.
-- VARIATION RULE (ALL SUBJECTS):
-  - All four choices must start differently.
-  - Use varied sentence structures.
-  - Each option must express a different reasoning path or interpretation.
-- Avoid sentence fragments like:
-  - "A combo pack cost $6 and included..."
-  - "The student council planned..."
-- Answers should be clear and natural, represent different ideas, and be plausible without sounding repetitive.
-- If an answer choice is cut off or incomplete, rewrite it fully before returning.
-- Never use: "best explains", "this shows", "the answer is supported", "it can be inferred".
-- Correct answers must include a specific event plus cause/effect OR decision/result reasoning.
-- Distractors must use one of: misinterpretation, partial-truth wrong conclusion, overgeneralization, or cause/effect confusion.
-- Incorrect answers must still be complete, realistic, and based on the passage.
-- Do NOT generate vague or generic wrong answers.
-- If any choice feels generic or easy, rewrite it with more specific passage evidence.
-- Include passage details in answers when they help clarity, but do not force every choice to repeat explicit passage details.
-- Avoid overly obvious or unrelated distractors.
-- Keep reasoning clear and student-friendly.
-- OUTPUT WORKFLOW (REQUIRED):
-  1) Generate a strong first draft.
-  2) Self-correct weak, generic, or unnatural choices.
-  3) Refine wording for specificity, plausibility, and student realism.
-  3.5) If any answer sounds templated or generic, rewrite it with a specific idea.
-  4) Output only after revision is complete.
-- Difficulty behavior lock:
-  - Below: shorter passage, explicit main idea, direct identification questions, clearly incorrect but plausible distractors.
-  - On Level: moderate passage length, some inference required, realistic distractors.
-  - Advanced: complex passage with multiple ideas/shifts, subtle distractors close to correct.
-${mainIdeaStemRule}
-- Rigor profile:
-  - passage complexity: grade-locked readability only (do not change by level)
-  - question depth: ${rigor.questionDepth}
-  - distractor quality: ${rigor.distractorQuality}
-- RIGOR ENGINE: ${rigorEngineRules}
-- Use clear, student-friendly STAAR language.
-- Every question has 4 distinct, specific answer choices.
-- FINAL SELF-CHECK (REQUIRED):
-  1) Passage Check:
-     - Does the passage match ${textType || "fiction"} requirements?
-     - If poem: does it include line breaks AND figurative language?
-     - If poem: is it 8–20 lines, line-by-line formatted, visually poem-like, and focused on one central idea?
-     - If drama: does it include Title, Characters, Setting, and line-by-line speaker turns (not paragraph dialogue)?
-  2) Answer Check:
-     - Are all answer choices complete sentences?
-     - Are any answers cut off or incomplete?
-  3) Quality Check:
-     - Do questions require thinking (not just recall)?
-     - Do distractors feel realistic and challenging?
-  4) Question-Type Check:
-     - Do the questions match the selected text type?
-     - Does at least one question target the key skill for that text type?
-     - Are questions varied and rigorous?
-  - If anything fails, revise before returning.
 - No markdown. JSON only.`;
   }
 
   return `Create JSON only for PRACTICE MODE.
-Grade: ${grade}
-Subject: ${subject}
-Skill: ${skill}
-Level: ${level}
 
 Return exactly:
 {
@@ -1263,82 +784,17 @@ Return exactly:
 }
 
 Rules:
-- PRACTICE MODE ONLY. Do not generate cross-curricular content.
+- Subject: ${subject}.
+- Generate exactly 5 questions aligned to skill ${skill}.
+- Do not generate a passage.
+- Each question must have exactly 4 choices.
+- Each question must have 1 correct answer and 3 realistic distractors.
+- Match grade ${grade} and level (${levelInstruction}).
+- Use natural, non-robotic language.
 - Context Type: ${contextType}
 - TEKS Alignment Code: ${teksCode}
-- Instruction: Design the question to match how this TEKS is assessed on STAAR.
-- TEKS alignment: skill "${skill}" at grade ${grade} must be assessed through application (analyze/infer/compare/explain), not definition recall.
-- Subject is ${subject}, so DO NOT generate a passage.
-- Grade readability lock (must override level language changes):
-  - max words per sentence: ${constraints.maxWordsPerSentence}
-  - vocabulary band: ${constraints.vocab}
-  - abstract language allowance: ${String(constraints.allowAbstract)}
-- Generate exactly 5 standalone STAAR-style ${subject} questions.
-- ${dokProgressionRequirement}
-- ${levelAdjustmentRequirement}
-- ${structurePrompt}
-- Vary scenario, setting, and context across generations to avoid repeated output patterns.
-- ${variationLock}
-- ${settingRotationRule}
-- Use multi-step reasoning where appropriate.
-- Questions should typically require inference or combining details when appropriate.
-- No “why did X happen?” when the answer is explicitly stated.
-- Prefer stems such as:
-  - "What can the reader conclude..."
-  - "Which idea is BEST supported..."
-  - "What is most likely..."
-  - "Which detail suggests..."
-- Questions must be subject-driven and not ELAR-framed.
-- Ensure answers are supported by the provided content.
-- Avoid overly obvious or unrelated distractors.
-- Keep reasoning clear and student-friendly.
-- Each answer choice MUST be a complete sentence.
-- Do NOT generate fragments or cut-off responses.
-- Each answer choice must be at least 8–12 words long.
-- Answer choices should be similar in length but may vary in structure to sound natural.
-- ANSWER CHOICE REQUIREMENTS (NON-NEGOTIABLE):
-  - Each answer must be a SPECIFIC claim about the question context.
-  - Each answer must include a clear idea, not a generic phrase.
-  - Each answer must be a COMPLETE thought with a clear reasoning path.
-  - Every answer must sound like something a student would genuinely think is correct.
-${globalBannedPhraseRules}
-${subjectSpecificAnswerLogic}
-- DISTRACTOR RULE (ALL SUBJECTS):
-  - Incorrect answers must be plausible and reflect realistic mistakes.
-  - Incorrect answers must differ by reasoning, not just wording.
-- VARIATION RULE (ALL SUBJECTS):
-  - All four choices must start differently.
-  - Use varied sentence structures.
-  - Each option must express a different reasoning path or interpretation.
-- Avoid sentence fragments like:
-  - "A combo pack cost $6 and included..."
-  - "The student council planned..."
-- Every answer must clearly express a full idea.
-- If an answer choice is cut off or incomplete, rewrite it fully before returning.
-- Incorrect answers must still be complete, realistic, and based on the passage.
-- Do NOT generate vague or generic wrong answers.
-- Forbidden wording in questions/choices: "main idea", "central idea", "author", "theme", "reader", "claim".
-- OUTPUT WORKFLOW (REQUIRED):
-  1) Generate a strong first draft.
-  2) Self-correct weak, generic, or unnatural choices.
-  3) Refine wording for specificity, plausibility, and student realism.
-  3.5) If any answer sounds templated or generic, rewrite it with a specific idea.
-  4) Output only after revision is complete.
-- Rigor profile:
-  - question depth: ${rigor.questionDepth}
-  - distractor quality: ${rigor.distractorQuality}
-- RIGOR ENGINE: ${rigorEngineRules}
-- Every question has 4 distinct, specific answer choices.
-- SELF-CHECK BEFORE RETURNING:
-- Are all answer choices complete sentences?
-- Are any answers cut off or unfinished?
-- Do all choices clearly express a full idea?
-- Are answers specific and free of banned phrases?
-- Are choices non-templated and aligned to ${subject} logic?
-- If not, fix them before returning.
 - No markdown. JSON only.`;
 }
-
 function buildEnrichmentPrompt(params: {
   grade: number;
   subject: CanonicalSubject;
@@ -1350,294 +806,40 @@ function buildEnrichmentPrompt(params: {
   contextType?: string;
 }): string {
   const { grade, subject, skill, practiceQuestions, level, crossPassage = "", teksCode = "Unknown", contextType = "real-world application" } = params;
-  const rigor = applyRigor(level);
-  const rigorEngineRules = getRigorEngineRules(level, subject);
-  const constraints = getGradeConstraints(grade);
-  const variationLock = `VARIATION LOCK (MANDATORY):
-- Each generation MUST use a DIFFERENT narrative or informational structure from previous runs.
-- Rotate across these REQUIRED structures:
-  1. Problem → Failed attempts → Unexpected solution
-  2. Mistake → Consequence → Reflection
-  3. Two stakeholders with opposing choices
-  4. Internal conflict (no external danger)
-  5. Decision with trade-off (no clear "good" choice)
-  6. Misleading situation where first assumption is wrong
-- DO NOT repeat:
-  - helping an animal
-  - simple kindness lesson
-  - "learned a lesson" endings
-- If output resembles a previous structure, REWRITE it.`;
-  const settingRotationRule = `SETTING ROTATION (MANDATORY):
-- Rotate settings across:
-  - urban
-  - rural
-  - school-based
-  - historical
-  - futuristic
-  - cultural/tradition-based
-- DO NOT repeat the same setting twice in a row.`;
-  const subjectFocus = subject === "Math"
-    ? [
-      "Math passage must include numbers, quantities, rates, or comparisons.",
-      "Questions MUST require calculations or numerical reasoning.",
-      "Use stems like: \"What is the total...\", \"How much...\", \"Which calculation...\", \"What is the difference...\".",
-      "DO NOT use ELAR wording.",
-    ].join("\n- ")
-    : subject === "Science"
-    ? [
-      "Science passage must describe a system, experiment, or process.",
-      "Questions must focus on cause/effect, variables, results, and conclusions.",
-      "Use stems like: \"What happens when...\", \"Which factor affects...\", \"What can be concluded...\".",
-      "DO NOT use ELAR wording.",
-    ].join("\n- ")
-    : subject === "Social Studies"
-    ? [
-      "Social Studies passage must include historical or economic context.",
-      "Questions must focus on decisions, impact, cause/effect, and influence.",
-      "Use stems like: \"Why did...\", \"What was the effect of...\", \"Which factor influenced...\".",
-      "DO NOT use ELAR wording.",
-    ].join("\n- ")
-    : [
-      "Reading uses ELAR-style reasoning grounded in the passage.",
-    ].join("\n- ");
-  const globalBannedPhraseRules = `GLOBAL BANNED PHRASES (ALL SUBJECTS):
-- DO NOT use:
-  - "one detail shows"
-  - "another clue suggests"
-  - "a separate detail"
-  - "the strongest evidence"
-  - "this shows that"
-  - "the passage explains"
-- These are ALWAYS invalid in answer choices.`;
-  const subjectSpecificAnswerLogic = subject === "Math"
-    ? `SUBJECT-SPECIFIC ANSWER LOGIC (MATH):
-- Answers must represent valid computation/results or realistic incorrect reasoning paths.
-- Correct answers must connect the calculation to what the quantity represents.
-- Distractors should reflect common mistakes (wrong operation, skipped step, or misreading).`
-    : subject === "Science"
-    ? `SUBJECT-SPECIFIC ANSWER LOGIC (SCIENCE):
-- Answers must explain a concept, cause/effect relationship, or system interaction.
-- Correct answers must reflect scientific reasoning tied to the scenario.
-- Distractors should reflect realistic scientific misconceptions.`
-    : subject === "Social Studies"
-    ? `SUBJECT-SPECIFIC ANSWER LOGIC (SOCIAL STUDIES):
-- Answers must explain historical reasoning, cause/effect, or significance.
-- Correct answers must connect events, decisions, or policies to outcomes.
-- Distractors should reflect realistic misinterpretations of significance or impact.`
-    : `SUBJECT-SPECIFIC ANSWER LOGIC (READING):
-- Answers must interpret meaning, inference, purpose, or development.
-- Answers should reference passage ideas naturally, not copy lines.
-- Correct answers must explain reasoning, not merely restate text.`;
-
-  const requiredQuestionBlock = `You are an expert STAAR test item writer aligned to Texas Essential Knowledge and Skills (TEKS).
-
-INPUT CONFIGURATION
-- Grade Level: ${grade}
-- Target Skill: ${skill}
-- TEKS Alignment Code: ${teksCode}
-- Instruction: Design the question to match how this TEKS is assessed on STAAR.
-
-TEKS ALIGNMENT RULE
-- Align the question to how this skill is tested on STAAR.
-- Identify the cognitive action students must perform (analyze, infer, compare, explain).
-- Build the question to match that cognitive demand.
-- Ensure the correct answer requires evidence-based reasoning from the passage.
-
-STAAR DESIGN REQUIREMENTS
-- Match STAAR format and rigor.
-- Require reasoning, not recall.
-- Ground every answer in passage evidence.
-- Reflect how TEKS skills are assessed, not just defined.
-- Questions should typically require inference or combining details when appropriate.
-- Ensure answers are supported by the cross passage.
-- Avoid overly obvious or unrelated distractors.
-- Keep reasoning clear and student-friendly.
-
-GRADE-LEVEL ADAPTATION
-- Grades 3-4: clear inference, concrete reasoning, shorter responses, direct passage links.
-- Grades 5-6: multi-step reasoning, combined details, moderate complexity.
-- Grades 7-8: abstract thinking, subtle choice differences, multi-layer reasoning.
-- Enforce readability from grade only (do not use level to alter vocabulary or sentence complexity):
-  - max words per sentence: ${constraints.maxWordsPerSentence}
-  - max sentence count target: ${constraints.maxSentences}
-  - vocabulary band: ${constraints.vocab}
-  - abstract language allowance: ${String(constraints.allowAbstract)}
-
-ANSWER CHOICE RULES
-- Each answer choice MUST fully answer the question.
-- All answer choices should be plausible based on the passage,
-  but do not need to directly quote or explicitly reference passage details.
-- Include real details, events, or outcomes in each choice.
-- Answer choices should:
-  - be grounded in the passage
-  - include passage details when helpful
-  - NOT force every choice to repeat exact passage language
-- At least ONE correct answer and ONE distractor should clearly connect to passage evidence.
-- Other choices may paraphrase or generalize as long as they are plausible.
-- BANNED ANSWERS (NEVER ALLOWED):
-  - "students compared..."
-  - "a class reviewed..."
-  - "text sets..."
-  - "reading team..."
-  - "which statement best..."
-- These are INVALID unless explicitly in the passage.
-- Keep choices similar in structure and length.
-- Each answer choice MUST be a complete sentence.
-- Do NOT generate fragments or cut-off responses.
-- Each answer choice must be at least 8–12 words long.
-- Answer choices should be similar in length but may vary in structure to sound natural.
-- ANSWER CHOICE REQUIREMENTS (NON-NEGOTIABLE):
-  - Each answer must be a SPECIFIC claim about the cross passage.
-  - Each answer must include a clear idea, not a generic phrase.
-  - Each answer must be a COMPLETE thought with a clear reasoning path.
-  - Every answer must sound like something a student would genuinely think is correct.
-${globalBannedPhraseRules}
-${subjectSpecificAnswerLogic}
-- DISTRACTOR RULE (ALL SUBJECTS):
-  - Incorrect answers must be plausible and reflect realistic mistakes.
-  - Incorrect answers must differ in reasoning, not wording only.
-- VARIATION RULE (ALL SUBJECTS):
-  - All four answer choices must start differently.
-  - Use varied sentence structures.
-  - Each answer must represent different reasoning.
-- Avoid sentence fragments like:
-  - "A combo pack cost $6 and included..."
-  - "The student council planned..."
-- Every answer must clearly express a full idea.
-- If an answer choice is cut off or incomplete, rewrite it fully before returning.
-- Do NOT repeat phrases from the passage without explaining what those details mean.
-- Every answer must include reasoning, not just a copied detail.
-- Avoid obvious wrong answers.
-- Avoid meta-language: "main idea", "this shows", "best explains", "this proves".
-
-REASONING QUESTION RULES (WHY / PURPOSE / IMPACT)
-- Answers must explain cause, reasoning, or impact.
-- Answers must connect multiple details from the passage or context.
-- Do not copy a full sentence from the passage as an answer.
-- Do not use generic phrasing without explanation.
-
-DISTRACTOR DESIGN (TEKS-ALIGNED)
-- Each wrong answer must model a realistic student mistake:
-  - misinterpretation of evidence
-  - partial understanding of the skill
-  - incorrect inference
-  - cause/effect confusion
-- Wrong answers must use real cross passage details with misinterpretation OR partial truth with wrong conclusion.
-- Incorrect answers must still be complete, realistic, and based on the passage.
-- Do NOT generate vague or generic wrong answers.
-- DO NOT create unrelated or vague distractors.
-- OUTPUT WORKFLOW (REQUIRED):
-  1) Generate a strong first draft.
-  2) Self-correct weak, generic, or unnatural choices.
-  3) Refine wording for specificity, plausibility, and student realism.
-  3.5) If an answer sounds generic or templated, rewrite it with a specific idea.
-  4) Output only after revision is complete.
-
-CORRECT ANSWER RULE
-- The correct answer must use specific passage evidence.
-- The correct answer must demonstrate the targeted skill correctly.
-- The correct answer must include reasoning (cause/effect, inference, comparison, etc.).
-
-SELF-CHECK (MANDATORY)
-- Does the question require the intended TEKS skill?
-- Would a student need to APPLY the skill, not define it?
-- Are distractors based on realistic student mistakes?
-- Is the answer supported by passage evidence?
-- If not, revise before returning.
-- SELF-CHECK BEFORE RETURNING:
-- Are all answer choices complete sentences?
-- Are any answers cut off or unfinished?
-- Do all choices clearly express a full idea?
-- Are answers specific and free of banned phrases?
-- Are choices non-templated and aligned to ${subject} logic?
-- If any answer sounds generic, rewrite it before returning.
-- If not, fix them before returning.
-
-OUTPUT FORMAT FOR EACH cross.questions ITEM:
-{
-  "question": "...",
-  "choices": ["...", "...", "...", "..."],
-  "correct_answer": "A"
-}
-
-FINAL RULE
-Do NOT write a generic question.
-Design each item as if it will appear on a STAAR test aligned to TEKS.`;
-
+  const levelInstruction = getLevelInstruction(level);
   const passageDirective = crossPassage.trim()
-    ? `\nPassage:\n${crossPassage}\n\nYou MUST use details from this passage in every answer.\n`
-    : "";
+    ? `\nUse this passage:
+${crossPassage}
+`
+    : "\nGenerate a new cross-curricular passage.\n";
 
-  return `Generate a NEW cross-curricular passage and cross-curricular questions, then return JSON only:
+  return `Generate cross-curricular content and return JSON only:
 {
   "cross": {
-    "passage": "REQUIRED string (250–300 words, MUST be complete, no cut-off sentences)",
-    "questions": [5 subject-aligned questions]
+    "passage": "string",
+    "questions": [5 items with question, choices, correct_answer]
   }
 }
 
-Subject: ${subject}
-Skill lock: ${skill}
-
-Practice questions:
-${JSON.stringify(practiceQuestions.slice(0, 5))}
+Inputs:
+- Grade: ${grade}
+- Subject: ${subject}
+- Skill: ${skill}
+- Level: ${levelInstruction}
+- TEKS: ${teksCode}
+- Context Type: ${contextType}
+- Practice sample size: ${practiceQuestions.slice(0, 5).length}
 
 Rules:
-- CROSS-CURRICULAR MODE ONLY.
-- CROSS MODE RULE (LOCK THIS):
-  - ALWAYS generate a nonfiction/informational passage.
-  - Focus on real-world, scientific, or social studies context.
-- Context Type: ${contextType}
-- CRITICAL: Generate a NEW passage (250–300 words).
-- Passage MUST be different from practice passage.
-- Passage MUST be aligned to ${subject}.
-- Vary passage topic and structure; each generation must use a different scenario, setting, and context.
-- ${variationLock}
-- ${settingRotationRule}
-- Do NOT explicitly state key conclusions.
-- Include details that require inference (imply cause, include competing details, delay explanations).
-- Questions MUST be based ONLY on this new passage.
-- Do NOT reuse or paraphrase the original practice passage.
-- Questions should typically require inference or combining details when appropriate.
-- Cross questions must be different from practice questions.
-- ALL questions in BOTH practice and cross must assess the selected skill exactly: ${skill}.
-- Cross questions MUST be subject-driven for ${subject}.
-- Cross-Curricular question focus (nonfiction):
-  - central idea
-  - supporting evidence
-  - cause and effect
-  - academic vocabulary in context
-  - logical reasoning based on data or details
-- DO NOT force question variety.
-- Generate the BEST 5 questions for the passage.
-- Prioritize inference and evidence-based reasoning.
-- Only include vocabulary or structure questions IF they naturally fit the passage.
-- If a question type does not fit, DO NOT include it.
-- Ensure answers are supported by the passage.
-- Avoid overly obvious or unrelated distractors.
-- Keep reasoning clear and student-friendly.
-- No “why did X happen?” when the answer is explicitly stated.
-- Prefer stems such as:
-  - "What can the reader conclude..."
-  - "Which idea is BEST supported..."
-  - "What is most likely..."
-  - "Which detail suggests..."
-- ${subjectFocus}
-- For Math/Science/Social Studies, forbidden wording: "main idea", "central idea", "author", "theme", "reader", "claim".
-- Rigor profile:
-  - passage complexity: ${rigor.passage}
-  - question depth: ${rigor.questionDepth}
-  - distractor quality: ${rigor.distractorQuality}
-- RIGOR ENGINE: ${rigorEngineRules}
-- Each question must include exactly 4 clear, distinct, passage-specific answer choices.
-- Choices must be clean answer options only (no explanations or commentary text).
-- Validate answer correctness before returning.
-- For cross question generation, apply this block exactly:
-${requiredQuestionBlock}
-- Return cross passage + cross questions only.
-- JSON only.${passageDirective}`;
+- Generate passage (if one is not provided).
+- Generate exactly 5 questions.
+- Each question must have exactly 4 choices.
+- Each question must have 1 correct answer and 3 realistic distractors.
+- Align questions to ${skill} and ${subject}.
+- Match grade ${grade} and level (${levelInstruction}).
+- Use natural, non-robotic language.${passageDirective}
+- No markdown. JSON only.`;
 }
-
 function buildGenerationPrompt(params: {
   mode: "core" | "enrichment";
   grade: number;
@@ -1705,45 +907,54 @@ No extra commentary.`;
 }
 
 function buildSubjectPassage(subject: CanonicalSubject, level: Level = "On Level"): string {
-  const rigor = applyRigor(level);
+  const profile = level === "Below" ? "simple" : level === "Advanced" ? "complex" : "grade";
   if (subject === "Science") {
-    if (rigor.passage === "simple") {
+    if (profile === "simple") {
       return "Students tested playground surfaces at school. They checked blacktop, grass, and concrete each hour. Blacktop got hottest in direct sun. Grass in the shade stayed cooler. After watering one area, that area warmed up more slowly. Students used this evidence to suggest more shade and lighter materials.";
     }
-    if (rigor.passage === "complex") {
-      return "During a campus heat-transfer inquiry, student teams tracked how surface composition and environmental conditions influenced recess temperatures. They measured blacktop, concrete, and grass hourly while recording cloud cover, wind speed, and direct-sun exposure.\n\nThe results showed a persistent interaction: darker pavement absorbed and retained heat rapidly, while shaded grass moderated temperature through moisture and airflow. When students repeated the procedure after watering one test area, the rate of temperature increase fell, suggesting that evaporative effects altered heat buildup. In their final report, students connected these observations to design choices, arguing that material selection and shade planning could reduce thermal stress for the wider school community.";
+    if (profile === "complex") {
+      return `During a campus heat-transfer inquiry, student teams tracked how surface composition and environmental conditions influenced recess temperatures. They measured blacktop, concrete, and grass hourly while recording cloud cover, wind speed, and direct-sun exposure.
+
+The results showed a persistent interaction: darker pavement absorbed and retained heat rapidly, while shaded grass moderated temperature through moisture and airflow. When students repeated the procedure after watering one test area, the rate of temperature increase fell, suggesting that evaporative effects altered heat buildup. In their final report, students connected these observations to design choices, arguing that material selection and shade planning could reduce thermal stress for the wider school community.`;
     }
     return "During a campus investigation, students tested how surface type affected temperature at recess. They placed thermometers on blacktop, grass, and concrete every hour and recorded wind speed, cloud cover, and sunlight. The data showed that dark pavement heated fastest in direct sun, while shaded grass stayed cooler because moisture and airflow reduced heat buildup. Students repeated the experiment after watering one section and observed a smaller temperature increase there. In their report, they explained the physical process of heat transfer and used cause-and-effect evidence to recommend shade trees and lighter playground materials.";
   }
 
   if (subject === "Social Studies") {
-    if (rigor.passage === "simple") {
+    if (profile === "simple") {
       return "In 1908, town leaders debated a bridge or a bigger rail depot. Farmers wanted the bridge to move crops faster. Merchants wanted rail growth for trade. Leaders first chose rail expansion. Flooding then delayed shipments and raised prices. Later, voters approved money for a bridge. These decisions changed where people lived and worked.";
     }
-    if (rigor.passage === "complex") {
-      return "In 1908, leaders in a river town argued over two competing transportation investments: a bridge linking both banks or an expanded rail depot intended to attract outside commerce. Farmers favored the bridge for faster crop movement, while merchants expected rail expansion to widen regional trade.\n\nCouncil records show rail improvements were approved first, but repeated flooding disrupted shipments, increased prices, and weakened confidence in that strategy. Over the next several years, population growth on the opposite bank shifted daily travel patterns and voting priorities. When residents later passed a bridge bond, newspapers connected the decision to broader outcomes—migration shifts, business relocation, and new debates over how public funds should balance immediate needs with long-term community stability.";
+    if (profile === "complex") {
+      return `In 1908, leaders in a river town argued over two competing transportation investments: a bridge linking both banks or an expanded rail depot intended to attract outside commerce. Farmers favored the bridge for faster crop movement, while merchants expected rail expansion to widen regional trade.
+
+Council records show rail improvements were approved first, but repeated flooding disrupted shipments, increased prices, and weakened confidence in that strategy. Over the next several years, population growth on the opposite bank shifted daily travel patterns and voting priorities. When residents later passed a bridge bond, newspapers connected the decision to broader outcomes—migration shifts, business relocation, and new debates over how public funds should balance immediate needs with long-term community stability.`;
     }
     return "In 1908, leaders in a river town debated whether to spend limited tax funds on a bridge or a larger rail depot. Farmers argued that a bridge would move crops to market faster, while merchants supported the depot to attract outside trade. Meeting records show that the council first approved rail expansion, but repeated flooding delayed shipments and raised prices. Five years later, after population growth along the opposite bank, voters passed a bond for the bridge. Newspaper timelines and election results suggest that transportation choices changed migration patterns, business investment, and daily life across the town.";
   }
 
   if (subject === "Math") {
-    if (rigor.passage === "simple") {
+    if (profile === "simple") {
       return "The student council sold snacks at field day. A combo pack cost $6. Single items cost $2 each. In hour 1, volunteers sold 38 combos and 24 single items. In hour 2, combo sales went down by 8, but single-item sales went up by 15. Students compared both hours to decide what to restock.";
     }
-    if (rigor.passage === "complex") {
-      return "The student council analyzed field-day snack sales to decide whether future inventory should prioritize combo packs or individual items. A combo pack was priced at $6 and included one drink plus two snacks, while single items were sold for $2 each.\n\nIn the first hour, volunteers recorded 38 combo purchases and 24 single-item purchases. In the second hour, combo volume declined by 8 after families shifted buying behavior, while single-item purchases rose by 15 following an announcement near the gym entrance. Organizers compared the two-hour revenue structure, not just item counts, because price-per-transaction and demand movement could produce different conclusions about total earnings and restocking risk.";
+    if (profile === "complex") {
+      return `The student council analyzed field-day snack sales to decide whether future inventory should prioritize combo packs or individual items. A combo pack was priced at $6 and included one drink plus two snacks, while single items were sold for $2 each.
+
+In the first hour, volunteers recorded 38 combo purchases and 24 single-item purchases. In the second hour, combo volume declined by 8 after families shifted buying behavior, while single-item purchases rose by 15 following an announcement near the gym entrance. Organizers compared the two-hour revenue structure, not just item counts, because price-per-transaction and demand movement could produce different conclusions about total earnings and restocking risk.`;
     }
     return "The student council planned a field-day snack sale with two pricing options for families. A combo pack cost $6 and included one drink and two snacks, while single items cost $2 each. In the first hour, volunteers sold 38 combo packs and 24 single items. In the second hour, combo sales dropped by 8, but single-item sales increased by 15 after an announcement. Organizers used these numbers to compare revenue patterns and decide whether to restock combo materials or individual items. Their final decision depended on how the quantities in both hours related to total earnings.";
   }
 
-  if (rigor.passage === "simple") {
+  if (profile === "simple") {
     return "Two groups discussed two articles about free-time reading. Some readers preferred short texts for quick facts. Others preferred longer pieces with more examples. The groups checked details to make sure each claim matched the evidence. They revised their summary to reflect the strongest support.";
   }
-  if (rigor.passage === "complex") {
-    return "Two groups analyzed two reports to explain why readers preferred different reading formats. Some readers valued short passages for quick access to key points, while others favored long-form pieces that developed ideas through examples and context.\n\nAs the groups compared exact lines across the reports, they noticed how wording choices could shift meaning and create apparent disagreement. They revised claims, reorganized evidence, and adjusted conclusions to better reflect what the strongest details supported. Their final write-up argued that careful comparison of language and evidence leads to more reliable conclusions, especially when two sources seem to conflict at first glance.";
+  if (profile === "complex") {
+    return `Two groups analyzed two reports to explain why readers preferred different reading formats. Some readers valued short passages for quick access to key points, while others favored long-form pieces that developed ideas through examples and context.
+
+As the groups compared exact lines across the reports, they noticed how wording choices could shift meaning and create apparent disagreement. They revised claims, reorganized evidence, and adjusted conclusions to better reflect what the strongest details supported. Their final write-up argued that careful comparison of language and evidence leads to more reliable conclusions, especially when two sources seem to conflict at first glance.`;
   }
   return "Two groups reviewed two article collections to understand why readers preferred different reading formats. Some readers said shorter pieces helped them find key ideas quickly, while others preferred longer selections with more examples and context. The groups compared exact lines, checked which claims were supported by multiple details, and revised conclusions to match the strongest evidence in each source. When two sources appeared to conflict, they re-read the original lines and identified how word choice changed meaning. Their final report explained how careful reading and evidence-based reasoning led to clearer conclusions.";
 }
+
 
 function buildMathFallbackChoices(): [string, string, string, string] {
   return [
@@ -3466,7 +2677,6 @@ function buildCrossFallback(
   const level: Level = skillOrLevel === "Below" || skillOrLevel === "On Level" || skillOrLevel === "Advanced"
     ? skillOrLevel
     : maybeLevel;
-  const rigor = applyRigor(level);
   const crossPassage = buildSubjectPassage(subject, level);
   const singleAnswerSequence = [...shuffledLetters(), ...shuffledLetters()];
   let singleAnswerIndex = 0;
@@ -3605,8 +2815,6 @@ function buildCrossFallback(
       ? `${stem.split("?")[0]}?`
       : level === "Advanced"
       ? `${stem} Compare close alternatives and identify why the strongest distractor is still wrong.`
-      : rigor.questionDepth === "high"
-      ? `${stem} Which passage detail best supports your analysis?`
       : `${stem} Use two linked details to support your reasoning.`;
     const sourceChoices = choiceBanks[i % choiceBanks.length];
     const correctAnswer = String(sourceChoices[0] || "").trim();
