@@ -145,6 +145,57 @@ const GENERIC_ANSWER_PATTERNS: RegExp[] = [
   /\bwhich answer best\b/i,
   /\bstatement best\b/i,
 ];
+const QUALITY_ALIGNMENT_RULES = [
+  "QUALITY CHECK:",
+  "- All writing must be clear and complete.",
+  "- All sentences must be complete (no fragments).",
+  "- All answer choices must be grammatically correct.",
+  "PASSAGE ALIGNMENT:",
+  "- Every question and answer choice must be directly supported by the passage or problem.",
+  "- Do not introduce new characters.",
+  "- Do not introduce events not mentioned.",
+  "- Do not assume information not stated or clearly implied.",
+  "- Ensure each correct answer is provable using the provided content.",
+  "PASSAGE QUALITY:",
+  "- Passage must be complete with clear, connected ideas and enough detail for all questions.",
+  "- Do not leave unfinished sentences or incomplete paragraphs.",
+  "- If the passage is incomplete, regenerate the passage before writing questions.",
+  "TUTOR QUALITY:",
+  "- Tutor explanations must sound natural, conversational, and varied across questions.",
+  "- Use a specific idea from the passage when explaining why an answer is correct.",
+  "- Avoid repetitive templates and generic phrasing.",
+  "PASSAGE GROUNDING:",
+  "- Use only information that clearly appears in the provided passage or problem.",
+  "- Do not introduce outside examples, unrelated scenarios, or new situations.",
+  "SUBJECT-SPECIFIC ANSWERS:",
+  "- If subject is Math: answer choices must be numerical values or valid expressions only.",
+  "- If subject is Math: distractors should reflect common calculation mistakes (operation errors, order-of-operations errors, missed steps, arithmetic mistakes).",
+  "- If subject is not Math: answer choices must be complete statements and distractors should reflect content misunderstandings.",
+  "ABSOLUTE RULE (CRITICAL):",
+  "- The phrase \"not supported by the passage\" must never appear in any answer choice.",
+  "- Every answer choice must be a valid response to the question.",
+].join("\n");
+const ENGAGING_CONTEXT_RULES = [
+  "ENGAGING CONTEXT (IMPORTANT):",
+  "- Use a highly engaging, student-relevant context for the passage or problem.",
+  "- Favor contexts like competitions, team challenges, content creation, sports, friend group decisions, money decisions, and real-life student dilemmas.",
+  "- Keep language school-appropriate and academic.",
+  "- Do not use slang, memes, brainrot language, or childish/silly tone.",
+  "- Balance engaging scenarios with clear academic language.",
+  "VARIATION (IMPORTANT):",
+  "- Each generation should feel different from previous ones.",
+  "- Vary the situation, conflict/problem type, question phrasing, and reasoning demands.",
+  "- Avoid repeating the same scenario or question pattern, even for the same skill/context.",
+  "- For Math/skill practice: vary numbers, quantities, operations, and real-world scenarios so problems are not structurally identical.",
+  "- For passage-based sets: vary storyline, setting, and reasoning type across questions (e.g., cause/effect, inference, decision, outcome).",
+  "- Ensure the five questions in a set are not all the same type of thinking.",
+].join("\n");
+const THINKING_OVER_RECALL_RULES = [
+  "THINKING OVER RECALL (CRITICAL):",
+  "- For Social Studies and Science, do not ask simple recall questions.",
+  "- Require reasoning, cause/effect thinking, interpretation, or application.",
+  "- Prefer prompts like: which situation best shows..., which example demonstrates..., which outcome is most likely..., how did X most influence Y in a real situation?",
+].join("\n");
 
 function containsBanned(choice: string): boolean {
   return BANNED_PHRASES.some((p) => String(choice || "").toLowerCase().includes(p));
@@ -341,8 +392,32 @@ function extractKeyConcept(answer: string): string {
   return concepts.join(" ") || "the key details";
 }
 
+function summarizeEvidenceIdea(snippet: string): string {
+  const cleaned = String(snippet || "").replace(/\s+/g, " ").trim().replace(/^["'\s]+|["'\s]+$/g, "");
+  if (!cleaned) return "the strongest idea in the passage";
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  const compact = words.length > 22 ? `${words.slice(0, 22).join(" ")}...` : cleaned;
+  return compact.replace(/[.!?]+$/, "");
+}
+
+function variedParentTip(index: number): string {
+  const tips = [
+    "👨‍👩‍👧 Parent Tip:\nHave your child reread the question, then restate it in their own words before choosing an answer.",
+    "👨‍👩‍👧 Parent Tip:\nAsk your child to eliminate two weak choices first and explain why those options do not match the passage.",
+    "👨‍👩‍👧 Parent Tip:\nInvite your child to underline one key detail in the passage and connect that detail to the best answer.",
+    "👨‍👩‍👧 Parent Tip:\nAsk your child to think out loud and explain each step of their reasoning before locking in the answer.",
+  ];
+  return tips[Math.abs(index) % tips.length];
+}
+
 function buildGuidedFallbackExplanation(correctChoice: string): string {
-  return `The correct answer is supported by the passage’s overall idea. The details about ${extractKeyConcept(correctChoice)} show why this choice is correct.`;
+  const leads = [
+    "A strong reading of the passage points to",
+    "The passage evidence lines up most clearly with",
+    "When you connect the key details, the best-supported choice is",
+  ];
+  const lead = leads[Math.floor(Math.random() * leads.length)];
+  return `${lead} ${extractKeyConcept(correctChoice)}.`;
 }
 
 function getRelevantSnippet(
@@ -527,14 +602,57 @@ function isGenericChoice(choice: string): boolean {
 }
 
 function isValidPassage(passage: string): boolean {
-  if (!passage) return false;
+  return isCompletePassage(passage);
+}
 
-  const sentences = passage
-    .split(/[.!?]/)
+function isCompletePassage(passage: string): boolean {
+  const text = String(passage || "").trim();
+  if (!text) return false;
+
+  const sentenceMatches = text.match(/[^.!?]+[.!?]/g) || [];
+  const sentences = sentenceMatches
     .map((s) => s.trim())
-    .filter((s) => s.length > 40);
+    .filter((s) => s.split(/\s+/).filter(Boolean).length >= 5);
 
-  return sentences.length >= 3;
+  if (sentences.length < 3) return false;
+  if (!/[.!?]["')\]]?\s*$/.test(text)) return false;
+
+  const coveredLength = sentenceMatches.join("").replace(/\s+/g, "").length;
+  const fullLength = text.replace(/\s+/g, "").length;
+  const hasUnfinishedTail = fullLength - coveredLength > 6;
+  if (hasUnfinishedTail) return false;
+
+  return hasConnectedIdeas(text);
+}
+
+function hasConnectedIdeas(passage: string): boolean {
+  const sentences = String(passage || "")
+    .split(/[.!?]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  if (sentences.length < 3) return false;
+  const transitions = /\b(however|therefore|because|also|then|later|after|before|while|when|as a result|for example)\b/i;
+  const repeatedToken = getTopicKeywords(passage).slice(0, 3).some((token) =>
+    sentences.filter((sentence) => sentence.includes(token)).length >= 2
+  );
+  return transitions.test(passage) || repeatedToken;
+}
+
+function passageSupportsQuestions(passage: string, questions: Question[]): boolean {
+  if (!isCompletePassage(passage)) return false;
+  if (!questions.length) return false;
+
+  return questions.every((q) => {
+    const validQuestion = hasReasonableAlignment(q, passage);
+    const correctChoice = typeof q.correct_answer === "string"
+      ? getChoiceByLetter(q, q.correct_answer)
+      : "";
+    const correctChoiceText = Array.isArray(correctChoice) ? correctChoice.join(" ") : String(correctChoice || "");
+    const supportedChoice = correctChoiceText
+      ? hasPassageSupportForChoice(passage, correctChoiceText) || hasLooseSupport(passage, correctChoiceText)
+      : true;
+    return validQuestion && supportedChoice;
+  });
 }
 
 function strengthenChoices(choices: [string, string, string, string], passage: string): [string, string, string, string] {
@@ -753,10 +871,22 @@ function buildCorePrompt(params: {
 }): string {
   const { grade, subject, skill, level, textType, teksCode = "Unknown", contextType = "real-world application" } = params;
   const levelInstruction = getLevelInstruction(level);
+  const scienceReasoningRule = subject === "Science"
+    ? "- Science rule: ask reasoning-focused questions (not simple recall) and use realistic scenarios/situations when possible."
+    : "";
 
   if (subject === "Reading") {
     const readingRange = readingPracticeWordRange(level);
     return `Create JSON only for PRACTICE MODE.
+
+Inputs:
+- Grade: ${grade}
+- Subject: ${subject}
+- Skill: ${skill}
+- Level: ${levelInstruction}
+
+${ENGAGING_CONTEXT_RULES}
+${THINKING_OVER_RECALL_RULES}
 
 Return exactly:
 {
@@ -773,10 +903,22 @@ Rules:
 - Use natural, non-robotic language.
 - Context Type: ${contextType}
 - TEKS Alignment Code: ${teksCode}
+- ${scienceReasoningRule || "Use cognitively demanding questions that require reasoning, not simple recall."}
+- Mode rule: Use passage-based reasoning and ensure answers are supported by the passage.
+- ${QUALITY_ALIGNMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - No markdown. JSON only.`;
   }
 
   return `Create JSON only for PRACTICE MODE.
+
+Inputs:
+- Grade: ${grade}
+- Subject: ${subject}
+- Skill: ${skill}
+- Level: ${levelInstruction}
+
+${ENGAGING_CONTEXT_RULES}
+${THINKING_OVER_RECALL_RULES}
 
 Return exactly:
 {
@@ -793,6 +935,9 @@ Rules:
 - Use natural, non-robotic language.
 - Context Type: ${contextType}
 - TEKS Alignment Code: ${teksCode}
+- ${scienceReasoningRule || "Use cognitively demanding questions that require reasoning, not simple recall."}
+- Mode rule: Do not reference a passage. Every choice must be a valid response to the problem.
+- ${QUALITY_ALIGNMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - No markdown. JSON only.`;
 }
 function buildEnrichmentPrompt(params: {
@@ -807,6 +952,9 @@ function buildEnrichmentPrompt(params: {
 }): string {
   const { grade, subject, skill, practiceQuestions, level, crossPassage = "", teksCode = "Unknown", contextType = "real-world application" } = params;
   const levelInstruction = getLevelInstruction(level);
+  const scienceReasoningRule = subject === "Science"
+    ? "- Science rule: emphasize reasoning over recall and frame questions in concrete scenarios when possible."
+    : "";
   const passageDirective = crossPassage.trim()
     ? `\nUse this passage:
 ${crossPassage}
@@ -838,6 +986,10 @@ Rules:
 - Align questions to ${skill} and ${subject}.
 - Match grade ${grade} and level (${levelInstruction}).
 - Use natural, non-robotic language.${passageDirective}
+- ${scienceReasoningRule || "Use questions that require applied reasoning rather than simple recall."}
+- ${THINKING_OVER_RECALL_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- Mode rule: Answers must be supported by the passage using passage-based reasoning.
+- ${QUALITY_ALIGNMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - No markdown. JSON only.`;
 }
 function buildGenerationPrompt(params: {
@@ -850,6 +1002,9 @@ function buildGenerationPrompt(params: {
   practiceQuestions?: Question[];
   crossPassage?: string;
 }): string {
+  const scienceReasoningRule = params.subject === "Science"
+    ? "Science rule: ask reasoning-heavy questions (not simple recall) and use realistic situations where possible."
+    : "Use applied reasoning questions rather than simple recall prompts.";
   if (params.mode === "core") {
     const readingDirective = params.subject === "Reading"
       ? `Include exactly 1 passage (complete, no truncation).`
@@ -880,6 +1035,10 @@ Rules:
 - Include exactly 5 questions.
 - Each question must have exactly 4 choices.
 - Choices must be concise, complete, and plausible.
+- ${scienceReasoningRule}
+- ${THINKING_OVER_RECALL_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- Mode rule: If no passage is included, do not reference passage-based support language.
+- ${QUALITY_ALIGNMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - Keep explanations short (1 sentence).
 - No commentary, markdown, or extra keys.`;
   }
@@ -902,6 +1061,10 @@ Rules:
 Create cross-curricular content for ${params.subject}, grade ${params.grade}, skill ${params.skill}.
 Use exactly 1 passage and exactly 5 questions.
 Each question must have exactly 4 choices.
+${scienceReasoningRule}
+${THINKING_OVER_RECALL_RULES}
+Mode rule: Answers must be supported by the passage with passage-based reasoning.
+${QUALITY_ALIGNMENT_RULES}
 Keep explanations short (1 sentence).
 No extra commentary.`;
 }
@@ -958,10 +1121,10 @@ As the groups compared exact lines across the reports, they noticed how wording 
 
 function buildMathFallbackChoices(): [string, string, string, string] {
   return [
-    "Compute both steps: (18 + 27) × 3 to find total notebook revenue.",
-    "Add all given quantities first, then subtract returns to get the final total sold.",
-    "Multiply batches by cups per batch, then compare with available inventory.",
-    "Use only one operation on one number, which misses a required computation step.",
+    "126",
+    "120",
+    "132",
+    "42",
   ];
 }
 
@@ -1045,10 +1208,9 @@ function getUniversalQuestion(
 ): string {
   const s = String(skill || "").toLowerCase();
   const selectByDOK = (stems: [string, string, string, string, string]) => {
-    void index;
-    void level;
-    const randomIndex = Math.floor(Math.random() * stems.length);
-    return stems[randomIndex];
+    const levelShift = level === "Below" ? 0 : level === "Advanced" ? 2 : 1;
+    const stemIndex = (index + levelShift) % stems.length;
+    return stems[stemIndex];
   };
 
   if (subject === "Reading") {
@@ -1093,21 +1255,21 @@ function getUniversalQuestion(
 
   if (subject === "Science") {
     return selectByDOK([
-      "What is the most likely outcome based on the information?",
-      "Which statement best explains the relationship shown?",
-      "What is the cause of the result described?",
-      "Which conclusion is supported by the data?",
-      "What does the passage suggest about the process?",
+      "In this scenario, what is the most likely outcome based on the information?",
+      "Which statement best explains the relationship shown in the situation?",
+      "What cause best explains the result described in the scenario?",
+      "Which conclusion is supported by the data and reasoning from the setup?",
+      "What does the information suggest about how the process works in this situation?",
     ]);
   }
 
   if (subject === "Social Studies") {
     return selectByDOK([
-      "Which statement is best supported by the passage?",
-      "What is the most likely reason for the event described?",
-      "Which conclusion can be drawn from the information?",
-      "What does the passage suggest about the situation?",
-      "Which idea best explains the outcome described?",
+      "Which situation best shows the impact described in the source?",
+      "Which outcome is most likely based on the historical conditions described?",
+      "Which conclusion is best supported when you compare the evidence in the source?",
+      "How did the decision in the passage most influence later events?",
+      "Which example best demonstrates the long-term effect described?",
     ]);
   }
 
@@ -1119,6 +1281,18 @@ function buildUniversalChoices(
   passage: string,
   level: Level = "On Level",
 ): [string, string, string, string] {
+  if (subject === "Math") {
+    const numbers = String(passage || "").match(/-?\d+(?:\.\d+)?/g) || [];
+    const base = numbers.length ? Number(numbers[0]) : 24;
+    const numericBase = Number.isFinite(base) ? base : 24;
+    const choices = [
+      numericBase,
+      numericBase + 1,
+      Math.max(0, numericBase - 1),
+      numericBase * 2,
+    ].map((value) => String(Number.isInteger(value) ? value : Number(value.toFixed(2))));
+    return normalizeChoices(choices) as [string, string, string, string];
+  }
   const sentences = String(passage || "")
     .split(/[.!?]/)
     .map((s) => s.trim())
@@ -1180,7 +1354,7 @@ function normalizeChoices(choices: unknown): [string, string, string, string] {
   );
 
   while (padded.length < 4) {
-    padded.push("Not enough information is provided to support this answer.");
+    padded.push("This option does not match the problem details.");
   }
 
   const used = new Set<string>();
@@ -1212,11 +1386,14 @@ function makeChoicesUnique(
 ): [string, string, string, string] {
   const used = new Set<string>();
   const fallback = getFallbackChoices(subject, question);
+  const cleanForSubject = (choice: string): string => subject === "Math"
+    ? (sanitizeMathChoice(choice) || "0")
+    : cleanAnswerChoice(choice);
   const result = choices.map((choice, index) => {
-    const cleaned = cleanAnswerChoice(String(choice || "").trim());
+    const cleaned = cleanForSubject(String(choice || "").trim());
     const key = cleaned.toLowerCase();
     if (!cleaned || used.has(key)) {
-      const replacement = cleanAnswerChoice(String(fallback[index] || fallback[0] || "Not supported by the passage."));
+      const replacement = cleanForSubject(String(fallback[index] || fallback[0] || "0"));
       used.add(replacement.toLowerCase());
       return replacement;
     }
@@ -1255,10 +1432,89 @@ function cleanAnswerChoice(choice: string): string {
   c = c.replace(/\s+/g, " ").trim();
 
   if (c.length < 10) {
-    c = "This answer is not supported by the passage.";
+    c = "This option does not match the problem details.";
   }
+  c = c.replace(/not supported by the passage/gi, "not supported by the details");
 
   return c;
+}
+
+function enforceThinkingStem(subject: CanonicalSubject, question: string): string {
+  const q = String(question || "").trim();
+  if (!q) return q;
+  const lower = q.toLowerCase();
+  if ((subject === "Science" || subject === "Social Studies") && /^what (was|is|were)\b/.test(lower)) {
+    if (subject === "Science") return "Which outcome is most likely based on the situation described?";
+    return "Which situation best demonstrates the historical impact described?";
+  }
+  return q;
+}
+
+function normalizeModeLanguage(
+  text: string,
+  mode: CanonicalMode,
+  subject: CanonicalSubject,
+): string {
+  const value = String(text || "");
+  if (mode === "Practice" && subject !== "Reading") {
+    return value
+      .replace(/\bpassage\b/gi, "problem")
+      .replace(/\btext evidence\b/gi, "problem evidence")
+      .replace(/\bthe text\b/gi, "the problem");
+  }
+  return value;
+}
+
+function isMathLikeChoice(choice: string): boolean {
+  const cleaned = String(choice || "").replace(/\$/g, "").replace(/,/g, "").trim();
+  return /\d/.test(cleaned) && /^[\d\s+\-*/().%]+$/.test(cleaned);
+}
+
+function sanitizeMathChoice(choice: string): string {
+  const cleaned = String(choice || "")
+    .replace(/^[A-D][\).\s-]+/i, "")
+    .replace(/\$/g, "")
+    .replace(/,/g, "")
+    .trim();
+  if (!cleaned) return "";
+  if (isMathLikeChoice(cleaned)) return cleaned.replace(/\s+/g, " ");
+  const numeric = cleaned.match(/-?\d+(?:\.\d+)?/);
+  return numeric ? numeric[0] : "";
+}
+
+function buildMathChoicesFromCorrect(correctChoice: string): [string, string, string, string] {
+  const numericMatch = String(correctChoice || "").match(/-?\d+(?:\.\d+)?/);
+  const numericValue = numericMatch ? Number(numericMatch[0]) : NaN;
+  if (!Number.isFinite(numericValue)) {
+    return ["0", "1", "2", "3"];
+  }
+  const distractors = [
+    numericValue + 1,
+    numericValue - 1,
+    numericValue * 2,
+  ];
+  const all = [numericValue, ...distractors].map((v) => String(Number.isInteger(v) ? v : Number(v.toFixed(2))));
+  return normalizeChoices(all) as [string, string, string, string];
+}
+
+function enforceMathChoices(
+  choices: [string, string, string, string],
+  correctAnswer: ChoiceLetter | ChoiceLetter[],
+): [string, string, string, string] {
+  const correctLetter = Array.isArray(correctAnswer) ? "A" : correctAnswer;
+  const correctIndex = Math.max(0, LETTERS.indexOf(correctLetter as ChoiceLetter));
+  const sanitized = choices.map((choice) => sanitizeMathChoice(choice));
+  let correct = sanitized[correctIndex] || "";
+  if (!correct) {
+    correct = sanitized.find((choice) => Boolean(choice)) || "0";
+  }
+  const rebuilt = buildMathChoicesFromCorrect(correct);
+  const finalChoices = [...rebuilt];
+  const correctSlot = sanitizeMathChoice(finalChoices[correctIndex] || "");
+  if (correctSlot !== correct) {
+    finalChoices[correctIndex] = correct;
+  }
+  return normalizeChoices(finalChoices) as [string, string, string, string];
 }
 
 function extractVocabTargetWord(questionText: string): string {
@@ -1587,15 +1843,20 @@ function finalValidation(q: Question, passage: string, skill: string): boolean {
 function repairQuestion(q: Question, subject: CanonicalSubject, passage: PassageContent | string): Question {
   const fallbackStem = "Which statement is best supported by the passage?";
   const questionText = String(q.question || "").trim() || fallbackStem;
+  const cleanForSubject = (choice: string): string => subject === "Math"
+    ? (sanitizeMathChoice(choice) || "0")
+    : cleanAnswerChoice(choice);
   const safeChoices = Array.isArray(q.choices) && q.choices.length === 4
-    ? normalizeChoices(q.choices).map(cleanAnswerChoice) as [string, string, string, string]
-    : getFallbackChoices(subject, questionText).map(cleanAnswerChoice) as [string, string, string, string];
+    ? normalizeChoices(q.choices).map(cleanForSubject) as [string, string, string, string]
+    : getFallbackChoices(subject, questionText).map(cleanForSubject) as [string, string, string, string];
   const uniqueChoices = makeChoicesUnique(safeChoices, subject, questionText);
   const safeAnswer = typeof q.correct_answer === "string" && LETTERS.includes(q.correct_answer as ChoiceLetter)
     ? q.correct_answer as ChoiceLetter
     : "A";
   const passageText = getPassageText(passage);
-  const strengthenedChoices = strengthenChoices(uniqueChoices, passageText);
+  const strengthenedChoices = subject === "Math"
+    ? enforceMathChoices(uniqueChoices, safeAnswer)
+    : strengthenChoices(uniqueChoices, passageText);
   const safeExplanation = String(q.explanation || "").trim() ||
     "This question was adjusted to maintain quality and alignment with the passage.";
 
@@ -1653,7 +1914,10 @@ function validateMCQuestion(
   ]);
 
   let normalizedQuestion = String(q.question || "").trim();
-  let choices = normalizeChoices(q.choices).map(cleanAnswerChoice) as [string, string, string, string];
+  const cleanForSubject = (choice: string): string => subject === "Math"
+    ? (sanitizeMathChoice(choice) || "0")
+    : cleanAnswerChoice(choice);
+  let choices = normalizeChoices(q.choices).map(cleanForSubject) as [string, string, string, string];
   const isCopied = (choice: string, sourcePassage: string) => {
     return sourcePassage.includes(choice.trim());
   };
@@ -1678,6 +1942,9 @@ function validateMCQuestion(
       choices = getFallbackChoices(subject, "general").map(cleanAnswerChoice) as [string, string, string, string];
       safeAnswer = pickRandom(["A", "B", "C", "D"] as ChoiceLetter[]);
     }
+  }
+  if (subject === "Math") {
+    choices = enforceMathChoices(choices, safeAnswer);
   }
 
   const { letter: originalLetter } = getQuestionCorrectPair({
@@ -1739,7 +2006,7 @@ function validateMCQuestion(
   );
   const syncedExplanation = finalChoice
     ? evidenceSnippet
-      ? `The correct answer is ${resolvedCorrectLetter} because the passage states: "${evidenceSnippet}." This supports "${finalChoice}".`
+      ? `If you focus on the passage idea about ${summarizeEvidenceIdea(evidenceSnippet)}, ${resolvedCorrectLetter} (${finalChoice}) stays most consistent with the evidence.`
       : buildGuidedFallbackExplanation(finalChoice)
     : String(q.explanation || "").trim();
 
@@ -2250,9 +2517,17 @@ function buildSupportContent(
   const thinkingType = detectThinkingType(questionText);
   const hasStrongEvidence = Boolean(snippet) && supportsMeaning(String(snippet || ""), String(correctChoice || ""));
   const hasWeakEvidence = Boolean(snippet) && !hasStrongEvidence;
+  const evidenceIdea = summarizeEvidenceIdea(String(snippet || ""));
+  const conversationalLeads = [
+    "Here is how I would think through it:",
+    "Let’s reason it out together:",
+    "A strong way to solve this is:",
+    "Notice what the passage is really saying:",
+  ];
+  const lead = conversationalLeads[Math.abs(_index) % conversationalLeads.length];
   const noEvidenceMessage = buildGuidedFallbackExplanation(String(correctChoice || ""));
   const semiSpecificMessage = snippet
-    ? `The passage states: "${snippet}." This clue supports ${extractKeyConcept(String(correctChoice || ""))}, which leads to the correct answer.`
+    ? `${lead} the passage emphasizes ${evidenceIdea}, which supports ${extractKeyConcept(String(correctChoice || ""))} and points to the best choice.`
     : noEvidenceMessage;
   const safeGenericExplanation = noEvidenceMessage;
   if (shouldUsePassage && !hasLooseSupport(passageText, String(correctChoice || ""))) {
@@ -2275,24 +2550,22 @@ function buildSupportContent(
     };
   }
   let explanation = subject === "Math"
-    ? "Start by identifying what the problem is asking. Then solve step by step by choosing the correct operation, calculating carefully, and checking whether the result is reasonable."
+    ? `${lead} start with what the problem gives you, then use those details to test each choice and keep the one that matches the math evidence.`
     : subject === "Science"
     ? hasStrongEvidence
-      ? `This question requires understanding cause and effect in a system. The data or details show a relationship that leads to the best-supported conclusion, especially in: "${snippet}."`
+      ? `${lead} the passage detail about ${evidenceIdea} shows the cause-and-effect relationship that supports the correct conclusion.`
       : hasWeakEvidence
       ? semiSpecificMessage
       : noEvidenceMessage
     : subject === "Social Studies"
     ? hasStrongEvidence
-      ? `This question asks you to reason through historical context and decisions. Use the situation described in the source to identify the most supported outcome, such as: "${snippet}."`
+      ? `${lead} the source detail about ${evidenceIdea} gives the strongest support for the historical or civic conclusion.`
       : hasWeakEvidence
       ? semiSpecificMessage
       : noEvidenceMessage
     : `
-The correct answer is supported by the passage. For example, the text states:
-"${snippet}."
-
-A strong reader uses this evidence to connect directly to the question. This detail helps confirm why the correct answer is the best choice.
+${lead} the passage highlights ${evidenceIdea}.
+That idea is the best evidence because it matches the question focus.
 `.trim();
 
   if (subject === "Reading" || shouldUsePassage) {
@@ -2304,9 +2577,9 @@ A strong reader uses this evidence to connect directly to the question. This det
   }
 
   if (thinkingType === "inference") {
-    explanation = `${explanation}\n\nFor inference questions, combine clues across the passage instead of searching for one exact phrase.`;
+    explanation = `${explanation}\n\nFor inference questions, combine two or more clues from the passage before you choose an answer.`;
   } else if (thinkingType === "evidence") {
-    explanation = `${explanation}\n\nFor evidence questions, choose the answer you can point to directly in the text.`;
+    explanation = `${explanation}\n\nFor evidence questions, keep the option you can prove with a specific sentence from the passage.`;
   } else if (thinkingType === "main_idea") {
     explanation = `${explanation}\n\nFor main idea questions, focus on the pattern repeated across multiple details.`;
   } else if (thinkingType === "cause_effect") {
@@ -2643,19 +2916,19 @@ function buildAlignedExplanation(
   if (!passageBased) {
     return {
       why:
-        `The correct answer is ${correctLabel} because ${answerReference} best matches the concept tested in the question.`,
+        `${answerReference} is the best fit because it matches the concept tested in the question.`,
       mistake:
-        `A common mistake on "${q.question}" is choosing an option that sounds familiar but does not match the concept requirements.`,
+        `A frequent trap on "${q.question}" is picking an option that sounds familiar but misses the concept requirement.`,
       tip:
         `Focus on what the question is asking, then eliminate options that do not satisfy the required concept.`,
     };
   }
   return {
     why:
-      `The correct answer is ${correctLabel} because the passage states: "${snippet}."\n` +
-      `This shows that ${answerReference} best matches ${focus} and is supported by the passage evidence.`,
+      `The passage highlights ${summarizeEvidenceIdea(snippet)}.\n` +
+      `That detail supports ${answerReference} as the best match for ${focus}.`,
     mistake:
-      `A common mistake on "${q.question}" is choosing an option that sounds related but does not match the evidence for ${answerReference}.`,
+      `A frequent trap on "${q.question}" is choosing an option that sounds related but does not match the evidence for ${answerReference}.`,
     tip:
       `Focus on matching each part of "${q.question}" to exact evidence, then remove options that do not directly prove ${answerReference}.`,
   };
@@ -3507,7 +3780,10 @@ function sanitizeQuestions(
       : rawQuestion;
 
     const passageText = getPassageText(passage);
-    let normalizedChoices = normalizeChoices(q.choices).map(cleanAnswerChoice) as [string, string, string, string];
+    const cleanForSubject = (choice: string): string => subject === "Math"
+      ? (sanitizeMathChoice(choice) || "0")
+      : cleanAnswerChoice(choice);
+    let normalizedChoices = normalizeChoices(q.choices).map(cleanForSubject) as [string, string, string, string];
     const normalizedCorrectAnswer = type === "multi_select"
       ? normalizeMultiSelectAnswer(q.correct_answer || "")
       : safeCorrectAnswer(q.correct_answer);
@@ -3521,6 +3797,7 @@ function sanitizeQuestions(
         ? "What is the main idea of the passage?"
         : "Which statement best describes the main idea?";
     }
+    normalizedQuestionText = enforceThinkingStem(subject, normalizedQuestionText);
 
     if (type === "mc" && isVocabStyleQuestion(normalizedQuestionText)) {
       const targetWord = extractVocabTargetWord(normalizedQuestionText);
@@ -3528,7 +3805,7 @@ function sanitizeQuestions(
       if (!isValidVocabTarget(getPassageText(passage), targetWord)) {
         normalizedQuestionText = "Which idea is BEST supported by the passage?";
         normalizedChoices = getFallbackChoices(subject, "general")
-          .map(cleanAnswerChoice) as [string, string, string, string];
+          .map(cleanForSubject) as [string, string, string, string];
       }
     }
 
@@ -3539,6 +3816,9 @@ function sanitizeQuestions(
       console.warn("Validation issue — keeping question", { index: i, skillType: requestedSkillType });
     }
     normalizedChoices = makeChoicesUnique(normalizedChoices, subject, normalizedQuestionText);
+    if (subject === "Math" && type === "mc") {
+      normalizedChoices = enforceMathChoices(normalizedChoices, normalizedCorrectAnswer);
+    }
     normalizedChoices = strengthenChoices(normalizedChoices, passageText);
 
     const base: Question = {
@@ -3620,7 +3900,19 @@ function sanitizeQuestions(
   if (questions.length < 5) {
     console.warn("⚠️ Fewer than 5 questions after validation — keeping available questions without regeneration");
   }
-  const finalQuestions = questions.slice(0, 5);
+  const finalQuestions = questions.slice(0, 5).map((q) => ({
+    ...q,
+    question: normalizeModeLanguage(String(q.question || ""), mode, subject),
+    choices: normalizeChoices((q.choices || []).map((choice) =>
+      normalizeModeLanguage(String(choice || ""), mode, subject).replace(/not supported by the passage/gi, "not supported by the details")
+    )),
+    explanation: normalizeModeLanguage(String(q.explanation || ""), mode, subject),
+    common_mistake: normalizeModeLanguage(String(q.common_mistake || ""), mode, subject),
+    hint: normalizeModeLanguage(String(q.hint || ""), mode, subject),
+    think: normalizeModeLanguage(String(q.think || ""), mode, subject),
+    step_by_step: normalizeModeLanguage(String(q.step_by_step || ""), mode, subject),
+    parent_tip: normalizeModeLanguage(String(q.parent_tip || ""), mode, subject),
+  }));
   console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", finalQuestions.length);
   const alignedSet = finalQuestions;
   if (!isPassageBased(mode, subject)) {
@@ -4237,22 +4529,21 @@ function generateAnswerKey(
           getRelevantSnippet(scopedPassageText, q.question, correctChoice) ||
           "the strongest supporting detail in the passage")
         : "the strongest detail provided in the question";
+      const evidenceIdea = summarizeEvidenceIdea(evidence);
       const explanationStyles = [
-        `For "${String(q.question || "").trim()}", the correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because the evidence "${evidence}" supports that choice most directly.`,
-        `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is correct for "${String(q.question || "").trim()}" since "${evidence}" aligns with that reasoning better than the other options.`,
-        `The best answer to "${String(q.question || "").trim()}" is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}; the passage detail "${evidence}" confirms this interpretation.`,
+        `For "${String(q.question || "").trim()}", start with the passage idea about ${evidenceIdea}. That points to ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
+        `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} fits best because the text emphasizes ${evidenceIdea}, which matches the question focus.`,
+        `A careful read of the evidence about ${evidenceIdea} makes ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} the strongest option.`,
       ];
       const explanationLead = explanationStyles[index % explanationStyles.length];
       const explanation = distractor
         ? `${explanationLead} ${distractor.letter} (${distractor.choice}) is incorrect because it does not match the same evidence as precisely.`
         : explanationLead;
       const commonMistake = distractor
-        ? `A common mistake is choosing ${distractor.letter} because it seems related, but it is not the best-supported interpretation of the passage evidence.`
-        : "A common mistake is selecting an answer that sounds plausible without checking passage evidence.";
+        ? `${distractor.letter} can seem related, but it is not the best-supported interpretation of the passage evidence.`
+        : "One trap is selecting an answer that sounds plausible without checking passage evidence.";
 
-      const parentTip = subject === "Reading"
-        ? "👨‍👩‍👧 Parent Tip:\nHave your child cite one line from the passage that proves the correct answer and one line that disproves a distractor."
-        : "👨‍👩‍👧 Parent Tip:\nAsk your child to explain why the correct choice is better supported than at least one distractor.";
+      const parentTip = variedParentTip(index);
       return {
         question_id: ensureQuestionId(q, index, mode),
         correct_answer: correctLetter || "",
@@ -4625,26 +4916,28 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
     const evidenceSnippet = selectEvidenceSnippet(q, passageText, usedEvidence) ||
       getRelevantSnippet(passageText, q.question, correctChoice) ||
       "the strongest details in the passage";
+    const evidenceIdea = summarizeEvidenceIdea(evidenceSnippet);
 
     const explanationVariants = [
-      `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it directly answers "${String(q.question || "").trim()}" and is supported by this passage detail: "${evidenceSnippet}".`,
-      `For "${String(q.question || "").trim()}", ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is correct since the passage states "${evidenceSnippet}", which supports that reasoning.`,
-      `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is the best answer to "${String(q.question || "").trim()}" because the evidence "${evidenceSnippet}" confirms that interpretation.`,
+      `I would start with the passage idea about ${evidenceIdea}. Once we anchor there, ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} fits the question best.`,
+      `Try reasoning it out this way: the passage explains ${evidenceIdea}, and that lines up most clearly with ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
+      `Before picking an answer, connect the question to this idea from the text: ${evidenceIdea}. That connection points to ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
+      `A strong approach here is to paraphrase the key detail as ${evidenceIdea}, then compare options. ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} stays consistent with that evidence.`,
     ];
     const explanationLead = explanationVariants[Math.abs(variant) % explanationVariants.length];
     const explanationTail = wrongOption
-      ? ` ${wrongOption.letter} (${wrongOption.choice}) is a common trap because it sounds related but is not supported as strongly by the same evidence.`
-      : " The distractors are weaker because they are not directly supported by the cited passage detail.";
+      ? ` ${wrongOption.letter} (${wrongOption.choice}) can feel tempting, but the passage evidence supports it less clearly than ${correctLetter}.`
+      : " The other options fall apart when you test them against the same passage detail.";
     const explanation = `${explanationLead}${explanationTail}`;
 
     const commonMistake = wrongOption
-      ? `A common mistake is selecting ${wrongOption.letter} because it sounds plausible, but it does not match the strongest passage evidence for the question.`
-      : "A common mistake is choosing an option that sounds familiar instead of proving it with passage evidence.";
+      ? `${wrongOption.letter} can sound close to the topic, but it does not match the passage idea about ${evidenceIdea} as well as ${correctLetter}.`
+      : `One trap here is picking a familiar-sounding choice without checking which passage idea actually proves the answer.`;
 
-    const hint = `Match each choice to the evidence, then keep the option that best answers: "${String(q.question || "").trim()}".`;
-    const think = `Which exact words in the passage prove ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}?`;
-    const stepByStep = `1. Read the question carefully.\n2. Locate evidence in the passage.\n3. Compare all four choices.\n4. Keep ${correctLetter} only if it is best supported.\n5. Eliminate choices that are only partly true.`;
-    const parentTip = "👨‍👩‍👧 Parent Tip:\nAsk your child to point to one sentence in the passage that proves the correct answer and one sentence that disproves a distractor.";
+    const hint = `Start with this passage idea: ${evidenceIdea}. Then compare each answer choice to that same idea.`;
+    const think = `If you restate the passage idea as "${evidenceIdea}," which option is fully supported?`;
+    const stepByStep = `1. Read the question and identify the key idea.\n2. Find the matching detail in the passage.\n3. Compare each choice to that same detail.\n4. Keep ${correctLetter} because it matches the evidence most completely.\n5. Cross out choices that only partly match.`;
+    const parentTip = variedParentTip(variant);
 
     return { explanation, commonMistake, hint, think, stepByStep, parentTip };
   };
@@ -5256,20 +5549,44 @@ serve(async (req) => {
             markRetry("no_questions_returned");
             continue;
           }
+          if (subject === "Reading" && !passageSupportsQuestions(String(safePassage || ""), practiceQuestions)) {
+            markRetry("invalid_passage_quality");
+            continue;
+          }
           if (subject === "Reading" && safePassage && practiceQuestions?.length) {
+            const tutorLeads = [
+              "Think about what the passage is saying in this part.",
+              "A good first step is to return to the key sentence in the passage.",
+              "Let’s solve this by matching the question to a specific detail in the text.",
+            ];
             const lightweightTutor = practiceQuestions.map((q, index) => ({
               question_id: ensureQuestionId(q, index, "practice"),
               question: q.question,
-              explanation: "Review the passage and identify key supporting details.",
-              common_mistake: "Choosing an answer without pointing to clear text evidence.",
+              explanation: (() => {
+                const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
+                const choice = getChoiceByLetter(q, correctLetter);
+                const choiceText = Array.isArray(choice) ? choice.join(" ") : String(choice || "");
+                const snippet = getRelevantSnippet(safePassage, q.question, choiceText) || "the strongest detail in the passage";
+                const idea = summarizeEvidenceIdea(snippet);
+                const lead = tutorLeads[index % tutorLeads.length];
+                return `${lead} The passage idea about ${idea} helps confirm why ${correctLetter}${choiceText ? ` (${choiceText})` : ""} is the best-supported answer.`;
+              })(),
+              common_mistake: "Choosing an option that sounds related without confirming it with a specific passage detail.",
             }));
-            const lightweightAnswerKey = practiceQuestions.map((q, index) => ({
-              question_id: ensureQuestionId(q, index, "practice"),
-              correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
-              explanation: "Review the passage and identify key supporting details.",
-              common_mistake: "Choosing an answer without pointing to clear text evidence.",
-              parent_tip: "👨‍👩‍👧 Parent Tip:\nAsk your student to underline one detail that proves the answer choice.",
-            }));
+            const lightweightAnswerKey = practiceQuestions.map((q, index) => {
+              const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
+              const choice = getChoiceByLetter(q, correctLetter);
+              const choiceText = Array.isArray(choice) ? choice.join(" ") : String(choice || "");
+              const snippet = getRelevantSnippet(safePassage, q.question, choiceText) || "the strongest detail in the passage";
+              const idea = summarizeEvidenceIdea(snippet);
+              return {
+                question_id: ensureQuestionId(q, index, "practice"),
+                correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
+                explanation: `If you focus on the passage idea about ${idea}, ${correctLetter}${choiceText ? ` (${choiceText})` : ""} is the choice that stays most consistent with the text.`,
+                common_mistake: "Selecting an answer that mentions the topic but is not fully supported by passage evidence.",
+                parent_tip: variedParentTip(index),
+              };
+            });
             bestAttempt = {
               passage: safePassage,
               practice: { questions: practiceQuestions },
