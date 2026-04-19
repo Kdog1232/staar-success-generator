@@ -1281,48 +1281,10 @@ function buildUniversalChoices(
   passage: string,
   level: Level = "On Level",
 ): [string, string, string, string] {
-  if (subject === "Math") {
-    const numbers = String(passage || "").match(/-?\d+(?:\.\d+)?/g) || [];
-    const base = numbers.length ? Number(numbers[0]) : 24;
-    const numericBase = Number.isFinite(base) ? base : 24;
-    const choices = [
-      numericBase,
-      numericBase + 1,
-      Math.max(0, numericBase - 1),
-      numericBase * 2,
-    ].map((value) => String(Number.isInteger(value) ? value : Number(value.toFixed(2))));
-    return normalizeChoices(choices) as [string, string, string, string];
-  }
-  const sentences = String(passage || "")
-    .split(/[.!?]/)
-    .map((s) => s.trim())
-    .filter((s) => Boolean(s) && s.length > 18);
-  const base = sentences.slice(0, 4);
-
-  while (base.length < 4) base.push(sentences[0] || "the passage describes a key detail about the topic");
-
-  const toChoiceSentence = (text: string): string => {
-    const cleaned = String(text || "").replace(/\s+/g, " ").trim().replace(/[.]+$/, "");
-    return `In the passage, ${cleaned.charAt(0).toLowerCase()}${cleaned.slice(1)}.`;
-  };
-  const twistDetail = (text: string, mode: number): string => {
-    const normalized = String(text || "").trim();
-    if (!normalized) return "the detail is described differently than in the text";
-    if (mode === 0) return normalized.replace(/\bbecause\b/gi, "even though").replace(/\bso\b/gi, "because");
-    if (mode === 1) return normalized.replace(/\bmost\b/gi, "all").replace(/\bsome\b/gi, "all");
-    return normalized.replace(/\bafter\b/gi, "before").replace(/\bbefore\b/gi, "after");
-  };
-
-  const correct = toChoiceSentence(base[0]);
-  const distractors = [
-    toChoiceSentence(twistDetail(base[1], 0)),
-    toChoiceSentence(twistDetail(base[2], 1)),
-    toChoiceSentence(twistDetail(base[3], 2)),
-  ];
   void subject;
+  void passage;
   void level;
-  const all = shuffleArray([correct, ...distractors]);
-  return all.map((c) => cleanChoice(String(c || "").trim())) as [string, string, string, string];
+  return ["", "", "", ""];
 }
 
 function buildUniversalFallbackQuestion(
@@ -1332,51 +1294,30 @@ function buildUniversalFallbackQuestion(
   index: number,
   level: Level = "On Level",
 ): Question {
-  const question = getUniversalQuestion(subject, skill, index, level);
+  const question = String(getUniversalQuestion(subject, skill, index, level) || "").trim();
   const choices = buildUniversalChoices(subject, passage, level);
-  const correctIndex = pickRandom([0, 1, 2, 3]);
 
   return {
     type: "mc",
     question,
     choices,
-    correct_answer: ["A", "B", "C", "D"][correctIndex] as ChoiceLetter,
-    explanation: buildFallbackExplanation(passage, question, choices[correctIndex]),
+    correct_answer: "A",
+    explanation: "",
   };
 }
 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
-  const raw = Array.isArray(choices) ? choices : [];
-  const padded = raw.slice(0, 4).map((c) =>
-    String(c ?? "")
-      .replace(/^[A-D][\).\s-]+/i, "")
-      .trim()
-  );
-
-  while (padded.length < 4) {
-    padded.push("This option does not match the problem details.");
-  }
-
-  const used = new Set<string>();
-  const unique = padded.map((choice, index) => {
-    const fallback = `Alternative answer choice ${index + 1}`;
-    const base = choice || fallback;
-    const lowered = base.toLowerCase();
-
-    if (!used.has(lowered)) {
-      used.add(lowered);
-      return base;
-    }
-
-    let candidate = `${base} (${index + 1})`;
-    while (used.has(candidate.toLowerCase())) {
-      candidate = `${candidate}*`;
-    }
-    used.add(candidate.toLowerCase());
-    return candidate;
+  const raw = Array.isArray(choices) ? choices.slice(0, 4) : [];
+  const seen = new Set<string>();
+  const cleaned = raw.map((c) => String(c ?? "").trim()).map((choice) => {
+    const key = choice.toLowerCase();
+    if (!choice) return "";
+    if (seen.has(key)) return "";
+    seen.add(key);
+    return choice;
   });
-
-  return unique as [string, string, string, string];
+  while (cleaned.length < 4) cleaned.push("");
+  return cleaned as [string, string, string, string];
 }
 
 function makeChoicesUnique(
@@ -1410,7 +1351,7 @@ function normalizeVocabChoices(choices: string[]): [string, string, string, stri
       .trim()
   );
 
-  while (cleaned.length < 4) cleaned.push("No valid meaning provided");
+  while (cleaned.length < 4) cleaned.push("");
 
   return cleaned.slice(0, 4) as [string, string, string, string];
 }
@@ -1431,9 +1372,7 @@ function cleanAnswerChoice(choice: string): string {
   c = c.replace(/\s+(because|which|that)$/i, "");
   c = c.replace(/\s+/g, " ").trim();
 
-  if (c.length < 10) {
-    c = "This option does not match the problem details.";
-  }
+  if (c.length < 10) return c;
   c = c.replace(/not supported by the passage/gi, "not supported by the details");
 
   return c;
@@ -1483,38 +1422,15 @@ function sanitizeMathChoice(choice: string): string {
 }
 
 function buildMathChoicesFromCorrect(correctChoice: string): [string, string, string, string] {
-  const numericMatch = String(correctChoice || "").match(/-?\d+(?:\.\d+)?/);
-  const numericValue = numericMatch ? Number(numericMatch[0]) : NaN;
-  if (!Number.isFinite(numericValue)) {
-    return ["0", "1", "2", "3"];
-  }
-  const distractors = [
-    numericValue + 1,
-    numericValue - 1,
-    numericValue * 2,
-  ];
-  const all = [numericValue, ...distractors].map((v) => String(Number.isInteger(v) ? v : Number(v.toFixed(2))));
-  return normalizeChoices(all) as [string, string, string, string];
+  return normalizeChoices([String(correctChoice || "").trim()]);
 }
 
 function enforceMathChoices(
   choices: [string, string, string, string],
   correctAnswer: ChoiceLetter | ChoiceLetter[],
 ): [string, string, string, string] {
-  const correctLetter = Array.isArray(correctAnswer) ? "A" : correctAnswer;
-  const correctIndex = Math.max(0, LETTERS.indexOf(correctLetter as ChoiceLetter));
-  const sanitized = choices.map((choice) => sanitizeMathChoice(choice));
-  let correct = sanitized[correctIndex] || "";
-  if (!correct) {
-    correct = sanitized.find((choice) => Boolean(choice)) || "0";
-  }
-  const rebuilt = buildMathChoicesFromCorrect(correct);
-  const finalChoices = [...rebuilt];
-  const correctSlot = sanitizeMathChoice(finalChoices[correctIndex] || "");
-  if (correctSlot !== correct) {
-    finalChoices[correctIndex] = correct;
-  }
-  return normalizeChoices(finalChoices) as [string, string, string, string];
+  void correctAnswer;
+  return normalizeChoices(choices);
 }
 
 function extractVocabTargetWord(questionText: string): string {
@@ -1841,32 +1757,16 @@ function finalValidation(q: Question, passage: string, skill: string): boolean {
 }
 
 function repairQuestion(q: Question, subject: CanonicalSubject, passage: PassageContent | string): Question {
-  const fallbackStem = "Which statement is best supported by the passage?";
-  const questionText = String(q.question || "").trim() || fallbackStem;
-  const cleanForSubject = (choice: string): string => subject === "Math"
-    ? (sanitizeMathChoice(choice) || "0")
-    : cleanAnswerChoice(choice);
-  const safeChoices = Array.isArray(q.choices) && q.choices.length === 4
-    ? normalizeChoices(q.choices).map(cleanForSubject) as [string, string, string, string]
-    : getFallbackChoices(subject, questionText).map(cleanForSubject) as [string, string, string, string];
-  const uniqueChoices = makeChoicesUnique(safeChoices, subject, questionText);
-  const safeAnswer = typeof q.correct_answer === "string" && LETTERS.includes(q.correct_answer as ChoiceLetter)
-    ? q.correct_answer as ChoiceLetter
-    : "A";
-  const passageText = getPassageText(passage);
-  const strengthenedChoices = subject === "Math"
-    ? enforceMathChoices(uniqueChoices, safeAnswer)
-    : strengthenChoices(uniqueChoices, passageText);
-  const safeExplanation = String(q.explanation || "").trim() ||
-    "This question was adjusted to maintain quality and alignment with the passage.";
-
-  return validateMCQuestion({
+  void subject;
+  void passage;
+  return {
     ...q,
-    question: questionText,
-    choices: strengthenedChoices,
-    correct_answer: safeAnswer,
-    explanation: safeExplanation,
-  }, passageText, subject);
+    type: "mc",
+    question: String(q.question || "").trim(),
+    choices: normalizeChoices(q.choices),
+    correct_answer: safeCorrectAnswer(q.correct_answer),
+    explanation: String(q.explanation || "").trim(),
+  };
 }
 
 function rebuildQuestionFromPassage(
@@ -1875,24 +1775,19 @@ function rebuildQuestionFromPassage(
   passageText: string,
   level: Level = "On Level",
 ): Question {
-  const fallbackQuestion = String(q.question || "").trim() || getUniversalQuestion(subject, "general", 0, level);
-  const rebuiltChoices = subject === "Reading"
-    ? forcePassageChoices(passageText)
-    : buildUniversalChoices(subject, passageText, level);
-  const ranked = LETTERS
-    .map((letter, index) => ({
-      letter,
-      score: scoreChoiceSupport(passageText, rebuiltChoices[index] || ""),
-    }))
-    .sort((a, b) => b.score - a.score);
-  const rebuiltCorrect = (ranked[0]?.score || 0) > 0 ? ranked[0].letter : "A";
-  const rebuiltCorrectChoice = String(rebuiltChoices[LETTERS.indexOf(rebuiltCorrect)] || "");
+  const fallbackQuestion = String(q.question || "").trim();
+  const rebuiltChoices = normalizeChoices(q.choices);
+  const rebuiltCorrect = safeCorrectAnswer(q.correct_answer);
+  const rebuiltCorrectChoice = String(rebuiltChoices[LETTERS.indexOf(rebuiltCorrect)] || "").trim();
+  void subject;
+  void passageText;
+  void level;
   return {
     ...q,
     question: fallbackQuestion,
     choices: rebuiltChoices,
     correct_answer: rebuiltCorrect,
-    explanation: buildFallbackExplanation(passageText, fallbackQuestion, rebuiltCorrectChoice),
+    explanation: String(q.explanation || "").trim() || buildGuidedFallbackExplanation(rebuiltCorrectChoice),
   };
 }
 
@@ -1901,131 +1796,28 @@ function validateMCQuestion(
   passage: PassageContent | string,
   subject: CanonicalSubject = "Reading",
 ): Question {
-  if (!q.type || q.type !== "mc") {
-    q.type = "mc";
-  }
-
-  const passageText = String(getPassageText(passage) || "");
-  const bannedTemplates = new Set([
-    "all of the above",
-    "none of the above",
-    "both a and c",
-    "both b and d",
-  ]);
-
-  let normalizedQuestion = String(q.question || "").trim();
-  const cleanForSubject = (choice: string): string => subject === "Math"
-    ? (sanitizeMathChoice(choice) || "0")
-    : cleanAnswerChoice(choice);
-  let choices = normalizeChoices(q.choices).map(cleanForSubject) as [string, string, string, string];
-  const isCopied = (choice: string, sourcePassage: string) => {
-    return sourcePassage.includes(choice.trim());
-  };
-
-  if (q.choices.some((c) => isCopied(String(c || ""), passageText))) {
-    console.warn("⚠️ Choices copy passage verbatim — keeping question");
-  }
-  let safeAnswer = safeCorrectAnswer(q.correct_answer);
-  const hasBrokenChoices = !Array.isArray(choices) || choices.length !== 4;
-  const uniqueChoiceCount = new Set(choices.map((choice) => String(choice || "").trim().toLowerCase())).size;
-  const allChoicesIdentical = uniqueChoiceCount <= 1;
-  const hasExactBannedTemplate = choices.some((choice) => bannedTemplates.has(String(choice || "").trim().toLowerCase()));
-  if (hasBrokenChoices || allChoicesIdentical || hasExactBannedTemplate) {
-    return rebuildQuestionFromPassage(q, subject, passageText);
-  }
-
-  if (isVocabStyleQuestion(normalizedQuestion)) {
-    const targetWord = extractVocabTargetWord(normalizedQuestion);
-    choices = normalizeVocabChoices(choices) as [string, string, string, string];
-    if (!isValidVocabTarget(passageText, targetWord)) {
-      normalizedQuestion = "Which idea is BEST supported by the passage?";
-      choices = getFallbackChoices(subject, "general").map(cleanAnswerChoice) as [string, string, string, string];
-      safeAnswer = pickRandom(["A", "B", "C", "D"] as ChoiceLetter[]);
-    }
-  }
-  if (subject === "Math") {
-    choices = enforceMathChoices(choices, safeAnswer);
-  }
-
-  const { letter: originalLetter } = getQuestionCorrectPair({
-    ...q,
-    question: normalizedQuestion,
-    choices,
-    correct_answer: safeAnswer,
-  });
-
-  if (!originalLetter) {
-    console.warn("⚠️ Invalid correct_answer — randomizing");
-
-    const fallback = pickRandom(["A", "B", "C", "D"]) as ChoiceLetter;
-
-    return {
-      ...q,
-      choices,
-      correct_answer: fallback,
-      explanation: String(q.explanation || "Answer corrected due to invalid response."),
-    };
-  }
-
-  const startingLetter = originalLetter;
-  let resolvedCorrectLetter = startingLetter as ChoiceLetter;
-  const isPassageFlow = passageText.trim().length > 0;
-  if (isPassageFlow) {
-    resolvedCorrectLetter = lockAnswerToPassage(
-      passageText,
-      choices,
-      resolvedCorrectLetter,
-    );
-  } else {
-    const verified = verifyNonPassageAnswer(normalizedQuestion, choices, subject);
-    if (verified && verified !== resolvedCorrectLetter) {
-      console.warn("🔄 AI answer corrected via verification");
-      resolvedCorrectLetter = verified;
-    }
-  }
-
-  const finalChoice = String(choices[LETTERS.indexOf(resolvedCorrectLetter)] || "").trim();
-  const hasSupport = hasLooseSupport(passageText, finalChoice) || hasPassageSupportForChoice(passageText, finalChoice);
-  if (!hasSupport) {
-    console.warn("⚠️ Weak passage alignment — keeping question");
-    return {
-      ...q,
-      question: normalizedQuestion,
-      choices,
-      correct_answer: resolvedCorrectLetter,
-      explanation: String(q.explanation || "").trim(),
-    };
-  }
-  const evidenceSnippet = extractEvidenceSnippet(
-    passageText,
-    [
-      ...String(q.question || "").split(/\s+/).slice(0, 5),
-      ...finalChoice.split(/\s+/).slice(0, 6),
-    ],
-    finalChoice,
-  );
-  const syncedExplanation = finalChoice
-    ? evidenceSnippet
-      ? `If you focus on the passage idea about ${summarizeEvidenceIdea(evidenceSnippet)}, ${resolvedCorrectLetter} (${finalChoice}) stays most consistent with the evidence.`
-      : buildGuidedFallbackExplanation(finalChoice)
-    : String(q.explanation || "").trim();
-
+  void passage;
+  void subject;
   return {
     ...q,
-    question: normalizedQuestion,
-    choices,
-    correct_answer: resolvedCorrectLetter,
-    explanation: syncedExplanation,
+    type: "mc",
+    question: String(q.question || "").trim(),
+    choices: normalizeChoices(q.choices),
+    correct_answer: safeCorrectAnswer(q.correct_answer),
+    explanation: String(q.explanation || "").trim(),
   };
 }
 
 function normalizeAndValidate(q: Question, passage: PassageContent | string): Question {
-  const normalized = {
+  void passage;
+  return {
     ...q,
+    type: "mc",
+    question: String(q.question || "").trim(),
     choices: normalizeChoices(q.choices),
     correct_answer: safeCorrectAnswer(q.correct_answer),
-  } as Question;
-  return validateMCQuestion(normalized, passage, "Reading");
+    explanation: String(q.explanation || "").trim(),
+  };
 }
 
 function validateOnce(questions: Question[], passage: PassageContent | string): Question[] {
@@ -2761,21 +2553,8 @@ function buildPracticeFallback(
 }
 
 function forcePassageChoices(passage: PassageContent | string): [string, string, string, string] {
-  const text = typeof passage === "string" ? passage : (passage?.text_1 || "");
-
-  const sentences = text
-    .split(/[.!?]/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 25);
-
-  const base = sentences[0] || text.slice(0, 120);
-
-  return [
-    `${base} because it explains the main idea or outcome in the passage.`,
-    `${base} but it only describes part of the situation and misses the main point.`,
-    `${base} even though it focuses on a detail that is not the most important.`,
-    `${base} which shows an event but does not fully explain the overall meaning.`,
-  ];
+  void passage;
+  return ["", "", "", ""];
 }
 
 function buildStudentMistakeDistractors(
@@ -3313,8 +3092,8 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
     .filter((q): q is Question => q !== null);
 
   if (!questions || questions.length === 0) {
-    console.warn("All questions failed → fallback");
-    return buildCrossFallback("Reading", "On Level");
+    console.warn("All questions failed");
+    return [];
   }
 
   const passageText = getPassageText(crossPassage).toLowerCase();
@@ -3325,17 +3104,7 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
     );
 
     if (!hasConnection) {
-      const subjectSafeFallback = getFallbackChoices("Reading", q.question);
-      if (hasLooseSupport(passageText, subjectSafeFallback.join(" "))) {
-        q.choices = subjectSafeFallback;
-      } else {
-        const rebuilt = buildUniversalChoices("Reading", getPassageText(crossPassage), "On Level");
-        if (hasLooseSupport(passageText, rebuilt.join(" "))) {
-          q.choices = rebuilt;
-        } else {
-          console.warn("🚨 REJECTED cross fallback — preserving original choices");
-        }
-      }
+      console.warn("🚨 Weak cross choice linkage — preserving original choices");
     }
   });
 
@@ -3790,24 +3559,8 @@ function sanitizeQuestions(
     const correctChoiceIndex = type === "mc" ? LETTERS.indexOf(normalizedCorrectAnswer as AnswerLetter) : -1;
     void correctChoiceIndex;
 
-    const isReadingMainIdea = subject === "Reading" && isMainIdeaSkill(skill);
     let normalizedQuestionText = questionText;
-    if (isReadingMainIdea && !isAllowedMainIdeaStem(normalizedQuestionText)) {
-      normalizedQuestionText = i % 2 === 0
-        ? "What is the main idea of the passage?"
-        : "Which statement best describes the main idea?";
-    }
-    normalizedQuestionText = enforceThinkingStem(subject, normalizedQuestionText);
-
-    if (type === "mc" && isVocabStyleQuestion(normalizedQuestionText)) {
-      const targetWord = extractVocabTargetWord(normalizedQuestionText);
-      normalizedChoices = normalizeVocabChoices(normalizedChoices) as [string, string, string, string];
-      if (!isValidVocabTarget(getPassageText(passage), targetWord)) {
-        normalizedQuestionText = "Which idea is BEST supported by the passage?";
-        normalizedChoices = getFallbackChoices(subject, "general")
-          .map(cleanForSubject) as [string, string, string, string];
-      }
-    }
+    normalizedQuestionText = String(normalizedQuestionText || "").trim();
 
     if (!validateQuestionAlignment(normalizedQuestionText, skill)) {
       console.warn("⚠️ Skill misalignment during normalization — keeping question", { index: i, skill });
@@ -3815,11 +3568,7 @@ function sanitizeQuestions(
     if (!normalizedChoices.every((choice) => validateChoiceAlignment(choice, requestedSkillType))) {
       console.warn("Validation issue — keeping question", { index: i, skillType: requestedSkillType });
     }
-    normalizedChoices = makeChoicesUnique(normalizedChoices, subject, normalizedQuestionText);
-    if (subject === "Math" && type === "mc") {
-      normalizedChoices = enforceMathChoices(normalizedChoices, normalizedCorrectAnswer);
-    }
-    normalizedChoices = strengthenChoices(normalizedChoices, passageText);
+    normalizedChoices = normalizeChoices(normalizedChoices);
 
     const base: Question = {
       type,
@@ -3976,17 +3725,9 @@ function buildCrossReadingChoices(
   passage: PassageContent | string,
   priorChoices: [string, string, string, string],
 ): [string, string, string, string] {
-  const passageText = getPassageText(passage);
-  const rebuilt = buildUniversalChoices("Reading", passageText, "On Level");
-  const cleanedRebuilt = normalizeChoices(rebuilt).map((choice) => cleanAnswerChoice(choice)) as [string, string, string, string];
-  const rebuiltUnique = new Set(cleanedRebuilt.map((c) => c.toLowerCase().trim())).size === 4;
-  if (rebuiltUnique && cleanedRebuilt.every((choice) => !hasCrossComputationLeak(choice))) {
-    return cleanedRebuilt;
-  }
   const safePrior = normalizeChoices(priorChoices).map((choice) => cleanAnswerChoice(choice)) as [string, string, string, string];
-  return safePrior.every((choice) => !hasCrossComputationLeak(choice))
-    ? safePrior
-    : forcePassageChoices(passageText);
+  void passage;
+  return safePrior;
 }
 
 function questionSemanticKey(question: string): string {
@@ -4730,17 +4471,6 @@ type PipelineInput = {
   answerKey?: { practice: unknown[]; cross: unknown[] };
 };
 
-function safeFallback(reason: string): PipelineResult {
-  console.warn("Pipeline fallback triggered:", reason);
-  const level: Level = "On Level";
-  const passage = fallbackPassageContent("Reading", "Practice", 5, READING_SKILL_DEFAULT, level);
-  return {
-    questions: buildPracticeFallback(READING_SKILL_DEFAULT, "Reading", level, passage),
-    tutor: { practice: [], cross: [] },
-    answerKey: { practice: [], cross: [] },
-  };
-}
-
 function generateQuestions(input: PipelineInput): PipelineResult {
   return {
     questions: Array.isArray(input?.questions) ? input.questions : [],
@@ -4760,15 +4490,6 @@ function normalizeOutput(result: PipelineResult): PipelineResult {
   return { ...result, questions };
 }
 
-function guaranteeOutput(result: PipelineResult): PipelineResult {
-  if (!result.questions || result.questions.length === 0) {
-    console.warn("Empty result → fallback");
-    return safeFallback("pipeline_guard");
-  }
-
-  return result;
-}
-
 function enrichOutput(result: PipelineResult): PipelineResult {
   return {
     questions: result.questions,
@@ -4778,43 +4499,10 @@ function enrichOutput(result: PipelineResult): PipelineResult {
 }
 
 async function runPipeline(input: PipelineInput): Promise<PipelineResult> {
-  const generate = () => generateQuestions(input);
-  let result = generate();
-  if (!result.questions?.length) {
-    console.warn("No questions returned, retrying once...");
-    result = generate(); // retry once
-  }
+  let result = generateQuestions(input);
   result = normalizeOutput(result);
-  result = guaranteeOutput(result);
   result = enrichOutput(result);
   return result;
-}
-
-function buildFallbackResponse(
-  grade: number,
-  subject: CanonicalSubject,
-  skill: string,
-  level: Level = "On Level",
-): WorkerAttempt {
-  const effectiveSubject = subject;
-  const crossContent = effectiveSubject === "Reading"
-    ? buildELARFallback(level)
-    : buildSubjectCrossContent(effectiveSubject, level);
-  console.log("🧠 CROSS SUBJECT:", effectiveSubject);
-  const practicePassage = fallbackPassageContent(effectiveSubject, "Practice", grade, skill, level);
-  const practiceQuestions = buildPracticeFallback(skill, effectiveSubject, level, practicePassage);
-  const crossTutor = sanitizeTutorExplanations([], crossContent.questions, effectiveSubject, "cross", crossContent.passage);
-  const practiceTutor = sanitizeTutorExplanations([], practiceQuestions, effectiveSubject, "practice");
-  return {
-    passage: subject === "Reading" ? practicePassage : "",
-    practice: { questions: practiceQuestions },
-    cross: { passage: crossContent.passage, questions: crossContent.questions },
-    tutor: { practice: practiceTutor, cross: crossTutor },
-    answerKey: {
-      practice: sanitizeAnswerKey([], practiceQuestions, effectiveSubject, practiceTutor, "practice"),
-      cross: sanitizeAnswerKey([], crossContent.questions, effectiveSubject, crossTutor, "cross", crossContent.passage),
-    },
-  };
 }
 
 function shouldRewrite(choices: string[]): boolean {
@@ -4835,51 +4523,20 @@ function shouldRewrite(choices: string[]): boolean {
 }
 
 function fallbackDiverseChoices(): [string, string, string, string] {
-  return [
-    "The passage shows that the key idea is supported by specific details.",
-    "The data suggests a different explanation based on what is measured.",
-    "The results indicate another possibility that fits some evidence.",
-    "The information explains why one conclusion is most accurate.",
-  ];
+  return ["", "", "", ""];
 }
 
 function rewriteChoicesForUniqueStarts(question: string): [string, string, string, string] {
-  const stem = String(question || "").trim().replace(/\?+$/, "");
-  const rewritten: [string, string, string, string] = [
-    `One detail in the text shows ${stem.toLowerCase() || "the main point"}.`,
-    `Another clue supports a different idea about ${stem.toLowerCase() || "the topic"}.`,
-    `A separate detail points to an alternative interpretation of ${stem.toLowerCase() || "the question"}.`,
-    `The strongest evidence confirms the best conclusion about ${stem.toLowerCase() || "the topic"}.`,
-  ];
-
-  const uniqueChoices = new Set(rewritten.map((choice) => choice.toLowerCase().trim())).size === 4;
-  if (!uniqueChoices || shouldRewrite(rewritten)) {
-    return fallbackDiverseChoices();
-  }
-
-  return rewritten;
+  void question;
+  return ["", "", "", ""];
 }
 
 function validateAndRewriteChoiceStarts(questions: Question[]): Question[] {
-  return questions.map((q) => {
-    if (!Array.isArray(q.choices) || q.choices.length !== 4) return q;
-    const normalizedChoices = normalizeChoices(q.choices).map((choice) => cleanAnswerChoice(choice)) as [string, string, string, string];
-    if (!shouldRewrite(normalizedChoices)) {
-      return {
-        ...q,
-        choices: normalizedChoices,
-      };
-    }
-
-    const rewritten = rewriteChoicesForUniqueStarts(q.question || "");
-    const fallback = fallbackDiverseChoices();
-    const safeChoices = shouldRewrite(rewritten) ? fallback : rewritten;
-
-    return {
-      ...q,
-      choices: safeChoices,
-    };
-  });
+  return questions.map((q) => ({
+    ...q,
+    question: String(q.question || "").trim(),
+    choices: normalizeChoices(q.choices),
+  }));
 }
 
 function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubject = "Reading"): WorkerAttempt {
@@ -5003,7 +4660,7 @@ serve(async (req) => {
   let teksCode = "Unknown";
 
   const jsonResponse = (payload: Record<string, unknown>, status = 200) =>
-    new Response(JSON.stringify(payload), {
+    new Response(JSON.stringify({ ...payload, source: "ai" }), {
       status,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -5042,9 +4699,7 @@ serve(async (req) => {
       grade,
       level,
     );
-    const gradeSafeCrossPassage = violatesGradeLevel(crossPassage, grade)
-      ? getPassageText(fallbackPassageContent(subject, "Cross-Curricular", grade, skill, level))
-      : enforceSentenceLength(crossPassage, constraints.maxWordsPerSentence);
+    const gradeSafeCrossPassage = enforceSentenceLength(crossPassage, constraints.maxWordsPerSentence);
     const crossQuestions = sanitizeQuestions(
       baseCross.questions || [],
       subject,
@@ -5198,15 +4853,8 @@ serve(async (req) => {
       });
     };
 
-  const safeFallback = (reason: string, error?: string) => {
-    console.log("🚨 FALLBACK TRIGGERED:", reason);
-    if (error) console.log("🚨 FALLBACK ERROR:", error);
-    const payload = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, level);
-    if (effectiveMode === "enrichment") {
-      return returnEnrichment(payload);
-    }
-    return returnCore(payload);
-  };
+  const aiErrorResponse = (reason: string, status = 502) =>
+    jsonResponse({ error: reason }, status);
 
   try {
     const supabase = createClient(
@@ -5319,8 +4967,9 @@ serve(async (req) => {
     }
 
     if (effectiveMode === "support") {
-      const core = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, level);
-      const practiceQuestions = core.practice?.questions || [];
+      const practiceQuestions = Array.isArray(body.practiceQuestions)
+        ? body.practiceQuestions as Question[]
+        : [];
       const bodyCross = body?.cross && typeof body.cross === "object"
         ? body.cross as Record<string, unknown>
         : {};
@@ -5335,7 +4984,7 @@ serve(async (req) => {
         "Practice",
         effectiveSkill,
         level,
-        getPassageText(core.passage || ""),
+        getPassageText(String(body.passage || "")),
         grade,
       );
       const crossQuestionSet = sanitizeQuestions(
@@ -5348,7 +4997,7 @@ serve(async (req) => {
         grade,
       );
       const supportFinalized = enforceSingleSourceOfTruth({
-        passage: getPassageText(core.passage || ""),
+        passage: getPassageText(String(body.passage || "")),
         practice: { questions: practiceQuestionSet },
         cross: { passage: crossPassage, questions: crossQuestionSet },
         tutor: { practice: [], cross: [] },
@@ -5372,7 +5021,7 @@ serve(async (req) => {
     const range = subject === "Reading" ? readingRange : { min: 250, max: 300 };
 
     let attempts = 0;
-    const MAX_ATTEMPTS = 2;
+    const MAX_ATTEMPTS = 1;
     const start = Date.now();
     const MAX_TIMEOUT_MS = 20000;
     const isTimedOut = () => Date.now() - start > MAX_TIMEOUT_MS;
@@ -5397,7 +5046,7 @@ serve(async (req) => {
           return returnCore(bestAttempt);
         }
         markRetry("no_questions_returned");
-        console.warn("⚠️ FALLBACK TRIGGERED: exceeded max time");
+        console.warn("⚠️ Timed out before generating questions");
         break;
       }
       attempts++;
@@ -5659,8 +5308,7 @@ serve(async (req) => {
         const corePassageFromRequest = typeof body.passage === "string"
           ? String(body.passage || "").trim()
           : "";
-        const fallbackPracticePassage = fallbackPassageContent(effectiveSubject, "Practice", grade, effectiveSkill, level);
-        const corePassageForChecks = corePassageFromRequest || getPassageText(fallbackPracticePassage);
+        const corePassageForChecks = corePassageFromRequest;
         const normalizedPractice = sanitizeQuestions(
           priorPractice,
           effectiveSubject,
@@ -5675,9 +5323,7 @@ serve(async (req) => {
           continue;
         }
         console.log("🧠 CROSS SUBJECT:", effectiveSubject);
-        const crossContent = effectiveSubject === "Reading"
-          ? buildELARFallback(level)
-          : buildSubjectCrossContent(effectiveSubject, level);
+        const crossContent = buildSubjectCrossContent(effectiveSubject, level);
         const baseCrossPassage = crossContent.passage;
         if (baseCrossPassage === corePassageForChecks) {
           console.log("⚠️ Cross passage duplication detected");
@@ -5694,10 +5340,7 @@ serve(async (req) => {
             grade,
             level,
           );
-          const gradeSafeCrossPassage = violatesGradeLevel(crossPassage, grade)
-            ? (console.warn("⚠️ Passage too advanced for grade:", grade),
-              getPassageText(fallbackPassageContent(effectiveSubject, "Cross-Curricular", grade, effectiveSkill, level)))
-            : enforceSentenceLength(crossPassage, constraints.maxWordsPerSentence);
+          const gradeSafeCrossPassage = enforceSentenceLength(crossPassage, constraints.maxWordsPerSentence);
           const crossQuestions = sanitizeQuestions(
             crossContent.questions || [],
             effectiveSubject,
@@ -5880,8 +5523,7 @@ serve(async (req) => {
         );
         subjectCrossPassage = enforceSentenceLength(subjectCrossPassage, constraints.maxWordsPerSentence);
         if (violatesGradeLevel(subjectCrossPassage, grade)) {
-          console.warn("⚠️ Passage too advanced for grade:", grade);
-          subjectCrossPassage = getPassageText(fallbackPassageContent(effectiveSubject, "Cross-Curricular", grade, effectiveSkill, level));
+          console.warn("⚠️ Passage too advanced for grade, keeping AI output");
         }
 
         let crossQuestions = sanitizeQuestions(
@@ -5934,7 +5576,7 @@ serve(async (req) => {
         const practiceAligned = validateTutorAnswerKeyAlignment(normalizedPractice, tutorPractice, answerKeyPractice, "practice");
         const crossAligned = validateTutorAnswerKeyAlignment(crossQuestions, tutorCross, answerKeyCross, "cross");
         if (!practiceAligned) {
-          console.warn("⚠️ Practice tutor misaligned — using fallback");
+          console.warn("⚠️ Practice tutor misaligned");
         }
 
         if (!crossAligned) {
@@ -5991,22 +5633,9 @@ serve(async (req) => {
       } catch (err) {
         console.error("BACKEND ERROR:", err);
         if (isTimedOut()) {
-          const partial = buildFallbackResponse(grade, effectiveSubject, effectiveSkill, level);
-          const partialPayload: CoreResponse = {
-            passage: subject === "Reading" ? getPassageText(partial.passage || "") : undefined,
-            practice: { questions: sanitizeQuestions(
-              partial.practice.questions || [],
-              effectiveSubject,
-              "Practice",
-              effectiveSkill,
-              level,
-              getPassageText(partial.passage || ""),
-              grade,
-            ).slice(0, 5) },
-          };
-          returnType = "PARTIAL_TIMEOUT";
+          returnType = "TIMEOUT";
           logReturnMetrics();
-          return returnCore(partialPayload);
+          return aiErrorResponse("generation_timeout", 504);
         }
         markRetry("no_questions_returned");
       }
@@ -6017,18 +5646,11 @@ serve(async (req) => {
       logReturnMetrics();
       return returnEnrichment(bestAttempt);
     }
-    if (attempts >= 2) {
-      console.log("🚨 FALLBACK TRIGGERED AFTER ATTEMPTS");
-      returnType = "FALLBACK";
-      logReturnMetrics();
-      return safeFallback(retryFailureReason);
-    }
-    console.warn("⚠️ NO RESULT — returning safe fallback");
-    returnType = "SAFE_FALLBACK";
+    returnType = "NO_RESULT";
     logReturnMetrics();
-    return safeFallback(retryFailureReason);
+    return aiErrorResponse(retryFailureReason);
   } catch (err) {
     console.error("🔥 EDGE FUNCTION ERROR:", err);
-    return safeFallback("no_questions_returned");
+    return aiErrorResponse("no_questions_returned", 500);
   }
 });
