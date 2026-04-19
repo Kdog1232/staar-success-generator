@@ -617,32 +617,38 @@ function buildNaturalAnswer(question: string, snippet: string, index: number): s
 }
 
 function rewriteWithPassageDetail(question: string, passage: string, choiceIndex = 0): string {
-  let snippet = "";
-  try {
-    snippet = extractEvidenceSnippet(
-      passage,
-      extractPassageKeywords(passage),
-      question,
-    ) || "";
-  } catch {
-    console.warn("Snippet extraction failed");
-  }
-  const cleaned = String(snippet || "").trim();
-
-  if (cleaned.length >= 40) {
-    return cleaned;
-  }
-
+  void question;
   const sentences = passage
     .split(/[.!?]/)
     .map((s) => s.trim())
     .filter((s) => s.length > 40);
 
   if (!sentences.length) {
-    return "The passage explains a key idea related to the question.";
+    return "The passage includes details that relate to the question's main idea.";
   }
 
-  return sentences[choiceIndex % sentences.length];
+  const base = sentences[choiceIndex % sentences.length];
+
+  switch (choiceIndex) {
+    case 0:
+      // Correct-style (clear reasoning)
+      return `${base}, which directly supports the main idea presented in the passage.`;
+
+    case 1:
+      // Misinterpretation
+      return `${base}, but this detail is interpreted incorrectly and does not fully support the idea.`;
+
+    case 2:
+      // Partial truth
+      return `${base}, but this only explains part of the situation and misses a key detail.`;
+
+    case 3:
+      // Overgeneralization
+      return `${base}, which leads to a conclusion that is too broad based on the evidence given.`;
+
+    default:
+      return base;
+  }
 }
 
 function buildMisconceptionChoice(correct: string, type: number): string {
