@@ -645,6 +645,37 @@ function rewriteWithPassageDetail(question: string, passage: string, choiceIndex
   return sentences[choiceIndex % sentences.length];
 }
 
+function buildMisconceptionChoice(correct: string, type: number): string {
+  switch (type) {
+    case 0:
+      // Overgeneralization
+      return correct.replace(/\b(some|often|can)\b/gi, "always");
+
+    case 1:
+      // Cause/effect confusion
+      return correct.replace(/\b(because|so|therefore)\b/gi, "even though");
+
+    case 2:
+      // Partial truth but wrong conclusion
+      return correct.length > 80
+        ? `${correct.slice(0, 60)} but this does not fully explain the outcome.`
+        : `${correct} but this does not fully explain the outcome.`;
+
+    case 3:
+      // Opposite reasoning
+      return correct.replace(/\b(increase|decrease|more|less)\b/gi, (match) => {
+        if (match === "increase") return "decrease";
+        if (match === "decrease") return "increase";
+        if (match === "more") return "less";
+        if (match === "less") return "more";
+        return match;
+      });
+
+    default:
+      return correct;
+  }
+}
+
 function strengthenChoices(choices: [string, string, string, string], passage: string): [string, string, string, string] {
   void passage;
   const strengthened = choices.map((choice) => String(choice || "").trim());
@@ -656,11 +687,8 @@ function sanitizeChoices(questions: Question[], passage: PassageContent | string
 
   return questions.map((q) => {
     let choices = Array.isArray(q?.choices) ? [...q.choices] : [];
-
-    while (choices.length < 4) {
-      choices.push(rewriteWithPassageDetail(q.question || "", passageText, choices.length));
-    }
     choices = choices.slice(0, 4);
+    while (choices.length < 4) choices.push("");
 
     const fixedChoices = choices.map((choice, i) => {
       const text = String(choice || "").trim();
@@ -680,33 +708,28 @@ function sanitizeChoices(questions: Question[], passage: PassageContent | string
       }
 
       if (!text || text.length < 25 || containsBanned(text)) {
-        return rewriteWithPassageDetail(q.question || "", passageText, i);
+        return i === 0 ? rewriteWithPassageDetail(q.question || "", passageText, i) : text;
       }
 
       return text;
     });
 
-    const uniqueChoices: string[] = [];
+    const baseCorrect = fixedChoices.find((c) =>
+      c.split(/\s+/).length >= 10 && !isGenericChoice(c)
+    ) || fixedChoices[0] || rewriteWithPassageDetail(q.question || "", passageText, 0);
 
-    for (const c of fixedChoices) {
-      if (!uniqueChoices.includes(c)) {
-        uniqueChoices.push(c);
-      }
-    }
-
-    while (uniqueChoices.length < 4) {
-      const next = rewriteWithPassageDetail(q.question || "", passageText, uniqueChoices.length);
-
-      if (!uniqueChoices.includes(next)) {
-        uniqueChoices.push(next);
+    const finalChoices: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      if (i === 0) {
+        finalChoices.push(baseCorrect);
       } else {
-        uniqueChoices.push(next + " (based on another detail)");
+        finalChoices.push(buildMisconceptionChoice(baseCorrect, i));
       }
     }
 
     return {
       ...q,
-      choices: normalizeChoices(uniqueChoices.slice(0, 4)),
+      choices: normalizeChoices(finalChoices),
     };
   });
 }
