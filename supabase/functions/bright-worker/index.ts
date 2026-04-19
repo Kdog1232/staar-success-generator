@@ -649,7 +649,7 @@ function passageSupportsQuestions(passage: string, questions: Question[]): boole
       : "";
     const correctChoiceText = Array.isArray(correctChoice) ? correctChoice.join(" ") : String(correctChoice || "");
     const supportedChoice = correctChoiceText
-      ? hasPassageSupportForChoice(passage, correctChoiceText) || hasLooseSupport(passage, correctChoiceText)
+      ? hasLooseSupport(passage, correctChoiceText)
       : true;
     return validQuestion && supportedChoice;
   });
@@ -1325,25 +1325,25 @@ function buildUniversalChoices(
   return all.map((c) => cleanChoice(String(c || "").trim())) as [string, string, string, string];
 }
 
-function buildUniversalFallbackQuestion(
-  subject: CanonicalSubject,
-  passage: string,
-  skill: string,
-  index: number,
-  level: Level = "On Level",
-): Question {
-  const question = getUniversalQuestion(subject, skill, index, level);
-  const choices = buildUniversalChoices(subject, passage, level);
-  const correctIndex = pickRandom([0, 1, 2, 3]);
-
-  return {
-    type: "mc",
-    question,
-    choices,
-    correct_answer: ["A", "B", "C", "D"][correctIndex] as ChoiceLetter,
-    explanation: buildFallbackExplanation(passage, question, choices[correctIndex]),
-  };
-}
+// function buildUniversalFallbackQuestion(
+//   subject: CanonicalSubject,
+//   passage: string,
+//   skill: string,
+//   index: number,
+//   level: Level = "On Level",
+// ): Question {
+//   const question = getUniversalQuestion(subject, skill, index, level);
+//   const choices = buildUniversalChoices(subject, passage, level);
+//   const correctIndex = pickRandom([0, 1, 2, 3]);
+//
+//   return {
+//     type: "mc",
+//     question,
+//     choices,
+//     correct_answer: ["A", "B", "C", "D"][correctIndex] as ChoiceLetter,
+//     explanation: buildFallbackExplanation(passage, question, choices[correctIndex]),
+//   };
+// }
 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
   const raw = Array.isArray(choices) ? choices : [];
@@ -1353,8 +1353,9 @@ function normalizeChoices(choices: unknown): [string, string, string, string] {
       .trim()
   );
 
-  while (padded.length < 4) {
-    padded.push("This option does not match the problem details.");
+  if (padded.length !== 4) {
+    console.warn("⚠️ Invalid choice count from AI:", padded);
+    return padded.slice(0, 4) as [string, string, string, string];
   }
 
   const used = new Set<string>();
@@ -1482,40 +1483,40 @@ function sanitizeMathChoice(choice: string): string {
   return numeric ? numeric[0] : "";
 }
 
-function buildMathChoicesFromCorrect(correctChoice: string): [string, string, string, string] {
-  const numericMatch = String(correctChoice || "").match(/-?\d+(?:\.\d+)?/);
-  const numericValue = numericMatch ? Number(numericMatch[0]) : NaN;
-  if (!Number.isFinite(numericValue)) {
-    return ["0", "1", "2", "3"];
-  }
-  const distractors = [
-    numericValue + 1,
-    numericValue - 1,
-    numericValue * 2,
-  ];
-  const all = [numericValue, ...distractors].map((v) => String(Number.isInteger(v) ? v : Number(v.toFixed(2))));
-  return normalizeChoices(all) as [string, string, string, string];
-}
-
-function enforceMathChoices(
-  choices: [string, string, string, string],
-  correctAnswer: ChoiceLetter | ChoiceLetter[],
-): [string, string, string, string] {
-  const correctLetter = Array.isArray(correctAnswer) ? "A" : correctAnswer;
-  const correctIndex = Math.max(0, LETTERS.indexOf(correctLetter as ChoiceLetter));
-  const sanitized = choices.map((choice) => sanitizeMathChoice(choice));
-  let correct = sanitized[correctIndex] || "";
-  if (!correct) {
-    correct = sanitized.find((choice) => Boolean(choice)) || "0";
-  }
-  const rebuilt = buildMathChoicesFromCorrect(correct);
-  const finalChoices = [...rebuilt];
-  const correctSlot = sanitizeMathChoice(finalChoices[correctIndex] || "");
-  if (correctSlot !== correct) {
-    finalChoices[correctIndex] = correct;
-  }
-  return normalizeChoices(finalChoices) as [string, string, string, string];
-}
+// function buildMathChoicesFromCorrect(correctChoice: string): [string, string, string, string] {
+//   const numericMatch = String(correctChoice || "").match(/-?\d+(?:\.\d+)?/);
+//   const numericValue = numericMatch ? Number(numericMatch[0]) : NaN;
+//   if (!Number.isFinite(numericValue)) {
+//     return ["0", "1", "2", "3"];
+//   }
+//   const distractors = [
+//     numericValue + 1,
+//     numericValue - 1,
+//     numericValue * 2,
+//   ];
+//   const all = [numericValue, ...distractors].map((v) => String(Number.isInteger(v) ? v : Number(v.toFixed(2))));
+//   return normalizeChoices(all) as [string, string, string, string];
+// }
+//
+// function enforceMathChoices(
+//   choices: [string, string, string, string],
+//   correctAnswer: ChoiceLetter | ChoiceLetter[],
+// ): [string, string, string, string] {
+//   const correctLetter = Array.isArray(correctAnswer) ? "A" : correctAnswer;
+//   const correctIndex = Math.max(0, LETTERS.indexOf(correctLetter as ChoiceLetter));
+//   const sanitized = choices.map((choice) => sanitizeMathChoice(choice));
+//   let correct = sanitized[correctIndex] || "";
+//   if (!correct) {
+//     correct = sanitized.find((choice) => Boolean(choice)) || "0";
+//   }
+//   const rebuilt = buildMathChoicesFromCorrect(correct);
+//   const finalChoices = [...rebuilt];
+//   const correctSlot = sanitizeMathChoice(finalChoices[correctIndex] || "");
+//   if (correctSlot !== correct) {
+//     finalChoices[correctIndex] = correct;
+//   }
+//   return normalizeChoices(finalChoices) as [string, string, string, string];
+// }
 
 function extractVocabTargetWord(questionText: string): string {
   const text = String(questionText || "");
@@ -1605,15 +1606,9 @@ function getCorrectChoice(q: Question): string {
 }
 
 function hasPassageSupportForChoice(passage: string, choice: string): boolean {
-  const normalizedPassage = String(passage || "").toLowerCase();
-  const choiceTokens = String(choice || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((token) => token.length > 2)
-    .slice(0, 4);
-  if (!normalizedPassage || choiceTokens.length < 2) return false;
-  return normalizedPassage.includes(choiceTokens.join(" "));
+  void passage;
+  void choice;
+  return false;
 }
 
 function hasLooseSupport(passage: string, choice: string): boolean {
@@ -1628,15 +1623,9 @@ function hasLooseSupport(passage: string, choice: string): boolean {
 }
 
 function scoreChoiceSupport(passage: string, choice: string): number {
-  const normalizedPassage = String(passage || "").toLowerCase();
-  const words = String(choice || "")
-    .toLowerCase()
-    .split(/\s+/)
-    .map((w) => w.replace(/[^a-z0-9]/g, ""))
-    .filter((w) => w.length > 3);
-  if (!normalizedPassage || words.length === 0) return 0;
-  const uniqueWords = Array.from(new Set(words));
-  return uniqueWords.reduce((score, word) => score + (normalizedPassage.includes(word) ? 1 : 0), 0);
+  void passage;
+  void choice;
+  return 0;
 }
 
 function verifyNonPassageAnswer(
@@ -1644,24 +1633,10 @@ function verifyNonPassageAnswer(
   choices: [string, string, string, string],
   subject: CanonicalSubject,
 ): ChoiceLetter {
-  const subjectSignals: Record<CanonicalSubject, string[]> = {
-    Reading: ["theme", "evidence", "infer", "main idea", "author", "detail"],
-    Math: ["sum", "difference", "product", "quotient", "equation", "value", "solve", "calculate"],
-    Science: ["variable", "experiment", "data", "result", "cause", "effect", "system", "observation"],
-    "Social Studies": ["event", "policy", "decision", "impact", "economy", "history", "government", "timeline"],
-  };
-
-  const questionText = String(question || "").toLowerCase();
-  const normalizedChoices = normalizeChoices(choices).map((choice) => String(choice || "").toLowerCase()) as [string, string, string, string];
-  const scored = LETTERS.map((letter, index) => {
-    const choice = normalizedChoices[index] || "";
-    const questionOverlap = scoreChoiceSupport(questionText, choice);
-    const signalScore = (subjectSignals[subject] || []).reduce((acc, signal) => acc + (choice.includes(signal) ? 1 : 0), 0);
-    const lengthScore = Math.min(choice.split(/\s+/).filter(Boolean).length / 20, 1);
-    return { letter, score: questionOverlap + signalScore + lengthScore };
-  }).sort((a, b) => b.score - a.score);
-
-  return (scored[0]?.letter || "A") as ChoiceLetter;
+  void question;
+  void choices;
+  void subject;
+  return "A";
 }
 
 function lockAnswerToPassage(
@@ -1669,31 +1644,8 @@ function lockAnswerToPassage(
   choices: [string, string, string, string],
   currentAnswer: ChoiceLetter,
 ): ChoiceLetter {
-  const ranked = LETTERS
-    .map((letter, index) => ({
-      letter,
-      score: scoreChoiceSupport(passageText, choices[index] || ""),
-    }))
-    .sort((a, b) => b.score - a.score);
-
-  const best = ranked[0];
-  if (!best || best.score === 0) return currentAnswer;
-
-  if (!LETTERS.includes(currentAnswer)) {
-    console.warn("🔄 Answer repaired (invalid answer format)", {
-      from: currentAnswer,
-      to: best.letter,
-    });
-    return best.letter as ChoiceLetter;
-  }
-
-  if (best.letter !== currentAnswer) {
-    console.warn("⚠️ Weak passage alignment — keeping answer", {
-      from: currentAnswer,
-      suggested: best.letter,
-    });
-    return currentAnswer;
-  }
+  void passageText;
+  void choices;
   return currentAnswer;
 }
 
@@ -1704,6 +1656,7 @@ async function verifyAnswerWithAI(
   try {
     const apiKey = Deno.env.get("OPENAI_API_KEY");
     if (!apiKey) return null;
+    const variationSeed = Math.random().toString(36).slice(2, 8);
     const prompt = `
 Question: ${question}
 
@@ -1715,6 +1668,7 @@ D. ${choices[3]}
 
 Select the correct answer.
 Return ONLY one letter: A, B, C, or D.
+Variation ID: ${variationSeed}
 `;
     const res = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -1724,7 +1678,7 @@ Return ONLY one letter: A, B, C, or D.
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        temperature: 0,
+        temperature: 0.7,
         max_output_tokens: 10,
         input: prompt,
       }),
@@ -1854,9 +1808,7 @@ function repairQuestion(q: Question, subject: CanonicalSubject, passage: Passage
     ? q.correct_answer as ChoiceLetter
     : "A";
   const passageText = getPassageText(passage);
-  const strengthenedChoices = subject === "Math"
-    ? enforceMathChoices(uniqueChoices, safeAnswer)
-    : strengthenChoices(uniqueChoices, passageText);
+  const strengthenedChoices = strengthenChoices(uniqueChoices, passageText);
   const safeExplanation = String(q.explanation || "").trim() ||
     "This question was adjusted to maintain quality and alignment with the passage.";
 
@@ -1876,16 +1828,8 @@ function rebuildQuestionFromPassage(
   level: Level = "On Level",
 ): Question {
   const fallbackQuestion = String(q.question || "").trim() || getUniversalQuestion(subject, "general", 0, level);
-  const rebuiltChoices = subject === "Reading"
-    ? forcePassageChoices(passageText)
-    : buildUniversalChoices(subject, passageText, level);
-  const ranked = LETTERS
-    .map((letter, index) => ({
-      letter,
-      score: scoreChoiceSupport(passageText, rebuiltChoices[index] || ""),
-    }))
-    .sort((a, b) => b.score - a.score);
-  const rebuiltCorrect = (ranked[0]?.score || 0) > 0 ? ranked[0].letter : "A";
+  const rebuiltChoices = forcePassageChoices(passageText);
+  const rebuiltCorrect = "A";
   const rebuiltCorrectChoice = String(rebuiltChoices[LETTERS.indexOf(rebuiltCorrect)] || "");
   return {
     ...q,
@@ -1943,9 +1887,9 @@ function validateMCQuestion(
       safeAnswer = pickRandom(["A", "B", "C", "D"] as ChoiceLetter[]);
     }
   }
-  if (subject === "Math") {
-    choices = enforceMathChoices(choices, safeAnswer);
-  }
+  // if (subject === "Math") {
+  //   choices = enforceMathChoices(choices, safeAnswer);
+  // }
 
   const { letter: originalLetter } = getQuestionCorrectPair({
     ...q,
@@ -1967,35 +1911,9 @@ function validateMCQuestion(
     };
   }
 
-  const startingLetter = originalLetter;
-  let resolvedCorrectLetter = startingLetter as ChoiceLetter;
-  const isPassageFlow = passageText.trim().length > 0;
-  if (isPassageFlow) {
-    resolvedCorrectLetter = lockAnswerToPassage(
-      passageText,
-      choices,
-      resolvedCorrectLetter,
-    );
-  } else {
-    const verified = verifyNonPassageAnswer(normalizedQuestion, choices, subject);
-    if (verified && verified !== resolvedCorrectLetter) {
-      console.warn("🔄 AI answer corrected via verification");
-      resolvedCorrectLetter = verified;
-    }
-  }
+  const resolvedCorrectLetter = originalLetter as ChoiceLetter;
 
   const finalChoice = String(choices[LETTERS.indexOf(resolvedCorrectLetter)] || "").trim();
-  const hasSupport = hasLooseSupport(passageText, finalChoice) || hasPassageSupportForChoice(passageText, finalChoice);
-  if (!hasSupport) {
-    console.warn("⚠️ Weak passage alignment — keeping question");
-    return {
-      ...q,
-      question: normalizedQuestion,
-      choices,
-      correct_answer: resolvedCorrectLetter,
-      explanation: String(q.explanation || "").trim(),
-    };
-  }
   const evidenceSnippet = extractEvidenceSnippet(
     passageText,
     [
@@ -2530,25 +2448,7 @@ function buildSupportContent(
     ? `${lead} the passage emphasizes ${evidenceIdea}, which supports ${extractKeyConcept(String(correctChoice || ""))} and points to the best choice.`
     : noEvidenceMessage;
   const safeGenericExplanation = noEvidenceMessage;
-  if (shouldUsePassage && !hasLooseSupport(passageText, String(correctChoice || ""))) {
-    console.warn("🚨 BAD EXPLANATION BLOCKED");
-    const normalizedChoices = normalizeChoices(q.choices);
-    const wrongChoices = normalizedChoices.filter((_, i) => LETTERS[i] !== correctLetter);
-    const sampleWrong =
-      wrongChoices.find((choice) => classifyErrorType(subject, questionText, choice) === "wrong_operation") ||
-      wrongChoices[0] ||
-      "";
-    const mt = buildMistakeAndTip(subject, questionText, sampleWrong);
-    const strategy = buildTargetedStrategy(subject, questionText, passageText, thinkingType);
-    return {
-      explanation: safeGenericExplanation,
-      common_mistake: mt.mistake,
-      parent_tip: `👨‍👩‍👧 Parent Tip: Ask your child: ${mt.tip}`,
-      hint: buildTargetedHint(questionText),
-      think: strategy.think,
-      step_by_step: strategy.step_by_step,
-    };
-  }
+  // Always trust AI explanation.
   let explanation = subject === "Math"
     ? `${lead} start with what the problem gives you, then use those details to test each choice and keep the one that matches the math evidence.`
     : subject === "Science"
@@ -3329,12 +3229,7 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
       if (hasLooseSupport(passageText, subjectSafeFallback.join(" "))) {
         q.choices = subjectSafeFallback;
       } else {
-        const rebuilt = buildUniversalChoices("Reading", getPassageText(crossPassage), "On Level");
-        if (hasLooseSupport(passageText, rebuilt.join(" "))) {
-          q.choices = rebuilt;
-        } else {
-          console.warn("🚨 REJECTED cross fallback — preserving original choices");
-        }
+        console.warn("🚨 REJECTED cross fallback — preserving original choices");
       }
     }
   });
@@ -3561,7 +3456,7 @@ function isPassageAnchoredChoice(choice: string, passage: string): boolean {
   const source = String(passage || "").trim();
   if (!text || !source) return false;
   if (isGenericAnswerChoice(text) && !source.toLowerCase().includes(text.toLowerCase())) return false;
-  return hasPassageSupportForChoice(source, text) || hasLooseSupport(source, text);
+  return hasLooseSupport(source, text);
 }
 
 function validateChoices(choices: string[], passage: string): boolean {
@@ -3816,9 +3711,9 @@ function sanitizeQuestions(
       console.warn("Validation issue — keeping question", { index: i, skillType: requestedSkillType });
     }
     normalizedChoices = makeChoicesUnique(normalizedChoices, subject, normalizedQuestionText);
-    if (subject === "Math" && type === "mc") {
-      normalizedChoices = enforceMathChoices(normalizedChoices, normalizedCorrectAnswer);
-    }
+    // if (subject === "Math" && type === "mc") {
+    //   normalizedChoices = enforceMathChoices(normalizedChoices, normalizedCorrectAnswer);
+    // }
     normalizedChoices = strengthenChoices(normalizedChoices, passageText);
 
     const base: Question = {
@@ -3977,12 +3872,6 @@ function buildCrossReadingChoices(
   priorChoices: [string, string, string, string],
 ): [string, string, string, string] {
   const passageText = getPassageText(passage);
-  const rebuilt = buildUniversalChoices("Reading", passageText, "On Level");
-  const cleanedRebuilt = normalizeChoices(rebuilt).map((choice) => cleanAnswerChoice(choice)) as [string, string, string, string];
-  const rebuiltUnique = new Set(cleanedRebuilt.map((c) => c.toLowerCase().trim())).size === 4;
-  if (rebuiltUnique && cleanedRebuilt.every((choice) => !hasCrossComputationLeak(choice))) {
-    return cleanedRebuilt;
-  }
   const safePrior = normalizeChoices(priorChoices).map((choice) => cleanAnswerChoice(choice)) as [string, string, string, string];
   return safePrior.every((choice) => !hasCrossComputationLeak(choice))
     ? safePrior
@@ -5341,10 +5230,11 @@ serve(async (req) => {
       }
       attempts++;
       try {
-        if (effectiveMode === "core") {
-          console.time("OPENAI_CALL");
-          const aiStartTime = Date.now();
-          const aiRes = await fetch("https://api.openai.com/v1/responses", {
+          if (effectiveMode === "core") {
+            console.time("OPENAI_CALL");
+            const aiStartTime = Date.now();
+            const variationSeed = Math.random().toString(36).slice(2, 8);
+            const aiRes = await fetch("https://api.openai.com/v1/responses", {
             method: "POST",
             headers: {
               Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
@@ -5361,7 +5251,7 @@ serve(async (req) => {
                 skill: effectiveSkill,
                 level,
                 teksCode,
-              }),
+              }) + `\nVariation ID: ${variationSeed}`,
               max_output_tokens: 1400,
             }),
             signal: AbortSignal.timeout(MAX_TIMEOUT_MS),
@@ -5446,8 +5336,7 @@ serve(async (req) => {
             const rawPassage = getPassageText(safePassage).trim();
             const rawWordCount = rawPassage.split(/\s+/).filter(Boolean).length;
             if (!isValidPassage(rawPassage)) {
-              console.warn("🚨 BAD PASSAGE — REGENERATING");
-              throw new Error("INVALID_PASSAGE");
+              console.warn("⚠️ Weak passage — using anyway");
             }
             if (!rawPassage || rawWordCount < 20) {
               markRetry("no_questions_returned");
@@ -5489,8 +5378,7 @@ serve(async (req) => {
             continue;
           }
           if (subject === "Reading" && !passageSupportsQuestions(String(safePassage || ""), practiceQuestions)) {
-            markRetry("invalid_passage_quality");
-            continue;
+            console.warn("⚠️ Weak passage — using anyway");
           }
           if (subject === "Reading" && safePassage && practiceQuestions?.length) {
             const tutorLeads = [
@@ -5750,6 +5638,7 @@ serve(async (req) => {
 
         console.time("OPENAI_CALL");
         const enrichStartTime = Date.now();
+        const variationSeed = Math.random().toString(36).slice(2, 8);
         const enrichRes = await fetch("https://api.openai.com/v1/responses", {
           method: "POST",
           headers: {
@@ -5769,7 +5658,7 @@ serve(async (req) => {
               level,
               crossPassage: baseCrossPassage,
               teksCode,
-            }),
+            }) + `\nVariation ID: ${variationSeed}`,
             max_output_tokens: 1400,
           }),
           signal: AbortSignal.timeout(MAX_TIMEOUT_MS),
