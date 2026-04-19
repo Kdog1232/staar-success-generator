@@ -584,15 +584,80 @@ function isGenericChoice(choice: string): boolean {
   return GENERIC_ANSWER_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
-function rewriteWithPassageDetail(questionOrChoice: string, passage: string, choiceIndex?: number): string {
-  const promptSeed = typeof choiceIndex === "number"
-    ? `${String(questionOrChoice || "").trim()} option ${choiceIndex + 1}`
-    : String(questionOrChoice || "").trim();
-  const snippet = extractEvidenceSnippet(passage, extractPassageKeywords(passage), promptSeed);
-  if (snippet) {
-    return `The passage explains that ${snippet.toLowerCase()}.`;
+function generateFallbackChoice(question: string, choiceIndex = 0): string {
+  const stem = String(question || "").trim().replace(/\?+$/, "");
+  const fallbackBank = [
+    `The evidence supports one clear conclusion about ${stem.toLowerCase() || "the topic"} when details are compared carefully.`,
+    `A stronger interpretation connects multiple details about ${stem.toLowerCase() || "the topic"} instead of relying on one line.`,
+    `The best-supported idea about ${stem.toLowerCase() || "the topic"} comes from matching details to the question exactly.`,
+    `A careful reader can infer from the details that ${stem.toLowerCase() || "the topic"} follows a clear evidence pattern.`,
+  ];
+  return fallbackBank[Math.abs(choiceIndex) % fallbackBank.length];
+}
+
+function buildNaturalAnswer(question: string, snippet: string, index: number): string {
+  const q = String(question || "").toLowerCase();
+  const compactSnippet = String(snippet || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const snippetIdea = compactSnippet
+    .split(/[.!?]/)[0]
+    ?.replace(/\b(the passage|the text)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[,;:\-\s]+/, "")
+    .replace(/[,:;\-\s]+$/, "") || "key evidence in the text";
+
+  if (q.includes("theme")) {
+    const themeBank = [
+      "The passage suggests that people solve problems by comparing ideas before making final decisions.",
+      "A key message is that careful evidence-based choices lead to better outcomes over time.",
+      "The text emphasizes that thoughtful decisions require weighing details from more than one viewpoint.",
+      "The passage shows that strong decisions come from reflection, evidence, and responsible action.",
+    ];
+    return themeBank[Math.abs(index) % themeBank.length];
   }
-  return promptSeed || "The passage provides details that support this idea.";
+
+  if (q.includes("infer") || q.includes("inference")) {
+    const inferenceBank = [
+      `The details suggest that ${snippetIdea.toLowerCase()} supports a conclusion built from evidence rather than assumptions.`,
+      `The evidence indicates that ${snippetIdea.toLowerCase()} helps readers infer a reasoned conclusion.`,
+      `From these details, readers can conclude that ${snippetIdea.toLowerCase()} is the most supported interpretation.`,
+      `The information implies that ${snippetIdea.toLowerCase()} leads to a conclusion grounded in text evidence.`,
+    ];
+    return inferenceBank[Math.abs(index) % inferenceBank.length];
+  }
+
+  if (q.includes("purpose")) {
+    const purposeBank = [
+      "The author includes this information to show how evidence guides better decisions in real situations.",
+      "This detail is used to explain why comparing evidence leads to more reliable conclusions.",
+      "The author presents this process to demonstrate how careful analysis strengthens final judgments.",
+      "This information helps readers understand that evidence-based reasoning improves decision quality.",
+    ];
+    return purposeBank[Math.abs(index) % purposeBank.length];
+  }
+
+  const generalBank = [
+    `The information shows that ${snippetIdea.toLowerCase()} supports the strongest conclusion when details are analyzed carefully.`,
+    `A logical interpretation is that ${snippetIdea.toLowerCase()} helps explain the most accurate conclusion.`,
+    `The strongest answer connects ${snippetIdea.toLowerCase()} to a conclusion supported by multiple details.`,
+    `The details indicate that ${snippetIdea.toLowerCase()} leads to a clearer and more accurate understanding.`,
+  ];
+  return generalBank[Math.abs(index) % generalBank.length];
+}
+
+function rewriteWithPassageDetail(question: string, passage: string, choiceIndex = 0): string {
+  const snippet = extractEvidenceSnippet(
+    passage,
+    extractPassageKeywords(passage),
+    question,
+  );
+  const cleanedSnippet = String(snippet || "").trim();
+  if (!cleanedSnippet) {
+    return generateFallbackChoice(question, choiceIndex);
+  }
+  return buildNaturalAnswer(question, cleanedSnippet, choiceIndex);
 }
 
 function strengthenChoices(choices: [string, string, string, string], passage: string): [string, string, string, string] {
