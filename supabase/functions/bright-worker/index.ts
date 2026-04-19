@@ -750,7 +750,10 @@ function sanitizeChoices(questions: Question[], passage: PassageContent | string
 function sanitizeExplanations(questions: Question[], passage: PassageContent | string): Question[] {
   return questions.map((q) => {
     const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
-    const correctChoice = getChoiceByLetter(q, correctLetter);
+    const correctChoiceRaw = getChoiceByLetter(q, correctLetter);
+    const correctChoice = Array.isArray(correctChoiceRaw)
+      ? correctChoiceRaw.join(" ")
+      : correctChoiceRaw;
     const fallbackExplanation = teacherStyleExplanation(passage, q.question, correctChoice);
     return {
       ...q,
