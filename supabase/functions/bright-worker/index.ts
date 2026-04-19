@@ -653,7 +653,7 @@ function buildNaturalAnswer(question: string, snippet: string, index: number): s
     `The strongest answer connects ${snippetIdea.toLowerCase()} to a conclusion supported by multiple details.`,
     `The details indicate that ${snippetIdea.toLowerCase()} leads to a clearer and more accurate understanding.`,
   ];
-  return generalBank[Math.abs(index) % generalBank.length];
+  return generalBank[Math.floor(Math.random() * generalBank.length)];
 }
 
 function rewriteWithPassageDetail(question: string, passage: string, choiceIndex = 0): string {
@@ -671,9 +671,7 @@ function rewriteWithPassageDetail(question: string, passage: string, choiceIndex
   if (!cleanedSnippet) {
     return generateFallbackChoice(question, choiceIndex);
   }
-  return Math.random() > 0.5
-    ? buildNaturalAnswer(question, cleanedSnippet, choiceIndex)
-    : generateFallbackChoice(question, choiceIndex);
+  return buildNaturalAnswer(question, cleanedSnippet, choiceIndex);
 }
 
 function strengthenChoices(choices: [string, string, string, string], passage: string): [string, string, string, string] {
@@ -695,16 +693,21 @@ function sanitizeChoices(questions: Question[], passage: PassageContent | string
 
     const fixedChoices = choices.map((choice, i) => {
       const text = String(choice || "").trim();
+      const hasEvidenceSupport = hasPassageSupportForChoice(passageText, text);
+      const hasReasoningLanguage =
+        /because|therefore|suggests|implies|shows|indicates|leads to|reveals|demonstrates|supports|explains/i.test(text);
 
       const isWeak =
         !text ||
         containsBanned(text) ||
-        text.split(/\s+/).length < 5;
+        text.split(/\s+/).length < 8 ||
+        (!hasEvidenceSupport && !hasReasoningLanguage);
 
       const looksStrong =
-        text.length > 60 &&
+        text.split(/\s+/).length >= 8 &&
         !isGenericChoice(text) &&
-        !containsBanned(text);
+        !containsBanned(text) &&
+        (hasEvidenceSupport || hasReasoningLanguage);
 
       if (looksStrong) {
         return text; // DO NOT TOUCH GOOD ANSWERS
@@ -717,9 +720,29 @@ function sanitizeChoices(questions: Question[], passage: PassageContent | string
       return text;
     });
 
+    const normalized = (s: string) =>
+      s.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 80);
+
+    const seen = new Set<string>();
+    const uniqueChoices: string[] = [];
+
+    for (const c of fixedChoices) {
+      const key = normalized(c);
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueChoices.push(c);
+      }
+    }
+
+    while (uniqueChoices.length < 4) {
+      uniqueChoices.push(
+        rewriteWithPassageDetail(q.question || "", passageText, uniqueChoices.length),
+      );
+    }
+
     return {
       ...q,
-      choices: normalizeChoices(fixedChoices),
+      choices: normalizeChoices(uniqueChoices.slice(0, 4)),
     };
   });
 }
