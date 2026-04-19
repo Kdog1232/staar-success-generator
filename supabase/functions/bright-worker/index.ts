@@ -696,62 +696,9 @@ function strengthenChoices(choices: [string, string, string, string], passage: s
 }
 
 function sanitizeChoices(questions: Question[], passage: PassageContent | string): Question[] {
-  const passageText = getPassageText(passage);
-
-  return questions.map((q) => {
-    let choices = Array.isArray(q?.choices) ? [...q.choices] : [];
-    choices = choices.slice(0, 4);
-    while (choices.length < 4) choices.push("");
-
-    const fixedChoices = choices.map((choice, i) => {
-      const text = String(choice || "").trim();
-
-      const hasEvidenceSupport = hasPassageSupportForChoice(passageText, text);
-      const hasReasoningLanguage =
-        /because|therefore|suggests|implies|shows|indicates|leads to|reveals|demonstrates|supports|explains/i.test(text);
-
-      const looksStrong =
-        text.split(/\s+/).length >= 8 &&
-        !isGenericChoice(text) &&
-        !containsBanned(text) &&
-        (hasEvidenceSupport || hasReasoningLanguage);
-
-      if (looksStrong) {
-        return text; // DO NOT TOUCH GOOD ANSWERS
-      }
-
-      if (!text || text.length < 25 || containsBanned(text)) {
-        return rewriteWithPassageDetail(q.question || "", passageText, i);
-      }
-
-      return text;
-    });
-
-    let finalChoices = fixedChoices.map((choice, i) => {
-      const text = String(choice || "").trim();
-
-      // Keep strong answers
-      if (text.split(/\s+/).length >= 8 && !isGenericChoice(text)) {
-        return text;
-      }
-
-      // Fix weak answers ONLY
-      return rewriteWithPassageDetail(q.question || "", passageText, i);
-    });
-
-    const uniqueChoices = new Set(finalChoices.map((c) => c.toLowerCase()));
-    if (uniqueChoices.size < 4) {
-      finalChoices = finalChoices.map((c, i) => {
-        void c;
-        return rewriteWithPassageDetail(q.question || "", passageText, i);
-      });
-    }
-
-    return {
-      ...q,
-      choices: normalizeChoices(finalChoices),
-    };
-  });
+  void passage;
+  // TEMPORARY TEST: bypass sanitize logic to inspect raw AI output.
+  return questions;
 }
 
 function sanitizeExplanations(questions: Question[], passage: PassageContent | string): Question[] {
