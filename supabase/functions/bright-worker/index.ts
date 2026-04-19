@@ -714,18 +714,17 @@ function sanitizeChoices(questions: Question[], passage: PassageContent | string
       return text;
     });
 
-    const baseCorrect = fixedChoices.find((c) =>
-      c.split(/\s+/).length >= 10 && !isGenericChoice(c)
-    ) || fixedChoices[0] || rewriteWithPassageDetail(q.question || "", passageText, 0);
+    const finalChoices = fixedChoices.map((choice, i) => {
+      const text = String(choice || "").trim();
 
-    const finalChoices: string[] = [];
-    for (let i = 0; i < 4; i++) {
-      if (i === 0) {
-        finalChoices.push(baseCorrect);
-      } else {
-        finalChoices.push(buildMisconceptionChoice(baseCorrect, i));
+      // Keep strong answers
+      if (text.split(/\s+/).length >= 8 && !isGenericChoice(text)) {
+        return text;
       }
-    }
+
+      // Fix weak answers ONLY
+      return rewriteWithPassageDetail(q.question || "", passageText, i);
+    });
 
     return {
       ...q,
