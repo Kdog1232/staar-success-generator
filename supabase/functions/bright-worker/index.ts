@@ -604,91 +604,6 @@ function isValidPassage(passage: string): boolean {
   return sentences.length >= 3;
 }
 
-function buildNaturalAnswer(question: string, snippet: string, index: number): string {
-  void question;
-  void index;
-  const cleaned = String(snippet || "").trim();
-
-  if (!cleaned) {
-    return "A detail from the passage supports this idea.";
-  }
-
-  return cleaned;
-}
-
-function rewriteWithPassageDetail(question: string, passage: string, choiceIndex = 0): string {
-  void question;
-  const sentences = passage
-    .split(/[.!?]/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 40);
-
-  if (sentences.length < 2) {
-    return "The passage includes details that relate to the main idea.";
-  }
-
-  // 🔥 FORCE DIFFERENT SENTENCES
-  const usedIndexes = new Set<number>();
-  const getUniqueSentence = (indexOffset: number): string => {
-    let idx = (choiceIndex + indexOffset) % sentences.length;
-    while (usedIndexes.has(idx)) {
-      idx = (idx + 1) % sentences.length;
-    }
-    usedIndexes.add(idx);
-    return sentences[idx];
-  };
-
-  const base = getUniqueSentence(choiceIndex);
-
-  switch (choiceIndex) {
-    case 0:
-      return `${base}, which clearly supports the central idea developed in the passage.`;
-
-    case 1:
-      return `${getUniqueSentence(1)}, but this detail is taken out of context and does not fully support the idea.`;
-
-    case 2:
-      return `${getUniqueSentence(2)}, which is only partially related and misses an important part of the situation.`;
-
-    case 3:
-      return `${getUniqueSentence(3)}, leading to a conclusion that is too broad based on the information given.`;
-
-    default:
-      return base;
-  }
-}
-
-function buildMisconceptionChoice(correct: string, type: number): string {
-  switch (type) {
-    case 0:
-      // Overgeneralization
-      return correct.replace(/\b(some|often|can)\b/gi, "always");
-
-    case 1:
-      // Cause/effect confusion
-      return correct.replace(/\b(because|so|therefore)\b/gi, "even though");
-
-    case 2:
-      // Partial truth but wrong conclusion
-      return correct.length > 80
-        ? `${correct.slice(0, 60)} but this does not fully explain the outcome.`
-        : `${correct} but this does not fully explain the outcome.`;
-
-    case 3:
-      // Opposite reasoning
-      return correct.replace(/\b(increase|decrease|more|less)\b/gi, (match) => {
-        if (match === "increase") return "decrease";
-        if (match === "decrease") return "increase";
-        if (match === "more") return "less";
-        if (match === "less") return "more";
-        return match;
-      });
-
-    default:
-      return correct;
-  }
-}
-
 function strengthenChoices(choices: [string, string, string, string], passage: string): [string, string, string, string] {
   void passage;
   const strengthened = choices.map((choice) => String(choice || "").trim());
@@ -4385,22 +4300,11 @@ function sanitizeQuestions(
 
     const passageText = getPassageText(passage);
     let normalizedChoices = normalizeChoices(q.choices).map(cleanAnswerChoice) as [string, string, string, string];
-    if (isClearlyGenericChoices(normalizedChoices)) {
-      console.warn("🚨 Clearly generic answers detected — rewriting choices");
-      q.choices = rewriteChoicesFromPassage(passageText);
-      normalizedChoices = normalizeChoices(q.choices).map(cleanAnswerChoice) as [string, string, string, string];
-    }
     const normalizedCorrectAnswer = type === "multi_select"
       ? normalizeMultiSelectAnswer(q.correct_answer || "")
       : safeCorrectAnswer(q.correct_answer);
     const correctChoiceIndex = type === "mc" ? LETTERS.indexOf(normalizedCorrectAnswer as AnswerLetter) : -1;
-    const correctChoiceText = normalizedChoices[correctChoiceIndex >= 0 ? correctChoiceIndex : 0];
-    if (type === "mc" && normalizedChoices.some(isWeakDistractor)) {
-      const fixedDistractors = fixDistractors(subject, questionText, correctChoiceText, passage);
-      if (fixedDistractors.length > 0) {
-        normalizedChoices = normalizeChoices([correctChoiceText, ...fixedDistractors.slice(0, 3)]);
-      }
-    }
+    void correctChoiceIndex;
 
     const isReadingMainIdea = subject === "Reading" && isMainIdeaSkill(skill);
     let normalizedQuestionText = questionText;
