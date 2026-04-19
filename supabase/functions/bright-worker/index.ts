@@ -605,55 +605,23 @@ function generateFallbackChoice(question: string, choiceIndex = 0): string {
 }
 
 function buildNaturalAnswer(question: string, snippet: string, index: number): string {
-  const q = String(question || "").toLowerCase();
-  const compactSnippet = String(snippet || "")
-    .replace(/\s+/g, " ")
-    .trim();
-  const snippetIdea = compactSnippet
-    .split(/[.!?]/)[0]
-    ?.replace(/\b(the passage|the text)\b/gi, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/^[,;:\-\s]+/, "")
-    .replace(/[,:;\-\s]+$/, "") || "key evidence in the text";
+  void question;
+  void index;
+  const cleaned = String(snippet || "").trim();
 
-  if (q.includes("theme")) {
-    const themeBank = [
-      "The passage suggests that people solve problems by comparing ideas before making final decisions.",
-      "A key message is that careful evidence-based choices lead to better outcomes over time.",
-      "The text emphasizes that thoughtful decisions require weighing details from more than one viewpoint.",
-      "The passage shows that strong decisions come from reflection, evidence, and responsible action.",
-    ];
-    return themeBank[Math.abs(index) % themeBank.length];
+  if (!cleaned) {
+    return "A detail from the passage supports this idea.";
   }
 
-  if (q.includes("infer") || q.includes("inference")) {
-    const inferenceBank = [
-      `The details suggest that ${snippetIdea.toLowerCase()} supports a conclusion built from evidence rather than assumptions.`,
-      `The evidence indicates that ${snippetIdea.toLowerCase()} helps readers infer a reasoned conclusion.`,
-      `From these details, readers can conclude that ${snippetIdea.toLowerCase()} is the most supported interpretation.`,
-      `The information implies that ${snippetIdea.toLowerCase()} leads to a conclusion grounded in text evidence.`,
-    ];
-    return inferenceBank[Math.abs(index) % inferenceBank.length];
-  }
-
-  if (q.includes("purpose")) {
-    const purposeBank = [
-      "The author includes this information to show how evidence guides better decisions in real situations.",
-      "This detail is used to explain why comparing evidence leads to more reliable conclusions.",
-      "The author presents this process to demonstrate how careful analysis strengthens final judgments.",
-      "This information helps readers understand that evidence-based reasoning improves decision quality.",
-    ];
-    return purposeBank[Math.abs(index) % purposeBank.length];
-  }
-
-  const generalBank = [
-    `The information shows that ${snippetIdea.toLowerCase()} supports the strongest conclusion when details are analyzed carefully.`,
-    `A logical interpretation is that ${snippetIdea.toLowerCase()} helps explain the most accurate conclusion.`,
-    `The strongest answer connects ${snippetIdea.toLowerCase()} to a conclusion supported by multiple details.`,
-    `The details indicate that ${snippetIdea.toLowerCase()} leads to a clearer and more accurate understanding.`,
+  // Direct answer styles (NO explanation language)
+  const bank = [
+    cleaned,
+    cleaned.replace(/^the /i, "A "),
+    `The passage shows that ${cleaned.toLowerCase()}.`,
+    `This detail explains that ${cleaned.toLowerCase()}.`,
   ];
-  return generalBank[Math.floor(Math.random() * generalBank.length)];
+
+  return bank[Math.floor(Math.random() * bank.length)];
 }
 
 function rewriteWithPassageDetail(question: string, passage: string, choiceIndex = 0): string {
@@ -693,6 +661,11 @@ function sanitizeChoices(questions: Question[], passage: PassageContent | string
 
     const fixedChoices = choices.map((choice, i) => {
       const text = String(choice || "").trim();
+
+      if (/the information shows|strongest answer|logical interpretation|details indicate/i.test(text)) {
+        return rewriteWithPassageDetail(q.question || "", passageText, i);
+      }
+
       const hasEvidenceSupport = hasPassageSupportForChoice(passageText, text);
       const hasReasoningLanguage =
         /because|therefore|suggests|implies|shows|indicates|leads to|reveals|demonstrates|supports|explains/i.test(text);
