@@ -1376,13 +1376,8 @@ function buildUniversalChoices(
 // }
 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
-  if (!Array.isArray(choices)) return ["", "", "", ""];
-
-  const cleaned = choices.map((c) => String(c || "").trim());
-
-  while (cleaned.length < 4) cleaned.push("");
-
-  return cleaned.slice(0, 4) as [string, string, string, string];
+  const raw = Array.isArray(choices) ? choices : [];
+  return raw.slice(0, 4).map((c) => String(c ?? "").trim()) as [string, string, string, string];
 }
 
 function makeChoicesUnique(
@@ -1426,6 +1421,28 @@ function enforceThinkingStem(subject: CanonicalSubject, question: string): strin
     return "Which situation best demonstrates the historical impact described?";
   }
   return q;
+}
+
+function normalizeModeLanguage(
+  text: string,
+  mode: CanonicalMode,
+  subject: CanonicalSubject,
+): string {
+  const value = String(text || "");
+  if (mode === "Practice" && subject !== "Reading") {
+    return value
+      .replace(/\bpassage\b/gi, "problem")
+      .replace(/\btext evidence\b/gi, "problem evidence")
+      .replace(/\bthe text\b/gi, "the problem");
+  }
+  return value;
+}
+
+function stripNonPassageLanguage(text: string): string {
+  return String(text || "")
+    .replace(/\bthe passage\b/gi, "the problem")
+    .replace(/\bthe text\b/gi, "the problem")
+    .replace(/\bevidence from\b/gi, "support from");
 }
 
 function isMathLikeChoice(choice: string): boolean {
@@ -3791,8 +3808,21 @@ function sanitizeQuestions(
     step_by_step: String(q.step_by_step || "").trim(),
     parent_tip: String(q.parent_tip || "").trim(),
   }));
+  const cleanedFinalQuestions = (mode === "Practice" && subject !== "Reading")
+    ? finalQuestions.map((q) => ({
+      ...q,
+      question: stripNonPassageLanguage(q.question),
+      choices: normalizeChoices((q.choices || []).map((choice) => stripNonPassageLanguage(String(choice || "")))),
+      explanation: stripNonPassageLanguage(String(q.explanation || "")),
+      common_mistake: stripNonPassageLanguage(String(q.common_mistake || "")),
+      hint: stripNonPassageLanguage(String(q.hint || "")),
+      think: stripNonPassageLanguage(String(q.think || "")),
+      step_by_step: stripNonPassageLanguage(String(q.step_by_step || "")),
+      parent_tip: stripNonPassageLanguage(String(q.parent_tip || "")),
+    }))
+    : finalQuestions;
   console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", finalQuestions.length);
-  const alignedSet = finalQuestions;
+  const alignedSet = cleanedFinalQuestions;
   if (!isPassageBased(mode, subject)) {
     for (const q of alignedSet) {
       if (!Array.isArray(q.choices) || q.choices.length !== 4) continue;
