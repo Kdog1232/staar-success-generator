@@ -623,28 +623,35 @@ function rewriteWithPassageDetail(question: string, passage: string, choiceIndex
     .map((s) => s.trim())
     .filter((s) => s.length > 40);
 
-  if (!sentences.length) {
-    return "The passage includes details that relate to the question's main idea.";
+  if (sentences.length < 2) {
+    return "The passage includes details that relate to the main idea.";
   }
 
-  const base = sentences[choiceIndex % sentences.length];
+  // 🔥 FORCE DIFFERENT SENTENCES
+  const usedIndexes = new Set<number>();
+  const getUniqueSentence = (indexOffset: number): string => {
+    let idx = (choiceIndex + indexOffset) % sentences.length;
+    while (usedIndexes.has(idx)) {
+      idx = (idx + 1) % sentences.length;
+    }
+    usedIndexes.add(idx);
+    return sentences[idx];
+  };
+
+  const base = getUniqueSentence(choiceIndex);
 
   switch (choiceIndex) {
     case 0:
-      // Correct-style (clear reasoning)
-      return `${base}, which directly supports the main idea presented in the passage.`;
+      return `${base}, which clearly supports the central idea developed in the passage.`;
 
     case 1:
-      // Misinterpretation
-      return `${base}, but this detail is interpreted incorrectly and does not fully support the idea.`;
+      return `${getUniqueSentence(1)}, but this detail is taken out of context and does not fully support the idea.`;
 
     case 2:
-      // Partial truth
-      return `${base}, but this only explains part of the situation and misses a key detail.`;
+      return `${getUniqueSentence(2)}, which is only partially related and misses an important part of the situation.`;
 
     case 3:
-      // Overgeneralization
-      return `${base}, which leads to a conclusion that is too broad based on the evidence given.`;
+      return `${getUniqueSentence(3)}, leading to a conclusion that is too broad based on the information given.`;
 
     default:
       return base;
@@ -714,13 +721,13 @@ function sanitizeChoices(questions: Question[], passage: PassageContent | string
       }
 
       if (!text || text.length < 25 || containsBanned(text)) {
-        return i === 0 ? rewriteWithPassageDetail(q.question || "", passageText, i) : text;
+        return rewriteWithPassageDetail(q.question || "", passageText, i);
       }
 
       return text;
     });
 
-    const finalChoices = fixedChoices.map((choice, i) => {
+    let finalChoices = fixedChoices.map((choice, i) => {
       const text = String(choice || "").trim();
 
       // Keep strong answers
@@ -731,6 +738,14 @@ function sanitizeChoices(questions: Question[], passage: PassageContent | string
       // Fix weak answers ONLY
       return rewriteWithPassageDetail(q.question || "", passageText, i);
     });
+
+    const uniqueChoices = new Set(finalChoices.map((c) => c.toLowerCase()));
+    if (uniqueChoices.size < 4) {
+      finalChoices = finalChoices.map((c, i) => {
+        void c;
+        return rewriteWithPassageDetail(q.question || "", passageText, i);
+      });
+    }
 
     return {
       ...q,
