@@ -2904,11 +2904,6 @@
     });
 
     document.addEventListener("click", (e) => {
-      if (e.target?.id === "generate-btn") {
-        generate();
-        return;
-      }
-
       if (e.target.classList.contains("choice")) {
         const parent = e.target.closest(".choices");
         if (!parent) return;
@@ -2916,6 +2911,33 @@
         e.target.classList.add("selected");
       }
     });
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const btn = document.getElementById("generate-btn");
+
+      if (!btn) {
+        console.error("❌ Generate button not found");
+        return;
+      }
+
+      btn.disabled = false;
+      console.log("🔍 BUTTON STATE:", {
+        disabled: btn.disabled
+      });
+
+      btn.addEventListener("click", () => {
+        console.log("🔥 CLICK CONFIRMED");
+      });
+
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        console.log("🖱 BUTTON CLICK DETECTED");
+        generate();
+      });
+
+      console.log("✅ Generate button wired");
+    });
+
     populateSubjectButtons();
     setMode("practice");
     setAppAuthenticatedState(false);
