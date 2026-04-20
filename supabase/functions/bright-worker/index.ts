@@ -1160,42 +1160,11 @@ function generateQuestionsPrompt(params: {
   level: Level;
   passage: string;
   teksCode?: string;
-  contextType?: string;
 }): string {
-  const {
-    grade,
-    subject,
-    skill,
-    level,
-    passage,
-    teksCode = "Unknown",
-    contextType = "real-world application",
-  } = params;
-  const levelInstruction = getLevelInstruction(level);
-  const rules = isPassageBased("Practice", subject) ? PASSAGE_RULES : NON_PASSAGE_RULES;
-  const scienceReasoningRule = subject === "Science"
-    ? "- Science rule: ask reasoning-focused questions (not simple recall) and use realistic scenarios/situations when possible."
-    : "";
-  const passageSection = subject === "Reading"
-    ? `Passage:
-${passage || "(missing passage)"}`
-    : "No passage provided.";
 
-  return `Create JSON only for PRACTICE MODE question generation.
+  const { grade, subject, skill, level, passage, teksCode = "Unknown" } = params;
 
-Inputs:
-- Grade: ${grade}
-- Subject: ${subject}
-- Skill: ${skill}
-- Level: ${levelInstruction}
-- Context Type: ${contextType}
-- TEKS Alignment Code: ${teksCode}
-
-${passageSection}
-${ENGAGING_CONTEXT_RULES}
-${THINKING_OVER_RECALL_RULES}
-
-Return exactly:
+  return `Return JSON only:
 {
   "questions": [
     {
@@ -1206,19 +1175,28 @@ Return exactly:
   ]
 }
 
+Generate 5 ${subject} questions aligned to:
+- Grade ${grade}
+- Skill: ${skill}
+- Level: ${level}
+- TEKS: ${teksCode}
+
+${subject === "Reading" ? `Passage:
+${passage}` : ""}
+
 Rules:
-- Generate exactly 5 questions aligned to skill ${skill}.
-- Each question must have exactly 4 choices.
-- Each question must have 1 correct answer and 3 realistic distractors.
-- Match grade ${grade} and level (${levelInstruction}).
-- Use natural, non-robotic language.
-- ${scienceReasoningRule || "Use cognitively demanding questions that require reasoning, not simple recall."}
-- ${rules.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${subject === "Reading" ? READING_PRACTICE_RIGOR_SECTION.replace(/\n/g, "\n- ").replace(/^-\s/, "") : DIFFICULTY_ENFORCEMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${ANTI_GENERIC_ANSWER_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${QUESTION_DESIGN_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- No markdown. JSON only.`;
+- Exactly 5 questions
+- Exactly 4 answer choices per question
+- Only 1 correct answer (A, B, C, or D)
+- Questions must require thinking (not simple recall)
+- Use clear, natural language
+- No explanations
+- No extra text
+- No placeholder phrases (like "one detail in the text shows")
+
+Return JSON only.`;
 }
+
 
 function buildCoreEnrichmentPrompt(params: {
   grade: number;
@@ -4104,7 +4082,6 @@ serve(async (req) => {
                 skill: effectiveSkill,
                 level,
                 teksCode,
-                contextType,
                 passage: String(passageRes?.passage || ""),
               }) + `\nVariation ID: ${variationId}`,
               2,
@@ -4578,7 +4555,6 @@ serve(async (req) => {
             skill: effectiveSkill,
             level,
             teksCode,
-            contextType,
             passage: String(crossPassageRes?.passage || baseCrossPassage),
           }) + `\nVariation ID: ${variationId}`,
           2,
