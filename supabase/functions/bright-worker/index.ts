@@ -208,6 +208,160 @@ const THINKING_OVER_RECALL_RULES = [
   "- Require reasoning, cause/effect thinking, interpretation, or application.",
   "- Prefer prompts like: which situation best shows..., which example demonstrates..., which outcome is most likely..., how did X most influence Y in a real situation?",
 ].join("\n");
+const READING_PRACTICE_RIGOR_SECTION = [
+  "RIGOR AND DISTRACTOR QUALITY (READING PRACTICE):",
+  "- Each question must require inference or reasoning.",
+  "- Avoid simple recall questions.",
+  "",
+  "DISTRACTOR RULES:",
+  "- One distractor partially correct but incomplete",
+  "- One distractor reflects a common misunderstanding",
+  "- One distractor misuses a passage detail",
+  "- All choices must be equally believable",
+  "",
+  "QUESTION REQUIREMENTS:",
+  "- At least 3 questions must require inference",
+  "- Include one question where two answers seem correct",
+  "",
+  "PASSAGE QUALITY:",
+  "- Complete sentences only",
+  "- Clear cause/effect or problem/solution",
+  "- Include inference-based detail",
+].join("\n");
+const CROSS_CURRICULAR_RIGOR_SECTION = [
+  "RIGOR AND DISTRACTOR QUALITY (CROSS-CURRICULAR):",
+  "- Questions must combine passage understanding with subject reasoning.",
+  "- Avoid purely recall-based questions.",
+  "",
+  "DISTRACTOR RULES:",
+  "- One distractor misinterprets the passage",
+  "- One distractor applies correct reasoning to the wrong detail",
+  "- One distractor reflects a common misconception in the subject area",
+  "- All answer choices must be plausible",
+  "",
+  "QUESTION REQUIREMENTS:",
+  "- At least 2 questions must require inference from the passage",
+  "- At least 2 questions must require subject-based reasoning",
+  "- Answers should not rely solely on quoting the passage",
+  "",
+  "PASSAGE QUALITY:",
+  "- Must support reasoning, not just description",
+  "- Include cause/effect, patterns, or relationships",
+  "- Include at least one detail that can be interpreted in multiple ways",
+].join("\n");
+const ANTI_GENERIC_ANSWER_RULES = [
+  "ANTI-GENERIC ANSWER RULE (CRITICAL):",
+  "- DO NOT use placeholder or template phrases such as:",
+  "  \"one detail in the text shows\"",
+  "  \"another clue suggests\"",
+  "  \"a separate detail indicates\"",
+  "  \"the strongest evidence confirms\"",
+  "- Every answer choice must include SPECIFIC content from the passage or problem.",
+  "- Answers must be concrete and meaningful, not abstract or self-referential.",
+  "- If an answer could apply to ANY passage, it is INVALID and must be rewritten.",
+  "- Each answer must clearly relate to:",
+  "  - a detail",
+  "  - a pattern",
+  "  - or a logical conclusion from the passage",
+].join("\n");
+const TUTOR_STYLE_RULES = [
+  "TUTOR STYLE (CRITICAL):",
+  "- Explain thinking like a real teacher talking to a student",
+  "- Use varied sentence structure (no repeated phrasing)",
+  "- Focus on WHY the answer is correct using passage evidence",
+  "- Explain wrong answers based on specific misunderstandings",
+  "- Keep explanations concise and clear",
+  "GROUNDING RULE (CRITICAL):",
+  "- All explanations must reference real details from the passage",
+  "- Do NOT repeat incomplete or broken phrases",
+  "- If a sentence is incomplete, paraphrase it into a full idea",
+  "VARIATION RULE (CRITICAL):",
+  "- Each question explanation must sound different",
+  "- Avoid repeating sentence starters across questions",
+  "- Do not follow a fixed script format",
+  "STRUCTURE (FLEXIBLE):",
+  "- Include hint, explanation, mistake, and tip",
+  "- Do NOT enforce identical phrasing",
+  "- Do NOT enforce identical order",
+].join("\n");
+const ANSWER_KEY_STYLE_RULES = [
+  "ANSWER KEY STYLE (CRITICAL):",
+  "- State the correct answer clearly",
+  "- Give a brief explanation (1–2 sentences max)",
+  "- Reference a specific detail or reasoning",
+  "- Keep tone direct and natural",
+  "MISCONCEPTION RULE:",
+  "- Explain ONE common mistake briefly",
+  "- Do NOT repeat the same phrasing across questions",
+  "- Focus on why a wrong answer seems correct",
+  "PARENT TIP RULE:",
+  "- Keep tips short (1 sentence)",
+  "- Vary wording across questions",
+  "- Focus on actionable thinking strategies",
+  "VARIATION RULE:",
+  "- Each explanation must sound different",
+  "- Avoid repeated sentence starters",
+  "- Do NOT follow a fixed script structure",
+].join("\n");
+const DIFFICULTY_ENFORCEMENT_RULES = [
+  "DIFFICULTY ENFORCEMENT (CRITICAL):",
+  "- Below Level:",
+  "  - Simple, single-step questions",
+  "  - Direct identification or recall",
+  "- On Level:",
+  "  - Multi-step thinking",
+  "  - Some reasoning required",
+  "- Advanced:",
+  "  - Require analysis, comparison, or application",
+  "  - Avoid definition-based or recall questions",
+  "  - Include multi-step reasoning or real-world scenarios",
+  "  - Questions should require students to explain why, not just identify",
+].join("\n");
+const QUESTION_DESIGN_RULES = [
+  "QUESTION DESIGN RULES:",
+  "- Do NOT ask:",
+  "  \"Which example shows...\"",
+  "  \"What is...\"",
+  "  \"Which is...\"",
+  "- Instead ask:",
+  "  - Why does this happen?",
+  "  - Which explanation is best supported?",
+  "  - What would happen if...",
+  "  - Which situation is most valid and why?",
+].join("\n");
+const CROSS_PASSAGE_QUALITY_CRITICAL = [
+  "PASSAGE QUALITY (CRITICAL):",
+  "- All sentences must be complete and fully expressed ideas.",
+  "- Do NOT produce fragments such as:",
+  "  \"tracked how surface\"",
+  "  \"absorbed and\"",
+  "  \"after watering\"",
+  "- Include specific measurable details (numbers, conditions, results).",
+  "- Include at least one clear cause-and-effect relationship.",
+  "- Include a comparison (before vs after, condition A vs B).",
+  "- Passage must support answering all 5 questions.",
+].join("\n");
+const CROSS_ANTI_GENERIC_ANSWERS_CRITICAL = [
+  "ANTI-GENERIC ANSWERS (CRITICAL):",
+  "- DO NOT use phrases such as:",
+  "  \"one detail in the text shows\"",
+  "  \"another clue suggests\"",
+  "  \"a separate detail indicates\"",
+  "  \"the strongest evidence confirms\"",
+  "- Each answer must include specific details from the passage.",
+  "- Answers must reference:",
+  "  - data",
+  "  - observations",
+  "  - or results from the passage",
+  "- If an answer could apply to ANY passage, it is INVALID.",
+].join("\n");
+const CROSS_QUESTION_REQUIREMENTS_CRITICAL = [
+  "QUESTION REQUIREMENTS:",
+  "- At least 2 questions must require inference.",
+  "- At least 2 questions must require scientific reasoning.",
+  "- Avoid vague or abstract questions.",
+  "- Questions must rely on passage details, not general knowledge.",
+].join("\n");
 
 function containsBanned(choice: string): boolean {
   return BANNED_PHRASES.some((p) => String(choice || "").toLowerCase().includes(p));
@@ -849,7 +1003,16 @@ Rules:
 - Each question has 1 correct answer and 3 realistic distractors.
 - Align to skill: ${skill}.
 - Match grade ${grade} and level (${levelInstruction}).
-- Avoid robotic or templated language.`;
+- Avoid robotic or templated language.
+- ${CROSS_CURRICULAR_RIGOR_SECTION.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${ANTI_GENERIC_ANSWER_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${TUTOR_STYLE_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${ANSWER_KEY_STYLE_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${DIFFICULTY_ENFORCEMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${QUESTION_DESIGN_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${CROSS_PASSAGE_QUALITY_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${CROSS_ANTI_GENERIC_ANSWERS_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${CROSS_QUESTION_REQUIREMENTS_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}`;
   }
 
   return `Generate STAAR-style ${subject} practice questions.
@@ -933,6 +1096,12 @@ Rules:
 - ${modeLogic.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${rules.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${QUALITY_ALIGNMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${READING_PRACTICE_RIGOR_SECTION.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${ANTI_GENERIC_ANSWER_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${TUTOR_STYLE_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${ANSWER_KEY_STYLE_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${DIFFICULTY_ENFORCEMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${QUESTION_DESIGN_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - No markdown. JSON only.`;
   }
 
@@ -967,6 +1136,13 @@ Rules:
 - ${modeLogic.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${rules.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${QUALITY_ALIGNMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${TUTOR_STYLE_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${ANSWER_KEY_STYLE_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${DIFFICULTY_ENFORCEMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${QUESTION_DESIGN_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${CROSS_PASSAGE_QUALITY_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${CROSS_ANTI_GENERIC_ANSWERS_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${CROSS_QUESTION_REQUIREMENTS_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - No markdown. JSON only.`;
 }
 function buildEnrichmentPrompt(params: {
@@ -1021,6 +1197,12 @@ Rules:
 - Mode rule: Answers must be supported by the passage using passage-based reasoning.
 - ${rules.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${QUALITY_ALIGNMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${CROSS_CURRICULAR_RIGOR_SECTION.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${ANTI_GENERIC_ANSWER_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${TUTOR_STYLE_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${ANSWER_KEY_STYLE_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${DIFFICULTY_ENFORCEMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${QUESTION_DESIGN_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - No markdown. JSON only.`;
 }
 function buildGenerationPrompt(params: {
@@ -1118,6 +1300,15 @@ Mode rule: Answers must be supported by the passage with passage-based reasoning
 ${modeLogic}
 ${rules}
 ${QUALITY_ALIGNMENT_RULES}
+${CROSS_CURRICULAR_RIGOR_SECTION}
+${ANTI_GENERIC_ANSWER_RULES}
+${TUTOR_STYLE_RULES}
+${ANSWER_KEY_STYLE_RULES}
+${DIFFICULTY_ENFORCEMENT_RULES}
+${QUESTION_DESIGN_RULES}
+${CROSS_PASSAGE_QUALITY_CRITICAL}
+${CROSS_ANTI_GENERIC_ANSWERS_CRITICAL}
+${CROSS_QUESTION_REQUIREMENTS_CRITICAL}
 Keep explanations short (1 sentence).
 No extra commentary.`;
 }
@@ -1246,11 +1437,11 @@ function getUniversalQuestion(
   if (subject === "Reading") {
     if (s.includes("theme")) {
       return selectByDOK([
-        "What is the central message of the passage?",
+        "Which explanation is best supported for the central message of the passage?",
         "Which statement best expresses the theme?",
         "What lesson does the passage convey?",
         "Which idea best reflects the author’s message?",
-        "What is the main message developed in the passage?",
+        "Why does the main message develop this way in the passage?",
       ]);
     }
 
@@ -1266,7 +1457,7 @@ function getUniversalQuestion(
 
     return selectByDOK([
       "Which idea is BEST supported by the passage?",
-      "What is the main idea of the passage?",
+      "Which explanation best supports the main idea of the passage?",
       "Which detail best supports a key idea?",
       "What can the reader conclude?",
       "Which statement accurately reflects the passage?",
@@ -1276,9 +1467,9 @@ function getUniversalQuestion(
   if (subject === "Math") {
     return selectByDOK([
       "Which answer correctly solves the problem?",
-      "What is the correct value based on the information?",
+      "Which calculation is most valid based on the information provided?",
       "Which calculation leads to the correct result?",
-      "What is the final answer after solving?",
+      "Why does the final answer follow from the steps used?",
       "Which method produces the correct solution?",
     ]);
   }
@@ -1427,6 +1618,33 @@ function enforceThinkingStem(subject: CanonicalSubject, question: string): strin
     return "Which situation best demonstrates the historical impact described?";
   }
   return q;
+}
+function enforceQuestionDesignStem(question: string, level: Level = "On Level"): string {
+  const q = String(question || "").trim();
+  if (!q) return q;
+  const normalized = q.replace(/\s+/g, " ");
+
+  if (/^which example shows\b/i.test(normalized)) {
+    return level === "Below"
+      ? "Which explanation is best supported by the information provided?"
+      : "Which explanation is best supported, and why?";
+  }
+  if (/^what is\b/i.test(normalized)) {
+    return level === "Below"
+      ? "Which explanation is best supported by the details?"
+      : "Why does this happen based on the evidence?";
+  }
+  if (/^which is\b/i.test(normalized)) {
+    return level === "Below"
+      ? "Which explanation is best supported by the details?"
+      : "Which situation is most valid and why?";
+  }
+
+  if (level === "Advanced" && /^what\b/i.test(normalized)) {
+    return normalized.replace(/^what\b/i, "Why");
+  }
+
+  return normalized;
 }
 
 function isMathLikeChoice(choice: string): boolean {
@@ -3421,7 +3639,10 @@ function isGenericAnswer(choice: string): boolean {
 function isClearlyGenericChoices(choices: [string, string, string, string]): boolean {
   return choices.every((choice) => {
     const lowered = String(choice || "").toLowerCase();
-    return lowered.includes("one detail") || lowered.includes("another clue");
+    return lowered.includes("one detail in the text shows") ||
+      lowered.includes("another clue suggests") ||
+      lowered.includes("a separate detail indicates") ||
+      lowered.includes("the strongest evidence confirms");
   });
 }
 
@@ -3680,6 +3901,7 @@ function sanitizeQuestions(
         : "Which statement best describes the main idea?";
     }
     normalizedQuestionText = enforceThinkingStem(subject, normalizedQuestionText);
+    normalizedQuestionText = enforceQuestionDesignStem(normalizedQuestionText, level);
 
     if (type === "mc" && isVocabStyleQuestion(normalizedQuestionText)) {
       const targetWord = extractVocabTargetWord(normalizedQuestionText);
@@ -4654,30 +4876,21 @@ function shouldRewrite(choices: string[]): boolean {
   return maxRepeat >= 3;
 }
 
-function fallbackDiverseChoices(): [string, string, string, string] {
-  return [
-    "The passage shows that the key idea is supported by specific details.",
-    "The data suggests a different explanation based on what is measured.",
-    "The results indicate another possibility that fits some evidence.",
-    "The information explains why one conclusion is most accurate.",
-  ];
-}
+function diversifyChoiceStarts(choices: [string, string, string, string]): [string, string, string, string] {
+  const cleaned = choices.map((choice) => cleanAnswerChoice(choice)) as [string, string, string, string];
+  const uniqueChoices = new Set(cleaned.map((choice) => choice.toLowerCase().trim())).size === 4;
+  if (!uniqueChoices) return cleaned;
 
-function rewriteChoicesForUniqueStarts(question: string): [string, string, string, string] {
-  const stem = String(question || "").trim().replace(/\?+$/, "");
-  const rewritten: [string, string, string, string] = [
-    `One detail in the text shows ${stem.toLowerCase() || "the main point"}.`,
-    `Another clue supports a different idea about ${stem.toLowerCase() || "the topic"}.`,
-    `A separate detail points to an alternative interpretation of ${stem.toLowerCase() || "the question"}.`,
-    `The strongest evidence confirms the best conclusion about ${stem.toLowerCase() || "the topic"}.`,
-  ];
+  const prefixes = ["Specifically, ", "By contrast, ", "For example, ", "As a result, "] as const;
+  const diversified = cleaned.map((choice, idx) => {
+    const normalized = String(choice || "").trim();
+    if (!normalized) return normalized;
+    if (/^[A-D]\)?\s*$/i.test(normalized) || /^-?\d+(\.\d+)?$/.test(normalized)) return normalized;
+    if (/^(specifically|by contrast|for example|as a result),\s+/i.test(normalized)) return normalized;
+    return `${prefixes[idx]}${normalized.charAt(0).toLowerCase()}${normalized.slice(1)}`;
+  }) as [string, string, string, string];
 
-  const uniqueChoices = new Set(rewritten.map((choice) => choice.toLowerCase().trim())).size === 4;
-  if (!uniqueChoices || shouldRewrite(rewritten)) {
-    return fallbackDiverseChoices();
-  }
-
-  return rewritten;
+  return diversified;
 }
 
 function validateAndRewriteChoiceStarts(questions: Question[]): Question[] {
@@ -4691,9 +4904,7 @@ function validateAndRewriteChoiceStarts(questions: Question[]): Question[] {
       };
     }
 
-    const rewritten = rewriteChoicesForUniqueStarts(q.question || "");
-    const fallback = fallbackDiverseChoices();
-    const safeChoices = shouldRewrite(rewritten) ? fallback : rewritten;
+    const safeChoices = diversifyChoiceStarts(normalizedChoices);
 
     return {
       ...q,
@@ -4736,30 +4947,97 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
     const evidenceSnippet = selectEvidenceSnippet(q, passageText, usedEvidence) ||
       getRelevantSnippet(passageText, q.question, correctChoice) ||
       "the strongest details in the passage";
-    const evidenceIdea = summarizeEvidenceIdea(evidenceSnippet);
+    const evidenceIdea = summarizeEvidenceIdea(evidenceSnippet).replace(/\s+/g, " ").trim();
+    const groundedEvidence = evidenceSnippet.replace(/\s+/g, " ").trim();
 
     const explanationVariants = [
-      `I would start with the passage idea about ${evidenceIdea}. Once we anchor there, ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} fits the question best.`,
-      `Try reasoning it out this way: the passage explains ${evidenceIdea}, and that lines up most clearly with ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
-      `Before picking an answer, connect the question to this idea from the text: ${evidenceIdea}. That connection points to ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
-      `A strong approach here is to paraphrase the key detail as ${evidenceIdea}, then compare options. ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} stays consistent with that evidence.`,
+      `Notice how the passage says "${groundedEvidence}." That detail supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it directly answers what the question asks.`,
+      `The key evidence is "${groundedEvidence}," and that is why ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is the strongest match to the question.`,
+      `When you connect the question to "${groundedEvidence}," ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is the only option that stays fully consistent with the text.`,
+      `A clear way to verify this is to use the passage detail "${groundedEvidence}." That evidence lines up best with ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
     ];
     const explanationLead = explanationVariants[Math.abs(variant) % explanationVariants.length];
     const explanationTail = wrongOption
-      ? ` ${wrongOption.letter} (${wrongOption.choice}) can feel tempting, but the passage evidence supports it less clearly than ${correctLetter}.`
+      ? ` ${wrongOption.letter} (${wrongOption.choice}) is a common misread because it sounds related to ${evidenceIdea}, but it misses what the quoted detail actually shows.`
       : " The other options fall apart when you test them against the same passage detail.";
     const explanation = `${explanationLead}${explanationTail}`;
 
     const commonMistake = wrongOption
-      ? `${wrongOption.letter} can sound close to the topic, but it does not match the passage idea about ${evidenceIdea} as well as ${correctLetter}.`
+      ? `Students often choose ${wrongOption.letter} (${wrongOption.choice}) when they focus on the topic but ignore the exact wording in "${groundedEvidence}".`
       : `One trap here is picking a familiar-sounding choice without checking which passage idea actually proves the answer.`;
 
-    const hint = `Start with this passage idea: ${evidenceIdea}. Then compare each answer choice to that same idea.`;
-    const think = `If you restate the passage idea as "${evidenceIdea}," which option is fully supported?`;
-    const stepByStep = `1. Read the question and identify the key idea.\n2. Find the matching detail in the passage.\n3. Compare each choice to that same detail.\n4. Keep ${correctLetter} because it matches the evidence most completely.\n5. Cross out choices that only partly match.`;
+    const hintVariants = [
+      `Use this passage detail as your anchor: "${groundedEvidence}".`,
+      `Find the line "${groundedEvidence}" and ask which option it truly supports.`,
+      `Look at "${groundedEvidence}" first, then test each choice against that exact idea.`,
+    ];
+    const thinkVariants = [
+      `Which answer still works if you point to "${groundedEvidence}" as proof?`,
+      `What does the detail "${groundedEvidence}" imply about the best answer?`,
+      `If "${groundedEvidence}" is true, which option is fully supported and which ones overreach?`,
+    ];
+    const stepVariants = [
+      `1. Read the question carefully.\n2. Locate the evidence: "${groundedEvidence}".\n3. Check which choice matches that idea completely.\n4. Keep ${correctLetter} and eliminate choices that only partly fit.`,
+      `1. Identify what the question asks you to prove.\n2. Re-read "${groundedEvidence}".\n3. Compare each option to that detail.\n4. Select ${correctLetter} because it is the best evidence match.`,
+      `1. Start with the passage line "${groundedEvidence}".\n2. Decide what conclusion that detail supports.\n3. Test all options against that conclusion.\n4. Choose ${correctLetter} and cross out weaker matches.`,
+    ];
+    const hint = hintVariants[Math.abs(variant) % hintVariants.length];
+    const think = thinkVariants[Math.abs(variant + 1) % thinkVariants.length];
+    const stepByStep = stepVariants[Math.abs(variant + 2) % stepVariants.length];
     const parentTip = variedParentTip(variant);
 
     return { explanation, commonMistake, hint, think, stepByStep, parentTip };
+  };
+  const buildBoundAnswerSupport = (
+    q: Question,
+    passage: PassageContent | string,
+    usedEvidence: Set<string>,
+    variant = 0,
+  ): { explanation: string; commonMistake: string; parentTip: string } => {
+    const passageText = getPassageText(passage);
+    const normalizedChoices = normalizeChoices(q.choices);
+    const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
+    const correctIndex = LETTERS.indexOf(correctLetter);
+    const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
+    const wrongOption = normalizedChoices
+      .map((choice, idx) => ({ letter: LETTERS[idx], choice: String(choice || "").trim() }))
+      .find((entry) => entry.letter !== correctLetter && entry.choice);
+    const evidenceSnippet = selectEvidenceSnippet(q, passageText, usedEvidence) ||
+      getRelevantSnippet(passageText, q.question, correctChoice) ||
+      "the strongest passage detail";
+    const groundedEvidence = evidenceSnippet.replace(/\s+/g, " ").trim();
+    const evidenceIdea = summarizeEvidenceIdea(evidenceSnippet).replace(/\s+/g, " ").trim();
+
+    const explanationVariants = [
+      `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is correct because the passage states "${groundedEvidence}."`,
+      `The best answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}; this matches "${groundedEvidence}" in the passage.`,
+      `Choose ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}. The detail "${groundedEvidence}" directly supports that conclusion.`,
+      `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is the correct choice since "${groundedEvidence}" provides the strongest support.`,
+    ];
+    const explanation = explanationVariants[Math.abs(variant) % explanationVariants.length];
+
+    const mistakeVariants = wrongOption
+      ? [
+        `A common mistake is choosing ${wrongOption.letter} (${wrongOption.choice}) because it sounds related to ${evidenceIdea}, but it is not fully supported by the quoted detail.`,
+        `Students often pick ${wrongOption.letter} (${wrongOption.choice}) when they focus on topic words and skip what "${groundedEvidence}" actually shows.`,
+        `${wrongOption.letter} (${wrongOption.choice}) can seem reasonable at first glance, but it overreaches beyond the evidence in "${groundedEvidence}".`,
+      ]
+      : [
+        "A common mistake is selecting a choice that sounds familiar without checking exact text evidence.",
+        "Students often choose an option that matches the topic but not the passage proof.",
+        "One mistake is relying on general meaning instead of the specific supporting line.",
+      ];
+    const commonMistake = mistakeVariants[Math.abs(variant + 1) % mistakeVariants.length];
+
+    const tipVariants = [
+      "Ask your child to quote one line that proves the answer before finalizing.",
+      "Have your child eliminate choices that are related to the topic but unsupported by text evidence.",
+      "Prompt your child to restate the key detail, then match it to the most precise option.",
+      "Encourage your child to verify every answer with exact wording from the passage.",
+    ];
+    const parentTip = tipVariants[Math.abs(variant + 2) % tipVariants.length];
+
+    return { explanation, commonMistake, parentTip };
   };
 
   const rebuildTutor = (questions: Question[], mode: "practice" | "cross"): TutorExplanation[] => {
@@ -4783,7 +5061,7 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
     const sourcePassage = mode === "cross" ? crossPassage : practicePassage;
     const usedEvidence = new Set<string>();
     return questions.map((q, i) => {
-      const support = buildBoundSupport(q, sourcePassage, usedEvidence, i);
+      const support = buildBoundAnswerSupport(q, sourcePassage, usedEvidence, i);
       return {
         question_id: ensureQuestionId(q, i, mode),
         correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
