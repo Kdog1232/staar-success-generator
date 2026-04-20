@@ -2093,10 +2093,47 @@
   `;
         });
 
+        if (currentData?.cross?.questions?.length) {
+          html += `<div id="cross-block"></div>`;
+        }
+
+        if (currentData?.tutor?.practice?.length) {
+          html += `<div id="tutor-block"></div>`;
+        }
+
+        if (currentData?.answerKey?.practice?.length) {
+          html += `<div id="answer-block"></div>`;
+        }
+
         html += `</div>`;
 
         container.innerHTML = html;
         container.style.display = "block";
+
+        if (currentData?.cross?.questions?.length) {
+          try {
+            renderCrossSection(currentData.cross, currentData.crossPassage || "");
+          } catch (crossErr) {
+            console.error("💥 CROSS RENDER FAILED:", crossErr);
+          }
+        }
+
+        if (currentData?.tutor?.practice?.length) {
+          try {
+            renderTutorSection(currentData.tutor);
+          } catch (tutorErr) {
+            console.error("💥 TUTOR RENDER FAILED:", tutorErr);
+          }
+        }
+
+        if (currentData?.answerKey?.practice?.length) {
+          try {
+            renderAnswerSection(currentData.answerKey);
+          } catch (answerErr) {
+            console.error("💥 ANSWER RENDER FAILED:", answerErr);
+          }
+        }
+
         console.log("✅ DOM UPDATED");
       } catch (err) {
         console.error("💥 RENDER CRASH:", err);
@@ -2108,7 +2145,7 @@
     }
 
     function renderCrossSection(crossData, crossText) {
-      const crossSection = document.getElementById("cross-section");
+      const crossSection = document.getElementById("cross-block") || document.getElementById("cross-section");
       if (!crossSection) return;
       if (!crossData || !Array.isArray(crossData.questions) || crossData.questions.length === 0) {
         console.warn("⚠️ Cross section skipped due to missing cross questions");
@@ -2129,7 +2166,7 @@
     }
 
     function renderTutorSection(tutorData, mode = currentMode) {
-      const tutorSection = document.getElementById("tutor-section");
+      const tutorSection = document.getElementById("tutor-block") || document.getElementById("tutor-section");
       if (!tutorSection) return;
       const passage = mode === "cross" ? (currentData?.cross?.passage || "") : (currentData?.passage || "");
       const enrichedTutor = tutorData;
@@ -2158,7 +2195,7 @@
     }
 
     function renderAnswerSection(answerKeyData, mode = currentMode) {
-      const answerSection = document.getElementById("answer-section");
+      const answerSection = document.getElementById("answer-block") || document.getElementById("answer-section");
       if (!answerSection) return;
       const practiceAnswers = Array.isArray(answerKeyData?.practice) ? answerKeyData.practice : [];
       const crossAnswers = Array.isArray(answerKeyData?.cross) ? answerKeyData.cross : [];
