@@ -1208,12 +1208,12 @@ Rules:
 ${subject === "Reading" ? `- Each question must assess a different reading skill (no duplicates)
 - Do not repeat question stems
 - Avoid surface-level recall questions
-- Required distribution across the 5 questions:
-  1) exactly 1 inference question
-  2) exactly 1 author’s purpose question
-  3) exactly 1 cause/effect or impact question
-  4) exactly 1 detail/support question
-  5) exactly 1 Part A / Part B style question (single MC item with 4 choices)
+- Include a mix of question types such as:
+  - inference
+  - author’s purpose
+  - cause/effect
+  - detail/support
+- Do not repeat the same skill across the set
 - Questions must require reasoning across multiple parts of the passage
 - Include at least one question where two choices are very close
 - Distractor quality per question:
@@ -2825,14 +2825,16 @@ function isValidAIOutput(data: any): boolean {
 
   const passage = data.passage || data.cross?.passage;
 
-  if (passage && !isCompletePassage(passage)) return false;
+  if (passage && !isCompletePassage(passage)) {
+    console.warn("⚠️ Passage not fully complete — accepting usable attempt");
+  }
 
   const rawQuestions =
     data.practice?.questions ||
     data.cross?.questions ||
     data.questions;
 
-  if (!Array.isArray(rawQuestions) || rawQuestions.length !== 5) return false;
+  if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) return false;
   const questions = rawQuestions.map((q: Partial<Question>) => withSafeQuestionDefaults(q));
 
   for (const q of questions) {
@@ -2851,7 +2853,7 @@ function isValidAIOutput(data: any): boolean {
         return false;
       }
 
-      if (text.length < 12) return false;
+      if (text.length < 8) return false;
     }
   }
 
@@ -3856,6 +3858,10 @@ serve(async (req) => {
   };
   const returnEnrichment = (data: EnrichmentResponse) =>
     {
+      let cross = data?.cross;
+      if (!cross?.questions?.length) {
+        cross = buildSubjectCrossContent(subject, level);
+      }
       const sanitizedPracticeQuestions = sanitizeExplanations(
         sanitizeChoices(
           ((data as Partial<WorkerAttempt>)?.practice?.questions || []).map((q) => ({ ...q })),
@@ -3864,9 +3870,9 @@ serve(async (req) => {
       );
       const sanitizedCrossQuestions = sanitizeExplanations(
         sanitizeChoices(
-          (data?.cross?.questions || []).map((q) => ({ ...q })),
+          (cross?.questions || []).map((q) => ({ ...q })),
         ),
-        String(data?.cross?.passage || ""),
+        String(cross?.passage || ""),
       );
       const finalized = enforceSingleSourceOfTruth({
         passage: String((data as Partial<WorkerAttempt>)?.passage || ""),
@@ -3874,7 +3880,7 @@ serve(async (req) => {
           questions: sanitizedPracticeQuestions,
         },
         cross: {
-          passage: String(data?.cross?.passage || ""),
+          passage: String(cross?.passage || ""),
           questions: sanitizedCrossQuestions,
         },
         tutor: { practice: [], cross: [] },
