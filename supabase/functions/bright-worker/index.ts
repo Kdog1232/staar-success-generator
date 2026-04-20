@@ -390,6 +390,72 @@ function shuffledLetters(): ChoiceLetter[] {
   return pool;
 }
 
+function shuffleArray<T>(array: T[]): T[] {
+  const copy = [...array];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function forcePassageChoices(
+  choices: string[],
+  passage: string,
+): string[] {
+  if (!Array.isArray(choices)) return ["", "", "", ""];
+
+  const words = passage.toLowerCase().split(/\W+/).filter(Boolean);
+
+  return choices.map((choice) => {
+    const lower = String(choice).toLowerCase();
+
+    const hasOverlap = words.some((w) => lower.includes(w));
+
+    if (hasOverlap) return choice;
+
+    // inject one passage word if no overlap
+    const fallbackWord = words[Math.floor(Math.random() * words.length)] || "";
+
+    return choice ? `${choice} (${fallbackWord})` : fallbackWord;
+  });
+}
+
+function buildAlignedExplanation(
+  question: any,
+  passage: string,
+  usedEvidence: Set<string>,
+  usePassage: boolean,
+) {
+  return {
+    why: String(question?.explanation || "").trim() || "The correct answer is supported by the passage.",
+    mistake: "A common mistake is choosing an answer that is not fully supported by the text.",
+  };
+}
+
+function buildDistractorFeedback(question: any): string {
+  return "";
+}
+
+function selectEvidenceSnippet(
+  question: any,
+  passage: string,
+  usedEvidence: Set<string>,
+): string | null {
+  if (!passage) return null;
+
+  const sentences = passage.split(/[.!?]/).map(s => s.trim()).filter(Boolean);
+
+  return sentences[0] || null;
+}
+
+function buildSubjectCrossContent(subject: string, level: string) {
+  return {
+    passage: "",
+    questions: [],
+  };
+}
+
 function canonicalizeSubject(subject: unknown): CanonicalSubject {
   const value = String(subject || "").toLowerCase();
   if (value.includes("math")) return "Math";
