@@ -882,8 +882,19 @@ function getSkillType(skill: string): "general" {
 
 function validateQuestionAlignment(question: string, skill: string): boolean {
   void skill;
-  const q = String(question || "").trim();
-  if (!q) return false;
+  if (!question || question.length < 15) return false;
+
+  const badPatterns = [
+    "which is",
+    "what is",
+    "one detail",
+    "another clue",
+  ];
+
+  const lower = question.toLowerCase();
+
+  if (badPatterns.some((p) => lower.includes(p))) return false;
+
   return true;
 }
 
@@ -891,6 +902,7 @@ function isGenericChoice(choice: string): boolean {
   const normalized = String(choice || "").trim().toLowerCase();
 
   if (!normalized) return true;
+  if (normalized.length < 20) return true;
 
   // Keep ONLY obvious template patterns
   return [
@@ -1735,6 +1747,49 @@ function getCorrectChoice(q: Question): string {
   return idx >= 0 ? String(normalizedChoices[idx] || "").trim() : "";
 }
 
+async function repairWeakQuestions(questions: Question[], passage: string): Promise<Question[]> {
+  const fixed: Question[] = [];
+
+  for (const q of questions) {
+    const updated: Question = { ...q };
+
+    if (q.choices.some((c) => isGenericChoice(c))) {
+      const newChoices = await generateWithRetry(`
+Rewrite these answer choices to be specific and based on the passage:
+
+Question:
+${q.question}
+
+Passage:
+${passage}
+
+Choices:
+${JSON.stringify(q.choices)}
+
+Return ONLY 4 improved answer choices as JSON array.
+      `) as unknown;
+
+      if (Array.isArray(newChoices)) {
+        updated.choices = normalizeChoices(newChoices);
+      } else if (
+        newChoices &&
+        typeof newChoices === "object" &&
+        Array.isArray((newChoices as Record<string, unknown>).choices)
+      ) {
+        updated.choices = normalizeChoices((newChoices as Record<string, unknown>).choices);
+      }
+    }
+
+    if (!hasLooseSupport(passage, getCorrectChoice(updated))) {
+      updated.correct_answer = "A";
+    }
+
+    fixed.push(updated);
+  }
+
+  return fixed;
+}
+
 function hasPassageSupportForChoice(passage: string, choice: string): boolean {
   void passage;
   void choice;
@@ -1742,14 +1797,16 @@ function hasPassageSupportForChoice(passage: string, choice: string): boolean {
 }
 
 function hasLooseSupport(passage: string, choice: string): boolean {
-  const normalizedPassage = String(passage || "").toLowerCase();
-  const words = String(choice || "")
-    .toLowerCase()
-    .split(/\s+/)
-    .map((w) => w.replace(/[^a-z0-9]/g, ""))
-    .filter((w) => w.length > 3);
-  if (!normalizedPassage || words.length === 0) return false;
-  return words.some((word) => normalizedPassage.includes(word));
+  const p = String(passage || "").toLowerCase();
+  const words = String(choice || "").toLowerCase().split(/\s+/).filter((w) => w.length > 4);
+
+  let matches = 0;
+
+  for (const word of words) {
+    if (p.includes(word)) matches++;
+  }
+
+  return matches >= 2;
 }
 
 function scoreChoiceSupport(passage: string, choice: string): number {
@@ -4097,7 +4154,7 @@ serve(async (req) => {
             }
 
             const coreRawQuestions = questionRes?.questions || questionRes?.items || [];
-            const coreQuestions = sanitizeQuestions(
+            let coreQuestions = sanitizeQuestions(
               coreRawQuestions,
               effectiveSubject,
               "Practice",
@@ -4106,6 +4163,54 @@ serve(async (req) => {
               String(passageRes?.passage || ""),
               grade,
             );
+            coreQuestions = sanitizeChoices(coreQuestions);
+            coreQuestions = coreQuestions.filter((q) =>
+              q.question &&
+              q.choices.length === 4 &&
+              !q.choices.some((c) => isGenericChoice(c)) &&
+              hasLooseSupport(String(passageRes?.passage || ""), getCorrectChoice(q))
+            );
+            coreQuestions = await repairWeakQuestions(coreQuestions, String(passageRes?.passage || ""));
+
+            if (coreQuestions.length < 5) {
+              console.warn("⚠️ Not enough valid questions — regenerating missing...");
+              const needed = 5 - coreQuestions.length;
+              const extraRes = await generateWithRetry(
+                generateQuestionsPrompt({
+                  grade,
+                  subject,
+                  skill: effectiveSkill,
+                  level,
+                  teksCode,
+                  passage: String(passageRes?.passage || ""),
+                }),
+                2,
+                (data: unknown) => {
+                  const raw = data as Record<string, unknown> | null;
+                  return Boolean(raw && Array.isArray(raw.questions) && raw.questions.length > 0);
+                },
+              ) as Record<string, unknown> | null;
+
+              const extraRaw = extraRes?.questions || extraRes?.items || [];
+              let extraQuestions = sanitizeQuestions(
+                extraRaw,
+                effectiveSubject,
+                "Practice",
+                effectiveSkill,
+                level,
+                String(passageRes?.passage || ""),
+                grade,
+              );
+              extraQuestions = sanitizeChoices(extraQuestions);
+              extraQuestions = extraQuestions.filter((q) =>
+                q.question &&
+                q.choices.length === 4 &&
+                !q.choices.some((c) => isGenericChoice(c)) &&
+                hasLooseSupport(String(passageRes?.passage || ""), getCorrectChoice(q))
+              );
+              coreQuestions = [...coreQuestions, ...extraQuestions.slice(0, needed)];
+            }
+
             if (coreQuestions.length === 0) {
               console.timeEnd("OPENAI_CALL");
               console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
