@@ -2523,6 +2523,20 @@
     }
 
     async function generate() {
+      console.log("🚀 GENERATE STARTED");
+
+      if (!cachedSession) {
+        console.error("❌ NO CACHED SESSION");
+
+        unlockGenerateUI();
+
+        return;
+      }
+
+      const token = cachedSession.access_token;
+
+      console.log("🔍 USING TOKEN:", token);
+
       if (isGenerating) {
         console.warn("⚠️ BLOCKED — already generating");
         return;
@@ -2657,11 +2671,7 @@
         structuredQuestions = [];
         currentData = null;
 
-        console.log("🟡 Getting session...");
-        const session = await getSafeSession();
-        console.log("STEP 3: session complete");
-        console.log("🟢 Session OK");
-        const token = session.access_token;
+        console.log("STEP 3: session ready from cache");
 
         console.log("SENDING REQUEST");
         const apiMode = currentMode === "cross"
