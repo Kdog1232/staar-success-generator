@@ -1203,87 +1203,53 @@ function buildCoreEnrichmentPrompt(params: {
   subject: CanonicalSubject;
   skill: string;
   level: Level;
-  teksCode?: string;
-  corePassage?: string;
   coreQuestions: Question[];
 }): string {
-  const { grade, subject, skill, level, teksCode = "Unknown", corePassage = "", coreQuestions } = params;
-  const coreSnapshot = JSON.stringify({
-    passage: corePassage,
-    questions: coreQuestions.map((q) => ({
-      question: q.question,
-      choices: q.choices,
-      correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
-    })),
-  });
+
+  const compactQuestions = params.coreQuestions.map((q, i) => ({
+    id: `practice-${i + 1}`,
+    q: q.question,
+    choices: q.choices,
+    answer: q.correct_answer
+  }));
 
   return `Return JSON only:
 {
-  "questions": [
-    {
-      "question": "string",
-      "choices": ["string", "string", "string", "string"],
-      "correct_answer": "A|B|C|D",
-      "explanation": "string"
-    }
-  ],
   "answerKey": [
     {
       "question_id": "practice-1",
-      "correct_answer": "A|B|C|D",
-      "explanation": "string",
-      "common_mistake": "string",
-      "parent_tip": "string"
+      "correct_answer": "A",
+      "explanation": "string"
     }
   ],
   "tutor": [
     {
       "question_id": "practice-1",
-      "question": "string",
-      "explanation": "string",
-      "common_mistake": "string",
-      "hint": "string",
-      "think": "string",
-      "step_by_step": "string"
+      "explanation": "string"
     }
   ]
 }
 
-Task: Enrich existing STAAR ${subject} practice items without changing question content.
-Grade: ${grade}
-Skill: ${skill}
-Level: ${level}
-TEKS: ${teksCode}
-
-Core input (DO NOT rewrite question text, choices, or correct answers):
-${coreSnapshot}
+Task:
+Provide the correct answer and a short explanation for each question.
 
 Rules:
-- Keep exactly 5 questions.
-- Keep each question, choices, and correct_answer exactly as provided in the core input.
-- Add concise explanation for each question.
-- Add answerKey with question_id, correct_answer, explanation, common_mistake, parent_tip for each question.
-- Add tutor entries with question_id, question, explanation, common_mistake, hint, think, and step_by_step for each question.
-- No markdown, no commentary, JSON only.`;
+- Do NOT rewrite questions
+- Do NOT rewrite choices
+- Keep explanations to 1–2 sentences
+- Be clear and direct
+- No extra text outside JSON
+
+Questions:
+${JSON.stringify(compactQuestions)}
+`;
 }
 
+
 function isValidCoreEnrichmentOutput(data: unknown): boolean {
-  const parsed = data as Record<string, unknown> | null;
-  if (!parsed) return false;
-  const maybePractice = parsed.practice && typeof parsed.practice === "object"
-    ? parsed.practice as Record<string, unknown>
-    : null;
-  const rawQuestions = parsed.questions || maybePractice?.questions;
-  if (!Array.isArray(rawQuestions) || rawQuestions.length !== 5) return false;
-
-  for (const rawQuestion of rawQuestions) {
-    const q = rawQuestion as Record<string, unknown>;
-    if (!q || typeof q.question !== "string") return false;
-    if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
-    if (!normalizeAnswerKeyEntry(q.correct_answer)) return false;
-  }
-
-  return true;
+  if (!data) return false;
+  const parsed = data as Record<string, unknown>;
+  return Array.isArray(parsed.answerKey) && Array.isArray(parsed.tutor);
 }
 
 function buildSubjectPassage(subject: CanonicalSubject, level: Level = "On Level"): string {
@@ -3914,6 +3880,38 @@ serve(async (req) => {
       mode: incomingMode,
       contextType: incomingContextType,
     } = body;
+    const requestPath = new URL(req.url).pathname;
+
+    if (requestPath.endsWith("/enrich")) {
+      const questions = Array.isArray(body.questions) ? body.questions as Question[] : [];
+      const enrichGrade = Number(body.grade || 5);
+      const enrichSubject = canonicalizeSubject(body.subject);
+      const enrichSkill = String(body.skill || READING_SKILL_DEFAULT).trim() || READING_SKILL_DEFAULT;
+      const enrichLevel = normalizeLevel(body.level);
+
+      const enrichment = await generateWithRetry(
+        buildCoreEnrichmentPrompt({
+          grade: enrichGrade,
+          subject: enrichSubject,
+          skill: enrichSkill,
+          level: enrichLevel,
+          coreQuestions: questions,
+        }),
+        2,
+        isValidCoreEnrichmentOutput,
+      ) as Record<string, unknown> | null;
+
+      return jsonResponse({
+        tutor: {
+          practice: Array.isArray(enrichment?.tutor) ? enrichment.tutor : [],
+          cross: [],
+        },
+        answerKey: {
+          practice: Array.isArray(enrichment?.answerKey) ? enrichment.answerKey : [],
+          cross: [],
+        },
+      });
+    }
 
     console.log("🔥 BACKEND RECEIVED:", {
       subject: incomingSubject,
@@ -4124,254 +4122,6 @@ serve(async (req) => {
               answerKey: { practice: [], cross: [] },
               cross: { passage: "", questions: [] },
             });
-
-            const enrichment = await generateWithRetry(
-              buildCoreEnrichmentPrompt({
-                grade,
-                subject,
-                skill: effectiveSkill,
-                level,
-                teksCode,
-                corePassage: String(passageRes?.passage || ""),
-                coreQuestions,
-              }),
-              2,
-              isValidCoreEnrichmentOutput,
-            ) as Record<string, unknown> | null;
-            console.timeEnd("OPENAI_CALL");
-            console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
-
-            if (!enrichment || !Object.keys(enrichment).length || !isValidCoreEnrichmentOutput(enrichment)) {
-              markRetry("malformed_json");
-              continue;
-            }
-
-            const parsed: Record<string, unknown> = {
-              passage: String(passageRes?.passage || ""),
-              practice: {
-                questions: Array.isArray(enrichment.questions)
-                  ? enrichment.questions
-                  : (questionRes?.questions || []),
-              },
-              answerKey: Array.isArray(enrichment.answerKey) ? enrichment.answerKey : [],
-              tutor: Array.isArray(enrichment.tutor) ? enrichment.tutor : [],
-            };
-          let passageText = String(parsed.passage || "").trim();
-          if (passageText) {
-            try {
-              passageText = enforceValidPassage(passageText);
-            } catch {
-              console.warn("Invalid passage — retrying generation");
-            }
-            parsed.passage = passageText;
-          } else if (parsed.passage && typeof parsed.passage === "object" && !Array.isArray(parsed.passage)) {
-            const passageObj = parsed.passage as Record<string, unknown>;
-            const text1 = String(passageObj.text_1 || "").trim();
-            const text2 = String(passageObj.text_2 || "").trim();
-            if (text1) {
-              try {
-                passageObj.text_1 = enforceValidPassage(text1);
-              } catch {
-                console.warn("Invalid passage — retrying generation");
-              }
-            }
-            if (text2) {
-              try {
-                passageObj.text_2 = enforceValidPassage(text2);
-              } catch {
-                console.warn("Invalid passage — retrying generation");
-              }
-            }
-            parsed.passage = passageObj;
-          }
-
-          const constraints = getGradeConstraints(grade);
-          const parsedPassage = parsed.passage;
-          const passage = parsedPassage && typeof parsedPassage === "object" && !Array.isArray(parsedPassage)
-            ? {
-              text_1: ensurePassageLength(
-                clampPassageWords(String((parsedPassage as Record<string, unknown>).text_1 || ""), range.min, range.max),
-                range.min,
-                range.max,
-                subject,
-                contentMode,
-                grade,
-                level,
-              ),
-              text_2: ensurePassageLength(
-                clampPassageWords(String((parsedPassage as Record<string, unknown>).text_2 || ""), range.min, range.max),
-                range.min,
-                range.max,
-                subject,
-                contentMode,
-                grade,
-                level,
-              ),
-            }
-            : ensurePassageLength(
-              clampPassageWords(String(parsedPassage || ""), range.min, range.max),
-              range.min,
-              range.max,
-              subject,
-              contentMode,
-              grade,
-              level,
-            );
-          let safePassage = subject === "Reading"
-            ? (
-              typeof passage === "string"
-                ? passage
-                : (passage.text_1 && passage.text_2 ? passage : null)
-            )
-            : "";
-          if (subject === "Reading") {
-            const rawPassage = getPassageText(safePassage).trim();
-            const rawWordCount = rawPassage.split(/\s+/).filter(Boolean).length;
-            if (!isValidPassage(rawPassage)) {
-              console.warn("⚠️ Weak passage — using anyway");
-            }
-            if (!rawPassage || rawWordCount < 20) {
-              markRetry("no_questions_returned");
-              continue;
-            }
-            if (!/[.!?]["')\]]?\s*$/.test(rawPassage)) {
-              console.warn("Validation issue — keeping question");
-            }
-            if (isWeakPassage(rawPassage, grade)) {
-              console.warn("Validation issue — keeping question");
-            }
-            if (violatesGradeLevel(rawPassage, grade)) {
-              console.warn("Validation issue — keeping question");
-            }
-            safePassage = enforceSentenceLength(rawPassage, constraints.maxWordsPerSentence);
-            if (looksLikeDramaPassage(safePassage)) {
-              safePassage = ensureDramaScriptFormat(safePassage);
-            }
-          }
-
-          const parsedPractice = parsed?.practice && typeof parsed.practice === "object"
-            ? parsed.practice as Record<string, unknown>
-            : null;
-          const rawQuestions = parsedPractice?.questions ||
-            parsed.questions ||
-            parsed.items ||
-            [];
-          const practiceQuestions = sanitizeQuestions(
-            rawQuestions,
-            effectiveSubject,
-            "Practice",
-            effectiveSkill,
-            level,
-            subject === "Reading" ? safePassage : "",
-            grade,
-          );
-          if (practiceQuestions.length === 0) {
-            markRetry("no_questions_returned");
-            continue;
-          }
-          if (subject === "Reading" && !passageSupportsQuestions(String(safePassage || ""), practiceQuestions)) {
-            console.warn("⚠️ Weak passage — using anyway");
-          }
-          if (subject === "Reading" && safePassage && practiceQuestions?.length) {
-            const tutorLeads = [
-              "Start by identifying the passage detail that most directly answers the question.",
-              "Trace the cause-and-effect clue in the passage before choosing an answer.",
-              "Compare two nearby details in the text and decide which one truly supports the claim.",
-              "Use the passage context to test each option against what actually happened.",
-              "Check how the evidence in this part of the text narrows the answer choices.",
-            ];
-            const lightweightTutor = practiceQuestions.map((q, index) => ({
-              question_id: ensureQuestionId(q, index, "practice"),
-              question: q.question,
-              explanation: (() => {
-                const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
-                const choice = getChoiceByLetter(q, correctLetter);
-                const choiceText = Array.isArray(choice) ? choice.join(" ") : String(choice || "");
-                const snippet = getRelevantSnippet(safePassage, q.question, choiceText) || "a specific detail stated in the passage";
-                const idea = summarizeEvidenceIdea(snippet);
-                const lead = tutorLeads[index % tutorLeads.length];
-                return `${lead} The passage idea about ${idea} helps confirm why ${correctLetter}${choiceText ? ` (${choiceText})` : ""} is the best-supported answer.`;
-              })(),
-              common_mistake: "Choosing an option that sounds related without confirming it with a specific passage detail.",
-            }));
-            const lightweightAnswerKey = practiceQuestions.map((q, index) => {
-              const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
-              const choice = getChoiceByLetter(q, correctLetter);
-              const choiceText = Array.isArray(choice) ? choice.join(" ") : String(choice || "");
-              const snippet = getRelevantSnippet(safePassage, q.question, choiceText) || "a specific detail stated in the passage";
-              const idea = summarizeEvidenceIdea(snippet);
-              return {
-                question_id: ensureQuestionId(q, index, "practice"),
-                correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
-                explanation: `If you focus on the passage idea about ${idea}, ${correctLetter}${choiceText ? ` (${choiceText})` : ""} is the choice that stays most consistent with the text.`,
-                common_mistake: "Selecting an answer that mentions the topic but is not fully supported by passage evidence.",
-                parent_tip: variedParentTip(index),
-              };
-            });
-            bestAttempt = {
-              passage: safePassage,
-              practice: { questions: practiceQuestions },
-              cross: { passage: "", questions: [] },
-              tutor: { practice: lightweightTutor, cross: [] },
-              answerKey: { practice: lightweightAnswerKey, cross: [] },
-            };
-          }
-
-          const pipelineResult = await runPipeline({
-            subject: effectiveSubject,
-            skill: effectiveSkill,
-            level,
-            crossPassage: subject === "Reading" ? safePassage : "",
-            questions: practiceQuestions,
-          });
-          const pipelineQuestions = sanitizeQuestions(
-            pipelineResult.questions,
-            effectiveSubject,
-            "Practice",
-            effectiveSkill,
-            level,
-            subject === "Reading" ? safePassage : "",
-            grade,
-          );
-          if (pipelineQuestions.length === 0) {
-            markRetry("no_questions_returned");
-            continue;
-          }
-          const outputValid = isValidAIOutput({
-            passage: safePassage,
-            practice: { questions: pipelineQuestions },
-          });
-          if (!outputValid) {
-            console.warn("Validation issue — keeping question");
-          }
-
-          const payload: CoreResponse = {
-            passage: subject === "Reading"
-              ? ensurePassageLength(getPassageText(safePassage), range.min, range.max, subject, contentMode, grade, level)
-              : undefined,
-            practice: { questions: pipelineQuestions },
-          };
-          if (subject !== "Reading") {
-            delete payload.passage;
-          }
-          bestAttempt = {
-            passage: payload.passage || "",
-            practice: payload.practice,
-            cross: { passage: "", questions: [] },
-            tutor: {
-              practice: Array.isArray(pipelineResult.tutor?.practice) ? pipelineResult.tutor.practice as TutorExplanation[] : [],
-              cross: Array.isArray(pipelineResult.tutor?.cross) ? pipelineResult.tutor.cross as TutorExplanation[] : [],
-            },
-            answerKey: {
-              practice: Array.isArray(pipelineResult.answerKey?.practice)
-                ? pipelineResult.answerKey.practice as AnswerKeyEntry[]
-                : [],
-              cross: Array.isArray(pipelineResult.answerKey?.cross) ? pipelineResult.answerKey.cross as AnswerKeyEntry[] : [],
-            },
-          };
-          returnType = "PRIMARY";
-          logReturnMetrics();
-          return returnCore(payload);
         }
 
         const priorPractice = body.practiceQuestions;
@@ -4638,28 +4388,11 @@ serve(async (req) => {
             subject: effectiveSubject,
             skill: effectiveSkill,
             level,
-            teksCode,
-            corePassage: subjectCrossPassage,
             coreQuestions: crossQuestions,
           }),
           2,
           isValidCoreEnrichmentOutput,
         ) as Record<string, unknown> | null;
-
-        const enrichedCrossQuestions = Array.isArray(crossEnrichment?.questions)
-          ? sanitizeQuestions(
-            crossEnrichment.questions,
-            effectiveSubject,
-            "Cross-Curricular",
-            effectiveSkill,
-            level,
-            subjectCrossPassage,
-            grade,
-          )
-          : [];
-        if (enrichedCrossQuestions.length) {
-          crossQuestions = enrichedCrossQuestions;
-        }
 
         const tutorPractice = sanitizeTutorExplanations(
           [],
