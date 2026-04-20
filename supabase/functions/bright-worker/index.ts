@@ -1298,6 +1298,127 @@ Rules:
 - ${QUESTION_DESIGN_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - No markdown. JSON only.`;
 }
+
+function generatePassagePrompt(params: {
+  grade: number;
+  subject: CanonicalSubject;
+  skill: string;
+  level: Level;
+  textType?: "fiction" | "poem" | "drama";
+  teksCode?: string;
+  contextType?: string;
+}): string {
+  const { grade, subject, skill, level, textType, teksCode = "Unknown", contextType = "real-world application" } = params;
+  const levelInstruction = getLevelInstruction(level);
+
+  if (subject !== "Reading") {
+    return `Create JSON only.
+
+Return exactly:
+{
+  "passage": ""
+}
+
+Rules:
+- Subject is ${subject}; no passage is needed for practice generation.
+- Return an empty string for passage.
+- No markdown. JSON only.`;
+  }
+
+  const readingRange = readingPracticeWordRange(level);
+  return `Create JSON only for PRACTICE MODE passage generation.
+
+Inputs:
+- Grade: ${grade}
+- Subject: ${subject}
+- Skill: ${skill}
+- Level: ${levelInstruction}
+- Context Type: ${contextType}
+- TEKS Alignment Code: ${teksCode}
+
+${ENGAGING_CONTEXT_RULES}
+${THINKING_OVER_RECALL_RULES}
+
+Return exactly:
+{
+  "passage": "REQUIRED ${textType || "fiction"} passage (${readingRange.min}–${readingRange.max} words)"
+}
+
+Rules:
+- Generate exactly 1 complete passage.
+- Every sentence must be complete and meaningful.
+- Ensure passage includes enough detail to support 5 rigorous STAAR-style questions.
+- Use natural, non-robotic language.
+- No markdown. JSON only.`;
+}
+
+function generateQuestionsPrompt(params: {
+  grade: number;
+  subject: CanonicalSubject;
+  skill: string;
+  level: Level;
+  passage: string;
+  teksCode?: string;
+  contextType?: string;
+}): string {
+  const {
+    grade,
+    subject,
+    skill,
+    level,
+    passage,
+    teksCode = "Unknown",
+    contextType = "real-world application",
+  } = params;
+  const levelInstruction = getLevelInstruction(level);
+  const rules = isPassageBased("Practice", subject) ? PASSAGE_RULES : NON_PASSAGE_RULES;
+  const scienceReasoningRule = subject === "Science"
+    ? "- Science rule: ask reasoning-focused questions (not simple recall) and use realistic scenarios/situations when possible."
+    : "";
+  const passageSection = subject === "Reading"
+    ? `Passage:
+${passage || "(missing passage)"}`
+    : "No passage provided.";
+
+  return `Create JSON only for PRACTICE MODE question generation.
+
+Inputs:
+- Grade: ${grade}
+- Subject: ${subject}
+- Skill: ${skill}
+- Level: ${levelInstruction}
+- Context Type: ${contextType}
+- TEKS Alignment Code: ${teksCode}
+
+${passageSection}
+${ENGAGING_CONTEXT_RULES}
+${THINKING_OVER_RECALL_RULES}
+
+Return exactly:
+{
+  "questions": [
+    {
+      "question": "...",
+      "choices": ["...", "...", "...", "..."],
+      "correct_answer": "A"
+    }
+  ]
+}
+
+Rules:
+- Generate exactly 5 questions aligned to skill ${skill}.
+- Each question must have exactly 4 choices.
+- Each question must have 1 correct answer and 3 realistic distractors.
+- Match grade ${grade} and level (${levelInstruction}).
+- Use natural, non-robotic language.
+- ${scienceReasoningRule || "Use cognitively demanding questions that require reasoning, not simple recall."}
+- ${rules.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${subject === "Reading" ? READING_PRACTICE_RIGOR_SECTION.replace(/\n/g, "\n- ").replace(/^-\s/, "") : DIFFICULTY_ENFORCEMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${ANTI_GENERIC_ANSWER_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${QUESTION_DESIGN_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- No markdown. JSON only.`;
+}
+
 function buildEnrichmentPrompt(params: {
   grade: number;
   subject: CanonicalSubject;
@@ -4262,37 +4383,51 @@ serve(async (req) => {
             console.time("OPENAI_CALL");
             const aiStartTime = Date.now();
             const variationSeed = Math.random().toString(36).slice(2, 8);
-            const corePrompt = buildGenerationPrompt({
-              mode: "core",
+            const passagePrompt = generatePassagePrompt({
               grade,
               subject,
               skill: effectiveSkill,
               level,
               teksCode,
             }) + `\nVariation ID: ${variationSeed}`;
-            const core = await generateWithRetry(corePrompt);
+            const passageResult = await generateWithRetry(
+              passagePrompt,
+              2,
+              (data: unknown) => Boolean(data && typeof data === "object" && "passage" in (data as Record<string, unknown>)),
+            ) as Record<string, unknown> | null;
+            const corePassage = subject === "Reading" ? String(passageResult?.passage || "") : "";
+            const questionPrompt = generateQuestionsPrompt({
+              grade,
+              subject,
+              skill: effectiveSkill,
+              level,
+              teksCode,
+              passage: corePassage,
+            }) + `\nVariation ID: ${variationSeed}`;
+            const questionResult = await generateWithRetry(
+              questionPrompt,
+              2,
+              (data: unknown) => {
+                const raw = data as Record<string, unknown> | null;
+                return Boolean(raw && Array.isArray(raw.questions) && raw.questions.length > 0);
+              },
+            ) as Record<string, unknown> | null;
 
-            if (!core || !Object.keys(core).length || !isValidAIOutput(core)) {
+            if (!questionResult || !Object.keys(questionResult).length) {
               console.timeEnd("OPENAI_CALL");
               console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
               markRetry("malformed_json");
               continue;
             }
 
-            const parsedCorePractice = core?.practice && typeof core.practice === "object"
-              ? core.practice as Record<string, unknown>
-              : null;
-            const coreRawQuestions = parsedCorePractice?.questions ||
-              core.questions ||
-              core.items ||
-              [];
+            const coreRawQuestions = questionResult?.questions || questionResult?.items || [];
             const coreQuestions = sanitizeQuestions(
               coreRawQuestions,
               effectiveSubject,
               "Practice",
               effectiveSkill,
               level,
-              subject === "Reading" ? String(core.passage || "") : "",
+              corePassage,
               grade,
             );
             if (coreQuestions.length === 0) {
@@ -4308,7 +4443,7 @@ serve(async (req) => {
               skill: effectiveSkill,
               level,
               teksCode,
-              corePassage: subject === "Reading" ? String(core.passage || "") : "",
+              corePassage,
               coreQuestions,
             }) + `\nVariation ID: ${variationSeed}`;
             const enrichment = await generateWithRetry(enrichmentPrompt, 2, isValidCoreEnrichmentOutput);
@@ -4321,8 +4456,8 @@ serve(async (req) => {
             }
 
             const parsed: Record<string, unknown> = {
-              ...core,
-              passage: core.passage,
+              ...questionResult,
+              passage: corePassage,
               practice: {
                 questions: Array.isArray(enrichment.questions)
                   ? enrichment.questions
