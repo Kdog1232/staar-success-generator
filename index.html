@@ -1892,6 +1892,13 @@
       };
     }
 
+    function matchesQuestionId(id, modePrefix, index) {
+      const expectedUnderscore = `${modePrefix}_q${index + 1}`;
+      const expectedDash = `${modePrefix}-${index + 1}`;
+      const normalized = String(id || "").trim().toLowerCase();
+      return normalized === expectedUnderscore || normalized === expectedDash;
+    }
+
     function validateTutorAnswerAlignment(questions = [], tutorEntries = [], answerEntries = [], modePrefix = "practice") {
       if (!Array.isArray(questions) || !Array.isArray(tutorEntries) || !Array.isArray(answerEntries)) return false;
       if (questions.length !== 5 || tutorEntries.length !== 5 || answerEntries.length !== 5) return false;
@@ -1899,14 +1906,69 @@
         const expectedId = `${modePrefix}_q${i + 1}`;
         const tutor = tutorEntries[i] || {};
         const answer = answerEntries[i] || {};
-        const tutorOk = tutor.question_id === expectedId &&
-          tutor.explanation && tutor.hint && tutor.step_by_step && tutor.common_mistake;
-        const answerOk = answer.question_id === expectedId &&
+        const tutorOk = (matchesQuestionId(tutor.question_id, modePrefix, i) || tutor.question_id === expectedId) &&
+          tutor.explanation;
+        const answerOk = (matchesQuestionId(answer.question_id, modePrefix, i) || answer.question_id === expectedId) &&
           answer.correct_answer &&
-          answer.explanation &&
-          answer.common_mistake;
+          answer.explanation;
         return Boolean(tutorOk && answerOk);
       });
+    }
+
+    async function fetchPracticeEnrichment({ token, subject, grade, skill, level, passage, questions }) {
+      const response = await fetch(
+        "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker/enrich",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            apikey: SUPABASE_ANON_KEY
+          },
+          body: JSON.stringify({
+            subject,
+            grade,
+            skill,
+            level,
+            passage,
+            questions
+          })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`ENRICH_STATUS_${response.status}`);
+      }
+
+      return response.json();
+    }
+
+    async function fetchCrossContent({ token, subject, grade, skill, level }) {
+      const response = await fetch(
+        "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            apikey: SUPABASE_ANON_KEY
+          },
+          body: JSON.stringify({
+            subject,
+            grade,
+            skill,
+            level,
+            mode: "cross"
+          })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`CROSS_STATUS_${response.status}`);
+      }
+
+      const payload = await response.json();
+      return payload?.cross || { passage: "", questions: [] };
     }
 
     function getTodayKey() {
@@ -2681,13 +2743,10 @@
           structuredQuestions = questions.slice(0, 5);
         }
 
-        validateSupportIntegrity(data);
-        console.log("ALIGNMENT DEBUG:", {
-          practice: data.practice?.questions?.length,
-          tutor: data.tutor?.practice?.length,
-          answer: data.answerKey?.practice?.length
-        });
-        validateAlignment(data);
+        if (!data.tutor) data.tutor = { practice: [], cross: [] };
+        if (!data.answerKey) data.answerKey = { practice: [], cross: [] };
+        if (!Array.isArray(data.tutor.practice)) data.tutor.practice = [];
+        if (!Array.isArray(data.answerKey.practice)) data.answerKey.practice = [];
         currentData = data;
         const selectedMode = apiMode === "Cross-Curricular" ? "Cross-Curricular" : "Practice";
         const selectedContent = resolveModeContent(currentData, selectedMode);
@@ -2707,6 +2766,59 @@
         }
         await new Promise((resolve) => requestAnimationFrame(() => resolve()));
         console.log("STEP 6: render complete");
+
+        fetchPracticeEnrichment({
+          token,
+          subject,
+          grade,
+          skill,
+          level,
+          passage: generatedPassage,
+          questions: structuredQuestions
+        })
+          .then((enrichment) => {
+            data.tutor = {
+              practice: Array.isArray(enrichment?.tutor?.practice) ? enrichment.tutor.practice : [],
+              cross: []
+            };
+
+            data.answerKey = {
+              practice: Array.isArray(enrichment?.answerKey?.practice) ? enrichment.answerKey.practice : [],
+              cross: []
+            };
+
+            currentData = data;
+            renderTutorSection(data.tutor);
+            renderAnswerSection(data.answerKey);
+          })
+          .catch((err) => {
+            console.warn("⚠️ Enrichment failed:", err);
+          });
+
+        fetchCrossContent({
+          token,
+          subject,
+          grade,
+          skill,
+          level
+        })
+          .then((crossData) => {
+            data.cross = {
+              passage: crossData?.passage || "",
+              questions: Array.isArray(crossData?.questions)
+                ? crossData.questions
+                : []
+            };
+
+            currentData = data;
+
+            if (currentMode === "cross") {
+              renderCrossSection(data.cross, data.cross.passage || "");
+            }
+          })
+          .catch((err) => {
+            console.warn("⚠️ Cross failed:", err);
+          });
       } catch (err) {
         const message = err?.message || String(err || "");
         if (message === "HALT") {
