@@ -2778,13 +2778,13 @@ async function generateWithRetry(prompt: string, attempts = 2) {
 
   for (let i = 0; i < attempts; i++) {
     try {
-      const result = await callOpenAI(prompt);
+      const result = await callOpenAI(prompt, 20000);
 
-      if (result) {
+      if (result && isValidAIOutput(result)) {
         return result;
       }
 
-      console.warn("⚠️ Empty result — retrying...");
+      console.warn("⚠️ Invalid output — retrying...");
       last = result;
 
     } catch (err) {
@@ -2792,6 +2792,7 @@ async function generateWithRetry(prompt: string, attempts = 2) {
     }
   }
 
+  console.error("❌ Returning last attempt");
   return last;
 }
 
