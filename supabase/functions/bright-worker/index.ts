@@ -1100,205 +1100,6 @@ function subjectStructure(subject: CanonicalSubject): string {
   ].join("\n");
 }
 
-function buildPrompt(params: {
-  grade: number;
-  subject: CanonicalSubject;
-  skill: string;
-  level: Level;
-  mode: CanonicalMode;
-}): string {
-  const { grade, subject, skill, level, mode } = params;
-  const levelInstruction = getLevelInstruction(level);
-
-  if (mode === "Cross-Curricular") {
-    return buildCrossPrompt({ grade, subject, skill, level: levelInstruction });
-  }
-
-  return `Generate STAAR-style ${subject} practice questions.
-
-Inputs:
-- Grade: ${grade}
-- Subject: ${subject}
-- Skill: ${skill}
-- Level: ${levelInstruction}
-
-Return strict JSON only with:
-- passage (if needed)
-- 5 questions
-- 4 choices per question
-- 1 correct answer + 3 realistic distractors
-- explanation, common_mistake, and parent_tip fields per question
-
-Keep language natural and student-friendly.`;
-}
-function buildCrossPrompt(params: {
-  grade: number;
-  subject: CanonicalSubject;
-  skill: string;
-  level: string;
-  teksCode?: string;
-  contextType?: string;
-  practiceSampleSize?: number;
-  crossPassage?: string;
-}): string {
-  const {
-    grade,
-    subject,
-    skill,
-    level,
-    teksCode = "Unknown",
-    contextType = "real-world application",
-    practiceSampleSize = 0,
-    crossPassage = "",
-  } = params;
-  const scienceReasoningRule = subject === "Science"
-    ? "- Science rule: emphasize reasoning over recall and frame questions in concrete scenarios when possible."
-    : "- Use questions that require applied reasoning rather than simple recall.";
-  const passageDirective = crossPassage.trim()
-    ? `\nUse this passage as the only passage context:\n${crossPassage}\n`
-    : "\nGenerate a new cross-curricular passage.\n";
-
-  return `Generate cross-curricular content and return JSON only:
-{
-  "cross": {
-    "passage": "string",
-    "questions": [5 items with question, choices, correct_answer, explanation]
-  }
-}
-
-Inputs:
-- Grade: ${grade}
-- Subject: ${subject}
-- Skill: ${skill}
-- Level: ${level}
-- TEKS: ${teksCode}
-- Context Type: ${contextType}
-- Practice sample size: ${practiceSampleSize}
-
-Rules:
-- Generate exactly 1 complete passage (never empty).
-- Generate exactly 5 questions.
-- Each question must have exactly 4 choices.
-- Each question must have 1 correct answer and 3 realistic distractors.
-- Align questions to ${skill} and ${subject}.
-- Match grade ${grade} and level (${level}).
-- Use natural, non-robotic language.
-- Choices must not be written as Option A, Option B, Option C, or Option D.${passageDirective}
-${scienceReasoningRule}
-${CROSS_CURRICULAR_RIGOR_SECTION}
-${CROSS_PASSAGE_QUALITY_CRITICAL}
-${CROSS_ANTI_GENERIC_ANSWERS_CRITICAL}
-${CROSS_QUESTION_REQUIREMENTS_CRITICAL}
-${DIFFICULTY_ENFORCEMENT_RULES}
-${QUESTION_DESIGN_RULES}
-- Keep explanations short (1 sentence).
-- No markdown. JSON only.`;
-}
-function buildCorePrompt(params: {
-  grade: number;
-  subject: CanonicalSubject;
-  skill: string;
-  level: Level;
-  textType?: "fiction" | "poem" | "drama";
-  teksCode?: string;
-  contextType?: string;
-}): string {
-  const { grade, subject, skill, level, textType, teksCode = "Unknown", contextType = "real-world application" } = params;
-  const levelInstruction = getLevelInstruction(level);
-  const rules = isPassageBased("Practice", subject) ? PASSAGE_RULES : NON_PASSAGE_RULES;
-  const modeLogic = `MODE LOGIC (CRITICAL):
-
-IF subject = Reading:
-→ Use passage-based reasoning
-
-IF subject ≠ Reading AND mode = Practice:
-→ DO NOT reference a passage
-→ DO NOT use phrases like:
-   "the passage shows"
-   "the text suggests"
-→ Answers must be based on logic or problem-solving
-
-IF mode = Cross-Curricular:
-→ Use passage as context
-→ Combine reasoning + content`;
-  const scienceReasoningRule = subject === "Science"
-    ? "- Science rule: ask reasoning-focused questions (not simple recall) and use realistic scenarios/situations when possible."
-    : "";
-
-  if (subject === "Reading") {
-    const readingRange = readingPracticeWordRange(level);
-    return `Create JSON only for PRACTICE MODE.
-
-Inputs:
-- Grade: ${grade}
-- Subject: ${subject}
-- Skill: ${skill}
-- Level: ${levelInstruction}
-
-${ENGAGING_CONTEXT_RULES}
-${THINKING_OVER_RECALL_RULES}
-
-Return exactly:
-{
-  "passage": "REQUIRED ${textType || "fiction"} passage (${readingRange.min}–${readingRange.max} words)",
-  "practice": { "questions": [5 items with question, choices, correct_answer, explanation] }
-}
-
-Rules:
-- Generate a passage for reading practice.
-- Generate exactly 5 questions aligned to skill ${skill}.
-- Each question must have exactly 4 choices.
-- Each question must have 1 correct answer and 3 realistic distractors.
-- Match grade ${grade} and level (${levelInstruction}).
-- Use natural, non-robotic language.
-- Context Type: ${contextType}
-- TEKS Alignment Code: ${teksCode}
-- ${scienceReasoningRule || "Use cognitively demanding questions that require reasoning, not simple recall."}
-- Mode rule: Use passage-based reasoning and ensure answers are supported by the passage.
-- ${modeLogic.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${rules.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${READING_PRACTICE_RIGOR_SECTION.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${ANTI_GENERIC_ANSWER_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${DIFFICULTY_ENFORCEMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${QUESTION_DESIGN_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- No markdown. JSON only.`;
-  }
-
-  return `Create JSON only for PRACTICE MODE.
-
-Inputs:
-- Grade: ${grade}
-- Subject: ${subject}
-- Skill: ${skill}
-- Level: ${levelInstruction}
-
-${ENGAGING_CONTEXT_RULES}
-${THINKING_OVER_RECALL_RULES}
-
-Return exactly:
-{
-  "practice": { "questions": [5 items with question, choices, correct_answer, explanation] }
-}
-
-Rules:
-- Subject: ${subject}.
-- Generate exactly 5 questions aligned to skill ${skill}.
-- Do not generate a passage.
-- Each question must have exactly 4 choices.
-- Each question must have 1 correct answer and 3 realistic distractors.
-- Match grade ${grade} and level (${levelInstruction}).
-- Use natural, non-robotic language.
-- Context Type: ${contextType}
-- TEKS Alignment Code: ${teksCode}
-- ${scienceReasoningRule || "Use cognitively demanding questions that require reasoning, not simple recall."}
-- Mode rule: Do not reference a passage. Every choice must be a valid response to the problem.
-- ${modeLogic.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${rules.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${DIFFICULTY_ENFORCEMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${QUESTION_DESIGN_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- No markdown. JSON only.`;
-}
-
 function generatePassagePrompt(params: {
   grade: number;
   subject: CanonicalSubject;
@@ -1417,107 +1218,6 @@ Rules:
 - ${ANTI_GENERIC_ANSWER_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${QUESTION_DESIGN_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - No markdown. JSON only.`;
-}
-
-function buildEnrichmentPrompt(params: {
-  grade: number;
-  subject: CanonicalSubject;
-  skill: string;
-  practiceQuestions: Question[];
-  level: Level;
-  crossPassage?: string;
-  teksCode?: string;
-  contextType?: string;
-}): string {
-  const { grade, subject, skill, practiceQuestions, level, crossPassage = "", teksCode = "Unknown", contextType = "real-world application" } = params;
-  const levelInstruction = getLevelInstruction(level);
-  return buildCrossPrompt({
-    grade,
-    subject,
-    skill,
-    level: levelInstruction,
-    teksCode,
-    contextType,
-    practiceSampleSize: practiceQuestions.slice(0, 5).length,
-    crossPassage,
-  });
-}
-function buildGenerationPrompt(params: {
-  mode: "core" | "enrichment";
-  grade: number;
-  subject: CanonicalSubject;
-  skill: string;
-  level: Level;
-  teksCode?: string;
-  practiceQuestions?: Question[];
-  crossPassage?: string;
-}): string {
-  const rules = isPassageBased(params.mode === "core" ? "Practice" : "Cross-Curricular", params.subject)
-    ? PASSAGE_RULES
-    : NON_PASSAGE_RULES;
-  const modeLogic = `MODE LOGIC (CRITICAL):
-
-IF subject = Reading:
-→ Use passage-based reasoning
-
-IF subject ≠ Reading AND mode = Practice:
-→ DO NOT reference a passage
-→ DO NOT use phrases like:
-   "the passage shows"
-   "the text suggests"
-→ Answers must be based on logic or problem-solving
-
-IF mode = Cross-Curricular:
-→ Use passage as context
-→ Combine reasoning + content`;
-  const scienceReasoningRule = params.subject === "Science"
-    ? "Science rule: ask reasoning-heavy questions (not simple recall) and use realistic situations where possible."
-    : "Use applied reasoning questions rather than simple recall prompts.";
-  if (params.mode === "core") {
-    const readingDirective = params.subject === "Reading"
-      ? `Include exactly 1 passage (complete, no truncation).`
-      : `Do not include a passage.`;
-    return `Return JSON only:
-{
-  "passage": "string (required for Reading only)",
-  "practice": {
-    "questions": [
-      {
-        "question": "string",
-        "choices": ["string","string","string","string"],
-        "correct_answer": "A|B|C|D"
-      }
-    ]
-  }
-}
-
-Task: Create STAAR-style ${params.subject} practice content.
-Grade: ${params.grade}
-Skill: ${params.skill}
-Level: ${params.level}
-TEKS: ${params.teksCode || "Unknown"}
-
-Rules:
-- ${readingDirective}
-- Include exactly 5 questions.
-- Each question must have exactly 4 choices.
-- Choices must be concise, complete, and plausible.
-- ${scienceReasoningRule}
-- ${THINKING_OVER_RECALL_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- Mode rule: If no passage is included, do not reference passage-based support language.
-- ${modeLogic.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${rules.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- No commentary, markdown, or extra keys.`;
-  }
-
-  return buildCrossPrompt({
-    grade: params.grade,
-    subject: params.subject,
-    skill: params.skill,
-    level: getLevelInstruction(params.level),
-    teksCode: params.teksCode,
-    crossPassage: params.crossPassage,
-  });
 }
 
 function buildCoreEnrichmentPrompt(params: {
@@ -3994,6 +3694,7 @@ serve(async (req) => {
   let effectiveSubject: CanonicalSubject = "Reading";
   let effectiveSkill = READING_SKILL_DEFAULT;
   let teksCode = "Unknown";
+  let contextType = "real-world application";
 
   const jsonResponse = (payload: Record<string, unknown>, status = 200) =>
     new Response(JSON.stringify({ ...payload, source: "ai" }), {
@@ -4233,6 +3934,7 @@ serve(async (req) => {
       skill: incomingSkill,
       level: incomingLevel,
       mode: incomingMode,
+      contextType: incomingContextType,
     } = body;
 
     console.log("🔥 BACKEND RECEIVED:", {
@@ -4248,6 +3950,7 @@ serve(async (req) => {
     skill = String(incomingSkill || READING_SKILL_DEFAULT).trim() || READING_SKILL_DEFAULT;
     teksCode = resolveTeks(subject, skill, grade);
     level = normalizeLevel(incomingLevel);
+    contextType = String(incomingContextType || "real-world application").trim() || "real-world application";
     const normalizedMode = String(incomingMode || "").toLowerCase().trim();
     if (normalizedMode === "cross" || normalizedMode === "cross-curricular") {
       effectiveMode = "cross";
@@ -4382,30 +4085,28 @@ serve(async (req) => {
           if (effectiveMode === "core") {
             console.time("OPENAI_CALL");
             const aiStartTime = Date.now();
-            const variationSeed = Math.random().toString(36).slice(2, 8);
-            const passagePrompt = generatePassagePrompt({
-              grade,
-              subject,
-              skill: effectiveSkill,
-              level,
-              teksCode,
-            }) + `\nVariation ID: ${variationSeed}`;
-            const passageResult = await generateWithRetry(
-              passagePrompt,
+            const variationId = Math.random().toString(36).slice(2, 8);
+            const passageRes = await generateWithRetry(
+              generatePassagePrompt({
+                grade,
+                subject,
+                skill: effectiveSkill,
+                level,
+                teksCode,
+                contextType,
+              }) + `\nVariation ID: ${variationId}`,
               2,
-              (data: unknown) => Boolean(data && typeof data === "object" && "passage" in (data as Record<string, unknown>)),
             ) as Record<string, unknown> | null;
-            const corePassage = subject === "Reading" ? String(passageResult?.passage || "") : "";
-            const questionPrompt = generateQuestionsPrompt({
-              grade,
-              subject,
-              skill: effectiveSkill,
-              level,
-              teksCode,
-              passage: corePassage,
-            }) + `\nVariation ID: ${variationSeed}`;
-            const questionResult = await generateWithRetry(
-              questionPrompt,
+            const questionRes = await generateWithRetry(
+              generateQuestionsPrompt({
+                grade,
+                subject,
+                skill: effectiveSkill,
+                level,
+                teksCode,
+                contextType,
+                passage: String(passageRes?.passage || ""),
+              }) + `\nVariation ID: ${variationId}`,
               2,
               (data: unknown) => {
                 const raw = data as Record<string, unknown> | null;
@@ -4413,21 +4114,21 @@ serve(async (req) => {
               },
             ) as Record<string, unknown> | null;
 
-            if (!questionResult || !Object.keys(questionResult).length) {
+            if (!questionRes || !Object.keys(questionRes).length) {
               console.timeEnd("OPENAI_CALL");
               console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
               markRetry("malformed_json");
               continue;
             }
 
-            const coreRawQuestions = questionResult?.questions || questionResult?.items || [];
+            const coreRawQuestions = questionRes?.questions || questionRes?.items || [];
             const coreQuestions = sanitizeQuestions(
               coreRawQuestions,
               effectiveSubject,
               "Practice",
               effectiveSkill,
               level,
-              corePassage,
+              String(passageRes?.passage || ""),
               grade,
             );
             if (coreQuestions.length === 0) {
@@ -4437,16 +4138,29 @@ serve(async (req) => {
               continue;
             }
 
-            const enrichmentPrompt = buildCoreEnrichmentPrompt({
-              grade,
-              subject,
-              skill: effectiveSkill,
-              level,
-              teksCode,
-              corePassage,
-              coreQuestions,
-            }) + `\nVariation ID: ${variationSeed}`;
-            const enrichment = await generateWithRetry(enrichmentPrompt, 2, isValidCoreEnrichmentOutput);
+            console.timeEnd("OPENAI_CALL");
+            console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
+            return jsonResponse({
+              passage: passageRes?.passage || "",
+              practice: { questions: coreQuestions },
+              tutor: { practice: [], cross: [] },
+              answerKey: { practice: [], cross: [] },
+              cross: { passage: "", questions: [] },
+            });
+
+            const enrichment = await generateWithRetry(
+              buildCoreEnrichmentPrompt({
+                grade,
+                subject,
+                skill: effectiveSkill,
+                level,
+                teksCode,
+                corePassage: String(passageRes?.passage || ""),
+                coreQuestions,
+              }),
+              2,
+              isValidCoreEnrichmentOutput,
+            ) as Record<string, unknown> | null;
             console.timeEnd("OPENAI_CALL");
             console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
 
@@ -4456,15 +4170,14 @@ serve(async (req) => {
             }
 
             const parsed: Record<string, unknown> = {
-              ...questionResult,
-              passage: corePassage,
+              passage: String(passageRes?.passage || ""),
               practice: {
                 questions: Array.isArray(enrichment.questions)
                   ? enrichment.questions
-                  : coreQuestions,
+                  : (questionRes?.questions || []),
               },
-              answerKey: enrichment.answerKey,
-              tutor: enrichment.tutor,
+              answerKey: Array.isArray(enrichment.answerKey) ? enrichment.answerKey : [],
+              tutor: Array.isArray(enrichment.tutor) ? enrichment.tutor : [],
             };
           let passageText = String(parsed.passage || "").trim();
           if (passageText) {
@@ -4845,53 +4558,47 @@ serve(async (req) => {
 
         console.time("OPENAI_CALL");
         const enrichStartTime = Date.now();
-        const variationSeed = Math.random().toString(36).slice(2, 8);
-        const enrichRes = await fetch("https://api.openai.com/v1/responses", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
-            "Content-Type": "application/json",
+        const variationId = Math.random().toString(36).slice(2, 8);
+        const crossPassageRes = await generateWithRetry(
+          generatePassagePrompt({
+            grade,
+            subject: effectiveSubject,
+            skill: effectiveSkill,
+            level,
+            teksCode,
+            contextType,
+          }) + `\nVariation ID: ${variationId}`,
+          2,
+          (data: unknown) => Boolean(data && typeof data === "object" && "passage" in (data as Record<string, unknown>)),
+        ) as Record<string, unknown> | null;
+        const crossQuestionRes = await generateWithRetry(
+          generateQuestionsPrompt({
+            grade,
+            subject: effectiveSubject,
+            skill: effectiveSkill,
+            level,
+            teksCode,
+            contextType,
+            passage: String(crossPassageRes?.passage || baseCrossPassage),
+          }) + `\nVariation ID: ${variationId}`,
+          2,
+          (data: unknown) => {
+            const raw = data as Record<string, unknown> | null;
+            return Boolean(raw && Array.isArray(raw.questions) && raw.questions.length > 0);
           },
-          body: JSON.stringify({
-            model: "gpt-4o-mini",
-            temperature: 0.7,
-            top_p: 1,
-            input: buildGenerationPrompt({
-              mode: "enrichment",
-              grade,
-              subject: effectiveSubject,
-              skill: effectiveSkill,
-              practiceQuestions: normalizedPractice,
-              level,
-              crossPassage: baseCrossPassage,
-              teksCode,
-            }) + `\nVariation ID: ${variationSeed}`,
-            max_output_tokens: 1400,
-          }),
-          signal: AbortSignal.timeout(MAX_TIMEOUT_MS),
-        });
+        ) as Record<string, unknown> | null;
         console.timeEnd("OPENAI_CALL");
         console.log("⏱️ AI Duration:", Date.now() - enrichStartTime);
 
-        if (!enrichRes.ok) {
+        if (!crossQuestionRes || !Object.keys(crossQuestionRes).length) {
           markRetry("no_questions_returned");
           continue;
         }
 
-        const enrichJson = await enrichRes.json() as Record<string, unknown>;
-        const enrichAny = enrichJson as {
-          output?: Array<{ content?: Array<{ text?: string }> }>;
-          output_text?: string;
+        const parsedCross: Record<string, unknown> = {
+          passage: String(crossPassageRes?.passage || baseCrossPassage),
+          questions: crossQuestionRes?.questions || crossQuestionRes?.items || [],
         };
-        const enrichText = String(
-          enrichAny.output?.[0]?.content?.[0]?.text ||
-          enrichAny.output_text ||
-          "",
-        ).trim();
-        const parsed = tryParseJsonPayload(enrichText) || {};
-        const parsedCross = parsed?.cross && typeof parsed.cross === "object"
-          ? parsed.cross as Record<string, unknown>
-          : {};
         let subjectCrossPassage = String(parsedCross.passage || "").trim() || baseCrossPassage;
         const originalCrossPassage = subjectCrossPassage;
         let regeneratedCrossPassage = false;
@@ -4949,6 +4656,35 @@ serve(async (req) => {
           console.warn("Validation issue — keeping question");
         }
 
+        const crossEnrichment = await generateWithRetry(
+          buildCoreEnrichmentPrompt({
+            grade,
+            subject: effectiveSubject,
+            skill: effectiveSkill,
+            level,
+            teksCode,
+            corePassage: subjectCrossPassage,
+            coreQuestions: crossQuestions,
+          }),
+          2,
+          isValidCoreEnrichmentOutput,
+        ) as Record<string, unknown> | null;
+
+        const enrichedCrossQuestions = Array.isArray(crossEnrichment?.questions)
+          ? sanitizeQuestions(
+            crossEnrichment.questions,
+            effectiveSubject,
+            "Cross-Curricular",
+            effectiveSkill,
+            level,
+            subjectCrossPassage,
+            grade,
+          )
+          : [];
+        if (enrichedCrossQuestions.length) {
+          crossQuestions = enrichedCrossQuestions;
+        }
+
         const tutorPractice = sanitizeTutorExplanations(
           [],
           normalizedPractice,
@@ -4956,7 +4692,7 @@ serve(async (req) => {
           "practice",
         );
         let tutorCross = sanitizeTutorExplanations(
-          [],
+          Array.isArray(crossEnrichment?.tutor) ? crossEnrichment.tutor : [],
           crossQuestions,
           effectiveSubject,
           "cross",
@@ -4971,7 +4707,7 @@ serve(async (req) => {
           "practice",
         );
         let answerKeyCross = sanitizeAnswerKey(
-          [],
+          Array.isArray(crossEnrichment?.answerKey) ? crossEnrichment.answerKey : [],
           crossQuestions,
           effectiveSubject,
           tutorCross,
