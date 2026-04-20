@@ -576,14 +576,8 @@ function variedParentTip(index: number): string {
   return tips[Math.abs(index) % tips.length];
 }
 
-function buildGuidedFallbackExplanation(correctChoice: string): string {
-  const leads = [
-    "A strong reading of the passage points to",
-    "The passage evidence lines up most clearly with",
-    "When you connect the key details, the best-supported choice is",
-  ];
-  const lead = leads[Math.floor(Math.random() * leads.length)];
-  return `${lead} ${extractKeyConcept(correctChoice)}.`;
+function buildGuidedFallbackExplanation(_correctChoice: string): string {
+  return "";
 }
 
 function getRelevantSnippet(
@@ -667,7 +661,7 @@ function teacherStyleExplanation(passage: PassageContent | string, question: str
   if (snippet) {
     return `The passage states: "${snippet}." This clue points to ${extractKeyConcept(correctChoice)}, which helps confirm the best answer.`;
   }
-  return buildGuidedFallbackExplanation(correctChoice);
+  return "";
 }
 
 function buildCrossExplanation(passage: PassageContent | string, question: string, correctChoice = ""): string {
@@ -757,13 +751,12 @@ function isGenericChoice(choice: string): boolean {
 
   if (!normalized) return true;
 
-  // ONLY flag truly empty or placeholder-like responses
-  if (normalized.length < 25) return true;
-
-  // Keep ONLY the most obvious generic patterns
+  // Keep ONLY obvious template patterns
   return [
-    /\bwhich statement\b/i,
-    /\bwhich answer\b/i,
+    /\bone detail in the text shows\b/i,
+    /\banother clue suggests\b/i,
+    /\ba separate detail\b/i,
+    /\bthe strongest evidence confirms\b/i,
   ].some((pattern) => pattern.test(normalized));
 }
 
@@ -827,25 +820,13 @@ function passageSupportsQuestions(passage: string, questions: Question[]): boole
 function sanitizeChoices(questions: Question[]): Question[] {
   return questions.map(q => ({
     ...q,
-    choices: normalizeChoices(q.choices),
+    choices: normalizeChoices(q.choices)
   }));
 }
 
 function sanitizeExplanations(questions: Question[], passage: PassageContent | string): Question[] {
-  return questions.map((q) => {
-    const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
-    const correctChoiceRaw = getChoiceByLetter(q, correctLetter);
-    const correctChoice = Array.isArray(correctChoiceRaw)
-      ? correctChoiceRaw.join(" ")
-      : correctChoiceRaw;
-    const fallbackExplanation = teacherStyleExplanation(passage, q.question, correctChoice);
-    return {
-      ...q,
-      explanation: ensureUsableExplanation(
-        q.explanation || fallbackExplanation,
-      ),
-    };
-  });
+  void passage;
+  return questions;
 }
 
 function validateChoiceAlignment(choice: string, skillType: "general"): boolean {
@@ -1360,14 +1341,8 @@ function buildExplanation(answer: string, question: string): string {
   return `The correct answer is supported by the passage detail: ${cleanAnswer}. A distractor is incorrect when it is only partly true or not fully supported.`;
 }
 
-function buildFallbackExplanation(passage: string, question: string, correctChoice: string): string {
-  const evidence = String(passage || "")
-    .split(/[.!?]+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 24)[0] || "the key details in the passage";
-  const shortEvidence = evidence.slice(0, 120).trim();
-  const base = buildExplanation(correctChoice, question);
-  return `${base} For example, the passage states that ${shortEvidence}.`;
+function buildFallbackExplanation(_passage: string, _question: string, _correctChoice: string): string {
+  return "";
 }
 
 function getDOKLevel(
@@ -1948,29 +1923,7 @@ function finalValidation(q: Question, passage: string, skill: string): boolean {
 }
 
 function repairQuestion(q: Question, subject: CanonicalSubject, passage: PassageContent | string): Question {
-  const fallbackStem = "Which statement is best supported by the passage?";
-  const questionText = String(q.question || "").trim() || fallbackStem;
-  const cleanForSubject = (choice: string): string => subject === "Math"
-    ? (sanitizeMathChoice(choice) || "0")
-    : cleanAnswerChoice(choice);
-  const safeChoices = Array.isArray(q.choices) && q.choices.length === 4
-    ? normalizeChoices(q.choices).map(cleanForSubject) as [string, string, string, string]
-    : normalizeChoices(Array.isArray(q.choices) ? q.choices : []).map(cleanForSubject) as [string, string, string, string];
-  const uniqueChoices = makeChoicesUnique(safeChoices, subject, questionText);
-  const safeAnswer = typeof q.correct_answer === "string" && LETTERS.includes(q.correct_answer as ChoiceLetter)
-    ? q.correct_answer as ChoiceLetter
-    : "A";
-  const passageText = getPassageText(passage);
-  const safeExplanation = String(q.explanation || "").trim() ||
-    "This question was adjusted to maintain quality and alignment with the passage.";
-
-  return validateMCQuestion({
-    ...q,
-    question: questionText,
-    choices: uniqueChoices,
-    correct_answer: safeAnswer,
-    explanation: safeExplanation,
-  }, passageText, subject);
+  return validateMCQuestion(q, passage, subject);
 }
 
 function rebuildQuestionFromPassage(
@@ -1979,17 +1932,10 @@ function rebuildQuestionFromPassage(
   passageText: string,
   level: Level = "On Level",
 ): Question {
-  const fallbackQuestion = String(q.question || "").trim() || getUniversalQuestion(subject, "general", 0, level);
-  const rebuiltChoices = forcePassageChoices(passageText);
-  const rebuiltCorrect = "A";
-  const rebuiltCorrectChoice = String(rebuiltChoices[LETTERS.indexOf(rebuiltCorrect)] || "");
-  return {
-    ...q,
-    question: fallbackQuestion,
-    choices: rebuiltChoices,
-    correct_answer: rebuiltCorrect,
-    explanation: buildFallbackExplanation(passageText, fallbackQuestion, rebuiltCorrectChoice),
-  };
+  void subject;
+  void passageText;
+  void level;
+  return validateMCQuestion(q, passageText, subject);
 }
 
 function validateMCQuestion(
@@ -1997,95 +1943,13 @@ function validateMCQuestion(
   passage: PassageContent | string,
   subject: CanonicalSubject = "Reading",
 ): Question {
-  if (!q.type || q.type !== "mc") {
-    q.type = "mc";
-  }
-
-  const passageText = String(getPassageText(passage) || "");
-  const bannedTemplates = new Set([
-    "all of the above",
-    "none of the above",
-    "both a and c",
-    "both b and d",
-  ]);
-
-  let normalizedQuestion = String(q.question || "").trim();
-  const cleanForSubject = (choice: string): string => subject === "Math"
-    ? (sanitizeMathChoice(choice) || "0")
-    : cleanAnswerChoice(choice);
-  let choices = normalizeChoices(q.choices).map(cleanForSubject) as [string, string, string, string];
-  const isCopied = (choice: string, sourcePassage: string) => {
-    return sourcePassage.includes(choice.trim());
-  };
-
-  if (q.choices.some((c) => isCopied(String(c || ""), passageText))) {
-    console.warn("⚠️ Choices copy passage verbatim — keeping question");
-  }
-  let safeAnswer = safeCorrectAnswer(q.correct_answer);
-  const hasBrokenChoices = !Array.isArray(choices) || choices.length !== 4;
-  const uniqueChoiceCount = new Set(choices.map((choice) => String(choice || "").trim().toLowerCase())).size;
-  const allChoicesIdentical = uniqueChoiceCount <= 1;
-  const hasExactBannedTemplate = choices.some((choice) => bannedTemplates.has(String(choice || "").trim().toLowerCase()));
-  if (hasBrokenChoices || allChoicesIdentical || hasExactBannedTemplate) {
-    return rebuildQuestionFromPassage(q, subject, passageText);
-  }
-
-  if (isVocabStyleQuestion(normalizedQuestion)) {
-    const targetWord = extractVocabTargetWord(normalizedQuestion);
-    choices = normalizeVocabChoices(choices) as [string, string, string, string];
-    if (!isValidVocabTarget(passageText, targetWord)) {
-      normalizedQuestion = "Which idea is BEST supported by the passage?";
-      choices = makeChoicesUnique(choices, subject, normalizedQuestion);
-      safeAnswer = safeCorrectAnswer(q.correct_answer);
-    }
-  }
-  // if (subject === "Math") {
-  //   choices = enforceMathChoices(choices, safeAnswer);
-  // }
-
-  const { letter: originalLetter } = getQuestionCorrectPair({
-    ...q,
-    question: normalizedQuestion,
-    choices,
-    correct_answer: safeAnswer,
-  });
-
-  if (!originalLetter) {
-    console.warn("⚠️ Invalid correct_answer — randomizing");
-
-    const fallback = pickRandom(["A", "B", "C", "D"]) as ChoiceLetter;
-
-    return {
-      ...q,
-      choices,
-      correct_answer: fallback,
-      explanation: String(q.explanation || "Answer corrected due to invalid response."),
-    };
-  }
-
-  const resolvedCorrectLetter = originalLetter as ChoiceLetter;
-
-  const finalChoice = String(choices[LETTERS.indexOf(resolvedCorrectLetter)] || "").trim();
-  const evidenceSnippet = extractEvidenceSnippet(
-    passageText,
-    [
-      ...String(q.question || "").split(/\s+/).slice(0, 5),
-      ...finalChoice.split(/\s+/).slice(0, 6),
-    ],
-    finalChoice,
-  );
-  const syncedExplanation = finalChoice
-    ? evidenceSnippet
-      ? `If you focus on the passage idea about ${summarizeEvidenceIdea(evidenceSnippet)}, ${resolvedCorrectLetter} (${finalChoice}) stays most consistent with the evidence.`
-      : buildGuidedFallbackExplanation(finalChoice)
-    : String(q.explanation || "").trim();
-
+  void passage;
+  void subject;
   return {
     ...q,
-    question: normalizedQuestion,
-    choices,
-    correct_answer: resolvedCorrectLetter,
-    explanation: syncedExplanation,
+    type: "mc",
+    choices: normalizeChoices(q.choices),
+    correct_answer: safeCorrectAnswer(q.correct_answer),
   };
 }
 
@@ -4317,11 +4181,11 @@ async function generateWithRetry(prompt: string, attempts = 2) {
         return result;
       }
 
-      console.warn("⚠️ Invalid output, retrying...");
+      console.warn("⚠️ Invalid output — retrying...");
       last = result;
 
     } catch (err) {
-      console.warn("⚠️ Generation error, retrying...", err);
+      console.warn("⚠️ Generation failed — retrying...", err);
     }
   }
 
