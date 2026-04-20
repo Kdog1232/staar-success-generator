@@ -2058,7 +2058,20 @@
     }
 
     function renderPracticeSection(practiceData, passageText) {
-      const container = document.getElementById("output");
+      const outputContainer = document.getElementById("output");
+      if (outputContainer && !document.getElementById("practice-section")) {
+        outputContainer.innerHTML = `
+          <div class="worksheet">
+            <p class="mode-status" id="mode-status">Mode: Practice Mode ON</p>
+            <div id="practice-section" class="practice-section"></div>
+            <div id="cross-section" class="cross-section" style="display: none;"></div>
+            <div id="tutor-section" class="think-section" style="display: none;"></div>
+            <div id="answer-section" class="answer-section" style="display: none;"></div>
+          </div>
+        `;
+      }
+
+      const container = document.getElementById("practice-section") || outputContainer;
 
       if (!container) {
         console.error("❌ OUTPUT DIV NOT FOUND");
@@ -2081,9 +2094,12 @@
 
         const questionList = Array.isArray(practice.questions) ? practice.questions : [];
         let html = `
-          <div class="practice-container">
+          <div class="mode-label">Practice Mode</div>
+          <section class="worksheet-section">
             <h3>📖 Passage</h3>
-            <p>${passageText || ""}</p>
+            ${renderPassage(passageText || "")}
+          </section>
+          <section class="worksheet-section">
             <h3>❓ Questions</h3>
         `;
 
@@ -2094,46 +2110,10 @@
   `;
         });
 
-        if (currentData?.cross?.questions?.length) {
-          html += `<div id="cross-block"></div>`;
-        }
-
-        if (currentData?.tutor?.practice?.length) {
-          html += `<div id="tutor-block"></div>`;
-        }
-
-        if (currentData?.answerKey?.practice?.length) {
-          html += `<div id="answer-block"></div>`;
-        }
-
-        html += `</div>`;
+        html += `</section>`;
 
         container.innerHTML = html;
         container.style.display = "block";
-
-        if (currentData?.cross?.questions?.length) {
-          try {
-            renderCrossSection(currentData.cross, currentData.crossPassage || "");
-          } catch (crossErr) {
-            console.error("💥 CROSS RENDER FAILED:", crossErr);
-          }
-        }
-
-        if (currentData?.tutor?.practice?.length) {
-          try {
-            renderTutorSection(currentData.tutor);
-          } catch (tutorErr) {
-            console.error("💥 TUTOR RENDER FAILED:", tutorErr);
-          }
-        }
-
-        if (currentData?.answerKey?.practice?.length) {
-          try {
-            renderAnswerSection(currentData.answerKey);
-          } catch (answerErr) {
-            console.error("💥 ANSWER RENDER FAILED:", answerErr);
-          }
-        }
 
         console.log("✅ DOM UPDATED");
       } catch (err) {
@@ -2359,15 +2339,23 @@
 
     function renderActivePanels() {
       if (!currentData) return;
-      validateSupportIntegrity(currentData);
+      try {
+        validateSupportIntegrity(currentData);
+      } catch (supportError) {
+        console.warn("⚠️ Support panels not ready yet:", supportError?.message || supportError);
+      }
       const mode = getActiveMode();
       const tutorData = currentData?.tutor || { practice: [], cross: [] };
       const answerData = currentData?.answerKey || { practice: [], cross: [] };
       console.log("🔥 MODE:", mode);
       console.log("🔥 TUTOR LENGTH:", tutorData?.[mode]?.length || 0);
       console.log("🔥 ANSWER LENGTH:", answerData?.[mode]?.length || 0);
-      renderTutorSection(tutorData, mode);
-      renderAnswerSection(answerData, mode);
+      if (Array.isArray(tutorData?.practice) || Array.isArray(tutorData?.cross)) {
+        renderTutorSection(tutorData, mode);
+      }
+      if (Array.isArray(answerData?.practice) || Array.isArray(answerData?.cross)) {
+        renderAnswerSection(answerData, mode);
+      }
     }
 
     function renderTab(tab = currentMode, options = {}) {
@@ -2387,6 +2375,14 @@
       const tutorSection = document.getElementById("tutor-section");
       const answerSection = document.getElementById("answer-section");
       if (!practiceSection || !crossSection || !tutorSection || !answerSection) return;
+
+      if (currentData?.cross?.questions?.length && !crossSection.innerHTML.trim()) {
+        renderCrossSection(currentData.cross, currentData?.cross?.passage || "");
+      }
+      if (currentData?.tutor || currentData?.answerKey) {
+        renderActivePanels();
+      }
+
       practiceSection.style.display = tab === "practice" ? "block" : "none";
       crossSection.style.display = tab === "cross" ? "block" : "none";
       tutorSection.style.display = tab === "tutor" ? "block" : "none";
@@ -2670,8 +2666,9 @@
         const requestId = Date.now();
         currentRequestId = requestId;
         currentData = data;
-
+        hasRenderedThisRun = false;
         renderPracticeSection(data.practice, data.passage);
+        renderTab(currentMode || "practice");
 
         (async () => {
           try {
@@ -2725,22 +2722,7 @@
 
             console.log("🧠 DATA AFTER MERGE", currentData);
 
-            const practiceContainer = document.querySelector("#output .practice-container");
-            if (practiceContainer) {
-              if (currentData?.cross?.questions?.length && !document.getElementById("cross-block")) {
-                practiceContainer.insertAdjacentHTML("beforeend", `<div id="cross-block"></div>`);
-              }
-              if (currentData?.tutor?.practice?.length && !document.getElementById("tutor-block")) {
-                practiceContainer.insertAdjacentHTML("beforeend", `<div id="tutor-block"></div>`);
-              }
-              if (currentData?.answerKey?.practice?.length && !document.getElementById("answer-block")) {
-                practiceContainer.insertAdjacentHTML("beforeend", `<div id="answer-block"></div>`);
-              }
-            }
-
-            renderCrossSection(currentData.cross, currentData?.cross?.passage || "");
-            renderTutorSection(currentData.tutor);
-            renderAnswerSection(currentData.answerKey);
+            renderTab(currentMode || "practice");
           } catch (err) {
             console.error("❌ ENRICHMENT FAILED", err);
           }
@@ -2763,7 +2745,7 @@
 
         if (btn) {
           btn.disabled = false;
-          btn.textContent = "Generate";
+          btn.textContent = "Generate STAAR Pack";
         }
 
         console.log("🔓 GENERATE RESET COMPLETE");

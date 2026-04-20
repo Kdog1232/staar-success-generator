@@ -3738,6 +3738,14 @@ function buildUniversalFallbackQuestions(subject: CanonicalSubject, skill: strin
   ];
 }
 
+function buildCrossFallback(subject: CanonicalSubject, level: Level, skill: string): { passage: string; questions: Question[] } {
+  const subjectCross = buildSubjectCrossContent(subject, level);
+  const fallbackPassage = String(subjectCross?.passage || "").trim() ||
+    "Students observed patterns, compared outcomes, and used evidence to support the strongest conclusion.";
+  const fallbackQuestions = ensureNonEmptyQuestions(subjectCross?.questions || [], subject, skill);
+  return { passage: fallbackPassage, questions: fallbackQuestions };
+}
+
 function ensureNonEmptyQuestions(
   questions: Question[] | undefined,
   subject: CanonicalSubject,
@@ -3952,13 +3960,19 @@ serve(async (req) => {
   };
   const returnEnrichment = (data: EnrichmentResponse) =>
     {
-      let cross = data?.cross;
-      if (!cross?.questions?.length) {
-        cross = buildSubjectCrossContent(subject, level);
+      const practiceQuestions = ensureNonEmptyQuestions(
+        ((data as Partial<WorkerAttempt>)?.practice?.questions || []) as Question[],
+        subject,
+        skill,
+      );
+      let cross = data?.cross as Partial<EnrichmentResponse["cross"]> | undefined;
+      if (!cross || !Array.isArray(cross.questions) || cross.questions.length === 0) {
+        console.warn("⚠️ Weak or missing cross data — patching instead");
+        cross = buildCrossFallback(subject, level, skill);
       }
       const sanitizedPracticeQuestions = sanitizeExplanations(
         sanitizeChoices(
-          ((data as Partial<WorkerAttempt>)?.practice?.questions || []).map((q) => ({ ...q })),
+          practiceQuestions.map((q) => ({ ...q })),
         ),
         String((data as Partial<WorkerAttempt>)?.passage || ""),
       );
@@ -3981,22 +3995,31 @@ serve(async (req) => {
         answerKey: { practice: [], cross: [] },
       }, subject);
       finalized.cross.questions = ensureNonEmptyQuestions(finalized.cross.questions, subject, skill);
+      if (!String(finalized.cross.passage || "").trim()) {
+        finalized.cross.passage = buildCrossFallback(subject, level, skill).passage;
+      }
+      const practiceSupport = ensureNonEmptySupport(
+        ensureNonEmptyQuestions(sanitizedPracticeQuestions, subject, skill),
+        (data as Partial<WorkerAttempt>)?.tutor?.practice as TutorExplanation[] | undefined,
+        (data as Partial<WorkerAttempt>)?.answerKey?.practice as AnswerKeyEntry[] | undefined,
+        "practice",
+      );
       const crossSupport = ensureNonEmptySupport(
         finalized.cross.questions,
-        finalized.tutor?.cross,
-        finalized.answerKey?.cross,
+        (data as Partial<WorkerAttempt>)?.tutor?.cross as TutorExplanation[] | undefined,
+        (data as Partial<WorkerAttempt>)?.answerKey?.cross as AnswerKeyEntry[] | undefined,
         "cross",
       );
       finalized.tutor = {
-        practice: finalized.tutor?.practice || [],
+        practice: practiceSupport.tutor,
         cross: crossSupport.tutor,
       };
       finalized.answerKey = {
-        practice: finalized.answerKey?.practice || [],
+        practice: practiceSupport.answerKey,
         cross: crossSupport.answerKey,
       };
       assertSupportIntegrity({
-        practice: { questions: [] },
+        practice: { questions: sanitizedPracticeQuestions },
         cross: { questions: finalized.cross.questions },
         tutor: finalized.tutor,
         answerKey: finalized.answerKey,
@@ -4362,7 +4385,7 @@ serve(async (req) => {
                 practice: ensureNonEmptySupport(coreQuestions, [], [], "practice").answerKey,
                 cross: ensureNonEmptySupport(buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill), [], [], "cross").answerKey,
               },
-              cross: { passage: "", questions: buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill) },
+              cross: buildCrossFallback(effectiveSubject, level, effectiveSkill),
             });
         }
 
@@ -4659,11 +4682,11 @@ serve(async (req) => {
         const practiceAligned = validateTutorAnswerKeyAlignment(safePracticeQuestions, tutorPractice, answerKeyPractice, "practice");
         const crossAligned = validateTutorAnswerKeyAlignment(crossQuestions, tutorCross, answerKeyCross, "cross");
         if (!practiceAligned) {
-          console.warn("⚠️ Practice tutor misaligned");
+          console.warn("⚠️ Weak or missing practice support — patching instead");
         }
 
         if (!crossAligned) {
-          console.warn("⚠️ Cross tutor misaligned");
+          console.warn("⚠️ Weak or missing cross support — patching instead");
           tutorCross = sanitizeTutorExplanations(
             [],
             crossQuestions,
@@ -4686,16 +4709,30 @@ serve(async (req) => {
         console.log("🔥 FINAL CROSS PASSAGE:", subjectCrossPassage);
 
         if (!crossQuestions.length) {
-          crossQuestions = crossContent.questions;
+          console.warn("⚠️ Weak or missing cross questions — patching instead");
+          crossQuestions = buildCrossFallback(effectiveSubject, level, effectiveSkill).questions;
         }
+
+        const practiceSupport = ensureNonEmptySupport(
+          safePracticeQuestions,
+          tutorPractice,
+          answerKeyPractice,
+          "practice",
+        );
+        const crossSupport = ensureNonEmptySupport(
+          crossQuestions,
+          tutorCross,
+          answerKeyCross,
+          "cross",
+        );
 
         const payload = {
           cross: {
             passage: subjectCrossPassage,
             questions: crossQuestions,
           },
-          tutor: { practice: tutorPractice, cross: tutorCross },
-          answerKey: { practice: answerKeyPractice, cross: answerKeyCross },
+          tutor: { practice: practiceSupport.tutor, cross: crossSupport.tutor },
+          answerKey: { practice: practiceSupport.answerKey, cross: crossSupport.answerKey },
         };
         assertSupportIntegrity({
           practice: { questions: safePracticeQuestions },
@@ -4725,7 +4762,7 @@ serve(async (req) => {
             grade,
             passage: "Students evaluated evidence, compared outcomes, and selected the most supported conclusion.",
             practice: { questions: fallbackQuestions },
-            cross: { passage: "", questions: fallbackQuestions },
+            cross: buildCrossFallback(effectiveSubject, level, effectiveSkill),
             tutor: {
               practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").tutor,
               cross: ensureNonEmptySupport(fallbackQuestions, [], [], "cross").tutor,
@@ -4754,7 +4791,7 @@ serve(async (req) => {
       grade,
       passage: "Students evaluated evidence, compared outcomes, and selected the most supported conclusion.",
       practice: { questions: fallbackQuestions },
-      cross: { passage: "", questions: fallbackQuestions },
+      cross: buildCrossFallback(effectiveSubject, level, effectiveSkill),
       tutor: {
         practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").tutor,
         cross: ensureNonEmptySupport(fallbackQuestions, [], [], "cross").tutor,
@@ -4774,7 +4811,7 @@ serve(async (req) => {
       grade,
       passage: "Students evaluated evidence, compared outcomes, and selected the most supported conclusion.",
       practice: { questions: fallbackQuestions },
-      cross: { passage: "", questions: fallbackQuestions },
+      cross: buildCrossFallback(effectiveSubject, level, effectiveSkill),
       tutor: {
         practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").tutor,
         cross: ensureNonEmptySupport(fallbackQuestions, [], [], "cross").tutor,
