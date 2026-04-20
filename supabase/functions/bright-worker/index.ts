@@ -210,23 +210,27 @@ const THINKING_OVER_RECALL_RULES = [
 ].join("\n");
 const READING_PRACTICE_RIGOR_SECTION = [
   "RIGOR AND DISTRACTOR QUALITY (READING PRACTICE):",
-  "- Each question must require inference or reasoning.",
-  "- Avoid simple recall questions.",
+  "- Questions must be STAAR-level rigorous and require real inference.",
+  "- Avoid obvious answers and direct recall.",
+  "- Each question must require reasoning across multiple details from the passage.",
+  "- Questions must NOT be answerable from one sentence alone.",
   "",
-  "DISTRACTOR RULES:",
-  "- One distractor partially correct but incomplete",
-  "- One distractor reflects a common misunderstanding",
-  "- One distractor misuses a passage detail",
-  "- All choices must be equally believable",
+  "PASSAGE RULE (CRITICAL):",
+  "- Every passage sentence must be complete and meaningful.",
+  "- Do not leave sentence fragments or unfinished ideas.",
+  "- Replace any incomplete fragment with a full, coherent sentence.",
+  "",
+  "DISTRACTOR RULES (CRITICAL):",
+  "- Each question must include exactly 1 correct answer, 2 plausible distractors, and 1 clearly incorrect answer.",
+  "- Plausible distractors must be based on passage details but still incorrect.",
+  "- The clearly incorrect answer must still be academic in tone and structure.",
+  "- All choices must sound equally academic and similarly strong in wording.",
+  "- Avoid extreme language such as always and never.",
   "",
   "QUESTION REQUIREMENTS:",
-  "- At least 3 questions must require inference",
-  "- Include one question where two answers seem correct",
-  "",
-  "PASSAGE QUALITY:",
-  "- Complete sentences only",
-  "- Clear cause/effect or problem/solution",
-  "- Include inference-based detail",
+  "- At least 3 of 5 questions must require inference.",
+  "- Include at least one item where two options are close and students must justify the best-supported choice.",
+  "- Ensure answer choices are concrete and content-specific, not generic.",
 ].join("\n");
 const CROSS_CURRICULAR_RIGOR_SECTION = [
   "RIGOR AND DISTRACTOR QUALITY (CROSS-CURRICULAR):",
@@ -267,18 +271,30 @@ const ANTI_GENERIC_ANSWER_RULES = [
 const TUTOR_STYLE_RULES = [
   "TUTOR STYLE (CRITICAL):",
   "- Explain thinking like a real teacher talking to a student",
-  "- Use varied sentence structure (no repeated phrasing)",
+  "- Use varied sentence structure and avoid repeated phrasing",
   "- Focus on WHY the answer is correct using passage evidence",
   "- Explain wrong answers based on specific misunderstandings",
   "- Keep explanations concise and clear",
+  "EVIDENCE VARIATION (CRITICAL):",
+  "- Each question must use a different part of the passage as evidence.",
+  "- Do not reuse the same passage sentence across questions.",
+  "- If evidence is reused, regenerate the explanation.",
   "GROUNDING RULE (CRITICAL):",
-  "- All explanations must reference real details from the passage",
+  "- All explanations must reference a real, specific detail from the passage.",
+  "- Do not use abstract phrases such as \"the strongest detail\", \"this shows\", or \"this proves\".",
+  "- If no real detail is used, the explanation is invalid and must be rewritten.",
   "- Do NOT repeat incomplete or broken phrases",
   "- If a sentence is incomplete, paraphrase it into a full idea",
-  "VARIATION RULE (CRITICAL):",
-  "- Each question explanation must sound different",
+  "EXPLANATION VARIATION (CRITICAL):",
+  "- Each question explanation must sound different.",
   "- Avoid repeating sentence starters across questions",
-  "- Do not follow a fixed script format",
+  "- Vary explanation structure naturally.",
+  "- Mix direct explanation, cause/effect reasoning, and contrast reasoning across the set.",
+  "ANTI-TEMPLATE RULE (CRITICAL):",
+  "- Do not follow fixed starters such as \"Notice how...\", \"The key evidence is...\", or \"When you connect...\".",
+  "- Write naturally like a teacher explaining to a student.",
+  "FAILSAFE (CRITICAL):",
+  "- If an explanation repeats structure, reuses the same sentence, or uses generic phrasing, rewrite it completely.",
   "STRUCTURE (FLEXIBLE):",
   "- Include hint, explanation, mistake, and tip",
   "- Do NOT enforce identical phrasing",
@@ -431,10 +447,74 @@ function selectEvidenceSnippet(
   usedEvidence: Set<string>,
 ): string | null {
   if (!passage) return null;
+  const sentences = passage
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  if (!sentences.length) return null;
 
-  const sentences = passage.split(/[.!?]/).map(s => s.trim()).filter(Boolean);
+  const normalizedChoices = normalizeChoices(question?.choices);
+  const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(question?.correct_answer));
+  const correctIndex = LETTERS.indexOf(correctLetter);
+  const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
+  const questionText = String(question?.question || "").trim();
+  const anchorText = `${questionText} ${correctChoice}`.toLowerCase();
 
-  return sentences[0] || null;
+  const stopwords = new Set([
+    "about", "after", "again", "also", "because", "before", "being", "between", "could", "every", "from", "have",
+    "into", "just", "like", "many", "more", "most", "only", "other", "over", "same", "some", "than", "that",
+    "their", "there", "these", "they", "this", "those", "through", "under", "very", "what", "when", "where",
+    "which", "while", "with", "would",
+  ]);
+
+  const queryTokens = anchorText
+    .split(/[^a-z0-9-]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 4 && !stopwords.has(token));
+
+  const scoreSentence = (sentence: string): number => {
+    const lower = sentence.toLowerCase();
+    const sentenceTokens = new Set(
+      lower
+        .split(/[^a-z0-9-]+/)
+        .map((token) => token.trim())
+        .filter((token) => token.length >= 4 && !stopwords.has(token)),
+    );
+    let score = 0;
+    for (const token of queryTokens) {
+      if (sentenceTokens.has(token)) score += 1;
+    }
+    if (correctChoice && lower.includes(correctChoice.toLowerCase())) score += 3;
+    if (questionText && lower.includes(questionText.toLowerCase().slice(0, 20))) score += 1;
+    return score;
+  };
+
+  const scored = sentences
+    .map((sentence) => ({ sentence, score: scoreSentence(sentence) }))
+    .filter((entry) => entry.sentence.split(/\s+/).length >= 5)
+    .sort((a, b) => b.score - a.score);
+
+  const bestUnused = scored.find((entry) => !usedEvidence.has(entry.sentence) && entry.score > 0);
+  if (bestUnused) {
+    usedEvidence.add(bestUnused.sentence);
+    return bestUnused.sentence;
+  }
+
+  const fallbackPair = scored.filter((entry) => !usedEvidence.has(entry.sentence)).slice(0, 2);
+  if (fallbackPair.length >= 2 && (fallbackPair[0].score > 0 || fallbackPair[1].score > 0)) {
+    const combined = `${fallbackPair[0].sentence} ${fallbackPair[1].sentence}`.trim();
+    usedEvidence.add(fallbackPair[0].sentence);
+    usedEvidence.add(fallbackPair[1].sentence);
+    return combined;
+  }
+
+  const firstUnused = sentences.find((sentence) => !usedEvidence.has(sentence));
+  if (firstUnused) {
+    usedEvidence.add(firstUnused);
+    return firstUnused;
+  }
+
+  return null;
 }
 
 function buildSubjectCrossContent(subject: string, level: string) {
@@ -720,7 +800,7 @@ function teacherStyleExplanation(passage: PassageContent | string, question: str
     return `${getExplanationStarter()}: "${snippet}". This detail helps explain why the correct choice is the strongest answer when compared to the other options.`;
   }
   if (snippet) {
-    return `The passage states: "${snippet}." This clue points to ${extractKeyConcept(correctChoice)}, which helps confirm the best answer.`;
+    return `A key detail is "${snippet}." This clue points to ${extractKeyConcept(correctChoice)}, which helps confirm the best answer.`;
   }
   return "";
 }
@@ -1031,28 +1111,7 @@ function buildPrompt(params: {
   const levelInstruction = getLevelInstruction(level);
 
   if (mode === "Cross-Curricular") {
-    return `Generate CROSS-CURRICULAR content.
-
-Return JSON only:
-{
-  "passage": "string",
-  "questions": [5 questions]
-}
-
-Rules:
-- Generate a passage.
-- Generate exactly 5 questions.
-- Each question has 4 choices.
-- Each question has 1 correct answer and 3 realistic distractors.
-- Align to skill: ${skill}.
-- Match grade ${grade} and level (${levelInstruction}).
-- Avoid robotic or templated language.
-- ${CROSS_CURRICULAR_RIGOR_SECTION.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${DIFFICULTY_ENFORCEMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${QUESTION_DESIGN_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${CROSS_PASSAGE_QUALITY_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${CROSS_ANTI_GENERIC_ANSWERS_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${CROSS_QUESTION_REQUIREMENTS_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}`;
+    return buildCrossPrompt({ grade, subject, skill, level: levelInstruction });
   }
 
   return `Generate STAAR-style ${subject} practice questions.
@@ -1071,6 +1130,69 @@ Return strict JSON only with:
 - explanation, common_mistake, and parent_tip fields per question
 
 Keep language natural and student-friendly.`;
+}
+function buildCrossPrompt(params: {
+  grade: number;
+  subject: CanonicalSubject;
+  skill: string;
+  level: string;
+  teksCode?: string;
+  contextType?: string;
+  practiceSampleSize?: number;
+  crossPassage?: string;
+}): string {
+  const {
+    grade,
+    subject,
+    skill,
+    level,
+    teksCode = "Unknown",
+    contextType = "real-world application",
+    practiceSampleSize = 0,
+    crossPassage = "",
+  } = params;
+  const scienceReasoningRule = subject === "Science"
+    ? "- Science rule: emphasize reasoning over recall and frame questions in concrete scenarios when possible."
+    : "- Use questions that require applied reasoning rather than simple recall.";
+  const passageDirective = crossPassage.trim()
+    ? `\nUse this passage as the only passage context:\n${crossPassage}\n`
+    : "\nGenerate a new cross-curricular passage.\n";
+
+  return `Generate cross-curricular content and return JSON only:
+{
+  "cross": {
+    "passage": "string",
+    "questions": [5 items with question, choices, correct_answer, explanation]
+  }
+}
+
+Inputs:
+- Grade: ${grade}
+- Subject: ${subject}
+- Skill: ${skill}
+- Level: ${level}
+- TEKS: ${teksCode}
+- Context Type: ${contextType}
+- Practice sample size: ${practiceSampleSize}
+
+Rules:
+- Generate exactly 1 complete passage (never empty).
+- Generate exactly 5 questions.
+- Each question must have exactly 4 choices.
+- Each question must have 1 correct answer and 3 realistic distractors.
+- Align questions to ${skill} and ${subject}.
+- Match grade ${grade} and level (${level}).
+- Use natural, non-robotic language.
+- Choices must not be written as Option A, Option B, Option C, or Option D.${passageDirective}
+${scienceReasoningRule}
+${CROSS_CURRICULAR_RIGOR_SECTION}
+${CROSS_PASSAGE_QUALITY_CRITICAL}
+${CROSS_ANTI_GENERIC_ANSWERS_CRITICAL}
+${CROSS_QUESTION_REQUIREMENTS_CRITICAL}
+${DIFFICULTY_ENFORCEMENT_RULES}
+${QUESTION_DESIGN_RULES}
+- Keep explanations short (1 sentence).
+- No markdown. JSON only.`;
 }
 function buildCorePrompt(params: {
   grade: number;
@@ -1188,49 +1310,16 @@ function buildEnrichmentPrompt(params: {
 }): string {
   const { grade, subject, skill, practiceQuestions, level, crossPassage = "", teksCode = "Unknown", contextType = "real-world application" } = params;
   const levelInstruction = getLevelInstruction(level);
-  const rules = isPassageBased("Cross-Curricular", subject) ? PASSAGE_RULES : NON_PASSAGE_RULES;
-  const scienceReasoningRule = subject === "Science"
-    ? "- Science rule: emphasize reasoning over recall and frame questions in concrete scenarios when possible."
-    : "";
-  const passageDirective = crossPassage.trim()
-    ? `\nUse this passage:
-${crossPassage}
-`
-    : "\nGenerate a new cross-curricular passage.\n";
-
-  return `Generate cross-curricular content and return JSON only:
-{
-  "cross": {
-    "passage": "string",
-    "questions": [5 items with question, choices, correct_answer]
-  }
-}
-
-Inputs:
-- Grade: ${grade}
-- Subject: ${subject}
-- Skill: ${skill}
-- Level: ${levelInstruction}
-- TEKS: ${teksCode}
-- Context Type: ${contextType}
-- Practice sample size: ${practiceQuestions.slice(0, 5).length}
-
-Rules:
-- Generate passage (if one is not provided).
-- Generate exactly 5 questions.
-- Each question must have exactly 4 choices.
-- Each question must have 1 correct answer and 3 realistic distractors.
-- Align questions to ${skill} and ${subject}.
-- Match grade ${grade} and level (${levelInstruction}).
-- Use natural, non-robotic language.${passageDirective}
-- ${scienceReasoningRule || "Use questions that require applied reasoning rather than simple recall."}
-- ${CROSS_CURRICULAR_RIGOR_SECTION.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${CROSS_PASSAGE_QUALITY_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${CROSS_ANTI_GENERIC_ANSWERS_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${CROSS_QUESTION_REQUIREMENTS_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${DIFFICULTY_ENFORCEMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${QUESTION_DESIGN_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- No markdown. JSON only.`;
+  return buildCrossPrompt({
+    grade,
+    subject,
+    skill,
+    level: levelInstruction,
+    teksCode,
+    contextType,
+    practiceSampleSize: practiceQuestions.slice(0, 5).length,
+    crossPassage,
+  });
 }
 function buildGenerationPrompt(params: {
   mode: "core" | "enrichment";
@@ -1302,33 +1391,14 @@ Rules:
 - No commentary, markdown, or extra keys.`;
   }
 
-  return `Return JSON only:
-{
-  "cross": {
-    "passage": "string",
-    "questions": [
-      {
-        "question": "string",
-        "choices": ["string","string","string","string"],
-        "correct_answer": "A|B|C|D",
-        "explanation": "short explanation"
-      }
-    ]
-  }
-}
-
-Create cross-curricular content for ${params.subject}, grade ${params.grade}, skill ${params.skill}.
-Use exactly 1 passage and exactly 5 questions.
-Each question must have exactly 4 choices.
-${scienceReasoningRule}
-${CROSS_CURRICULAR_RIGOR_SECTION}
-${CROSS_PASSAGE_QUALITY_CRITICAL}
-${CROSS_ANTI_GENERIC_ANSWERS_CRITICAL}
-${CROSS_QUESTION_REQUIREMENTS_CRITICAL}
-${DIFFICULTY_ENFORCEMENT_RULES}
-${QUESTION_DESIGN_RULES}
-Keep explanations short (1 sentence).
-No extra commentary.`;
+  return buildCrossPrompt({
+    grade: params.grade,
+    subject: params.subject,
+    skill: params.skill,
+    level: getLevelInstruction(params.level),
+    teksCode: params.teksCode,
+    crossPassage: params.crossPassage,
+  });
 }
 
 function buildSubjectPassage(subject: CanonicalSubject, level: Level = "On Level"): string {
@@ -3560,15 +3630,15 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
       .find((entry) => entry.letter !== correctLetter && entry.choice);
     const evidenceSnippet = selectEvidenceSnippet(q, passageText, usedEvidence) ||
       getRelevantSnippet(passageText, q.question, correctChoice) ||
-      "the strongest details in the passage";
+      "a specific detail stated in the passage";
     const evidenceIdea = summarizeEvidenceIdea(evidenceSnippet).replace(/\s+/g, " ").trim();
     const groundedEvidence = evidenceSnippet.replace(/\s+/g, " ").trim();
 
     const explanationVariants = [
-      `Notice how the passage says "${groundedEvidence}." That detail supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it directly answers what the question asks.`,
-      `The key evidence is "${groundedEvidence}," and that is why ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is the strongest match to the question.`,
-      `When you connect the question to "${groundedEvidence}," ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is the only option that stays fully consistent with the text.`,
-      `A clear way to verify this is to use the passage detail "${groundedEvidence}." That evidence lines up best with ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
+      `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is correct because "${groundedEvidence}" directly answers the question.`,
+      `Because "${groundedEvidence}" happens in the text, the most supported conclusion is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
+      `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} fits the evidence, while other options conflict with the detail "${groundedEvidence}".`,
+      `The passage detail "${groundedEvidence}" supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} since it matches both the claim and context in the question.`,
     ];
     const explanationLead = explanationVariants[Math.abs(variant) % explanationVariants.length];
     const explanationTail = wrongOption
@@ -3618,15 +3688,15 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
       .find((entry) => entry.letter !== correctLetter && entry.choice);
     const evidenceSnippet = selectEvidenceSnippet(q, passageText, usedEvidence) ||
       getRelevantSnippet(passageText, q.question, correctChoice) ||
-      "the strongest passage detail";
+      "a specific detail stated in the passage";
     const groundedEvidence = evidenceSnippet.replace(/\s+/g, " ").trim();
     const evidenceIdea = summarizeEvidenceIdea(evidenceSnippet).replace(/\s+/g, " ").trim();
 
     const explanationVariants = [
-      `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is correct because the passage states "${groundedEvidence}."`,
+      `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is correct because "${groundedEvidence}" directly supports it.`,
       `The best answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}; this matches "${groundedEvidence}" in the passage.`,
       `Choose ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}. The detail "${groundedEvidence}" directly supports that conclusion.`,
-      `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is the correct choice since "${groundedEvidence}" provides the strongest support.`,
+      `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is the correct choice since "${groundedEvidence}" provides direct support.`,
     ];
     const explanation = explanationVariants[Math.abs(variant) % explanationVariants.length];
 
@@ -4236,9 +4306,11 @@ serve(async (req) => {
           }
           if (subject === "Reading" && safePassage && practiceQuestions?.length) {
             const tutorLeads = [
-              "Think about what the passage is saying in this part.",
-              "A good first step is to return to the key sentence in the passage.",
-              "Let’s solve this by matching the question to a specific detail in the text.",
+              "Start by identifying the passage detail that most directly answers the question.",
+              "Trace the cause-and-effect clue in the passage before choosing an answer.",
+              "Compare two nearby details in the text and decide which one truly supports the claim.",
+              "Use the passage context to test each option against what actually happened.",
+              "Check how the evidence in this part of the text narrows the answer choices.",
             ];
             const lightweightTutor = practiceQuestions.map((q, index) => ({
               question_id: ensureQuestionId(q, index, "practice"),
@@ -4247,7 +4319,7 @@ serve(async (req) => {
                 const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
                 const choice = getChoiceByLetter(q, correctLetter);
                 const choiceText = Array.isArray(choice) ? choice.join(" ") : String(choice || "");
-                const snippet = getRelevantSnippet(safePassage, q.question, choiceText) || "the strongest detail in the passage";
+                const snippet = getRelevantSnippet(safePassage, q.question, choiceText) || "a specific detail stated in the passage";
                 const idea = summarizeEvidenceIdea(snippet);
                 const lead = tutorLeads[index % tutorLeads.length];
                 return `${lead} The passage idea about ${idea} helps confirm why ${correctLetter}${choiceText ? ` (${choiceText})` : ""} is the best-supported answer.`;
@@ -4258,7 +4330,7 @@ serve(async (req) => {
               const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
               const choice = getChoiceByLetter(q, correctLetter);
               const choiceText = Array.isArray(choice) ? choice.join(" ") : String(choice || "");
-              const snippet = getRelevantSnippet(safePassage, q.question, choiceText) || "the strongest detail in the passage";
+              const snippet = getRelevantSnippet(safePassage, q.question, choiceText) || "a specific detail stated in the passage";
               const idea = summarizeEvidenceIdea(snippet);
               return {
                 question_id: ensureQuestionId(q, index, "practice"),
