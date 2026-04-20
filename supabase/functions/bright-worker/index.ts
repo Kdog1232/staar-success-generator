@@ -1005,9 +1005,6 @@ Rules:
 - Match grade ${grade} and level (${levelInstruction}).
 - Avoid robotic or templated language.
 - ${CROSS_CURRICULAR_RIGOR_SECTION.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${ANTI_GENERIC_ANSWER_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${TUTOR_STYLE_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${ANSWER_KEY_STYLE_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${DIFFICULTY_ENFORCEMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${QUESTION_DESIGN_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${CROSS_PASSAGE_QUALITY_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
@@ -1136,13 +1133,8 @@ Rules:
 - ${modeLogic.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${rules.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${QUALITY_ALIGNMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${TUTOR_STYLE_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${ANSWER_KEY_STYLE_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${DIFFICULTY_ENFORCEMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${QUESTION_DESIGN_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${CROSS_PASSAGE_QUALITY_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${CROSS_ANTI_GENERIC_ANSWERS_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${CROSS_QUESTION_REQUIREMENTS_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - No markdown. JSON only.`;
 }
 function buildEnrichmentPrompt(params: {
@@ -1198,11 +1190,11 @@ Rules:
 - ${rules.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${QUALITY_ALIGNMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${CROSS_CURRICULAR_RIGOR_SECTION.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${ANTI_GENERIC_ANSWER_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${TUTOR_STYLE_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${ANSWER_KEY_STYLE_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${DIFFICULTY_ENFORCEMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${QUESTION_DESIGN_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${CROSS_PASSAGE_QUALITY_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${CROSS_ANTI_GENERIC_ANSWERS_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${CROSS_QUESTION_REQUIREMENTS_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - No markdown. JSON only.`;
 }
 function buildGenerationPrompt(params: {
@@ -1301,9 +1293,6 @@ ${modeLogic}
 ${rules}
 ${QUALITY_ALIGNMENT_RULES}
 ${CROSS_CURRICULAR_RIGOR_SECTION}
-${ANTI_GENERIC_ANSWER_RULES}
-${TUTOR_STYLE_RULES}
-${ANSWER_KEY_STYLE_RULES}
 ${DIFFICULTY_ENFORCEMENT_RULES}
 ${QUESTION_DESIGN_RULES}
 ${CROSS_PASSAGE_QUALITY_CRITICAL}
@@ -5960,9 +5949,17 @@ serve(async (req) => {
           ? parsed.cross as Record<string, unknown>
           : {};
         let subjectCrossPassage = String(parsedCross.passage || "").trim() || baseCrossPassage;
+        const originalCrossPassage = subjectCrossPassage;
+        let regeneratedCrossPassage = false;
         if (subjectCrossPassage) {
           subjectCrossPassage = enforceValidPassage(subjectCrossPassage, effectiveSubject, level);
+          regeneratedCrossPassage = subjectCrossPassage !== originalCrossPassage;
           parsedCross.passage = subjectCrossPassage;
+        }
+        if (regeneratedCrossPassage) {
+          console.warn("🚨 Cross passage regenerated after validation — rejecting attempt and regenerating full block");
+          markRetry("cross_passage_regenerated");
+          continue;
         }
         if (!validateCrossPassage(subjectCrossPassage) || subjectCrossPassage === corePassageForChecks) {
           console.warn("⚠️ Invalid or duplicated cross passage, forcing subject passage");
