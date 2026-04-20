@@ -1513,6 +1513,33 @@ function normalizeChoices(choices: unknown): [string, string, string, string] {
   return cleaned.slice(0, 4) as [string, string, string, string];
 }
 
+function normalizeCorrectAnswer(q: Question): Question {
+  if (Array.isArray(q.correct_answer)) {
+    return {
+      ...q,
+      correct_answer: q.correct_answer[0] || "A",
+    };
+  }
+  return q;
+}
+
+function withSafeQuestionDefaults(q: Partial<Question> | null | undefined): Question {
+  const base = (q || {}) as Question;
+  const withDefaults: Question = {
+    ...base,
+    question: String(base.question || ""),
+    choices: normalizeChoices(base.choices),
+    correct_answer: base.correct_answer ?? "A",
+    explanation: String(base.explanation || ""),
+  };
+  const normalized = normalizeCorrectAnswer(withDefaults);
+  return {
+    ...normalized,
+    choices: normalizeChoices(normalized.choices),
+    correct_answer: safeCorrectAnswer(normalized.correct_answer),
+  };
+}
+
 function makeChoicesUnique(
   choices: [string, string, string, string],
   subject: CanonicalSubject,
@@ -1710,7 +1737,7 @@ function getQuestionCorrectPair(q: Question): { letter: ChoiceLetter | null; cho
 
 function getCorrectChoice(q: Question): string {
   const letters: ChoiceLetter[] = ["A", "B", "C", "D"];
-  if (!Array.isArray(q.choices) || q.choices.length !== 4) return "";
+  const normalizedChoices = normalizeChoices(q.choices);
   const answer = q.correct_answer;
   if (Array.isArray(answer)) {
     return "";
@@ -1719,7 +1746,7 @@ function getCorrectChoice(q: Question): string {
     return "";
   }
   const idx = letters.indexOf(answer as ChoiceLetter);
-  return idx >= 0 ? String(q.choices[idx] || "").trim() : "";
+  return idx >= 0 ? String(normalizedChoices[idx] || "").trim() : "";
 }
 
 function hasPassageSupportForChoice(passage: string, choice: string): boolean {
@@ -1774,14 +1801,15 @@ async function verifyAnswerWithAI(
     const apiKey = Deno.env.get("OPENAI_API_KEY");
     if (!apiKey) return null;
     const variationSeed = Math.random().toString(36).slice(2, 8);
+    const normalizedChoices = normalizeChoices(choices);
     const prompt = `
 Question: ${question}
 
 Choices:
-A. ${choices[0]}
-B. ${choices[1]}
-C. ${choices[2]}
-D. ${choices[3]}
+A. ${normalizedChoices[0]}
+B. ${normalizedChoices[1]}
+C. ${normalizedChoices[2]}
+D. ${normalizedChoices[3]}
 
 Select the correct answer.
 Return ONLY one letter: A, B, C, or D.
@@ -1931,16 +1959,13 @@ function validateMCQuestion(
 }
 
 function normalizeAndValidate(q: Question, passage: PassageContent | string): Question {
-  const normalized = {
-    ...q,
-    choices: normalizeChoices(q.choices),
-    correct_answer: safeCorrectAnswer(q.correct_answer),
-  } as Question;
+  const normalized = withSafeQuestionDefaults(q);
   return validateMCQuestion(normalized, passage, "Reading");
 }
 
 function validateOnce(questions: Question[], passage: PassageContent | string): Question[] {
-  return questions.map((q) => normalizeAndValidate(q, passage));
+  const normalizedQuestions = (questions || []).map((q) => withSafeQuestionDefaults(q));
+  return normalizedQuestions.map((q) => normalizeAndValidate(q, passage));
 }
 function normalizeMultiSelectAnswer(value: unknown): ChoiceLetter[] {
   const raw = Array.isArray(value) ? value : [];
@@ -2697,7 +2722,7 @@ function validateRigorAlignment(level: Level, passage: PassageContent | string, 
   return validatePassageComplexity(level, passage) && validateQuestionDepth(level, questions);
 }
 
-async function callOpenAI(prompt: string, timeoutMs = 20000): Promise<Record<string, unknown> | null> {
+async function callOpenAI(prompt: string, timeout = 15000): Promise<Record<string, unknown> | null> {
   const aiRes = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -2711,7 +2736,7 @@ async function callOpenAI(prompt: string, timeoutMs = 20000): Promise<Record<str
       input: prompt,
       max_output_tokens: 1400,
     }),
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: AbortSignal.timeout(timeout),
   });
 
   if (!aiRes.ok) return null;
@@ -2743,16 +2768,17 @@ function isValidAIOutput(data: any): boolean {
 
   if (passage && !isCompletePassage(passage)) return false;
 
-  const questions =
+  const rawQuestions =
     data.practice?.questions ||
     data.cross?.questions ||
     data.questions;
 
-  if (!Array.isArray(questions) || questions.length !== 5) return false;
+  if (!Array.isArray(rawQuestions) || rawQuestions.length !== 5) return false;
+  const questions = rawQuestions.map((q: Partial<Question>) => withSafeQuestionDefaults(q));
 
   for (const q of questions) {
     if (!q.question) return false;
-    if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
+    q.choices = normalizeChoices(q.choices);
 
     for (const choice of q.choices) {
       const text = String(choice || "").toLowerCase();
@@ -2766,7 +2792,7 @@ function isValidAIOutput(data: any): boolean {
         return false;
       }
 
-      if (text.length < 25) return false;
+      if (text.length < 12) return false;
     }
   }
 
@@ -2778,7 +2804,7 @@ async function generateWithRetry(prompt: string, attempts = 2) {
 
   for (let i = 0; i < attempts; i++) {
     try {
-      const result = await callOpenAI(prompt, 20000);
+      const result = await callOpenAI(prompt, 15000);
 
       if (result && isValidAIOutput(result)) {
         return result;
@@ -3361,10 +3387,7 @@ function generateQuestions(input: PipelineInput): PipelineResult {
 
 function normalizeOutput(result: PipelineResult): PipelineResult {
   const questions = (result?.questions || []).map((q) => ({
-    ...q,
-    question: String(q.question || ""),
-    choices: normalizeChoices(q.choices),
-    correct_answer: q.correct_answer || "A",
+    ...withSafeQuestionDefaults(q as Partial<Question>),
   }));
 
   return { ...result, questions };
@@ -4032,14 +4055,30 @@ serve(async (req) => {
           }
           let passageText = String(parsed.passage || "").trim();
           if (passageText) {
-            passageText = enforceValidPassage(passageText);
+            try {
+              passageText = enforceValidPassage(passageText);
+            } catch {
+              console.warn("Invalid passage — retrying generation");
+            }
             parsed.passage = passageText;
           } else if (parsed.passage && typeof parsed.passage === "object" && !Array.isArray(parsed.passage)) {
             const passageObj = parsed.passage as Record<string, unknown>;
             const text1 = String(passageObj.text_1 || "").trim();
             const text2 = String(passageObj.text_2 || "").trim();
-            if (text1) passageObj.text_1 = enforceValidPassage(text1);
-            if (text2) passageObj.text_2 = enforceValidPassage(text2);
+            if (text1) {
+              try {
+                passageObj.text_1 = enforceValidPassage(text1);
+              } catch {
+                console.warn("Invalid passage — retrying generation");
+              }
+            }
+            if (text2) {
+              try {
+                passageObj.text_2 = enforceValidPassage(text2);
+              } catch {
+                console.warn("Invalid passage — retrying generation");
+              }
+            }
             parsed.passage = passageObj;
           }
 
@@ -4442,7 +4481,11 @@ serve(async (req) => {
         const originalCrossPassage = subjectCrossPassage;
         let regeneratedCrossPassage = false;
         if (subjectCrossPassage) {
-          subjectCrossPassage = enforceValidPassage(subjectCrossPassage);
+          try {
+            subjectCrossPassage = enforceValidPassage(subjectCrossPassage);
+          } catch {
+            console.warn("Invalid passage — retrying generation");
+          }
           regeneratedCrossPassage = subjectCrossPassage !== originalCrossPassage;
           parsedCross.passage = subjectCrossPassage;
         }
