@@ -1262,7 +1262,7 @@
     let authReady = false;
 
     function resetGenerateState() {
-      const generateBtn = document.getElementById("generateBtn") || document.getElementById("generate-btn");
+      const generateBtn = document.getElementById("generate-btn");
       isGenerating = false;
       currentController = null;
       if (generateBtn) {
@@ -2857,6 +2857,8 @@
             console.warn("⚠️ Cross failed:", err);
           });
       } catch (err) {
+        console.error(err);
+        isGenerating = false;
         unlockGenerateUI();
         const message = err?.message || String(err || "");
         if (message === "HALT") {
