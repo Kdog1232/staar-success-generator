@@ -1356,12 +1356,12 @@ function enforceValidPassage(
   subject: string,
   level: string,
 ): string {
-  if (isCompletePassage(passage)) return passage;
-
-  console.warn("🚨 INVALID PASSAGE — regenerating once");
-
-  const regenerated = buildSubjectPassage(subject as CanonicalSubject, level as Level);
-  return regenerated || passage;
+  void subject;
+  void level;
+  if (!isCompletePassage(passage)) {
+    throw new Error("INVALID_PASSAGE");
+  }
+  return passage;
 }
 
 
@@ -4247,16 +4247,95 @@ function validateRigorAlignment(level: Level, passage: PassageContent | string, 
   return validatePassageComplexity(level, passage) && validateQuestionDepth(level, questions);
 }
 
-function isValidOutput(questions: Question[], passage: PassageContent | string): boolean {
-  void passage;
-  if (!Array.isArray(questions) || questions.length < 3) return false;
-  return questions.every((question) => {
-    const hasQuestion = String(question?.question || "").trim().length > 0;
-    const hasChoices = Array.isArray(question?.choices) && question.choices.length === 4;
-    const hasAnswer = question?.correct_answer !== undefined && question?.correct_answer !== null &&
-      String(question.correct_answer).trim().length > 0;
-    return hasQuestion && hasChoices && hasAnswer;
+async function callOpenAI(prompt: string, timeoutMs = 20000): Promise<Record<string, unknown> | null> {
+  const aiRes = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      temperature: 0.7,
+      top_p: 1,
+      input: prompt,
+      max_output_tokens: 1400,
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
   });
+
+  if (!aiRes.ok) return null;
+
+  const aiJson = await aiRes.json() as Record<string, unknown>;
+  const aiAny = aiJson as {
+    output?: Array<{ content?: Array<{ text?: string }> }>;
+    output_text?: string;
+  };
+  const text = String(
+    aiAny.output?.[0]?.content?.[0]?.text ||
+    aiAny.output_text ||
+    "",
+  ).trim();
+
+  if (!text || isBadOutput(text)) return null;
+
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return tryParseJsonPayload(text) || null;
+  }
+}
+
+function isValidOutput(response: any): boolean {
+  if (!response) return false;
+
+  if (response.passage) {
+    if (typeof response.passage === "string") {
+      if (!isCompletePassage(response.passage)) return false;
+    } else if (typeof response.passage === "object" && !Array.isArray(response.passage)) {
+      const text1 = String(response.passage?.text_1 || "").trim();
+      const text2 = String(response.passage?.text_2 || "").trim();
+      if ((text1 && !isCompletePassage(text1)) || (text2 && !isCompletePassage(text2))) return false;
+    }
+  }
+
+  const questions = response.practice?.questions || response.questions;
+  if (!questions || questions.length !== 5) return false;
+
+  for (const q of questions) {
+    if (!q.question) return false;
+    if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
+    for (const choice of q.choices) {
+      const text = String(choice).toLowerCase();
+      if (
+        text.includes("one detail in the text shows") ||
+        text.includes("another clue suggests") ||
+        text.includes("a separate detail") ||
+        text.includes("the strongest evidence confirms")
+      ) {
+        return false;
+      }
+      if (text.length < 25) return false;
+    }
+  }
+
+  return true;
+}
+
+async function generateWithRetry(prompt: string, maxAttempts = 2): Promise<Record<string, unknown> | null> {
+  let lastResponse: Record<string, unknown> | null = null;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const response = await callOpenAI(prompt);
+    if (isValidOutput(response)) {
+      return response;
+    }
+    console.warn("⚠️ Invalid AI output — retrying...");
+    lastResponse = response;
+  }
+
+  console.error("❌ All attempts failed — returning last response");
+  return lastResponse;
 }
 
 function validateDistractorQuality(questions: Question[], passage: PassageContent | string): boolean {
@@ -5485,61 +5564,19 @@ serve(async (req) => {
             console.time("OPENAI_CALL");
             const aiStartTime = Date.now();
             const variationSeed = Math.random().toString(36).slice(2, 8);
-            const aiRes = await fetch("https://api.openai.com/v1/responses", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: "gpt-4o-mini",
-              temperature: 0.7,
-              top_p: 1,
-              input: buildGenerationPrompt({
-                mode: "core",
-                grade,
-                subject,
-                skill: effectiveSkill,
-                level,
-                teksCode,
-              }) + `\nVariation ID: ${variationSeed}`,
-              max_output_tokens: 1400,
-            }),
-            signal: AbortSignal.timeout(MAX_TIMEOUT_MS),
-          });
-          console.timeEnd("OPENAI_CALL");
-          console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
+            const prompt = buildGenerationPrompt({
+              mode: "core",
+              grade,
+              subject,
+              skill: effectiveSkill,
+              level,
+              teksCode,
+            }) + `\nVariation ID: ${variationSeed}`;
+            const parsed = await generateWithRetry(prompt);
+            console.timeEnd("OPENAI_CALL");
+            console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
 
-          if (!aiRes.ok) {
-            markRetry("no_questions_returned");
-            continue;
-          }
-
-          const aiJson = await aiRes.json() as Record<string, unknown>;
-          const aiAny = aiJson as {
-            output?: Array<{ content?: Array<{ text?: string }> }>;
-            output_text?: string;
-          };
-          const text = String(
-            aiAny.output?.[0]?.content?.[0]?.text ||
-            aiAny.output_text ||
-            "",
-          ).trim();
-
-          if (!text || isBadOutput(text)) {
-            markRetry("no_questions_returned");
-            continue;
-          }
-
-          let parsed: Record<string, unknown>;
-          try {
-            parsed = JSON.parse(text);
-          } catch (err) {
-            console.error("JSON PARSE ERROR:", err);
-            parsed = tryParseJsonPayload(text) || {};
-          }
-
-          if (!parsed || !Object.keys(parsed).length) {
+          if (!parsed || !Object.keys(parsed).length || !isValidOutput(parsed)) {
             markRetry("malformed_json");
             continue;
           }
@@ -5706,7 +5743,10 @@ serve(async (req) => {
             markRetry("no_questions_returned");
             continue;
           }
-          const outputValid = isValidOutput(pipelineQuestions, safePassage);
+          const outputValid = isValidOutput({
+            passage: safePassage,
+            practice: { questions: pipelineQuestions },
+          });
           if (!outputValid) {
             console.warn("Validation issue — keeping question");
           }
@@ -5989,7 +6029,10 @@ serve(async (req) => {
           subjectCrossPassage,
           grade,
         );
-        const crossValid = isValidOutput(crossQuestions, subjectCrossPassage);
+        const crossValid = isValidOutput({
+          passage: subjectCrossPassage,
+          questions: crossQuestions,
+        });
         if (crossQuestions.length === 0 && attempts === 1) {
           markRetry("no_questions_returned");
           continue;
