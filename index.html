@@ -2575,6 +2575,16 @@
         pendingRegenerate = true;
       }
 
+      function unlockGenerateUI() {
+        isGenerating = false;
+        const btn = document.getElementById("generate-btn");
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "Generate";
+        }
+        console.log("✅ UI UNLOCKED");
+      }
+
       try {
         outputDiv.innerHTML = "Step 1: Generating practice...";
 
@@ -2736,6 +2746,7 @@
         const questions = data?.practice?.questions || [];
         if (!questions.length) {
           queueRegenerate();
+          unlockGenerateUI();
           return;
         }
         if (Array.isArray(questions) && questions.length > 0) {
@@ -2755,13 +2766,18 @@
         lastGeneratedContentMode = "both";
         const progressCount = incrementDailyProgress();
 
-        if (hasRendered) return;
+        if (hasRendered) {
+          unlockGenerateUI();
+          return;
+        }
         hasRendered = true;
         try {
           renderAll(currentData, { progressCount, skill, level, currentModeValue: currentMode });
+          unlockGenerateUI();
         } catch (renderErr) {
           console.error("RENDER ERROR:", renderErr);
           showError("Display issue. Try again.");
+          unlockGenerateUI();
           return;
         }
         await new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -2820,6 +2836,7 @@
             console.warn("⚠️ Cross failed:", err);
           });
       } catch (err) {
+        unlockGenerateUI();
         const message = err?.message || String(err || "");
         if (message === "HALT") {
           console.log("🟡 HALT CAUGHT");
@@ -2849,13 +2866,8 @@
       } finally {
         console.log("🧹 FINAL CLEANUP");
         progressTimers.forEach((timer) => clearTimeout(timer));
-        isGenerating = false;
         currentController = null;
-        const btn = document.getElementById("generate-btn");
-        if (btn) {
-          btn.disabled = false;
-          btn.textContent = "Generate STAAR Pack";
-        }
+        unlockGenerateUI();
         if (pendingRegenerate) {
           pendingRegenerate = false;
           setTimeout(() => {
