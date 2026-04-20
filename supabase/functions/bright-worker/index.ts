@@ -1205,6 +1205,22 @@ Rules:
 - No explanations
 - No extra text
 - No placeholder phrases (like "one detail in the text shows")
+${subject === "Reading" ? `- Each question must assess a different reading skill (no duplicates)
+- Do not repeat question stems
+- Avoid surface-level recall questions
+- Required distribution across the 5 questions:
+  1) exactly 1 inference question
+  2) exactly 1 author’s purpose question
+  3) exactly 1 cause/effect or impact question
+  4) exactly 1 detail/support question
+  5) exactly 1 Part A / Part B style question (single MC item with 4 choices)
+- Questions must require reasoning across multiple parts of the passage
+- Include at least one question where two choices are very close
+- Distractor quality per question:
+  - 2 plausible distractors grounded in passage details but incorrect
+  - 1 clearly incorrect but still academic distractor
+  - All answer choices must sound equally strong
+- Do not create duplicate questions` : ""}
 
 Return JSON only.`;
 }
