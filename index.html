@@ -2057,25 +2057,54 @@
     }
 
     function renderPracticeSection(practiceData, passageText) {
-      const practiceSection = document.getElementById("practice-section");
-      if (!practiceSection) return;
-      const questionMarkup = renderPractice(practiceData);
-      const selectedSubject = document.getElementById("subject")?.value || "Reading";
-      const shouldRenderPracticePassage = selectedSubject === "Reading";
-      practiceSection.innerHTML = `
-        <div class="worksheet-header">STAAR Practice Worksheet</div>
-        <div class="mode-label">Practice Mode</div>
-        ${shouldRenderPracticePassage ? `
-          <section class="worksheet-section">
+      const container = document.getElementById("output");
+
+      if (!container) {
+        console.error("❌ OUTPUT DIV NOT FOUND");
+        return;
+      }
+
+      try {
+        let practice = practiceData;
+
+        if (Array.isArray(practiceData)) {
+          practice = { questions: practiceData };
+        }
+
+        if (!practice?.questions) {
+          console.error("❌ INVALID PRACTICE DATA:", practiceData);
+          container.innerHTML = "<div style='color:red;'>Invalid data format</div>";
+          container.style.display = "block";
+          return;
+        }
+
+        const questionList = Array.isArray(practice.questions) ? practice.questions : [];
+        let html = `
+          <div class="practice-container">
             <h3>📖 Passage</h3>
-            ${renderPassage(passageText)}
-          </section>
-        ` : ""}
-        <section class="worksheet-section">
-          <h3>❓ Questions</h3>
-          ${questionMarkup}
-        </section>
-      `;
+            <p>${passageText || ""}</p>
+            <h3>❓ Questions</h3>
+        `;
+
+        questionList.forEach((q, i) => {
+          const choices = Array.isArray(q?.choices) ? q.choices : [];
+          html += `    <div class="question-block">       <p><strong>${i + 1}. ${q?.question || "Missing question"}</strong></p>       <ul>
+        ${choices.map(c => `<li>${c}</li>`).join("")}       </ul>     </div>
+  `;
+        });
+
+        html += `</div>`;
+
+        container.innerHTML = html;
+        container.style.display = "block";
+        console.log("✅ DOM UPDATED");
+      } catch (err) {
+        console.error("💥 RENDER CRASH:", err);
+        container.innerHTML = `     <div style="color:red;font-weight:600;">
+      Render failed. Check console.     </div>
+  `;
+        container.style.display = "block";
+      }
     }
 
     function renderCrossSection(crossData, crossText) {
