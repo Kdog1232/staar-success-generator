@@ -824,10 +824,11 @@ function passageSupportsQuestions(passage: string, questions: Question[]): boole
   });
 }
 
-function sanitizeChoices(questions: Question[], passage: PassageContent | string): Question[] {
-  void passage;
-  // TEMPORARY TEST: bypass sanitize logic to inspect raw AI output.
-  return questions;
+function sanitizeChoices(questions: Question[]): Question[] {
+  return questions.map(q => ({
+    ...q,
+    choices: normalizeChoices(q.choices),
+  }));
 }
 
 function sanitizeExplanations(questions: Question[], passage: PassageContent | string): Question[] {
@@ -1092,11 +1093,8 @@ Rules:
 - Mode rule: Use passage-based reasoning and ensure answers are supported by the passage.
 - ${modeLogic.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${rules.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${QUALITY_ALIGNMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${READING_PRACTICE_RIGOR_SECTION.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${ANTI_GENERIC_ANSWER_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${TUTOR_STYLE_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${ANSWER_KEY_STYLE_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${DIFFICULTY_ENFORCEMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${QUESTION_DESIGN_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - No markdown. JSON only.`;
@@ -1185,16 +1183,12 @@ Rules:
 - Match grade ${grade} and level (${levelInstruction}).
 - Use natural, non-robotic language.${passageDirective}
 - ${scienceReasoningRule || "Use questions that require applied reasoning rather than simple recall."}
-- ${THINKING_OVER_RECALL_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- Mode rule: Answers must be supported by the passage using passage-based reasoning.
-- ${rules.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${QUALITY_ALIGNMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${CROSS_CURRICULAR_RIGOR_SECTION.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${DIFFICULTY_ENFORCEMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- ${QUESTION_DESIGN_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${CROSS_PASSAGE_QUALITY_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${CROSS_ANTI_GENERIC_ANSWERS_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${CROSS_QUESTION_REQUIREMENTS_CRITICAL.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${DIFFICULTY_ENFORCEMENT_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
+- ${QUESTION_DESIGN_RULES.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - No markdown. JSON only.`;
 }
 function buildGenerationPrompt(params: {
@@ -1287,17 +1281,12 @@ Create cross-curricular content for ${params.subject}, grade ${params.grade}, sk
 Use exactly 1 passage and exactly 5 questions.
 Each question must have exactly 4 choices.
 ${scienceReasoningRule}
-${THINKING_OVER_RECALL_RULES}
-Mode rule: Answers must be supported by the passage with passage-based reasoning.
-${modeLogic}
-${rules}
-${QUALITY_ALIGNMENT_RULES}
 ${CROSS_CURRICULAR_RIGOR_SECTION}
-${DIFFICULTY_ENFORCEMENT_RULES}
-${QUESTION_DESIGN_RULES}
 ${CROSS_PASSAGE_QUALITY_CRITICAL}
 ${CROSS_ANTI_GENERIC_ANSWERS_CRITICAL}
 ${CROSS_QUESTION_REQUIREMENTS_CRITICAL}
+${DIFFICULTY_ENFORCEMENT_RULES}
+${QUESTION_DESIGN_RULES}
 Keep explanations short (1 sentence).
 No extra commentary.`;
 }
@@ -1351,13 +1340,7 @@ As the groups compared exact lines across the reports, they noticed how wording 
   return "Two groups reviewed two article collections to understand why readers preferred different reading formats. Some readers said shorter pieces helped them find key ideas quickly, while others preferred longer selections with more examples and context. The groups compared exact lines, checked which claims were supported by multiple details, and revised conclusions to match the strongest evidence in each source. When two sources appeared to conflict, they re-read the original lines and identified how word choice changed meaning. Their final report explained how careful reading and evidence-based reasoning led to clearer conclusions.";
 }
 
-function enforceValidPassage(
-  passage: string,
-  subject: string,
-  level: string,
-): string {
-  void subject;
-  void level;
+function enforceValidPassage(passage: string): string {
   if (!isCompletePassage(passage)) {
     throw new Error("INVALID_PASSAGE");
   }
@@ -2208,7 +2191,7 @@ function fallbackPassage(subject: CanonicalSubject, mode: CanonicalMode, grade: 
 
   if (mode === "Cross-Curricular") {
     let passageText = buildSubjectPassage(subject, level);
-    passageText = enforceValidPassage(passageText, subject, level);
+    passageText = enforceValidPassage(passageText);
     return ensurePassageLength(clampPassageWords(passageText, min, max), min, max, subject, mode, grade, level, false);
   }
 
@@ -3022,7 +3005,7 @@ function buildCrossFallback(
     ? skillOrLevel
     : maybeLevel;
   let crossPassage = buildSubjectPassage(subject, level);
-  crossPassage = enforceValidPassage(crossPassage, subject, level);
+  crossPassage = enforceValidPassage(crossPassage);
   const singleAnswerSequence = [...shuffledLetters(), ...shuffledLetters()];
   let singleAnswerIndex = 0;
   const nextSingleAnswer = (): ChoiceLetter => {
@@ -3224,7 +3207,7 @@ function buildShortResponse(): string {
 function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
   const subject: CanonicalSubject = "Reading";
   let crossPassage = buildSubjectPassage(crossSubject, "On Level");
-  crossPassage = enforceValidPassage(crossPassage, crossSubject, "On Level");
+  crossPassage = enforceValidPassage(crossPassage);
   const stems = [
     buildMainIdeaQuestion(),
     buildEvidenceQuestion(),
@@ -3413,7 +3396,7 @@ function buildELARCrossQuestions(crossSubject: CanonicalSubject): Question[] {
 function buildELARFallback(level: Level = "On Level"): { passage: string; questions: Question[] } {
   const crossSubject = randomChoice<CanonicalSubject>(["Science", "Social Studies", "Math"]);
   let passageText = buildSubjectPassage(crossSubject, level);
-  passageText = enforceValidPassage(passageText, crossSubject, level);
+  passageText = enforceValidPassage(passageText);
   return {
     passage: passageText,
     questions: buildELARCrossQuestions(crossSubject),
@@ -3422,7 +3405,7 @@ function buildELARFallback(level: Level = "On Level"): { passage: string; questi
 
 function buildMathFallback(level: Level = "On Level"): { passage: string; questions: Question[] } {
   let passageText = buildSubjectPassage("Math", level);
-  passageText = enforceValidPassage(passageText, "Math", level);
+  passageText = enforceValidPassage(passageText);
   return {
     passage: passageText,
     questions: buildCrossFallback("Math", level),
@@ -3431,7 +3414,7 @@ function buildMathFallback(level: Level = "On Level"): { passage: string; questi
 
 function buildScienceFallback(level: Level = "On Level"): { passage: string; questions: Question[] } {
   let passageText = buildSubjectPassage("Science", level);
-  passageText = enforceValidPassage(passageText, "Science", level);
+  passageText = enforceValidPassage(passageText);
   return {
     passage: passageText,
     questions: buildCrossFallback("Science", level),
@@ -3440,7 +3423,7 @@ function buildScienceFallback(level: Level = "On Level"): { passage: string; que
 
 function buildSSFallback(level: Level = "On Level"): { passage: string; questions: Question[] } {
   let passageText = buildSubjectPassage("Social Studies", level);
-  passageText = enforceValidPassage(passageText, "Social Studies", level);
+  passageText = enforceValidPassage(passageText);
   return {
     passage: passageText,
     questions: buildCrossFallback("Social Studies", level),
@@ -3450,18 +3433,18 @@ function buildSSFallback(level: Level = "On Level"): { passage: string; question
 function buildSubjectCrossContent(subject: CanonicalSubject, level: Level = "On Level"): { passage: string; questions: Question[] } {
   if (subject === "Math") {
     console.warn("⚠️ Using AI output despite imperfections");
-    return { passage: enforceValidPassage(buildSubjectPassage("Math", level), "Math", level), questions: [] };
+    return { passage: enforceValidPassage(buildSubjectPassage("Math", level)), questions: [] };
   }
   if (subject === "Science") {
     console.warn("⚠️ Using AI output despite imperfections");
-    return { passage: enforceValidPassage(buildSubjectPassage("Science", level), "Science", level), questions: [] };
+    return { passage: enforceValidPassage(buildSubjectPassage("Science", level)), questions: [] };
   }
   if (subject === "Social Studies") {
     console.warn("⚠️ Using AI output despite imperfections");
-    return { passage: enforceValidPassage(buildSubjectPassage("Social Studies", level), "Social Studies", level), questions: [] };
+    return { passage: enforceValidPassage(buildSubjectPassage("Social Studies", level)), questions: [] };
   }
   const readingFallback = {
-    passage: enforceValidPassage(buildSubjectPassage("Reading", level), "Reading", level),
+    passage: enforceValidPassage(buildSubjectPassage("Reading", level)),
     questions: [] as Question[],
   };
   return {
@@ -4286,27 +4269,27 @@ async function callOpenAI(prompt: string, timeoutMs = 20000): Promise<Record<str
   }
 }
 
-function isValidOutput(response: any): boolean {
-  if (!response) return false;
+function isValidAIOutput(data: any): boolean {
+  if (!data) return false;
 
-  if (response.passage) {
-    if (typeof response.passage === "string") {
-      if (!isCompletePassage(response.passage)) return false;
-    } else if (typeof response.passage === "object" && !Array.isArray(response.passage)) {
-      const text1 = String(response.passage?.text_1 || "").trim();
-      const text2 = String(response.passage?.text_2 || "").trim();
-      if ((text1 && !isCompletePassage(text1)) || (text2 && !isCompletePassage(text2))) return false;
-    }
-  }
+  const passage = data.passage || data.cross?.passage;
 
-  const questions = response.practice?.questions || response.questions;
-  if (!questions || questions.length !== 5) return false;
+  if (passage && !isCompletePassage(passage)) return false;
+
+  const questions =
+    data.practice?.questions ||
+    data.cross?.questions ||
+    data.questions;
+
+  if (!Array.isArray(questions) || questions.length !== 5) return false;
 
   for (const q of questions) {
     if (!q.question) return false;
     if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
+
     for (const choice of q.choices) {
-      const text = String(choice).toLowerCase();
+      const text = String(choice || "").toLowerCase();
+
       if (
         text.includes("one detail in the text shows") ||
         text.includes("another clue suggests") ||
@@ -4315,6 +4298,7 @@ function isValidOutput(response: any): boolean {
       ) {
         return false;
       }
+
       if (text.length < 25) return false;
     }
   }
@@ -4322,20 +4306,27 @@ function isValidOutput(response: any): boolean {
   return true;
 }
 
-async function generateWithRetry(prompt: string, maxAttempts = 2): Promise<Record<string, unknown> | null> {
-  let lastResponse: Record<string, unknown> | null = null;
+async function generateWithRetry(prompt: string, attempts = 2) {
+  let last = null;
 
-  for (let i = 0; i < maxAttempts; i++) {
-    const response = await callOpenAI(prompt);
-    if (isValidOutput(response)) {
-      return response;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const result = await callOpenAI(prompt);
+
+      if (isValidAIOutput(result)) {
+        return result;
+      }
+
+      console.warn("⚠️ Invalid output, retrying...");
+      last = result;
+
+    } catch (err) {
+      console.warn("⚠️ Generation error, retrying...", err);
     }
-    console.warn("⚠️ Invalid AI output — retrying...");
-    lastResponse = response;
   }
 
-  console.error("❌ All attempts failed — returning last response");
-  return lastResponse;
+  console.error("❌ Returning last attempt");
+  return last;
 }
 
 function validateDistractorQuality(questions: Question[], passage: PassageContent | string): boolean {
@@ -5273,14 +5264,8 @@ serve(async (req) => {
     });
     const crossPassage = cross?.passage || "";
     cross.questions = sanitizeAndValidateQuestions(cross.questions, crossPassage, "cross");
-    practice.questions = sanitizeChoices(
-      practice.questions,
-      getPassageText(practicePassage),
-    );
-    cross.questions = sanitizeChoices(
-      cross.questions,
-      cross.passage,
-    );
+    practice.questions = sanitizeChoices(practice.questions);
+    cross.questions = sanitizeChoices(cross.questions);
     practice.questions = sanitizeExplanations(practice.questions, practicePassage);
     cross.questions = sanitizeExplanations(cross.questions, cross.passage);
 
@@ -5320,14 +5305,12 @@ serve(async (req) => {
       const sanitizedPracticeQuestions = sanitizeExplanations(
         sanitizeChoices(
           ((data as Partial<WorkerAttempt>)?.practice?.questions || []).map((q) => ({ ...q })),
-          getPassageText(String((data as Partial<WorkerAttempt>)?.passage || "")),
         ),
         String((data as Partial<WorkerAttempt>)?.passage || ""),
       );
       const sanitizedCrossQuestions = sanitizeExplanations(
         sanitizeChoices(
           (data?.cross?.questions || []).map((q) => ({ ...q })),
-          String(data?.cross?.passage || ""),
         ),
         String(data?.cross?.passage || ""),
       );
@@ -5576,20 +5559,20 @@ serve(async (req) => {
             console.timeEnd("OPENAI_CALL");
             console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
 
-          if (!parsed || !Object.keys(parsed).length || !isValidOutput(parsed)) {
+          if (!parsed || !Object.keys(parsed).length || !isValidAIOutput(parsed)) {
             markRetry("malformed_json");
             continue;
           }
           let passageText = String(parsed.passage || "").trim();
           if (passageText) {
-            passageText = enforceValidPassage(passageText, subject, level);
+            passageText = enforceValidPassage(passageText);
             parsed.passage = passageText;
           } else if (parsed.passage && typeof parsed.passage === "object" && !Array.isArray(parsed.passage)) {
             const passageObj = parsed.passage as Record<string, unknown>;
             const text1 = String(passageObj.text_1 || "").trim();
             const text2 = String(passageObj.text_2 || "").trim();
-            if (text1) passageObj.text_1 = enforceValidPassage(text1, subject, level);
-            if (text2) passageObj.text_2 = enforceValidPassage(text2, subject, level);
+            if (text1) passageObj.text_1 = enforceValidPassage(text1);
+            if (text2) passageObj.text_2 = enforceValidPassage(text2);
             parsed.passage = passageObj;
           }
 
@@ -5743,7 +5726,7 @@ serve(async (req) => {
             markRetry("no_questions_returned");
             continue;
           }
-          const outputValid = isValidOutput({
+          const outputValid = isValidAIOutput({
             passage: safePassage,
             practice: { questions: pipelineQuestions },
           });
@@ -5992,7 +5975,7 @@ serve(async (req) => {
         const originalCrossPassage = subjectCrossPassage;
         let regeneratedCrossPassage = false;
         if (subjectCrossPassage) {
-          subjectCrossPassage = enforceValidPassage(subjectCrossPassage, effectiveSubject, level);
+          subjectCrossPassage = enforceValidPassage(subjectCrossPassage);
           regeneratedCrossPassage = subjectCrossPassage !== originalCrossPassage;
           parsedCross.passage = subjectCrossPassage;
         }
@@ -6029,7 +6012,7 @@ serve(async (req) => {
           subjectCrossPassage,
           grade,
         );
-        const crossValid = isValidOutput({
+        const crossValid = isValidAIOutput({
           passage: subjectCrossPassage,
           questions: crossQuestions,
         });
