@@ -1257,6 +1257,7 @@
     let structuredQuestions = [];
     let generatedPassage = "";
     let currentData = null;
+    let currentRequestId = 0;
     let cachedSession = null;
     let cachedUser = null;
     let authReady = false;
@@ -2666,9 +2667,84 @@
 
         console.log("✅ DATA RECEIVED:", data);
 
+        const requestId = Date.now();
+        currentRequestId = requestId;
         currentData = data;
 
         renderPracticeSection(data.practice, data.passage);
+
+        (async () => {
+          try {
+            console.log("🟡 ENRICHMENT START");
+
+            const enrichRes = await fetch(
+              "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                  apikey: SUPABASE_ANON_KEY
+                },
+                body: JSON.stringify({
+                  grade,
+                  subject,
+                  skill,
+                  level,
+                  mode: "enrichment",
+                  questions: data.practice.questions
+                })
+              }
+            );
+
+            console.log("📡 ENRICH STATUS:", enrichRes.status);
+
+            if (!enrichRes.ok) {
+              throw new Error("ENRICHMENT_FAILED_" + enrichRes.status);
+            }
+
+            const enrichData = await enrichRes.json();
+
+            console.log("🔥 ENRICHMENT RECEIVED", enrichData);
+
+            if (requestId !== currentRequestId) {
+              console.warn("⏭️ STALE ENRICHMENT RESPONSE IGNORED");
+              return;
+            }
+
+            const safeEnrich = {
+              cross: enrichData?.cross ?? { passage: "", questions: [] },
+              tutor: enrichData?.tutor ?? { practice: [], cross: [] },
+              answerKey: enrichData?.answerKey ?? { practice: [], cross: [] }
+            };
+
+            currentData = {
+              ...currentData,
+              ...safeEnrich
+            };
+
+            console.log("🧠 DATA AFTER MERGE", currentData);
+
+            const practiceContainer = document.querySelector("#output .practice-container");
+            if (practiceContainer) {
+              if (currentData?.cross?.questions?.length && !document.getElementById("cross-block")) {
+                practiceContainer.insertAdjacentHTML("beforeend", `<div id="cross-block"></div>`);
+              }
+              if (currentData?.tutor?.practice?.length && !document.getElementById("tutor-block")) {
+                practiceContainer.insertAdjacentHTML("beforeend", `<div id="tutor-block"></div>`);
+              }
+              if (currentData?.answerKey?.practice?.length && !document.getElementById("answer-block")) {
+                practiceContainer.insertAdjacentHTML("beforeend", `<div id="answer-block"></div>`);
+              }
+            }
+
+            renderCrossSection(currentData.cross, currentData?.cross?.passage || "");
+            renderTutorSection(currentData.tutor);
+            renderAnswerSection(currentData.answerKey);
+          } catch (err) {
+            console.error("❌ ENRICHMENT FAILED", err);
+          }
+        })();
 
         console.log("🎯 RENDER COMPLETE");
       } catch (err) {
