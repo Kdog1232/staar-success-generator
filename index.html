@@ -2530,25 +2530,31 @@
     async function generate() {
       console.log("🚀 GENERATE STARTED");
 
-      if (!cachedSession) {
-        console.error("❌ NO CACHED SESSION");
-
-        unlockGenerateUI();
-
+      if (isGenerating) {
+        console.warn("⚠️ BLOCKED — already generating");
         return;
+      }
+
+      isGenerating = true;
+
+      if (!cachedSession) {
+        console.warn("⏳ Waiting for session...");
+        const { data } = await supabase.auth.getSession();
+        cachedSession = data?.session ?? null;
+        cachedUser = cachedSession?.user ?? null;
+
+        if (!cachedSession) {
+          console.error("❌ STILL NO SESSION");
+          unlockGenerateUI();
+          return;
+        }
       }
 
       const token = cachedSession.access_token;
 
       console.log("🔍 USING TOKEN:", token);
 
-      if (isGenerating) {
-        console.warn("⚠️ BLOCKED — already generating");
-        return;
-      }
-
       hasRenderedThisRun = false;
-      isGenerating = true;
       console.log("🚀 GENERATE START");
       // 🔥 FORCE NEW CONTROLLERS EVERY TIME
       if (currentController) {
