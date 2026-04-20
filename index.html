@@ -2531,373 +2531,100 @@
       console.log("🚀 GENERATE STARTED");
 
       if (isGenerating) {
-        console.warn("⚠️ BLOCKED — already generating");
+        console.warn("⚠️ BLOCKED — already running");
         return;
       }
 
       isGenerating = true;
 
-      if (!cachedSession) {
-        console.warn("⏳ Waiting for session...");
-        const { data } = await supabase.auth.getSession();
-        cachedSession = data?.session ?? null;
-        cachedUser = cachedSession?.user ?? null;
+      const btn = document.getElementById("generate-btn");
+
+      try {
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = "Generating...";
+        }
+
+        console.log("🟡 STEP 1: SESSION CHECK");
 
         if (!cachedSession) {
-          console.error("❌ STILL NO SESSION");
-          unlockGenerateUI();
-          return;
+          console.warn("⏳ Fetching session...");
+          const { data } = await supabase.auth.getSession();
+
+          cachedSession = data?.session ?? null;
+          cachedUser = cachedSession?.user ?? null;
+
+          if (!cachedSession) {
+            throw new Error("NO_SESSION");
+          }
         }
-      }
 
-      const token = cachedSession.access_token;
+        const token = cachedSession.access_token;
+        console.log("🟢 TOKEN READY");
 
-      console.log("🔍 USING TOKEN:", token);
+        const grade = document.getElementById("grade")?.value;
+        const subject = document.getElementById("subject")?.value;
+        const skill = document.getElementById("skill")?.value;
+        const level = document.getElementById("level")?.value;
 
-      hasRenderedThisRun = false;
-      console.log("🚀 GENERATE START");
-      // 🔥 FORCE NEW CONTROLLERS EVERY TIME
-      if (currentController) {
-        currentController.abort();
-      }
-      currentController = new AbortController();
-      console.log("GENERATE TRIGGERED");
-      console.log("STATE:", {
-        isGenerating,
-        authReady,
-        hasSession: !!cachedSession
-      });
-      const outputDiv = document.getElementById("output");
-      const btn = document.getElementById("generate-btn");
-      const viewToggle = document.getElementById("view-toggle");
-      if (!outputDiv || !btn || !viewToggle) {
-        console.error("❌ Missing DOM elements", {
-          hasOutputDiv: !!outputDiv,
-          hasGenerateBtn: !!btn,
-          hasViewToggle: !!viewToggle
-        });
-        throw new Error("HALT_MISSING_DOM");
-      }
-      btn.disabled = true;
-      btn.textContent = "Generating...";
-      const progressTimers = [];
-      let hasRendered = false;
+        console.log("📦 PAYLOAD:", { grade, subject, skill, level });
 
-      function halt(message) {
-        console.log("⛔ HALT:", message);
-        if (message) {
-          outputDiv.innerHTML = message;
+        console.log("📡 SENDING REQUEST");
+
+        const res = await fetch(
+          "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+              apikey: SUPABASE_ANON_KEY
+            },
+            body: JSON.stringify({
+              grade,
+              subject,
+              skill,
+              level,
+              mode: "core"
+            })
+          }
+        );
+
+        console.log("📥 RESPONSE STATUS:", res.status);
+
+        if (!res.ok) {
+          throw new Error("API_ERROR_" + res.status);
         }
-        throw new Error("HALT");
-      }
 
-      function showError(message) {
-        outputDiv.innerHTML = message;
-      }
+        const data = await res.json();
 
-      function queueRegenerate(message = "Regenerating better version...") {
-        outputDiv.innerHTML = `<p class="muted-note">${message}</p>`;
-        pendingRegenerate = true;
-      }
+        console.log("✅ DATA RECEIVED:", data);
 
-      function unlockGenerateUI() {
+        currentData = data;
+
+        renderPracticeSection(data.practice, data.passage);
+
+        console.log("🎯 RENDER COMPLETE");
+      } catch (err) {
+        console.error("💥 GENERATE FAILED:", err);
+
+        const outputDiv = document.getElementById("output");
+        if (outputDiv) {
+          outputDiv.innerHTML = `
+            <div style="color:red;font-weight:600;">
+              Something went wrong. Check console.
+            </div>
+          `;
+        }
+      } finally {
         isGenerating = false;
-        const btn = document.getElementById("generate-btn");
+
         if (btn) {
           btn.disabled = false;
           btn.textContent = "Generate";
         }
-        console.log("✅ UI UNLOCKED");
-      }
 
-      try {
-        outputDiv.innerHTML = "Step 1: Generating practice...";
-
-        progressTimers.push(setTimeout(() => {
-          outputDiv.innerHTML = "Step 1: Generating practice...";
-        }, 900));
-
-        progressTimers.push(setTimeout(() => {
-          outputDiv.innerHTML = "Step 1: Generating practice...";
-        }, 1800));
-
-        progressTimers.push(setTimeout(() => {
-          outputDiv.innerHTML = "Step 1: Generating practice...";
-        }, 2700));
-
-        progressTimers.push(setTimeout(() => {
-          outputDiv.innerHTML = "Step 1: Generating practice...";
-        }, 3200));
-        progressTimers.push(setTimeout(() => {
-          if (isGenerating && !hasRendered) {
-            outputDiv.innerHTML = "Still generating...";
-            console.warn("⏳ Still generating... keeping request running in background");
-          }
-        }, 15000));
-        viewToggle.style.display = "none";
-        console.log("STEP 1: start");
-        const user = await requireAuth();
-        console.log("STEP 2: auth complete");
-
-        if (!user) {
-          throw new Error("HALT_NO_USER");
-        }
-
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("plan, generations_used")
-          .eq("id", user.id)
-          .single();
-
-        const plan = profile?.plan || "free";
-        const currentGenerations = Number(profile?.generations_used || 0);
-        renderUsageStatus({ plan, generations_used: currentGenerations });
-
-        if (plan !== "paid" && currentGenerations >= FREE_PLAN_LIMIT) {
-          halt(`
-            <div class="locked">
-              <strong>You've reached your free limit. Upgrade to continue.</strong>
-              <a href="${GUMROAD_URL}" class="unlock-btn" target="_blank" rel="noopener noreferrer">
-                Unlock Full Access for $12
-              </a>
-            </div>
-          `);
-        }
-
-        const gradeInput = document.getElementById("grade");
-        const subjectInput = document.getElementById("subject");
-        const skillInput = document.getElementById("skill");
-        const levelInput = document.getElementById("level");
-        if (!gradeInput || !subjectInput || !skillInput || !levelInput) {
-          throw new Error("MISSING_FORM_INPUT");
-        }
-        const grade = gradeInput.value;
-        const subject = subjectInput.value;
-        const skill = skillInput.value;
-        const level = levelInput.value;
-
-        standardContent = "";
-        crossContent = "";
-        generatedPassage = "";
-        structuredQuestions = [];
-        currentData = null;
-
-        console.log("STEP 3: session ready from cache");
-
-        console.log("SENDING REQUEST");
-        const apiMode = currentMode === "cross"
-          ? "Cross-Curricular"
-          : currentMode === "tutor"
-            ? "Tutor"
-            : currentMode === "answer"
-              ? "Answer Key"
-              : "Practice";
-        const payload = {
-          subject,
-          grade,
-          skill,
-          level,
-          mode: "core",
-          contentMode: apiMode
-        };
-        console.log("🚀 PAYLOAD SENT TO BACKEND:", payload);
-        console.log("📡 BEFORE FETCH");
-        const timeoutId = setTimeout(() => currentController?.abort(), 20000);
-        let res;
-        try {
-          res = await fetch(
-            "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
-                apikey: SUPABASE_ANON_KEY
-              },
-              body: JSON.stringify(payload),
-              signal: currentController.signal
-            }
-          );
-        } finally {
-          clearTimeout(timeoutId);
-        }
-        console.log("📡 AFTER FETCH");
-        console.log("STEP 4: fetch response");
-        console.log("🟢 Fetch sent");
-        progressTimers.forEach((timer) => clearTimeout(timer));
-
-        if (res.status === 403) {
-          halt(`
-            <div class="locked">
-              <strong>You've reached your free limit. Upgrade to continue.</strong>
-              <a href="${GUMROAD_URL}" class="unlock-btn" target="_blank">
-                Unlock Full Access for $12
-              </a>
-            </div>
-          `);
-        }
-
-        const data = await res.json();
-        console.log("STEP 5: json parsed");
-        console.log("🟢 Data received");
-        console.log("🔥 FRONTEND RECEIVED:", data);
-
-        if (!data || (!data.practice && !data.cross)) {
-          throw new Error("Invalid response shape");
-        }
-
-        if (subject === "Reading" && !data.passage) {
-          console.log("❌ INVALID RESPONSE SHAPE", data);
-          halt(`<div class="locked"><strong>Temporary issue. Try again.</strong></div>`);
-        }
-
-        if (plan !== "paid") {
-          const nextGenerationsUsed = currentGenerations + 1;
-          const { error: usageUpdateError } = await supabase
-            .from("profiles")
-            .update({ generations_used: nextGenerationsUsed })
-            .eq("id", user.id);
-
-          if (!usageUpdateError) {
-            renderUsageStatus({ plan, generations_used: nextGenerationsUsed });
-          }
-        }
-
-        generatedPassage = subject === "Reading" ? cleanText(data.passage || "") : "";
-        const questions = data?.practice?.questions || [];
-        if (!questions.length) {
-          queueRegenerate();
-          unlockGenerateUI();
-          return;
-        }
-        if (Array.isArray(questions) && questions.length > 0) {
-          console.log("✅ RENDERING QUESTIONS");
-          structuredQuestions = questions.slice(0, 5);
-        }
-
-        if (!data.tutor) data.tutor = { practice: [], cross: [] };
-        if (!data.answerKey) data.answerKey = { practice: [], cross: [] };
-        if (!Array.isArray(data.tutor.practice)) data.tutor.practice = [];
-        if (!Array.isArray(data.answerKey.practice)) data.answerKey.practice = [];
-        currentData = data;
-        const selectedMode = apiMode === "Cross-Curricular" ? "Cross-Curricular" : "Practice";
-        const selectedContent = resolveModeContent(currentData, selectedMode);
-        currentMode = selectedContent.isCross ? "cross" : "practice";
-
-        lastGeneratedContentMode = "both";
-        const progressCount = incrementDailyProgress();
-
-        if (hasRendered) {
-          unlockGenerateUI();
-          return;
-        }
-        hasRendered = true;
-        try {
-          renderAll(currentData, { progressCount, skill, level, currentModeValue: currentMode });
-          unlockGenerateUI();
-        } catch (renderErr) {
-          console.error("RENDER ERROR:", renderErr);
-          showError("Display issue. Try again.");
-          unlockGenerateUI();
-          return;
-        }
-        await new Promise((resolve) => requestAnimationFrame(() => resolve()));
-        console.log("STEP 6: render complete");
-
-        fetchPracticeEnrichment({
-          token,
-          subject,
-          grade,
-          skill,
-          level,
-          passage: generatedPassage,
-          questions: structuredQuestions
-        })
-          .then((enrichment) => {
-            data.tutor = {
-              practice: Array.isArray(enrichment?.tutor?.practice) ? enrichment.tutor.practice : [],
-              cross: []
-            };
-
-            data.answerKey = {
-              practice: Array.isArray(enrichment?.answerKey?.practice) ? enrichment.answerKey.practice : [],
-              cross: []
-            };
-
-            currentData = data;
-            renderTutorSection(data.tutor);
-            renderAnswerSection(data.answerKey);
-          })
-          .catch((err) => {
-            console.warn("⚠️ Enrichment failed:", err);
-          });
-
-        fetchCrossContent({
-          token,
-          subject,
-          grade,
-          skill,
-          level
-        })
-          .then((crossData) => {
-            data.cross = {
-              passage: crossData?.passage || "",
-              questions: Array.isArray(crossData?.questions)
-                ? crossData.questions
-                : []
-            };
-
-            currentData = data;
-
-            if (currentMode === "cross") {
-              renderCrossSection(data.cross, data.cross.passage || "");
-            }
-          })
-          .catch((err) => {
-            console.warn("⚠️ Cross failed:", err);
-          });
-      } catch (err) {
-        console.error(err);
-        isGenerating = false;
-        unlockGenerateUI();
-        const message = err?.message || String(err || "");
-        if (message === "HALT") {
-          console.log("🟡 HALT CAUGHT");
-        } else if (message === "HALT_NO_USER") {
-          outputDiv.innerHTML = "Please log in.";
-        } else if (message === "NO_SESSION") {
-          outputDiv.innerHTML = "Session expired. Refresh page.";
-        } else if (message === "TIMEOUT") {
-          console.error("⏰ TIMEOUT DETECTED");
-          if (!hasRendered) {
-            outputDiv.innerHTML = `
-              <div class="locked">
-                <strong>Still working...</strong><br>
-                This request is taking longer than usual.
-              </div>
-            `;
-          }
-        } else if (message === "MISSING_FORM_INPUT") {
-          outputDiv.innerHTML = "A required form field is missing. Refresh and try again.";
-        } else if (message === "HALT_MISSING_DOM") {
-          console.error("Critical UI element missing.");
-        } else if (err?.name !== "AbortError" && message !== "HALT") {
-          console.error("GENERATION ERROR:", err);
-          showError("Temporary issue. Try again.");
-        }
-        console.error("❌ GENERATE ERROR:", err);
-      } finally {
-        console.log("🧹 FINAL CLEANUP");
-        progressTimers.forEach((timer) => clearTimeout(timer));
-        currentController = null;
-        unlockGenerateUI();
-        if (pendingRegenerate) {
-          pendingRegenerate = false;
-          setTimeout(() => {
-            generate().catch((err) => console.error("Auto-regenerate failed:", err));
-          }, 250);
-        }
-        console.log("✅ GENERATE FULLY COMPLETE");
+        console.log("🔓 GENERATE RESET COMPLETE");
       }
     }
 
@@ -2909,46 +2636,43 @@
     window.logout = logout;
     window.forgotPassword = forgotPassword;
 
-    document.querySelectorAll(".mode-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const mode = btn.dataset.mode;
+    document.querySelectorAll(".mode-btn").forEach((modeBtn) => {
+      modeBtn.addEventListener("click", () => {
+        const mode = modeBtn.dataset.mode;
         setMode(mode);
       });
-    });
-
-    document.addEventListener("click", (e) => {
-      if (e.target.classList.contains("choice")) {
-        const parent = e.target.closest(".choices");
-        if (!parent) return;
-        parent.querySelectorAll(".choice").forEach((choice) => choice.classList.remove("selected"));
-        e.target.classList.add("selected");
-      }
     });
 
     document.addEventListener("DOMContentLoaded", () => {
       const btn = document.getElementById("generate-btn");
 
       if (!btn) {
-        console.error("❌ Generate button not found");
+        console.error("❌ Button not found");
         return;
       }
 
-      btn.disabled = false;
-      console.log("🔍 BUTTON STATE:", {
-        disabled: btn.disabled
-      });
-
-      btn.addEventListener("click", () => {
-        console.log("🔥 CLICK CONFIRMED");
-      });
-
-      btn.addEventListener("click", (e) => {
+      btn.onclick = async (e) => {
         e.preventDefault();
-        console.log("🖱 BUTTON CLICK DETECTED");
-        generate();
-      });
+        e.stopPropagation();
 
-      console.log("✅ Generate button wired");
+        console.log("🔥 CLICK CONFIRMED");
+
+        await generate();
+      };
+
+      console.log("✅ Button wired safely");
+    });
+
+    window.addEventListener("error", (e) => {
+      console.error("🌍 GLOBAL ERROR:", e.error);
+    });
+
+    window.addEventListener("unhandledrejection", (e) => {
+      console.error("🌍 PROMISE ERROR:", e.reason);
+    });
+
+    window.addEventListener("click", (e) => {
+      console.log("🖱 CLICK TARGET:", e.target);
     });
 
     populateSubjectButtons();
