@@ -1909,17 +1909,6 @@
       });
     }
 
-    function showFallback(fallbackText, fallbackQuestions = []) {
-      const fallback = fallbackText || "";
-      standardContent = fallback;
-      crossContent = "";
-      structuredQuestions = Array.isArray(fallbackQuestions) ? fallbackQuestions.slice(0, 5) : [];
-    }
-
-    function showFallbackUI() {
-      return `<p class="muted-note">No structured questions available yet. Try generating again.</p>`;
-    }
-
     function getTodayKey() {
       const now = new Date();
       return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
@@ -2207,7 +2196,7 @@
 
       viewToggle.style.display = "flex";
       if (!Array.isArray(data?.practice?.questions) || data.practice.questions.length === 0) {
-        outputDiv.innerHTML += `<div class="muted-note" style="margin-top:10px;">No questions were returned, so fallback guidance is shown.</div>`;
+        outputDiv.innerHTML += `<div class="muted-note" style="margin-top:10px;">No questions were returned, so guidance is shown.</div>`;
       }
       clearRenderedSections();
       renderPracticeSection(data.practice, data.passage);
@@ -2682,16 +2671,6 @@
         }
 
         generatedPassage = subject === "Reading" ? cleanText(data.passage || "") : "";
-        if (data.meta?.fallback) {
-          console.log("⚠️ FALLBACK MODE:", data.meta.reason || "unknown");
-          if (Array.isArray(data?.practice?.questions) && data.practice.questions.length > 0) {
-            console.warn("Validation issue — keeping question");
-          } else {
-            queueRegenerate();
-            return;
-          }
-        }
-
         const questions = data?.practice?.questions || [];
         if (!questions.length) {
           queueRegenerate();
