@@ -2668,6 +2668,8 @@
         currentData = data;
         hasRenderedThisRun = false;
         renderPracticeSection(data.practice, data.passage);
+        const toggle = document.getElementById("view-toggle");
+        if (toggle) toggle.style.display = "flex";
         renderTab(currentMode || "practice");
 
         (async () => {
