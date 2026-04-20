@@ -399,26 +399,14 @@ function shuffleArray<T>(array: T[]): T[] {
   return copy;
 }
 
-function forcePassageChoices(
-  choices: string[],
-  passage: string,
-): string[] {
-  if (!Array.isArray(choices)) return ["", "", "", ""];
+function forcePassageChoices(passageText: string): [string, string, string, string] {
+  if (!passageText) return ["", "", "", ""];
 
-  const words = passage.toLowerCase().split(/\W+/).filter(Boolean);
+  const words = passageText.split(/\W+/).filter(Boolean);
 
-  return choices.map((choice) => {
-    const lower = String(choice).toLowerCase();
+  const pick = () => words[Math.floor(Math.random() * words.length)] || "";
 
-    const hasOverlap = words.some((w) => lower.includes(w));
-
-    if (hasOverlap) return choice;
-
-    // inject one passage word if no overlap
-    const fallbackWord = words[Math.floor(Math.random() * words.length)] || "";
-
-    return choice ? `${choice} (${fallbackWord})` : fallbackWord;
-  });
+  return [pick(), pick(), pick(), pick()];
 }
 
 function buildAlignedExplanation(
@@ -454,6 +442,17 @@ function buildSubjectCrossContent(subject: string, level: string) {
     passage: "",
     questions: [],
   };
+}
+
+function buildELARFallback(level: string) {
+  return {
+    passage: "",
+    questions: [],
+  };
+}
+
+function buildThinkPrompt(question: any): string {
+  return "Think about what the question is asking and find evidence that supports the best answer.";
 }
 
 function canonicalizeSubject(subject: unknown): CanonicalSubject {
