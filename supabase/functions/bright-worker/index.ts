@@ -1364,8 +1364,7 @@ IF mode = Cross-Curricular:
       {
         "question": "string",
         "choices": ["string","string","string","string"],
-        "correct_answer": "A|B|C|D",
-        "explanation": "short explanation"
+        "correct_answer": "A|B|C|D"
       }
     ]
   }
@@ -1387,7 +1386,6 @@ Rules:
 - Mode rule: If no passage is included, do not reference passage-based support language.
 - ${modeLogic.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
 - ${rules.replace(/\n/g, "\n- ").replace(/^-\s/, "")}
-- Keep explanations short (1 sentence).
 - No commentary, markdown, or extra keys.`;
   }
 
@@ -1399,6 +1397,94 @@ Rules:
     teksCode: params.teksCode,
     crossPassage: params.crossPassage,
   });
+}
+
+function buildCoreEnrichmentPrompt(params: {
+  grade: number;
+  subject: CanonicalSubject;
+  skill: string;
+  level: Level;
+  teksCode?: string;
+  corePassage?: string;
+  coreQuestions: Question[];
+}): string {
+  const { grade, subject, skill, level, teksCode = "Unknown", corePassage = "", coreQuestions } = params;
+  const coreSnapshot = JSON.stringify({
+    passage: corePassage,
+    questions: coreQuestions.map((q) => ({
+      question: q.question,
+      choices: q.choices,
+      correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
+    })),
+  });
+
+  return `Return JSON only:
+{
+  "questions": [
+    {
+      "question": "string",
+      "choices": ["string", "string", "string", "string"],
+      "correct_answer": "A|B|C|D",
+      "explanation": "string"
+    }
+  ],
+  "answerKey": [
+    {
+      "question_id": "practice-1",
+      "correct_answer": "A|B|C|D",
+      "explanation": "string",
+      "common_mistake": "string",
+      "parent_tip": "string"
+    }
+  ],
+  "tutor": [
+    {
+      "question_id": "practice-1",
+      "question": "string",
+      "explanation": "string",
+      "common_mistake": "string",
+      "hint": "string",
+      "think": "string",
+      "step_by_step": "string"
+    }
+  ]
+}
+
+Task: Enrich existing STAAR ${subject} practice items without changing question content.
+Grade: ${grade}
+Skill: ${skill}
+Level: ${level}
+TEKS: ${teksCode}
+
+Core input (DO NOT rewrite question text, choices, or correct answers):
+${coreSnapshot}
+
+Rules:
+- Keep exactly 5 questions.
+- Keep each question, choices, and correct_answer exactly as provided in the core input.
+- Add concise explanation for each question.
+- Add answerKey with question_id, correct_answer, explanation, common_mistake, parent_tip for each question.
+- Add tutor entries with question_id, question, explanation, common_mistake, hint, think, and step_by_step for each question.
+- No markdown, no commentary, JSON only.`;
+}
+
+function isValidCoreEnrichmentOutput(data: unknown): boolean {
+  const parsed = data as Record<string, unknown> | null;
+  if (!parsed) return false;
+  const maybePractice = parsed.practice && typeof parsed.practice === "object"
+    ? parsed.practice as Record<string, unknown>
+    : null;
+  const rawQuestions = parsed.questions || maybePractice?.questions;
+  if (!Array.isArray(rawQuestions) || rawQuestions.length !== 5) return false;
+
+  for (const rawQuestion of rawQuestions) {
+    const q = rawQuestion as Record<string, unknown>;
+    if (!q || typeof q.question !== "string") return false;
+    if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
+    if (!normalizeAnswerKeyEntry(q.correct_answer)) return false;
+  }
+
+  return true;
 }
 
 function buildSubjectPassage(subject: CanonicalSubject, level: Level = "On Level"): string {
@@ -2934,14 +3020,18 @@ function isValidAIOutput(data: any): boolean {
   return true;
 }
 
-async function generateWithRetry(prompt: string, attempts = 2) {
+async function generateWithRetry(
+  prompt: string,
+  attempts = 2,
+  validateOutput: (data: unknown) => boolean = isValidAIOutput,
+) {
   let last = null;
 
   for (let i = 0; i < attempts; i++) {
     try {
       const result = await callOpenAI(prompt, 15000);
 
-      if (result && isValidAIOutput(result)) {
+      if (result && validateOutput(result)) {
         return result;
       }
 
@@ -4172,7 +4262,7 @@ serve(async (req) => {
             console.time("OPENAI_CALL");
             const aiStartTime = Date.now();
             const variationSeed = Math.random().toString(36).slice(2, 8);
-            const prompt = buildGenerationPrompt({
+            const corePrompt = buildGenerationPrompt({
               mode: "core",
               grade,
               subject,
@@ -4180,14 +4270,67 @@ serve(async (req) => {
               level,
               teksCode,
             }) + `\nVariation ID: ${variationSeed}`;
-            const parsed = await generateWithRetry(prompt);
+            const core = await generateWithRetry(corePrompt);
+
+            if (!core || !Object.keys(core).length || !isValidAIOutput(core)) {
+              console.timeEnd("OPENAI_CALL");
+              console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
+              markRetry("malformed_json");
+              continue;
+            }
+
+            const parsedCorePractice = core?.practice && typeof core.practice === "object"
+              ? core.practice as Record<string, unknown>
+              : null;
+            const coreRawQuestions = parsedCorePractice?.questions ||
+              core.questions ||
+              core.items ||
+              [];
+            const coreQuestions = sanitizeQuestions(
+              coreRawQuestions,
+              effectiveSubject,
+              "Practice",
+              effectiveSkill,
+              level,
+              subject === "Reading" ? String(core.passage || "") : "",
+              grade,
+            );
+            if (coreQuestions.length === 0) {
+              console.timeEnd("OPENAI_CALL");
+              console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
+              markRetry("no_questions_returned");
+              continue;
+            }
+
+            const enrichmentPrompt = buildCoreEnrichmentPrompt({
+              grade,
+              subject,
+              skill: effectiveSkill,
+              level,
+              teksCode,
+              corePassage: subject === "Reading" ? String(core.passage || "") : "",
+              coreQuestions,
+            }) + `\nVariation ID: ${variationSeed}`;
+            const enrichment = await generateWithRetry(enrichmentPrompt, 2, isValidCoreEnrichmentOutput);
             console.timeEnd("OPENAI_CALL");
             console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
 
-          if (!parsed || !Object.keys(parsed).length || !isValidAIOutput(parsed)) {
-            markRetry("malformed_json");
-            continue;
-          }
+            if (!enrichment || !Object.keys(enrichment).length || !isValidCoreEnrichmentOutput(enrichment)) {
+              markRetry("malformed_json");
+              continue;
+            }
+
+            const parsed: Record<string, unknown> = {
+              ...core,
+              passage: core.passage,
+              practice: {
+                questions: Array.isArray(enrichment.questions)
+                  ? enrichment.questions
+                  : coreQuestions,
+              },
+              answerKey: enrichment.answerKey,
+              tutor: enrichment.tutor,
+            };
           let passageText = String(parsed.passage || "").trim();
           if (passageText) {
             try {
