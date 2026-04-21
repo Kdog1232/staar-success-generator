@@ -4327,10 +4327,10 @@ serve(async (req) => {
       answerKey: finalized.answerKey,
     });
   };
-  const returnEnrichment = (data: EnrichmentResponse) =>
+  const returnEnrichment = (data: WorkerAttempt) =>
     {
       const practiceQuestions = ensureNonEmptyQuestions(
-        ((data as Partial<WorkerAttempt>)?.practice?.questions || []) as Question[],
+        (data.practice?.questions || []) as Question[],
         subject,
         skill,
       );
@@ -5183,7 +5183,9 @@ serve(async (req) => {
           "cross",
         );
 
-        const payload = {
+        const payload: WorkerAttempt = {
+          passage: corePassageForChecks,
+          practice: { questions: safePracticeQuestions },
           cross: {
             passage: subjectCrossPassage,
             questions: crossQuestions,
