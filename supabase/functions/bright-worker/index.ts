@@ -3138,7 +3138,6 @@ async function generateWithRetry(
   attempts = 2,
   validateOutput: (data: unknown) => boolean = isValidAIOutput,
 ) {
-  let last = null;
   let lastValid: any = null;
 
   for (let i = 0; i < attempts; i++) {
@@ -3151,7 +3150,6 @@ async function generateWithRetry(
       }
 
       console.warn("⚠️ Invalid output — retrying...");
-      last = result;
 
     } catch (err) {
       console.warn("⚠️ Generation failed — retrying...", err);
@@ -3163,8 +3161,8 @@ async function generateWithRetry(
     return lastValid;
   }
 
-  console.warn("⚠️ FALLBACK USED");
-  return last;
+  console.error("❌ ALL ATTEMPTS FAILED — NO FALLBACK");
+  return null;
 }
 
 function validateDistractorQuality(questions: Question[], passage: PassageContent | string): boolean {
