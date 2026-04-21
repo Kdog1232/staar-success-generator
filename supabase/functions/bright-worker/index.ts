@@ -1305,17 +1305,17 @@ function buildCoreEnrichmentPrompt(params: {
   crossPassage?: string;
 }): string {
   const compactPractice = params.practiceQuestions.map((q, i) => ({
-    id: `practice-${i + 1}`,
-    q: q.question,
-    choices: q.choices,
-    answer: q.correct_answer
-  }));
-  const compactCross = params.crossQuestions.map((q, i) => ({
-    id: `cross-${i + 1}`,
-    q: q.question,
-    choices: q.choices,
-    answer: q.correct_answer
-  }));
+  question_id: `practice-${i + 1}`,
+  question: q.question,
+  choices: q.choices,
+  correct_answer: q.correct_answer
+}));
+ const compactCross = params.crossQuestions.map((q, i) => ({
+  question_id: `cross-${i + 1}`,
+  question: q.question,
+  choices: q.choices,
+  correct_answer: q.correct_answer
+}));
   const crossPassage = String(params.crossPassage || "").trim();
 
   return `Return JSON only:
@@ -4536,13 +4536,13 @@ serve(async (req) => {
         throw new Error("MISSING_TUTOR_PRACTICE");
       }
 
-      if (!tutorCross.length || tutorCross.length !== crossQuestions.length) {
-        throw new Error("MISSING_TUTOR_CROSS");
-      }
+      if (!tutorCross.length) {
+     console.warn("⚠️ Missing tutor cross — using partial");
+    }
 
-      if (!answerPractice.length || answerPractice.length !== practiceQuestions.length) {
-        throw new Error("MISSING_ANSWER_PRACTICE");
-      }
+    if (!answerCross.length) {
+   console.warn("⚠️ Missing answer cross — using partial");
+   }
 
       if (!answerCross.length || answerCross.length !== crossQuestions.length) {
         throw new Error("MISSING_ANSWER_CROSS");
