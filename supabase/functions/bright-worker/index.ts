@@ -131,7 +131,6 @@ const SUBJECT_SKILLS = {
 } as const;
 
 const LETTERS: ChoiceLetter[] = ["A", "B", "C", "D"];
-const TRUST_AI_ANSWER_KEY = true;
 const BANNED_PHRASES = [
   "this reflects",
   "this reasoning",
@@ -416,13 +415,31 @@ function shuffleArray<T>(array: T[]): T[] {
 }
 
 function forcePassageChoices(passageText: string): [string, string, string, string] {
-  if (!passageText) return ["", "", "", ""];
+  const fallback: [string, string, string, string] = [
+    "A detail directly supported by the content.",
+    "A partially related detail missing key evidence.",
+    "A broad claim that overgeneralizes the content.",
+    "An unsupported detail not stated in the content.",
+  ];
+  const text = String(passageText || "").trim();
+  if (!text) return fallback;
 
-  const words = passageText.split(/\W+/).filter(Boolean);
+  const words = text
+    .split(/\W+/)
+    .map((word) => word.trim())
+    .filter((word) => word.length >= 4);
 
-  const pick = () => words[Math.floor(Math.random() * words.length)] || "";
+  if (words.length < 4) return fallback;
 
-  return [pick(), pick(), pick(), pick()];
+  const unique = Array.from(new Set(words));
+  const pick = (start: number) => unique[start % unique.length] || "detail";
+
+  return [
+    `Supported by ${pick(0)} in the text.`,
+    `Partly related to ${pick(1)} but missing proof.`,
+    `Too broad compared with ${pick(2)} details.`,
+    `Not stated in the text about ${pick(3)}.`,
+  ];
 }
 
 function buildAlignedExplanation(
@@ -430,11 +447,29 @@ function buildAlignedExplanation(
   passage: string,
   usedEvidence: Set<string>,
   usePassage: boolean,
-) {
-  return {
-    why: String(question?.explanation || "").trim() || "The correct answer is supported by the passage.",
-    mistake: "A common mistake is choosing an answer that is not fully supported by the text.",
-  };
+): { why: string; mistake: string; tip: string } {
+  const normalizedChoices = normalizeChoices(question?.choices);
+  const correctLetter = safeCorrectAnswer(question?.correct_answer);
+  const correctIndex = Math.max(0, LETTERS.indexOf(correctLetter));
+  const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
+  const snippet = usePassage ? selectEvidenceSnippet(question, String(passage || ""), usedEvidence) : null;
+  const explicit = String(question?.explanation || "").trim();
+
+  const why = explicit || (usePassage
+    ? (snippet
+      ? `The best answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because the text states: "${summarizeEvidenceIdea(snippet)}."`
+      : `The best answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it is the only option fully supported by the passage.`)
+    : `The best answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it matches the problem's required reasoning.`);
+
+  const mistake = usePassage
+    ? "A common mistake is choosing an option that sounds related but is not directly supported by the passage evidence."
+    : "A common mistake is choosing an option that seems plausible without checking all constraints in the question.";
+
+  const tip = usePassage
+    ? "Go back to the exact line that proves the answer before choosing."
+    : "Test each option against the full question, not just one keyword.";
+
+  return { why, mistake, tip };
 }
 
 function buildDistractorFeedback(question: any): string {
@@ -454,8 +489,8 @@ function selectEvidenceSnippet(
   if (!sentences.length) return null;
 
   const normalizedChoices = normalizeChoices(question?.choices);
-  const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(question?.correct_answer));
-  const correctIndex = LETTERS.indexOf(correctLetter);
+  const correctLetter = safeCorrectAnswer(question?.correct_answer);
+  const correctIndex = Math.max(0, LETTERS.indexOf(correctLetter));
   const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
   const questionText = String(question?.question || "").trim();
   const anchorText = `${questionText} ${correctChoice}`.toLowerCase();
@@ -517,12 +552,21 @@ function selectEvidenceSnippet(
   return null;
 }
 
-function buildSubjectCrossContent(subject: string, level: string) {
-  throw new Error("CROSS SHOULD NEVER BE EMPTY");
-}
-
-function buildELARFallback(level: string) {
-  throw new Error("FALLBACK SHOULD NOT RUN");
+function buildCrossFallbackContent(subject: CanonicalSubject, level: Level, skill: string): {
+  passage: string;
+  questions: Question[];
+} {
+  const passage = buildSubjectPassage(subject, level);
+  const effectiveSkill = String(skill || "").trim() || SUBJECT_SKILLS[subject]?.[0]?.skill || READING_SKILL_DEFAULT;
+  const seed = buildUniversalFallbackQuestions(subject, effectiveSkill);
+  const questions = Array.from({ length: 5 }, (_, index) => {
+    const template = seed[index % seed.length] || seed[0];
+    return {
+      ...template,
+      question: `${String(template?.question || "").trim()} (${index + 1})`,
+    } as Question;
+  });
+  return { passage, questions };
 }
 
 function buildThinkPrompt(question: any): string {
@@ -1390,15 +1434,17 @@ Rules:
 
 
 function isValidCoreEnrichmentOutput(data: unknown): boolean {
-  if (!data) return false;
+  if (!data || typeof data !== "object") return false;
   const parsed = data as Record<string, unknown>;
   const cross = parsed.cross as Record<string, unknown> | undefined;
   const tutor = parsed.tutor as Record<string, unknown> | undefined;
   const answerKey = parsed.answerKey as Record<string, unknown> | undefined;
+  const crossQuestions = Array.isArray(cross?.questions) ? cross.questions : [];
+
+  if (!cross || typeof cross.passage !== "string" || !cross.passage.trim()) return false;
+  if (crossQuestions.length !== 5) return false;
+
   return Boolean(
-    cross &&
-    typeof cross.passage === "string" &&
-    Array.isArray(cross.questions) &&
     tutor &&
     answerKey &&
     Array.isArray(tutor.practice) &&
@@ -1669,12 +1715,12 @@ function buildUniversalChoices(
 // }
 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
-  if (!Array.isArray(choices)) return ["", "", "", ""];
+  if (!Array.isArray(choices)) return forcePassageChoices("");
 
   const cleaned = choices.map(c => String(c || "").trim());
 
   // Ensure structure ONLY (do not rewrite content)
-  while (cleaned.length < 4) cleaned.push("");
+  while (cleaned.length < 4) cleaned.push("Unsupported option.");
 
   return cleaned.slice(0, 4) as [string, string, string, string];
 }
@@ -2698,7 +2744,7 @@ async function sanitizeQuestions(
     } else {
       patchedChoices = Array.isArray(q.choices)
         ? q.choices.map((c) => String(c || "").trim()).slice(0, 4) as [string, string, string, string]
-        : ["", "", "", ""];
+        : forcePassageChoices("");
     }
 
     if (!Array.isArray(q.choices) || q.choices.length !== 4 || q.choices.every((choice) => !String(choice || "").trim())) {
@@ -3584,7 +3630,7 @@ function generateAnswerKey(
     try {
       const normalizedChoices = normalizeChoices(q.choices);
       const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
-      const correctIndex = LETTERS.indexOf(correctLetter);
+      const correctIndex = Math.max(0, LETTERS.indexOf(correctLetter));
       const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
       const distractor = normalizedChoices
         .map((choice, idx) => ({ letter: LETTERS[idx], choice: String(choice || "").trim() }))
@@ -3920,7 +3966,7 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
     const passageText = getPassageText(passage);
     const normalizedChoices = normalizeChoices(q.choices);
     const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
-    const correctIndex = LETTERS.indexOf(correctLetter);
+    const correctIndex = Math.max(0, LETTERS.indexOf(correctLetter));
     const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
     const wrongOption = normalizedChoices
       .map((choice, idx) => ({ letter: LETTERS[idx], choice: String(choice || "").trim() }))
@@ -3978,7 +4024,7 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
     const passageText = getPassageText(passage);
     const normalizedChoices = normalizeChoices(q.choices);
     const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
-    const correctIndex = LETTERS.indexOf(correctLetter);
+    const correctIndex = Math.max(0, LETTERS.indexOf(correctLetter));
     const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
     const wrongOption = normalizedChoices
       .map((choice, idx) => ({ letter: LETTERS[idx], choice: String(choice || "").trim() }))
@@ -4202,7 +4248,7 @@ serve(async (req) => {
     practiceQuestions: Question[];
   }) => {
     const { grade, subject, skill, level, practiceQuestions } = params;
-    const baseCross = subject === "Reading" ? buildELARFallback(level) : buildSubjectCrossContent(subject, level);
+    const baseCross = buildCrossFallbackContent(subject, level, skill);
     const constraints = getGradeConstraints(grade);
     const crossPassage = ensurePassageLength(
       baseCross.passage,
@@ -4609,7 +4655,7 @@ serve(async (req) => {
 
     // 🚀 NEW MODE ROUTING
     if (effectiveMode === "cross") {
-      const crossContent = buildSubjectCrossContent(subject, level);
+      const crossContent = buildCrossFallbackContent(subject, level, effectiveSkill);
       const result = await runPipeline({
         stems: crossContent.questions,
         crossSubject: subject,

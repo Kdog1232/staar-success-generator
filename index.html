@@ -2275,13 +2275,56 @@
       }
     }
 
-    function ensureQuestionIds(questions, type = "practice") {
+    function normalizePassageValue(passageValue) {
+      if (typeof passageValue === "string") return cleanText(passageValue);
+      if (passageValue && typeof passageValue === "object") {
+        const first = cleanText(passageValue?.text_1 || "");
+        const second = cleanText(passageValue?.text_2 || "");
+        return [first, second].filter(Boolean).join("\n\n");
+      }
+      return "";
+    }
+
+    function normalizeCorrectAnswerValue(value) {
+      if (Array.isArray(value)) {
+        return value.map((entry) => cleanText(entry)).filter(Boolean).join(", ") || "A";
+      }
+      if (value && typeof value === "object") {
+        const partA = cleanText(value?.partA || "");
+        const partB = cleanText(value?.partB || "");
+        if (partA && partB) return `${partA}, ${partB}`;
+      }
+      return cleanText(value || "A") || "A";
+    }
+
+    function normalizeChoicesForUI(choices) {
+      const source = Array.isArray(choices) ? choices : [];
+      const normalized = source
+        .map((choice) => cleanText(typeof choice === "string" ? choice : choice?.text || ""))
+        .filter((choice) => Boolean(choice));
+
+      while (normalized.length < 4) {
+        normalized.push("Unsupported option.");
+      }
+
+      return normalized.slice(0, 4);
+    }
+
+    function normalizeQuestionForUI(question, index, type = "practice") {
       const modePrefix = type === "cross" ? "cross" : "practice";
+      const safe = question && typeof question === "object" ? question : {};
+      return {
+        ...safe,
+        question_id: cleanText(safe?.question_id || `${modePrefix}_q${index + 1}`),
+        question: cleanText(safe?.question || `Question ${index + 1}`),
+        choices: normalizeChoicesForUI(safe?.choices),
+        correct_answer: normalizeCorrectAnswerValue(safe?.correct_answer)
+      };
+    }
+
+    function ensureQuestionIds(questions, type = "practice") {
       const source = Array.isArray(questions) ? questions : [];
-      return source.map((q, i) => ({
-        ...q,
-        question_id: q?.question_id || `${modePrefix}_q${i + 1}`
-      }));
+      return source.map((q, i) => normalizeQuestionForUI(q, i, type));
     }
 
     function normalizeWorkerPayload(raw = {}, { fallbackPassage = "" } = {}) {
@@ -2293,12 +2336,12 @@
 
       return {
         ...safe,
-        passage: String(safe?.passage || fallbackPassage || ""),
+        passage: normalizePassageValue(safe?.passage) || normalizePassageValue(fallbackPassage),
         practice: {
           questions: ensureQuestionIds(practiceQuestions, "practice")
         },
         cross: {
-          passage: String(safe?.cross?.passage || ""),
+          passage: normalizePassageValue(safe?.cross?.passage),
           questions: ensureQuestionIds(crossQuestions, "cross")
         },
         tutor: {
