@@ -555,7 +555,7 @@ function normalizeLevel(level: unknown): Level {
 }
 
 function gradeWordRange(grade: number, subject: CanonicalSubject, mode: CanonicalMode): { min: number; max: number } {
-  if (mode === "Cross-Curricular") return { min: 150, max: 250 };
+  if (mode === "Cross-Curricular") return { min: 150, max: 200 };
   if (subject === "Math") return { min: 60, max: 130 };
   if (subject === "Reading") return { min: 150, max: 300 };
   if (subject === "Science") return { min: grade <= 4 ? 120 : 140, max: grade <= 4 ? 220 : 260 };
@@ -1211,51 +1211,186 @@ ${subject === "Reading" ? `- Each question must assess a different reading skill
 Return JSON only.`;
 }
 
+function crossCurricularPassageTopicRule(subject: CanonicalSubject): string {
+  if (subject === "Reading") return "Science OR Social Studies passage";
+  if (subject === "Math") return "Real-world / problem-based passage (word context)";
+  if (subject === "Science") return "Science passage";
+  if (subject === "Social Studies") return "Social Studies / historical passage";
+  return "Academic subject-aligned passage";
+}
+
+function generateCrossCurricularPrompt(params: {
+  grade: number;
+  subject: CanonicalSubject;
+  skill: string;
+  level: Level;
+  teksCode?: string;
+}): string {
+  const { grade, subject, skill, level, teksCode = "Unknown" } = params;
+  const topicRule = crossCurricularPassageTopicRule(subject);
+
+  return `You are a senior STAAR item writer. Generate cross-curricular content with strong reading rigor.
+
+Inputs:
+- Grade: ${grade}
+- Subject: ${subject}
+- Skill: ${skill}
+- Level: ${level}
+- TEKS: ${teksCode}
+
+Requirements:
+- Passage must be STRICTLY 150-200 words.
+- Passage topic must be: ${topicRule}.
+- Passage must include at least TWO of the following:
+  - cause/effect
+  - problem/solution
+  - claim + evidence
+  - data or observations
+- Passage must feel like a real academic passage and include enough detail to support all questions.
+
+Question design rules:
+- Generate exactly 5 multiple-choice questions.
+- Every question must assess a READING skill (ELAR), not simple content recall.
+- Each set must include exactly one of each:
+  1) inference
+  2) main idea / central idea
+  3) author's purpose
+  4) evidence-based
+  5) vocabulary in context OR text structure
+- No duplicate question types.
+- Every question must require both:
+  - understanding passage content
+  - applying a reading skill
+- Avoid surface-level recall.
+
+Distractor quality:
+- Each question has exactly 4 choices.
+- One correct answer supported by passage evidence.
+- Two plausible distractors based on passage details but incorrect.
+- One clearly incorrect but still academic distractor.
+- Choices must be similar in tone and length.
+- Distractors should reflect common mistakes: overgeneralization, partial understanding, or misinterpretation.
+- Do NOT use generic fillers like "Option A", "Option B", or vague wording.
+
+Output format:
+Return JSON only:
+{
+  "cross": {
+    "passage": "string (150-200 words)",
+    "questions": [
+      {
+        "question": "string",
+        "choices": ["string", "string", "string", "string"],
+        "correct_answer": "A"
+      }
+    ]
+  }
+}
+
+Hard constraints:
+- Exactly 5 questions
+- Exactly 4 choices per question
+- Only one correct answer per question
+- No explanations
+- No extra text outside JSON
+- No placeholders
+
+Return JSON only.`;
+}
+
 
 function buildCoreEnrichmentPrompt(params: {
   grade: number;
   subject: CanonicalSubject;
   skill: string;
   level: Level;
-  coreQuestions: Question[];
+  practiceQuestions: Question[];
+  crossQuestions: Question[];
+  crossPassage?: string;
 }): string {
-
-  const compactQuestions = params.coreQuestions.map((q, i) => ({
+  const compactPractice = params.practiceQuestions.map((q, i) => ({
     id: `practice-${i + 1}`,
     q: q.question,
     choices: q.choices,
     answer: q.correct_answer
   }));
+  const compactCross = params.crossQuestions.map((q, i) => ({
+    id: `cross-${i + 1}`,
+    q: q.question,
+    choices: q.choices,
+    answer: q.correct_answer
+  }));
+  const crossPassage = String(params.crossPassage || "").trim();
 
   return `Return JSON only:
 {
-  "answerKey": [
-    {
-      "question_id": "practice-1",
-      "correct_answer": "A",
-      "explanation": "string"
-    }
-  ],
-  "tutor": [
-    {
-      "question_id": "practice-1",
-      "explanation": "string"
-    }
-  ]
+  "tutor": {
+    "practice": [
+      {
+        "question_id": "practice-1",
+        "explanation": "string"
+      }
+    ],
+    "cross": [
+      {
+        "question_id": "cross-1",
+        "explanation": "string"
+      }
+    ]
+  },
+  "answerKey": {
+    "practice": [
+      {
+        "question_id": "practice-1",
+        "correct_answer": "A",
+        "explanation": "string"
+      }
+    ],
+    "cross": [
+      {
+        "question_id": "cross-1",
+        "correct_answer": "A",
+        "explanation": "string"
+      }
+    ]
+  }
 }
 
-Task:
-Provide the correct answer and a short explanation for each question.
+You are generating Tutor explanations and Answer Key.
+
+You are given:
+
+Practice Questions:
+${JSON.stringify(compactPractice)}
+
+Cross Questions:
+${JSON.stringify(compactCross)}
+
+Cross Passage:
+${crossPassage || "(none)"}
+
+----------------------------------------
+
+Generate:
+
+1. Tutor explanations for:
+   - ALL practice questions
+   - ALL cross questions
+
+2. Answer key for:
+   - ALL practice questions
+   - ALL cross questions
+
+----------------------------------------
 
 Rules:
-- Do NOT rewrite questions
-- Do NOT rewrite choices
+- Keep practice and cross SEPARATE
+- Do NOT mix them
+- Maintain alignment with each question
+- Explanations must reference the passage when needed
 - Keep explanations to 1–2 sentences
-- Be clear and direct
+- Do not rewrite questions or choices
 - No extra text outside JSON
-
-Questions:
-${JSON.stringify(compactQuestions)}
 `;
 }
 
@@ -1263,7 +1398,16 @@ ${JSON.stringify(compactQuestions)}
 function isValidCoreEnrichmentOutput(data: unknown): boolean {
   if (!data) return false;
   const parsed = data as Record<string, unknown>;
-  return Array.isArray(parsed.answerKey) && Array.isArray(parsed.tutor);
+  const tutor = parsed.tutor as Record<string, unknown> | undefined;
+  const answerKey = parsed.answerKey as Record<string, unknown> | undefined;
+  return Boolean(
+    tutor &&
+    answerKey &&
+    Array.isArray(tutor.practice) &&
+    Array.isArray(tutor.cross) &&
+    Array.isArray(answerKey.practice) &&
+    Array.isArray(answerKey.cross)
+  );
 }
 
 function buildSubjectPassage(subject: CanonicalSubject, level: Level = "On Level"): string {
@@ -2448,9 +2592,20 @@ async function sanitizeQuestions(
     .filter((item): item is Question => Boolean(item));
   void grade;
   const requestedSkillType = getSkillType(skill);
+  const isGenericChoices = (choices: string[]): boolean => {
+    const joined = choices.join(" ").toLowerCase();
+    return (
+      joined.includes("option") ||
+      joined.includes("best demonstrates") ||
+      joined.includes("reasonable") ||
+      joined.includes("partial") ||
+      joined.includes("overgeneralizes")
+    );
+  };
   const needsRepair = (choices: unknown): boolean => {
     if (!Array.isArray(choices)) return true;
     if (choices.length !== 4) return true;
+    if (isGenericChoices(choices.map((c) => String(c || "").trim()))) return true;
     return choices.some((c) => !c || !String(c).trim());
   };
   const brokenItems = incoming
@@ -3018,11 +3173,21 @@ function validateDistractorQuality(questions: Question[], passage: PassageConten
   });
 }
 
-function validateCrossCurricular(data: { passage?: unknown; questions?: unknown[] }): boolean {
-  const passage = String(data?.passage || "").toLowerCase();
-  const questions = Array.isArray(data?.questions) ? data.questions : [];
-  if (!passage.trim()) return false;
-  if (questions.length === 0) return false;
+function validateCrossCurricular(data: { passage?: unknown; questions?: unknown[]; cross?: { passage?: unknown; questions?: unknown[] } }): boolean {
+  const scoped = data?.cross && typeof data.cross === "object" ? data.cross : data;
+  const passageText = String(scoped?.passage || "").trim();
+  const passage = passageText.toLowerCase();
+  const questions = Array.isArray(scoped?.questions) ? scoped.questions : [];
+  if (!passageText) return false;
+  if (questions.length < 3) return false;
+  const words = passageText.split(/\s+/).filter(Boolean).length;
+  if (words < 140 || words > 220) return false;
+  const hasValidChoices = questions.every((q) => {
+    const item = q && typeof q === "object" ? q as Record<string, unknown> : {};
+    const choices = Array.isArray(item.choices) ? item.choices : [];
+    return choices.length === 4;
+  });
+  if (!hasValidChoices) return false;
 
   const badPhrases = [
     "this question links ideas",
@@ -3936,8 +4101,8 @@ serve(async (req) => {
     const constraints = getGradeConstraints(grade);
     const crossPassage = ensurePassageLength(
       baseCross.passage,
-      250,
-      300,
+      150,
+      200,
       subject,
       "Cross-Curricular",
       grade,
@@ -4197,7 +4362,13 @@ serve(async (req) => {
     const requestPath = new URL(req.url).pathname;
 
     if (requestPath.endsWith("/enrich")) {
-      const questions = Array.isArray(body.questions) ? body.questions as Question[] : [];
+      const practiceQuestions = Array.isArray(body.practice)
+        ? body.practice as Question[]
+        : Array.isArray(body.questions)
+        ? body.questions as Question[]
+        : [];
+      const crossQuestions = Array.isArray(body.cross) ? body.cross as Question[] : [];
+      const crossPassage = String(body.crossPassage || "").trim();
       const enrichGrade = Number(body.grade || 5);
       const enrichSubject = canonicalizeSubject(body.subject);
       const enrichSkill = String(body.skill || READING_SKILL_DEFAULT).trim() || READING_SKILL_DEFAULT;
@@ -4209,20 +4380,28 @@ serve(async (req) => {
           subject: enrichSubject,
           skill: enrichSkill,
           level: enrichLevel,
-          coreQuestions: questions,
+          practiceQuestions,
+          crossQuestions,
+          crossPassage,
         }),
         2,
         isValidCoreEnrichmentOutput,
       ) as Record<string, unknown> | null;
+      const tutor = enrichment?.tutor && typeof enrichment.tutor === "object"
+        ? enrichment.tutor as Record<string, unknown>
+        : {};
+      const answerKey = enrichment?.answerKey && typeof enrichment.answerKey === "object"
+        ? enrichment.answerKey as Record<string, unknown>
+        : {};
 
       return jsonResponse({
         tutor: {
-          practice: Array.isArray(enrichment?.tutor) ? enrichment.tutor : [],
-          cross: [],
+          practice: Array.isArray(tutor.practice) ? tutor.practice : [],
+          cross: Array.isArray(tutor.cross) ? tutor.cross : [],
         },
         answerKey: {
-          practice: Array.isArray(enrichment?.answerKey) ? enrichment.answerKey : [],
-          cross: [],
+          practice: Array.isArray(answerKey.practice) ? answerKey.practice : [],
+          cross: Array.isArray(answerKey.cross) ? answerKey.cross : [],
         },
       });
     }
@@ -4527,8 +4706,8 @@ serve(async (req) => {
           const constraints = getGradeConstraints(grade);
           const crossPassage = ensurePassageLength(
             baseCrossPassage,
-            250,
-            300,
+            150,
+            200,
             effectiveSubject,
             "Cross-Curricular",
             grade,
@@ -4659,44 +4838,31 @@ serve(async (req) => {
         console.time("OPENAI_CALL");
         const enrichStartTime = Date.now();
         const variationId = Math.random().toString(36).slice(2, 8);
-        const crossPassageRes = await generateWithRetry(
-          generatePassagePrompt({
+        const crossRes = await generateWithRetry(
+          generateCrossCurricularPrompt({
             grade,
             subject: effectiveSubject,
             skill: effectiveSkill,
             level,
             teksCode,
-            contextType,
           }) + `\nVariation ID: ${variationId}`,
           2,
-          (data: unknown) => Boolean(data && typeof data === "object" && "passage" in (data as Record<string, unknown>)),
-        ) as Record<string, unknown> | null;
-        let crossQuestionRes = await generateWithRetry(
-          generateQuestionsPrompt({
-            grade,
-            subject: effectiveSubject,
-            skill: effectiveSkill,
-            level,
-            teksCode,
-            passage: String(crossPassageRes?.passage || baseCrossPassage),
-          }) + `\nVariation ID: ${variationId}`,
-          2,
-          (data: unknown) => {
-            const raw = data as Record<string, unknown> | null;
-            return Boolean(raw && Array.isArray(raw.questions) && raw.questions.length > 0);
-          },
+          (data: unknown) => validateCrossCurricular((data || {}) as { passage?: unknown; questions?: unknown[]; cross?: { passage?: unknown; questions?: unknown[] } }),
         ) as Record<string, unknown> | null;
         console.timeEnd("OPENAI_CALL");
         console.log("⏱️ AI Duration:", Date.now() - enrichStartTime);
 
-        if (!crossQuestionRes || !Object.keys(crossQuestionRes).length) {
-          console.warn("⚠️ Empty cross question payload — using fallback questions");
-          crossQuestionRes = { questions: buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill) };
+        const scopedCross = crossRes?.cross && typeof crossRes.cross === "object"
+          ? crossRes.cross as Record<string, unknown>
+          : crossRes;
+
+        if (!scopedCross || !Object.keys(scopedCross).length) {
+          console.warn("⚠️ Empty cross payload — using fallback cross content");
         }
 
         const parsedCross: Record<string, unknown> = {
-          passage: String(crossPassageRes?.passage || baseCrossPassage),
-          questions: crossQuestionRes?.questions || crossQuestionRes?.items || [],
+          passage: String(scopedCross?.passage || baseCrossPassage),
+          questions: scopedCross?.questions || scopedCross?.items || buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill),
         };
         let subjectCrossPassage = String(parsedCross.passage || "").trim() || baseCrossPassage;
         const originalCrossPassage = subjectCrossPassage;
@@ -4720,8 +4886,8 @@ serve(async (req) => {
         const constraints = getGradeConstraints(grade);
         subjectCrossPassage = ensurePassageLength(
           subjectCrossPassage,
-          250,
-          300,
+          150,
+          200,
           effectiveSubject,
           "Cross-Curricular",
           grade,
@@ -4757,20 +4923,28 @@ serve(async (req) => {
             subject: effectiveSubject,
             skill: effectiveSkill,
             level,
-            coreQuestions: crossQuestions,
+            practiceQuestions: safePracticeQuestions,
+            crossQuestions,
+            crossPassage: subjectCrossPassage,
           }),
           2,
           isValidCoreEnrichmentOutput,
         ) as Record<string, unknown> | null;
+        const crossTutor = crossEnrichment?.tutor && typeof crossEnrichment.tutor === "object"
+          ? crossEnrichment.tutor as Record<string, unknown>
+          : {};
+        const crossAnswer = crossEnrichment?.answerKey && typeof crossEnrichment.answerKey === "object"
+          ? crossEnrichment.answerKey as Record<string, unknown>
+          : {};
 
         const tutorPractice = sanitizeTutorExplanations(
-          [],
+          Array.isArray(crossTutor.practice) ? crossTutor.practice : [],
           safePracticeQuestions,
           effectiveSubject,
           "practice",
         );
         let tutorCross = sanitizeTutorExplanations(
-          Array.isArray(crossEnrichment?.tutor) ? crossEnrichment.tutor : [],
+          Array.isArray(crossTutor.cross) ? crossTutor.cross : [],
           crossQuestions,
           effectiveSubject,
           "cross",
@@ -4778,14 +4952,14 @@ serve(async (req) => {
         );
 
         const answerKeyPractice = sanitizeAnswerKey(
-          [],
+          Array.isArray(crossAnswer.practice) ? crossAnswer.practice : [],
           safePracticeQuestions,
           effectiveSubject,
           tutorPractice,
           "practice",
         );
         let answerKeyCross = sanitizeAnswerKey(
-          Array.isArray(crossEnrichment?.answerKey) ? crossEnrichment.answerKey : [],
+          Array.isArray(crossAnswer.cross) ? crossAnswer.cross : [],
           crossQuestions,
           effectiveSubject,
           tutorCross,
