@@ -4988,18 +4988,6 @@ serve(async (req) => {
           "practice",
         );
         let answerKeyCross: AnswerKeyEntry[] = [];
-        if (Array.isArray(crossQuestions) && crossQuestions.length >= 5) {
-          console.warn("🔒 LOCKING VALID AI OUTPUT — NO FURTHER MODIFICATIONS");
-          return returnEnrichment({
-            cross: {
-              passage: subjectCrossPassage,
-              questions: crossQuestions,
-            },
-            tutor: { practice: tutorPractice, cross: tutorCross },
-            answerKey: { practice: answerKeyPractice, cross: answerKeyCross },
-          });
-        }
-
         const crossEnrichment = await generateWithRetry(
           buildCoreEnrichmentPrompt({
             grade,
