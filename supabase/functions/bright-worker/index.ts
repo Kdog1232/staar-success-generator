@@ -4435,13 +4435,27 @@ serve(async (req) => {
     const requestPath = new URL(req.url).pathname;
 
     if (requestPath.endsWith("/enrich")) {
-      const practiceQuestions = Array.isArray(body.practice)
+      const practiceQuestions = Array.isArray(body.practiceQuestions)
+        ? body.practiceQuestions as Question[]
+        : Array.isArray(body.practice)
         ? body.practice as Question[]
         : Array.isArray(body.questions)
         ? body.questions as Question[]
         : [];
-      const crossQuestions = Array.isArray(body.cross) ? body.cross as Question[] : [];
-      const crossPassage = String(body.crossPassage || "").trim();
+      const bodyCross = body.cross && typeof body.cross === "object"
+        ? body.cross as Record<string, unknown>
+        : null;
+      const crossQuestions = Array.isArray(body.crossQuestions)
+        ? body.crossQuestions as Question[]
+        : bodyCross && Array.isArray(bodyCross.questions)
+        ? bodyCross.questions as Question[]
+        : Array.isArray(body.cross)
+        ? body.cross as Question[]
+        : [];
+      const crossPassage = String(
+        body.crossPassage ??
+          (bodyCross?.passage ?? ""),
+      ).trim();
       const enrichGrade = Number(body.grade || 5);
       const enrichSubject = canonicalizeSubject(body.subject);
       const enrichSkill = String(body.skill || READING_SKILL_DEFAULT).trim() || READING_SKILL_DEFAULT;
@@ -4466,15 +4480,35 @@ serve(async (req) => {
       const answerKey = enrichment?.answerKey && typeof enrichment.answerKey === "object"
         ? enrichment.answerKey as Record<string, unknown>
         : {};
+      const tutorPractice = Array.isArray(tutor.practice) ? tutor.practice : [];
+      const tutorCross = Array.isArray(tutor.cross) ? tutor.cross : [];
+      const answerPractice = Array.isArray(answerKey.practice) ? answerKey.practice : [];
+      const answerCross = Array.isArray(answerKey.cross) ? answerKey.cross : [];
+
+      if (!tutorPractice.length || tutorPractice.length !== practiceQuestions.length) {
+        throw new Error("MISSING_TUTOR_PRACTICE");
+      }
+
+      if (!tutorCross.length || tutorCross.length !== crossQuestions.length) {
+        throw new Error("MISSING_TUTOR_CROSS");
+      }
+
+      if (!answerPractice.length || answerPractice.length !== practiceQuestions.length) {
+        throw new Error("MISSING_ANSWER_PRACTICE");
+      }
+
+      if (!answerCross.length || answerCross.length !== crossQuestions.length) {
+        throw new Error("MISSING_ANSWER_CROSS");
+      }
 
       return jsonResponse({
         tutor: {
-          practice: Array.isArray(tutor.practice) ? tutor.practice : [],
-          cross: Array.isArray(tutor.cross) ? tutor.cross : [],
+          practice: tutorPractice,
+          cross: tutorCross,
         },
         answerKey: {
-          practice: Array.isArray(answerKey.practice) ? answerKey.practice : [],
-          cross: Array.isArray(answerKey.cross) ? answerKey.cross : [],
+          practice: answerPractice,
+          cross: answerCross,
         },
       });
     }
