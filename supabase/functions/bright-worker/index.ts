@@ -4368,6 +4368,11 @@ serve(async (req) => {
       );
     }
 
+    const trigger = String(body?.trigger || "").trim().toLowerCase();
+    if (trigger === "login_check") {
+      return jsonResponse({ ok: true, trigger: "login_check" });
+    }
+
     const {
       grade: incomingGrade,
       subject: incomingSubject,
@@ -4430,6 +4435,16 @@ serve(async (req) => {
       level: incomingLevel,
       mode: incomingMode,
     });
+
+    if (!incomingSubject || !incomingGrade || !incomingSkill || !incomingLevel) {
+      console.warn("⚠️ Missing required generation fields — skipping AI call");
+      return jsonResponse(
+        {
+          error: "Missing required fields: subject, grade, skill, level",
+        },
+        400,
+      );
+    }
 
     grade = Number(incomingGrade || 5);
     subject = canonicalizeSubject(incomingSubject);
