@@ -4846,7 +4846,7 @@ serve(async (req) => {
             level,
             teksCode,
           }) + `\nVariation ID: ${variationId}`,
-          1,
+          2,
           () => true,
         ) as Record<string, unknown> | null;
         console.timeEnd("OPENAI_CALL");
