@@ -919,14 +919,19 @@ function isGenericChoice(choice: string): boolean {
   ].some((pattern) => pattern.test(normalized));
 }
 
-function isBadChoice(choice: string): boolean {
-  const text = String(choice || "").trim().toLowerCase();
-  return (
-    text.includes("based on the passage") ||
-    text.includes("one detail") ||
-    text.includes("another clue") ||
-    text.length < 8
-  );
+function containsInjectedTemplate(text: string): boolean {
+  return String(text || "").toLowerCase().includes("based on the passage");
+}
+
+function isAcceptableAIQuestion(input: unknown): input is Question {
+  if (!input || typeof input !== "object") return false;
+  const q = input as Question;
+  if (!String(q.question || "").trim()) return false;
+  if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
+  const normalized = q.choices.map((choice) => String(choice || "").trim());
+  if (new Set(normalized).size !== 4) return false;
+  if (normalized.some((choice) => containsInjectedTemplate(choice))) return false;
+  return true;
 }
 
 function isValidQuestion(q: Question): boolean {
@@ -935,7 +940,7 @@ function isValidQuestion(q: Question): boolean {
     Array.isArray(q?.choices) &&
     q.choices.length === 4 &&
     new Set(q.choices.map((choice) => String(choice || "").trim())).size === 4 &&
-    !q.choices.some((choice) => isBadChoice(String(choice || ""))),
+    !q.choices.some((choice) => containsInjectedTemplate(String(choice || ""))),
   );
 }
 
@@ -2395,7 +2400,7 @@ function isGenericAnswer(choice: string): boolean {
 }
 
 function isClearlyGenericChoices(choices: [string, string, string, string]): boolean {
-  return choices.every((choice) => isBadChoice(String(choice || "")));
+  return choices.every((choice) => containsInjectedTemplate(String(choice || "")));
 }
 
 function rewriteChoicesFromPassage(passage: string): [string, string, string, string] {
@@ -3900,7 +3905,11 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
   const crossPassage = data.cross?.passage || "";
 
   const validatedPractice = [...(data.practice.questions || [])]
-    .map((q) => repairQuestion(q, subject, practicePassageForOps));
+    .map((q) => ({
+      ...q,
+      choices: normalizeChoices(q.choices),
+    }))
+    .filter((q) => isAcceptableAIQuestion(q));
 
   let validatedCross: Question[] = [];
   if (data.cross?.questions) {
@@ -3908,7 +3917,7 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
       .map((q) => repairQuestion(q, subject, crossPassage));
     data.cross.questions = validatedCross;
   }
-  data.practice.questions = validateAndRewriteChoiceStarts(validatedPractice).slice(0, 5);
+  data.practice.questions = validatedPractice.slice(0, 5);
   data.cross.questions = validateAndRewriteChoiceStarts(validatedCross);
 
   const buildBoundSupport = (
@@ -4254,11 +4263,11 @@ serve(async (req) => {
       mode: "practice" | "cross",
     ): Question[] => {
       const normalizedQuestions = questions
-        .map((q) => repairQuestion(q, subject, passage))
-        .map((q) => normalizeAndValidate(q, passage));
-      if (mode === "practice" && !normalizedQuestions.every(isValidQuestion)) {
+        .map((q) => ({ ...q, choices: normalizeChoices(q.choices) }));
+      if (mode === "practice" && !normalizedQuestions.every((q) => isAcceptableAIQuestion(q))) {
         throw new Error("Invalid practice questions after normalization");
       }
+      void passage;
 
       return normalizedQuestions.slice(0, 5);
     };
@@ -4270,7 +4279,7 @@ serve(async (req) => {
     const practicePassageForOps = subject === "Reading" ? String(practicePassage || "") : "";
 
     practice.questions = sanitizeAndValidateQuestions(practice.questions, practicePassageForOps, "practice");
-    practice.questions = ensureNonEmptyQuestions(practice.questions, subject, skill);
+    if (!practice.questions.length) throw new Error("Practice questions missing");
 
     const cross = await generateCross({
       grade,
@@ -4282,7 +4291,7 @@ serve(async (req) => {
     const crossPassage = cross?.passage || "";
     cross.questions = sanitizeAndValidateQuestions(cross.questions, crossPassage, "cross");
     cross.questions = ensureNonEmptyQuestions(cross.questions, subject, skill, "cross");
-    practice.questions = sanitizeChoices(practice.questions);
+    practice.questions = practice.questions.map((q) => ({ ...q, choices: normalizeChoices(q.choices) }));
     cross.questions = sanitizeChoices(cross.questions);
     practice.questions = sanitizeExplanations(practice.questions, practicePassageForOps);
     cross.questions = sanitizeExplanations(cross.questions, cross.passage);
@@ -4306,7 +4315,7 @@ serve(async (req) => {
       tutor: { practice: [], cross: [] },
       answerKey: { practice: [], cross: [] },
     }, subject);
-    finalized.practice.questions = ensureNonEmptyQuestions(finalized.practice.questions, subject, skill);
+    finalized.practice.questions = Array.isArray(finalized.practice.questions) ? finalized.practice.questions : [];
     finalized.cross.questions = ensureNonEmptyQuestions(finalized.cross.questions, subject, skill, "cross");
     const practiceSupport = ensureNonEmptySupport(
       finalized.practice.questions,
@@ -4336,11 +4345,12 @@ serve(async (req) => {
   };
   const returnEnrichment = (data: WorkerAttempt) =>
     {
-      const practiceQuestions = ensureNonEmptyQuestions(
-        (data.practice?.questions || []) as Question[],
-        subject,
-        skill,
-      );
+      const practiceQuestions = ((data.practice?.questions || []) as Question[])
+        .map((q) => ({ ...q, choices: normalizeChoices(q.choices) }))
+        .filter((q) => isAcceptableAIQuestion(q));
+      if (!practiceQuestions.length) {
+        throw new Error("PRACTICE_GENERATION_FAILED");
+      }
       let cross = data?.cross as Partial<EnrichmentResponse["cross"]> | undefined;
       if (!cross || !Array.isArray(cross.questions) || cross.questions.length === 0) {
         console.error("❌ CROSS GENERATION FAILED — AI RETURNED EMPTY");
@@ -4349,12 +4359,7 @@ serve(async (req) => {
           questions: rebuildCrossFromPractice(practiceQuestions, subject, skill),
         };
       }
-      const sanitizedPracticeQuestions = sanitizeExplanations(
-        sanitizeChoices(
-          practiceQuestions.map((q) => ({ ...q })),
-        ),
-        String((data as Partial<WorkerAttempt>)?.passage || ""),
-      );
+      const sanitizedPracticeQuestions = practiceQuestions.map((q) => ({ ...q, choices: normalizeChoices(q.choices) }));
       const sanitizedCrossQuestions = sanitizeExplanations(
         sanitizeChoices(
           (cross?.questions || []).map((q) => ({ ...q })),
@@ -4380,7 +4385,7 @@ serve(async (req) => {
         finalized.cross.passage = String(cross?.passage || (data as Partial<WorkerAttempt>)?.passage || "");
       }
       const practiceSupport = ensureNonEmptySupport(
-        ensureNonEmptyQuestions(sanitizedPracticeQuestions, subject, skill),
+        sanitizedPracticeQuestions,
         (data as Partial<WorkerAttempt>)?.tutor?.practice as TutorExplanation[] | undefined,
         (data as Partial<WorkerAttempt>)?.answerKey?.practice as AnswerKeyEntry[] | undefined,
         "practice",
@@ -4410,7 +4415,7 @@ serve(async (req) => {
         skill,
         grade,
         practice: {
-          questions: ensureNonEmptyQuestions(sanitizedPracticeQuestions, subject, skill),
+          questions: sanitizedPracticeQuestions,
         },
         cross: finalized.cross,
         tutor: finalized.tutor,
@@ -4741,23 +4746,13 @@ serve(async (req) => {
             console.log("FINAL PRACTICE QUESTIONS:", parsed.questions.length);
             questionRes = parsed;
 
-            const coreRawQuestions = questionRes?.questions || questionRes?.items || [];
-            let coreQuestions = await sanitizeQuestions(
-              coreRawQuestions,
-              effectiveSubject,
-              "Practice",
-              effectiveSkill,
-              level,
-              String(passageRes?.passage || ""),
-              grade,
-              repairState,
-            );
-            coreQuestions = sanitizeChoices(coreQuestions);
-            coreQuestions = coreQuestions.map((q) => ({
-              ...q,
-              choices: normalizeChoices(q.choices),
-            }));
-            if (!coreQuestions.every(isValidQuestion)) {
+            const aiQuestions = questionRes?.questions || questionRes?.items || [];
+            let coreQuestions = (Array.isArray(aiQuestions) ? aiQuestions : []).map((q) => {
+              const item = (q || {}) as Question;
+              const patchedChoices = normalizeChoices(item.choices);
+              return { ...item, choices: patchedChoices } as Question;
+            });
+            if (!coreQuestions.every((q) => isAcceptableAIQuestion(q))) {
               console.warn("Invalid AI output — regenerating clean questions");
               console.log("✅ FLOW STEP: generateQuestionsPrompt");
               const regenerated = await generateWithRetry(
@@ -4776,22 +4771,13 @@ serve(async (req) => {
                 },
               ) as Record<string, unknown> | null;
               const regeneratedRaw = regenerated?.questions || regenerated?.items || [];
-              const regeneratedQuestions = await sanitizeQuestions(
-                regeneratedRaw,
-                effectiveSubject,
-                "Practice",
-                effectiveSkill,
-                level,
-                String(passageRes?.passage || ""),
-                grade,
-                repairState,
-              );
-              coreQuestions = regeneratedQuestions.map((q) => ({
-                ...q,
-                choices: normalizeChoices(q.choices),
-              }));
+              coreQuestions = (Array.isArray(regeneratedRaw) ? regeneratedRaw : []).map((q) => {
+                const item = (q || {}) as Question;
+                const patchedChoices = normalizeChoices(item.choices);
+                return { ...item, choices: patchedChoices } as Question;
+              });
             }
-            coreQuestions = coreQuestions.filter(isValidQuestion).slice(0, 5);
+            coreQuestions = coreQuestions.filter((q) => isAcceptableAIQuestion(q)).slice(0, 5);
             if (!coreQuestions.length) {
               throw new Error("Invalid AI output after single regeneration attempt");
             }
@@ -4822,17 +4808,15 @@ serve(async (req) => {
         if (effectiveSubject === "Reading" && (!corePassageForChecks || corePassageForChecks.length < 30)) {
           throw new Error("🚨 PASSAGE MISSING IN FINAL PAYLOAD");
         }
-        const normalizedPractice = await sanitizeQuestions(
-          priorPractice,
-          effectiveSubject,
-          "Practice",
-          effectiveSkill,
-          level,
-          effectiveSubject === "Reading" ? String(corePassageForChecks || "") : "",
-          grade,
-          repairState,
-        );
-        const safePracticeQuestions = ensureNonEmptyQuestions(normalizedPractice, effectiveSubject, effectiveSkill);
+        const normalizedPractice = priorPractice.map((q) => {
+          const item = (q || {}) as Question;
+          const patchedChoices = normalizeChoices(item.choices);
+          return { ...item, choices: patchedChoices } as Question;
+        });
+        const safePracticeQuestions = normalizedPractice.filter((q) => isAcceptableAIQuestion(q)).slice(0, 5);
+        if (!safePracticeQuestions.length) {
+          throw new Error("PRACTICE_GENERATION_FAILED");
+        }
         console.log("🧠 CROSS SUBJECT:", effectiveSubject);
         const baseCrossPassage = buildSubjectPassage(effectiveSubject, level);
         if (baseCrossPassage === corePassageForChecks) {
