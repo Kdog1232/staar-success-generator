@@ -4706,6 +4706,7 @@ serve(async (req) => {
               }) + `\nVariation ID: ${variationId}`,
               2,
             ) as Record<string, unknown> | null;
+            console.log("✅ FLOW STEP: generateQuestionsPrompt");
             const questionRes = await generateWithRetry(
               generateQuestionsPrompt({
                 grade,
@@ -4756,6 +4757,7 @@ serve(async (req) => {
             if (coreQuestions.length < 5) {
               console.warn("⚠️ Not enough valid questions — regenerating missing...");
               const needed = 5 - coreQuestions.length;
+              console.log("✅ FLOW STEP: generateQuestionsPrompt");
               const extraRes = await generateWithRetry(
                 generateQuestionsPrompt({
                   grade,
@@ -4837,6 +4839,7 @@ serve(async (req) => {
         const shouldGenerateCross = true;
         let crossRes: Record<string, unknown> | null = null;
         if (shouldGenerateCross) {
+          console.log("✅ FLOW STEP: generateCrossCurricularPrompt");
           crossRes = await generateWithRetry(
             generateCrossCurricularPrompt({
               grade,
@@ -5026,6 +5029,11 @@ serve(async (req) => {
           "practice",
         );
         let answerKeyCross: AnswerKeyEntry[] = [];
+        console.log("CROSS QUESTIONS COUNT:", cross?.questions?.length);
+        if (!cross?.questions?.length) {
+          throw new Error("CROSS_GENERATION_FAILED");
+        }
+        console.log("✅ FLOW STEP: buildCoreEnrichmentPrompt");
         const crossEnrichment = await generateWithRetry(
           buildCoreEnrichmentPrompt({
             grade,
