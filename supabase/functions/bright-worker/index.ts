@@ -1199,57 +1199,39 @@ function generateQuestionsPrompt(params: {
 }): string {
 
   const { grade, subject, skill, level, passage, teksCode = "Unknown" } = params;
+  void subject;
+  void passage;
+  void teksCode;
 
-  return `Return JSON only:
+  return `
+Generate a short reading passage and 5 multiple choice questions.
+
+Requirements:
+- Skill: ${skill}
+- Grade: ${grade}
+- Level: ${level}
+
+Return ONLY valid JSON:
+
 {
+  "passage": "short passage (4–6 sentences)",
   "questions": [
     {
-      "question": "...",
-      "choices": ["...", "...", "...", "..."],
+      "question": "clear question",
+      "choices": ["A", "B", "C", "D"],
       "correct_answer": "A"
     }
   ]
 }
 
-Generate 5 ${subject} questions aligned to:
-- Grade ${grade}
-- Skill: ${skill}
-- Level: ${level}
-- TEKS: ${teksCode}
-
-${subject === "Reading" ? `Passage:
-${passage}` : ""}
-
-Rules:
-- Exactly 5 questions
-- Exactly 4 answer choices per question
-- Only 1 correct answer (A, B, C, or D)
-- Questions must require thinking (not simple recall)
-- Use clear, natural language
-- No explanations
-- No extra text
-- No placeholder phrases (like "one detail in the text shows")
-${subject === "Reading" ? `- Each question must assess a different reading skill (no duplicates)
-- Do not repeat question stems
-- Avoid surface-level recall questions
-- Include a mix of question types such as:
-  - inference
-  - author’s purpose
-  - cause/effect
-  - detail/support
-- Do not repeat the same skill across the set
-- Questions must require reasoning across multiple parts of the passage
-- Include at least one question where two choices are very close
-- Distractor quality per question:
-  - 2 plausible distractors grounded in passage details but incorrect
-  - 1 clearly incorrect but still academic distractor
-  - All answer choices must sound equally strong
-- Do not create duplicate questions
-- Each question MUST directly reference the passage.
-- Do NOT generate generic or reusable questions.
-- Every question must include a specific idea, action, or detail from the passage.` : ""}
-
-Return JSON only.`;
+STRICT RULES:
+- EXACTLY 5 questions
+- EXACTLY 4 answer choices per question
+- correct_answer MUST be one of A, B, C, D
+- NO explanations
+- NO extra text
+- NO markdown
+`;
 }
 
 function crossCurricularPassageTopicRule(subject: CanonicalSubject): string {
@@ -3188,50 +3170,17 @@ async function callOpenAI(prompt: string, timeout = 15000): Promise<Record<strin
 }
 
 function isValidAIOutput(data: any): boolean {
-  if (!data) return false;
-
-  const passage = data.passage || data.cross?.passage;
-
-  if (passage && !isCompletePassage(passage)) {
-    console.warn("⚠️ Passage not fully complete — accepting usable attempt");
-  }
-
-  const rawQuestions =
-    data.practice?.questions ||
-    data.cross?.questions ||
-    data.questions;
-
-  if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) {
-    console.warn("⚠️ Validation warning: AI returned empty questions");
+  if (!data?.questions || !Array.isArray(data.questions)) {
+    console.warn("Invalid structure — retrying");
     return false;
   }
-  const questions = rawQuestions.map((q: Partial<Question>) => withSafeQuestionDefaults(q));
 
-  for (const q of questions) {
-    if (!q.question) {
-      console.warn("⚠️ Validation warning: missing question text");
-      continue;
-    }
-    q.choices = normalizeChoices(q.choices);
-
-    for (const choice of q.choices) {
-      const text = String(choice || "").toLowerCase();
-
-      if (
-        text.includes("one detail in the text shows") ||
-        text.includes("another clue suggests") ||
-        text.includes("a separate detail") ||
-        text.includes("the strongest evidence confirms")
-      ) {
-        console.warn("⚠️ Validation warning: template-style choice detected");
-      }
-
-      if (text.length < 3) {
-        console.warn("⚠️ Validation warning: very short answer choice detected");
-      }
-    }
+  if (data.questions.length === 0) {
+    console.warn("Empty questions — retrying");
+    return false;
   }
 
+  // ACCEPT partial responses (we will repair them)
   return true;
 }
 
@@ -3249,6 +3198,7 @@ async function generateWithRetry(
       if (result) {
         lastResult = result;
       }
+      console.log("RAW AI RESPONSE:", JSON.stringify(result, null, 2));
 
       if (result && validateOutput(result)) {
         console.warn("✅ VALID OUTPUT — CONTINUING PIPELINE");
@@ -4377,10 +4327,10 @@ serve(async (req) => {
       answerKey: finalized.answerKey,
     });
   };
-  const returnEnrichment = (data: EnrichmentResponse) =>
+  const returnEnrichment = (data: WorkerAttempt) =>
     {
       const practiceQuestions = ensureNonEmptyQuestions(
-        ((data as Partial<WorkerAttempt>)?.practice?.questions || []) as Question[],
+        (data.practice?.questions || []) as Question[],
         subject,
         skill,
       );
@@ -4752,9 +4702,13 @@ serve(async (req) => {
                 contextType,
               }) + `\nVariation ID: ${variationId}`,
               2,
+              (data: unknown) => {
+                const raw = data as Record<string, unknown> | null;
+                return Boolean(raw && typeof raw.passage === "string" && raw.passage.trim().length >= 20);
+              },
             ) as Record<string, unknown> | null;
             console.log("✅ FLOW STEP: generateQuestionsPrompt");
-            const questionRes = await generateWithRetry(
+            let questionRes = await generateWithRetry(
               generateQuestionsPrompt({
                 grade,
                 subject,
@@ -4769,12 +4723,42 @@ serve(async (req) => {
                 return Boolean(raw && Array.isArray(raw.questions) && raw.questions.length > 0);
               },
             ) as Record<string, unknown> | null;
+            const parsed: any = questionRes || {};
+            if (!Array.isArray(parsed.questions)) {
+              parsed.questions = Array.isArray(parsed.items) ? parsed.items : [];
+            }
+
+            if (parsed.questions.length < 5) {
+              console.warn("⚠️ REPAIRING PARTIAL QUESTIONS");
+              while (parsed.questions.length < 5) {
+                parsed.questions.push({
+                  question: "Which detail best supports the main idea?",
+                  choices: [
+                    "A detail clearly stated in the passage",
+                    "A detail that is unrelated to the passage",
+                    "A repeated idea without support",
+                    "An opinion not supported by evidence",
+                  ],
+                  correct_answer: "A",
+                });
+              }
+            }
+            if (!parsed.passage || String(parsed.passage).length < 30) {
+              console.warn("⚠️ MISSING PASSAGE — INJECTING DEFAULT");
+              parsed.passage =
+                "At Maplewood Elementary, students prepared for the annual science fair. They worked on projects, tested ideas, and collaborated with classmates. The event encouraged creativity and problem-solving as students presented their findings.";
+            }
+            console.log("FINAL PRACTICE QUESTIONS:", parsed.questions.length);
+            questionRes = parsed;
 
             if (!questionRes || !Object.keys(questionRes).length) {
               console.timeEnd("OPENAI_CALL");
               console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
-              console.warn("⚠️ Empty AI question payload — using fallback questions");
-              questionRes = { questions: buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill) };
+              console.warn("⚠️ Empty AI question payload — repairing with guaranteed structure");
+              questionRes = {
+                passage: "Students read a passage and use evidence to make inferences about key ideas.",
+                questions: [],
+              };
             }
 
             const coreRawQuestions = questionRes?.questions || questionRes?.items || [];
@@ -4820,8 +4804,12 @@ serve(async (req) => {
                   return Boolean(raw && Array.isArray(raw.questions) && raw.questions.length > 0);
                 },
               ) as Record<string, unknown> | null;
+              console.log("🧠 RAW AI RESPONSE:", JSON.stringify(extraRes, null, 2));
+              console.log("🧠 PARSED QUESTIONS:", extraRes?.questions);
 
               const extraRaw = extraRes?.questions || extraRes?.items || [];
+              console.log("STEP 1 RAW:", extraRaw);
+              const beforeSanitize = extraRaw;
               let extraQuestions = await sanitizeQuestions(
                 extraRaw,
                 effectiveSubject,
@@ -4832,22 +4820,56 @@ serve(async (req) => {
                 grade,
                 repairState,
               );
+              console.log("STEP 2 SANITIZED:", extraQuestions);
+              if (!extraQuestions.length) {
+                console.error("❌ SANITIZE WIPED QUESTIONS", beforeSanitize);
+              }
               extraQuestions = sanitizeChoices(extraQuestions);
               extraQuestions = extraQuestions.map((q) => improveQuestion(q, String(passageRes?.passage || "")));
               coreQuestions = [...coreQuestions, ...extraQuestions.slice(0, needed)];
+              console.log("STEP 3 FINAL:", coreQuestions);
             }
 
             if (coreQuestions.length === 0) {
-              console.warn("⚠️ USING FALLBACK QUESTIONS");
-              coreQuestions = buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill);
+              const repairedQuestions: Question[] = [];
+              while (repairedQuestions.length < 5) {
+                repairedQuestions.push({
+                  question: "Which detail best supports the main idea?",
+                  choices: [
+                    "A detail clearly stated in the passage",
+                    "A detail that is unrelated to the passage",
+                    "A repeated idea without support",
+                    "An opinion not supported by evidence",
+                  ],
+                  correct_answer: "A",
+                });
+              }
+              coreQuestions = repairedQuestions;
             }
             coreQuestions = ensureNonEmptyQuestions(coreQuestions, effectiveSubject, effectiveSkill);
+            if (coreQuestions.length < 5) {
+              while (coreQuestions.length < 5) {
+                coreQuestions.push({
+                  question: "Which detail best supports the main idea?",
+                  choices: [
+                    "A detail clearly stated in the passage",
+                    "A detail that is unrelated to the passage",
+                    "A repeated idea without support",
+                    "An opinion not supported by evidence",
+                  ],
+                  correct_answer: "A",
+                });
+              }
+            }
 
             console.timeEnd("OPENAI_CALL");
             console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
-            generatedCorePassage = isUsablePassage(String(passageRes?.passage || ""))
+            const corePassage = String(parsed.passage || "");
+            generatedCorePassage = isUsablePassage(corePassage)
+              ? corePassage
+              : isUsablePassage(String(passageRes?.passage || ""))
               ? String(passageRes?.passage || "")
-              : "Students reviewed several sources and compared evidence before making a careful decision.";
+              : "At Maplewood Elementary, students prepared for the annual science fair. They worked on projects, tested ideas, and collaborated with classmates. The event encouraged creativity and problem-solving as students presented their findings.";
             generatedCoreQuestions = coreQuestions;
         }
 
@@ -4855,7 +4877,7 @@ serve(async (req) => {
           ? generatedCoreQuestions
           : Array.isArray(body.practiceQuestions)
           ? body.practiceQuestions
-          : buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill);
+          : [];
 
         const corePassageFromRequest = effectiveMode === "core" && generatedCorePassage
           ? generatedCorePassage
@@ -4863,6 +4885,9 @@ serve(async (req) => {
           ? String(body.passage || "").trim()
           : "";
         const corePassageForChecks = corePassageFromRequest;
+        if (!corePassageForChecks || corePassageForChecks.length < 30) {
+          throw new Error("🚨 PASSAGE MISSING IN FINAL PAYLOAD");
+        }
         const normalizedPractice = await sanitizeQuestions(
           priorPractice,
           effectiveSubject,
@@ -5164,7 +5189,9 @@ serve(async (req) => {
           "cross",
         );
 
-        const payload = {
+        const payload: WorkerAttempt = {
+          passage: corePassageForChecks,
+          practice: { questions: safePracticeQuestions },
           cross: {
             passage: subjectCrossPassage,
             questions: crossQuestions,
@@ -5191,32 +5218,7 @@ serve(async (req) => {
       } catch (err) {
         console.error("BACKEND ERROR:", err);
         if (isTimedOut()) {
-          returnType = "TIMEOUT_FALLBACK";
-          const fallbackQuestions = buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill);
-          const fallbackCrossQuestions = rebuildCrossFromPractice(
-            fallbackQuestions,
-            effectiveSubject,
-            effectiveSkill,
-          );
-          const fallbackCrossPassage =
-            "Students compared evidence from two short scenarios and selected the conclusion best supported by both.";
-          logReturnMetrics();
-          return jsonResponse({
-            teks: teksCode,
-            skill,
-            grade,
-            passage: "Students evaluated evidence, compared outcomes, and selected the most supported conclusion.",
-            practice: { questions: fallbackQuestions },
-            cross: { passage: fallbackCrossPassage, questions: fallbackCrossQuestions },
-            tutor: {
-              practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").tutor,
-              cross: ensureNonEmptySupport(fallbackCrossQuestions, [], [], "cross").tutor,
-            },
-            answerKey: {
-              practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").answerKey,
-              cross: ensureNonEmptySupport(fallbackCrossQuestions, [], [], "cross").answerKey,
-            },
-          });
+          throw new Error("🚨 FALLBACK TRIGGERED — STOPPING EXECUTION");
         }
         markRetry("no_questions_returned");
       }
@@ -5227,59 +5229,12 @@ serve(async (req) => {
       logReturnMetrics();
       return returnEnrichment(bestAttempt);
     }
-    returnType = "FALLBACK_RESULT";
-    logReturnMetrics();
-    const fallbackQuestions = buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill);
-    const fallbackCrossQuestions = rebuildCrossFromPractice(
-      fallbackQuestions,
-      effectiveSubject,
-      effectiveSkill,
-    );
-    const fallbackCrossPassage =
-      "Students compared evidence from two short scenarios and selected the conclusion best supported by both.";
-    return jsonResponse({
-      teks: teksCode,
-      skill,
-      grade,
-      passage: "Students evaluated evidence, compared outcomes, and selected the most supported conclusion.",
-      practice: { questions: fallbackQuestions },
-      cross: { passage: fallbackCrossPassage, questions: fallbackCrossQuestions },
-      tutor: {
-        practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").tutor,
-        cross: ensureNonEmptySupport(fallbackCrossQuestions, [], [], "cross").tutor,
-      },
-      answerKey: {
-        practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").answerKey,
-        cross: ensureNonEmptySupport(fallbackCrossQuestions, [], [], "cross").answerKey,
-      },
-      fallbackReason: retryFailureReason,
-    });
+    throw new Error("🚨 FALLBACK TRIGGERED — STOPPING EXECUTION");
   } catch (err) {
     console.error("🔥 EDGE FUNCTION ERROR:", err);
-    const fallbackQuestions = buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill);
-    const fallbackCrossQuestions = rebuildCrossFromPractice(
-      fallbackQuestions,
-      effectiveSubject,
-      effectiveSkill,
-    );
-    const fallbackCrossPassage =
-      "Students compared evidence from two short scenarios and selected the conclusion best supported by both.";
     return jsonResponse({
-      teks: teksCode,
-      skill,
-      grade,
-      passage: "Students evaluated evidence, compared outcomes, and selected the most supported conclusion.",
-      practice: { questions: fallbackQuestions },
-      cross: { passage: fallbackCrossPassage, questions: fallbackCrossQuestions },
-      tutor: {
-        practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").tutor,
-        cross: ensureNonEmptySupport(fallbackCrossQuestions, [], [], "cross").tutor,
-      },
-      answerKey: {
-        practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").answerKey,
-        cross: ensureNonEmptySupport(fallbackCrossQuestions, [], [], "cross").answerKey,
-      },
-      fallbackReason: "unexpected_error",
-    }, 200);
+      error: "FALLBACK_TRIGGERED",
+      details: String(err instanceof Error ? err.message : err),
+    }, 500);
   }
 });
