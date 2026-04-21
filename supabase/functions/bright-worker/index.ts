@@ -1320,6 +1320,10 @@ function buildCoreEnrichmentPrompt(params: {
 
   return `Return JSON only:
 {
+  "cross": {
+    "passage": "${crossPassage || ""}",
+    "questions": ${JSON.stringify(compactCross)}
+  },
   "tutor": {
     "practice": [
       {
@@ -1394,9 +1398,13 @@ Rules:
 function isValidCoreEnrichmentOutput(data: unknown): boolean {
   if (!data) return false;
   const parsed = data as Record<string, unknown>;
+  const cross = parsed.cross as Record<string, unknown> | undefined;
   const tutor = parsed.tutor as Record<string, unknown> | undefined;
   const answerKey = parsed.answerKey as Record<string, unknown> | undefined;
   return Boolean(
+    cross &&
+    typeof cross.passage === "string" &&
+    Array.isArray(cross.questions) &&
     tutor &&
     answerKey &&
     Array.isArray(tutor.practice) &&
@@ -1404,6 +1412,30 @@ function isValidCoreEnrichmentOutput(data: unknown): boolean {
     Array.isArray(answerKey.practice) &&
     Array.isArray(answerKey.cross)
   );
+}
+
+function normalizeEnrichmentSupport(enrichment: Record<string, unknown> | null): {
+  tutor: { practice: TutorExplanation[]; cross: TutorExplanation[] };
+  answerKey: { practice: AnswerKeyEntry[]; cross: AnswerKeyEntry[] };
+} {
+  const tutorNode = enrichment?.tutor && typeof enrichment.tutor === "object"
+    ? enrichment.tutor as Record<string, unknown>
+    : null;
+  const answerNode = enrichment?.answerKey && typeof enrichment.answerKey === "object"
+    ? enrichment.answerKey as Record<string, unknown>
+    : null;
+
+  const tutor = {
+    practice: Array.isArray(tutorNode?.practice) ? tutorNode.practice as TutorExplanation[] : [],
+    cross: Array.isArray(tutorNode?.cross) ? tutorNode.cross as TutorExplanation[] : [],
+  };
+
+  const answerKey = {
+    practice: Array.isArray(answerNode?.practice) ? answerNode.practice as AnswerKeyEntry[] : [],
+    cross: Array.isArray(answerNode?.cross) ? answerNode.cross as AnswerKeyEntry[] : [],
+  };
+
+  return { tutor, answerKey };
 }
 
 function buildSubjectPassage(subject: CanonicalSubject, level: Level = "On Level"): string {
@@ -3167,11 +3199,16 @@ async function generateWithRetry(
   prompt: string,
   attempts = 2,
   validateOutput: (data: unknown) => boolean = isValidAIOutput,
+  options: { returnLastInvalid?: boolean } = {},
 ) {
   let validResult: unknown = null;
+  let lastResult: unknown = null;
   for (let i = 0; i < attempts; i++) {
     try {
       const result = await callOpenAI(prompt, 35000);
+      if (result) {
+        lastResult = result;
+      }
 
       if (result && validateOutput(result)) {
         console.warn("✅ VALID OUTPUT — CONTINUING PIPELINE");
@@ -3188,6 +3225,11 @@ async function generateWithRetry(
 
   if (validResult) {
     return validResult;
+  }
+
+  if (options.returnLastInvalid && lastResult) {
+    console.warn("⚠️ ALL ATTEMPTS FAILED VALIDATION — USING RAW OUTPUT");
+    return lastResult;
   }
 
   console.error("❌ ALL ATTEMPTS FAILED — NO FALLBACK");
@@ -4479,17 +4521,16 @@ serve(async (req) => {
         }),
         2,
         isValidCoreEnrichmentOutput,
+        { returnLastInvalid: true },
       ) as Record<string, unknown> | null;
-      const tutor = enrichment?.tutor && typeof enrichment.tutor === "object"
-        ? enrichment.tutor as Record<string, unknown>
-        : {};
-      const answerKey = enrichment?.answerKey && typeof enrichment.answerKey === "object"
-        ? enrichment.answerKey as Record<string, unknown>
-        : {};
-      const tutorPractice = Array.isArray(tutor.practice) ? tutor.practice : [];
-      const tutorCross = Array.isArray(tutor.cross) ? tutor.cross : [];
-      const answerPractice = Array.isArray(answerKey.practice) ? answerKey.practice : [];
-      const answerCross = Array.isArray(answerKey.cross) ? answerKey.cross : [];
+      if (enrichment && !isValidCoreEnrichmentOutput(enrichment)) {
+        console.warn("⚠️ Enrichment failed validation — using raw output");
+      }
+      const { tutor, answerKey } = normalizeEnrichmentSupport(enrichment);
+      const tutorPractice = tutor.practice;
+      const tutorCross = tutor.cross;
+      const answerPractice = answerKey.practice;
+      const answerCross = answerKey.cross;
 
       if (!tutorPractice.length || tutorPractice.length !== practiceQuestions.length) {
         throw new Error("MISSING_TUTOR_PRACTICE");
@@ -4997,22 +5038,21 @@ serve(async (req) => {
           }),
           2,
           isValidCoreEnrichmentOutput,
+          { returnLastInvalid: true },
         ) as Record<string, unknown> | null;
-        const crossTutor = crossEnrichment?.tutor && typeof crossEnrichment.tutor === "object"
-          ? crossEnrichment.tutor as Record<string, unknown>
-          : {};
-        const crossAnswer = crossEnrichment?.answerKey && typeof crossEnrichment.answerKey === "object"
-          ? crossEnrichment.answerKey as Record<string, unknown>
-          : {};
+        if (crossEnrichment && !isValidCoreEnrichmentOutput(crossEnrichment)) {
+          console.warn("⚠️ Enrichment failed validation — using raw output");
+        }
+        const { tutor: crossTutor, answerKey: crossAnswer } = normalizeEnrichmentSupport(crossEnrichment);
 
         tutorPractice = sanitizeTutorExplanations(
-          Array.isArray(crossTutor.practice) ? crossTutor.practice : [],
+          crossTutor.practice,
           safePracticeQuestions,
           effectiveSubject,
           "practice",
         );
         tutorCross = sanitizeTutorExplanations(
-          Array.isArray(crossTutor.cross) ? crossTutor.cross : [],
+          crossTutor.cross,
           crossQuestions,
           effectiveSubject,
           "cross",
@@ -5020,14 +5060,14 @@ serve(async (req) => {
         );
 
         answerKeyPractice = sanitizeAnswerKey(
-          Array.isArray(crossAnswer.practice) ? crossAnswer.practice : [],
+          crossAnswer.practice,
           safePracticeQuestions,
           effectiveSubject,
           tutorPractice,
           "practice",
         );
         answerKeyCross = sanitizeAnswerKey(
-          Array.isArray(crossAnswer.cross) ? crossAnswer.cross : [],
+          crossAnswer.cross,
           crossQuestions,
           effectiveSubject,
           tutorCross,
@@ -5041,23 +5081,7 @@ serve(async (req) => {
         }
 
         if (!crossAligned) {
-          console.warn("⚠️ Weak or missing cross support — patching instead");
-          tutorCross = sanitizeTutorExplanations(
-            [],
-            crossQuestions,
-            effectiveSubject,
-            "cross",
-            subjectCrossPassage,
-          );
-
-          answerKeyCross = sanitizeAnswerKey(
-            [],
-            crossQuestions,
-            effectiveSubject,
-            tutorCross,
-            "cross",
-            subjectCrossPassage,
-          );
+          console.warn("⚠️ Weak cross support — KEEPING AI OUTPUT");
         }
 
         console.log("🔥 FINAL CROSS SUBJECT:", effectiveSubject);
