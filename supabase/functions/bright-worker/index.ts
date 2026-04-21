@@ -3168,13 +3168,15 @@ async function generateWithRetry(
   attempts = 2,
   validateOutput: (data: unknown) => boolean = isValidAIOutput,
 ) {
+  let validResult: unknown = null;
   for (let i = 0; i < attempts; i++) {
     try {
       const result = await callOpenAI(prompt, 35000);
 
       if (result && validateOutput(result)) {
-        console.warn("✅ VALID OUTPUT — RETURNING EARLY");
-        return result;
+        console.warn("✅ VALID OUTPUT — CONTINUING PIPELINE");
+        validResult = result;
+        break;
       }
 
       console.warn("⚠️ Invalid output — retrying...");
@@ -3182,6 +3184,10 @@ async function generateWithRetry(
     } catch (err) {
       console.warn("⚠️ Generation failed — retrying...", err);
     }
+  }
+
+  if (validResult) {
+    return validResult;
   }
 
   console.error("❌ ALL ATTEMPTS FAILED — NO FALLBACK");
