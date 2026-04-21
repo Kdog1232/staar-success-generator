@@ -4849,12 +4849,14 @@ serve(async (req) => {
           2,
           () => true,
         ) as Record<string, unknown> | null;
+        console.log("🧠 RAW AI RESPONSE:", JSON.stringify(crossRes, null, 2));
         console.timeEnd("OPENAI_CALL");
         console.log("⏱️ AI Duration:", Date.now() - enrichStartTime);
 
         const scopedCross = crossRes?.cross && typeof crossRes.cross === "object"
           ? crossRes.cross as Record<string, unknown>
           : crossRes;
+        console.log("🔍 SCOPED CROSS:", JSON.stringify(scopedCross, null, 2));
 
         if (!scopedCross || !Object.keys(scopedCross).length) {
           console.warn("⚠️ Empty cross payload — using fallback cross content");
@@ -4888,6 +4890,18 @@ serve(async (req) => {
         if (!cross.passage || cross.passage.split(/\s+/).filter(Boolean).length < 120) {
           cross.passage = buildCrossFallback(effectiveSubject, level, effectiveSkill).passage;
         }
+
+        const aiQuestionCount = Array.isArray(scopedCross?.questions)
+          ? scopedCross.questions.length
+          : 0;
+
+        const finalQuestionCount = cross.questions.length;
+
+        console.log("📊 CROSS SOURCE:", {
+          aiCount: aiQuestionCount,
+          finalCount: finalQuestionCount,
+          usedFallback: aiQuestionCount === 0
+        });
 
         const parsedCross: Record<string, unknown> = {
           passage: String(cross.passage || baseCrossPassage),
