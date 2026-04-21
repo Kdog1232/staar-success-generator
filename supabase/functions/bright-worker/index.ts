@@ -1320,6 +1320,10 @@ function buildCoreEnrichmentPrompt(params: {
 
   return `Return JSON only:
 {
+  "cross": {
+    "passage": "${crossPassage || ""}",
+    "questions": ${JSON.stringify(compactCross)}
+  },
   "tutor": {
     "practice": [
       {
@@ -1394,9 +1398,13 @@ Rules:
 function isValidCoreEnrichmentOutput(data: unknown): boolean {
   if (!data) return false;
   const parsed = data as Record<string, unknown>;
+  const cross = parsed.cross as Record<string, unknown> | undefined;
   const tutor = parsed.tutor as Record<string, unknown> | undefined;
   const answerKey = parsed.answerKey as Record<string, unknown> | undefined;
   return Boolean(
+    cross &&
+    typeof cross.passage === "string" &&
+    Array.isArray(cross.questions) &&
     tutor &&
     answerKey &&
     Array.isArray(tutor.practice) &&
