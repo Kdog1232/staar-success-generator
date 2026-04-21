@@ -3139,13 +3139,15 @@ async function generateWithRetry(
   validateOutput: (data: unknown) => boolean = isValidAIOutput,
 ) {
   let last = null;
+  let lastValid: any = null;
 
   for (let i = 0; i < attempts; i++) {
     try {
       const result = await callOpenAI(prompt, 15000);
 
       if (result && validateOutput(result)) {
-        return result;
+        lastValid = result;
+        continue;
       }
 
       console.warn("⚠️ Invalid output — retrying...");
@@ -3156,7 +3158,12 @@ async function generateWithRetry(
     }
   }
 
-  console.error("❌ Returning last attempt");
+  if (lastValid) {
+    console.warn("✅ USING LAST VALID AI OUTPUT");
+    return lastValid;
+  }
+
+  console.warn("⚠️ FALLBACK USED");
   return last;
 }
 
@@ -4874,13 +4881,11 @@ serve(async (req) => {
           console.warn("⚠️ Empty cross payload — using fallback cross content");
         }
 
+        const aiQuestions = scopedCross?.questions || scopedCross?.items || [];
+
         let cross = {
           passage: String(scopedCross?.passage || ""),
-          questions: Array.isArray(scopedCross?.questions)
-            ? scopedCross.questions as unknown[]
-            : Array.isArray(scopedCross?.items)
-              ? scopedCross.items as unknown[]
-              : [],
+          questions: Array.isArray(aiQuestions) ? aiQuestions as unknown[] : [],
         };
         const crossShapeValid = validateCrossCurricular({
           passage: cross.passage,
@@ -4889,8 +4894,8 @@ serve(async (req) => {
         if (!crossShapeValid) {
           console.warn("⚠️ Invalid cross shape from AI — applying guard rails");
         }
-        if (!Array.isArray(cross.questions) || cross.questions.length === 0) {
-          console.warn("⚠️ Empty cross — using fallback");
+        if (cross.questions.length === 0) {
+          console.warn("⚠️ AI returned empty AFTER retry → fallback");
           cross.questions = buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill);
         }
         if (cross.questions.length < 5) {
@@ -4903,8 +4908,8 @@ serve(async (req) => {
           cross.passage = buildCrossFallback(effectiveSubject, level, effectiveSkill).passage;
         }
 
-        const aiQuestionCount = Array.isArray(scopedCross?.questions)
-          ? scopedCross.questions.length
+        const aiQuestionCount = Array.isArray(aiQuestions)
+          ? aiQuestions.length
           : 0;
 
         const finalQuestionCount = cross.questions.length;
