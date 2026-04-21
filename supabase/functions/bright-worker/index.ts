@@ -66,7 +66,7 @@ type AnswerKeyEntry = {
 };
 
 type CoreResponse = {
-  passage?: PassageContent;
+  passage?: PassageContent | null;
   practice: {
     questions: Question[];
   };
@@ -254,11 +254,7 @@ const CROSS_CURRICULAR_RIGOR_SECTION = [
 ].join("\n");
 const ANTI_GENERIC_ANSWER_RULES = [
   "ANTI-GENERIC ANSWER RULE (CRITICAL):",
-  "- DO NOT use placeholder or template phrases such as:",
-  "  \"one detail in the text shows\"",
-  "  \"another clue suggests\"",
-  "  \"a separate detail indicates\"",
-  "  \"the strongest evidence confirms\"",
+  "- DO NOT use placeholder or template phrase patterns.",
   "- Every answer choice must include SPECIFIC content from the passage or problem.",
   "- Answers must be concrete and meaningful, not abstract or self-referential.",
   "- If an answer could apply to ANY passage, it is INVALID and must be rewritten.",
@@ -358,11 +354,7 @@ const CROSS_PASSAGE_QUALITY_CRITICAL = [
 ].join("\n");
 const CROSS_ANTI_GENERIC_ANSWERS_CRITICAL = [
   "ANTI-GENERIC ANSWERS (CRITICAL):",
-  "- DO NOT use phrases such as:",
-  "  \"one detail in the text shows\"",
-  "  \"another clue suggests\"",
-  "  \"a separate detail indicates\"",
-  "  \"the strongest evidence confirms\"",
+  "- DO NOT use placeholder or template phrase patterns.",
   "- Each answer must include specific details from the passage.",
   "- Answers must reference:",
   "  - data",
@@ -415,31 +407,8 @@ function shuffleArray<T>(array: T[]): T[] {
 }
 
 function forcePassageChoices(passageText: string): [string, string, string, string] {
-  const fallback: [string, string, string, string] = [
-    "A detail directly supported by the content.",
-    "A partially related detail missing key evidence.",
-    "A broad claim that overgeneralizes the content.",
-    "An unsupported detail not stated in the content.",
-  ];
-  const text = String(passageText || "").trim();
-  if (!text) return fallback;
-
-  const words = text
-    .split(/\W+/)
-    .map((word) => word.trim())
-    .filter((word) => word.length >= 4);
-
-  if (words.length < 4) return fallback;
-
-  const unique = Array.from(new Set(words));
-  const pick = (start: number) => unique[start % unique.length] || "detail";
-
-  return [
-    `Supported by ${pick(0)} in the text.`,
-    `Partly related to ${pick(1)} but missing proof.`,
-    `Too broad compared with ${pick(2)} details.`,
-    `Not stated in the text about ${pick(3)}.`,
-  ];
+  void passageText;
+  return ["", "", "", ""];
 }
 
 function buildAlignedExplanation(
@@ -944,11 +913,35 @@ function isGenericChoice(choice: string): boolean {
   if (!normalized) return true;
 
   return [
-    /\bone detail in the text shows\b/i,
-    /\banother clue suggests\b/i,
-    /\ba separate detail\b/i,
-    /\bthe strongest evidence confirms\b/i,
+    /\bbased on the passage\b/i,
+    /\bone detail\b/i,
+    /\banother clue\b/i,
   ].some((pattern) => pattern.test(normalized));
+}
+
+function containsInjectedTemplate(text: string): boolean {
+  return String(text || "").toLowerCase().includes("based on the passage");
+}
+
+function isAcceptableAIQuestion(input: unknown): input is Question {
+  if (!input || typeof input !== "object") return false;
+  const q = input as Question;
+  if (!String(q.question || "").trim()) return false;
+  if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
+  const normalized = q.choices.map((choice) => String(choice || "").trim());
+  if (new Set(normalized).size !== 4) return false;
+  if (normalized.some((choice) => containsInjectedTemplate(choice))) return false;
+  return true;
+}
+
+function isValidQuestion(q: Question): boolean {
+  return Boolean(
+    String(q?.question || "").trim() &&
+    Array.isArray(q?.choices) &&
+    q.choices.length === 4 &&
+    new Set(q.choices.map((choice) => String(choice || "").trim())).size === 4 &&
+    !q.choices.some((choice) => containsInjectedTemplate(String(choice || ""))),
+  );
 }
 
 function isValidPassage(passage: string): boolean {
@@ -1153,12 +1146,12 @@ function generatePassagePrompt(params: {
 
 Return exactly:
 {
-  "passage": ""
+  "passage": null
 }
 
 Rules:
 - Subject is ${subject}; no passage is needed for practice generation.
-- Return an empty string for passage.
+- Return null for passage.
 - No markdown. JSON only.`;
   }
 
@@ -1194,44 +1187,81 @@ function generateQuestionsPrompt(params: {
   subject: CanonicalSubject;
   skill: string;
   level: Level;
-  passage: string;
+  passage: string | null;
   teksCode?: string;
 }): string {
-
   const { grade, subject, skill, level, passage, teksCode = "Unknown" } = params;
-  void subject;
-  void passage;
   void teksCode;
 
-  return `
-Generate a short reading passage and 5 multiple choice questions.
+  if (subject === "Reading") {
+    return `
+Use the passage below.
 
-Requirements:
-- Skill: ${skill}
-- Grade: ${grade}
-- Level: ${level}
+PASSAGE:
+${String(passage || "").trim()}
 
-Return ONLY valid JSON:
+Generate 5 STAAR-style reading questions.
 
+Rules:
+- All questions must rely on the passage
+- All answer choices must be grounded in passage details
+- No outside scenarios
+
+Return JSON:
 {
-  "passage": "short passage (4–6 sentences)",
   "questions": [
     {
-      "question": "clear question",
-      "choices": ["A", "B", "C", "D"],
+      "question": "",
+      "choices": ["", "", "", ""],
       "correct_answer": "A"
     }
   ]
-}
+}`;
+  }
 
-STRICT RULES:
-- EXACTLY 5 questions
-- EXACTLY 4 answer choices per question
-- correct_answer MUST be one of A, B, C, D
-- NO explanations
-- NO extra text
-- NO markdown
-`;
+  if (subject === "Math") {
+    return `
+Generate 5 STAAR-style math WORD PROBLEMS.
+
+Rules:
+- Each question must be a real-world scenario
+- Include numbers and multi-step reasoning
+- NO passage
+- Choices must be numeric or expressions
+
+Return JSON:
+{
+  "questions": [...]
+}`;
+  }
+
+  if (subject === "Science") {
+    return `
+Generate 5 STAAR-style science questions.
+
+Rules:
+- Each question must include a SHORT scenario (2–3 sentences max)
+- Focus on cause/effect, systems, or experiments
+- NO long passage
+
+Return JSON:
+{
+  "questions": [...]
+}`;
+  }
+
+  return `
+Generate 5 STAAR-style social studies questions.
+
+Rules:
+- Each question must include a SHORT scenario (historical or civic)
+- Focus on cause/effect, impact, or decision-making
+- NO long passage
+
+Return JSON:
+{
+  "questions": [...]
+}`;
 }
 
 function crossCurricularPassageTopicRule(subject: CanonicalSubject): string {
@@ -1697,13 +1727,9 @@ function buildUniversalChoices(
 // }
 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
-  if (!Array.isArray(choices)) return forcePassageChoices("");
-
+  if (!Array.isArray(choices)) return ["", "", "", ""];
   const cleaned = choices.map(c => String(c || "").trim());
-
-  // Ensure structure ONLY (do not rewrite content)
-  while (cleaned.length < 4) cleaned.push("Unsupported option.");
-
+  while (cleaned.length < 4) cleaned.push("");
   return cleaned.slice(0, 4) as [string, string, string, string];
 }
 
@@ -2111,12 +2137,9 @@ function isWeakChoice(choice: string): boolean {
 }
 
 function improveChoice(choice: string, passage: PassageContent | string): string {
+  void passage;
   const text = String(choice || "").trim();
-  if (!isWeakChoice(text)) return text;
-  const snippet = getRelevantSnippet(passage, text) || summarizeEvidenceIdea(getPassageText(passage));
-  return cleanAnswerChoice(
-    `${text || "This option"} based on the passage detail: ${snippet || "key evidence in the text"}.`,
-  );
+  return text;
 }
 
 function improveQuestion(question: Question, passage: PassageContent | string): Question {
@@ -2377,26 +2400,12 @@ function isGenericAnswer(choice: string): boolean {
 }
 
 function isClearlyGenericChoices(choices: [string, string, string, string]): boolean {
-  return choices.every((choice) => {
-    const lowered = String(choice || "").toLowerCase();
-    return lowered.includes("one detail in the text shows") ||
-      lowered.includes("another clue suggests") ||
-      lowered.includes("a separate detail indicates") ||
-      lowered.includes("the strongest evidence confirms");
-  });
+  return choices.every((choice) => containsInjectedTemplate(String(choice || "")));
 }
 
 function rewriteChoicesFromPassage(passage: string): [string, string, string, string] {
-  const sentences = String(passage || "")
-    .split(/[.!?]/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .slice(0, 4);
-  const seed = sentences[0] || "the passage includes an important detail";
-  return Array.from({ length: 4 }, (_, index) => {
-    const sentence = String(sentences[index] || seed).replace(/\s+/g, " ").trim().replace(/[.]+$/, "");
-    return `Based on the passage, ${sentence.charAt(0).toLowerCase() + sentence.slice(1)}.`;
-  }) as [string, string, string, string];
+  void passage;
+  return ["", "", "", ""];
 }
 
 function isPassageAnchoredChoice(choice: string, passage: string): boolean {
@@ -2726,7 +2735,7 @@ async function sanitizeQuestions(
     } else {
       patchedChoices = Array.isArray(q.choices)
         ? q.choices.map((c) => String(c || "").trim()).slice(0, 4) as [string, string, string, string]
-        : forcePassageChoices("");
+        : normalizeChoices(q.choices);
     }
 
     if (!Array.isArray(q.choices) || q.choices.length !== 4 || q.choices.every((choice) => !String(choice || "").trim())) {
@@ -3891,12 +3900,16 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
     delete legacy.questions;
   }
 
-  const practicePassage = data.passage || "";
+  const practicePassage = data.passage ?? null;
+  const practicePassageForOps = subject === "Reading" ? String(practicePassage || "") : "";
   const crossPassage = data.cross?.passage || "";
 
-  void subject;
   const validatedPractice = [...(data.practice.questions || [])]
-    .map((q) => repairQuestion(q, subject, practicePassage));
+    .map((q) => ({
+      ...q,
+      choices: normalizeChoices(q.choices),
+    }))
+    .filter((q) => isAcceptableAIQuestion(q));
 
   let validatedCross: Question[] = [];
   if (data.cross?.questions) {
@@ -3904,7 +3917,7 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
       .map((q) => repairQuestion(q, subject, crossPassage));
     data.cross.questions = validatedCross;
   }
-  data.practice.questions = validateAndRewriteChoiceStarts(validatedPractice).slice(0, 5);
+  data.practice.questions = validatedPractice.slice(0, 5);
   data.cross.questions = validateAndRewriteChoiceStarts(validatedCross);
 
   const buildBoundSupport = (
@@ -4092,11 +4105,11 @@ function ensureNonEmptyQuestions(
   skill: string,
   mode: "practice" | "cross" = "practice",
 ): Question[] {
+  void subject;
+  void skill;
   const normalized = Array.isArray(questions) ? questions : [];
   if (mode === "cross") return normalized;
-  if (normalized.length > 0) return normalized;
-  console.log("⚠️ USING FALLBACK QUESTIONS");
-  return buildUniversalFallbackQuestions(subject, skill);
+  return normalized;
 }
 
 function rebuildCrossFromPractice(
@@ -4249,10 +4262,12 @@ serve(async (req) => {
       passage: PassageContent | string,
       mode: "practice" | "cross",
     ): Question[] => {
-      void mode;
       const normalizedQuestions = questions
-        .map((q) => repairQuestion(q, subject, passage))
-        .map((q) => normalizeAndValidate(q, passage));
+        .map((q) => ({ ...q, choices: normalizeChoices(q.choices) }));
+      if (mode === "practice" && !normalizedQuestions.every((q) => isAcceptableAIQuestion(q))) {
+        throw new Error("Invalid practice questions after normalization");
+      }
+      void passage;
 
       return normalizedQuestions.slice(0, 5);
     };
@@ -4260,10 +4275,11 @@ serve(async (req) => {
     const practice = {
       questions: [...(data?.practice?.questions || [])],
     };
-    const practicePassage = data?.passage || "";
+    const practicePassage = data?.passage ?? null;
+    const practicePassageForOps = subject === "Reading" ? String(practicePassage || "") : "";
 
-    practice.questions = sanitizeAndValidateQuestions(practice.questions, practicePassage, "practice");
-    practice.questions = ensureNonEmptyQuestions(practice.questions, subject, skill);
+    practice.questions = sanitizeAndValidateQuestions(practice.questions, practicePassageForOps, "practice");
+    if (!practice.questions.length) throw new Error("Practice questions missing");
 
     const cross = await generateCross({
       grade,
@@ -4275,9 +4291,9 @@ serve(async (req) => {
     const crossPassage = cross?.passage || "";
     cross.questions = sanitizeAndValidateQuestions(cross.questions, crossPassage, "cross");
     cross.questions = ensureNonEmptyQuestions(cross.questions, subject, skill, "cross");
-    practice.questions = sanitizeChoices(practice.questions);
+    practice.questions = practice.questions.map((q) => ({ ...q, choices: normalizeChoices(q.choices) }));
     cross.questions = sanitizeChoices(cross.questions);
-    practice.questions = sanitizeExplanations(practice.questions, practicePassage);
+    practice.questions = sanitizeExplanations(practice.questions, practicePassageForOps);
     cross.questions = sanitizeExplanations(cross.questions, cross.passage);
 
     const finalized = enforceSingleSourceOfTruth({
@@ -4291,7 +4307,7 @@ serve(async (req) => {
           grade,
           level,
         )
-        : "",
+        : null,
       practice: {
         questions: practice.questions,
       },
@@ -4299,7 +4315,7 @@ serve(async (req) => {
       tutor: { practice: [], cross: [] },
       answerKey: { practice: [], cross: [] },
     }, subject);
-    finalized.practice.questions = ensureNonEmptyQuestions(finalized.practice.questions, subject, skill);
+    finalized.practice.questions = Array.isArray(finalized.practice.questions) ? finalized.practice.questions : [];
     finalized.cross.questions = ensureNonEmptyQuestions(finalized.cross.questions, subject, skill, "cross");
     const practiceSupport = ensureNonEmptySupport(
       finalized.practice.questions,
@@ -4329,11 +4345,12 @@ serve(async (req) => {
   };
   const returnEnrichment = (data: WorkerAttempt) =>
     {
-      const practiceQuestions = ensureNonEmptyQuestions(
-        (data.practice?.questions || []) as Question[],
-        subject,
-        skill,
-      );
+      const practiceQuestions = ((data.practice?.questions || []) as Question[])
+        .map((q) => ({ ...q, choices: normalizeChoices(q.choices) }))
+        .filter((q) => isAcceptableAIQuestion(q));
+      if (!practiceQuestions.length) {
+        throw new Error("PRACTICE_GENERATION_FAILED");
+      }
       let cross = data?.cross as Partial<EnrichmentResponse["cross"]> | undefined;
       if (!cross || !Array.isArray(cross.questions) || cross.questions.length === 0) {
         console.error("❌ CROSS GENERATION FAILED — AI RETURNED EMPTY");
@@ -4342,12 +4359,7 @@ serve(async (req) => {
           questions: rebuildCrossFromPractice(practiceQuestions, subject, skill),
         };
       }
-      const sanitizedPracticeQuestions = sanitizeExplanations(
-        sanitizeChoices(
-          practiceQuestions.map((q) => ({ ...q })),
-        ),
-        String((data as Partial<WorkerAttempt>)?.passage || ""),
-      );
+      const sanitizedPracticeQuestions = practiceQuestions.map((q) => ({ ...q, choices: normalizeChoices(q.choices) }));
       const sanitizedCrossQuestions = sanitizeExplanations(
         sanitizeChoices(
           (cross?.questions || []).map((q) => ({ ...q })),
@@ -4373,7 +4385,7 @@ serve(async (req) => {
         finalized.cross.passage = String(cross?.passage || (data as Partial<WorkerAttempt>)?.passage || "");
       }
       const practiceSupport = ensureNonEmptySupport(
-        ensureNonEmptyQuestions(sanitizedPracticeQuestions, subject, skill),
+        sanitizedPracticeQuestions,
         (data as Partial<WorkerAttempt>)?.tutor?.practice as TutorExplanation[] | undefined,
         (data as Partial<WorkerAttempt>)?.answerKey?.practice as AnswerKeyEntry[] | undefined,
         "practice",
@@ -4403,7 +4415,7 @@ serve(async (req) => {
         skill,
         grade,
         practice: {
-          questions: ensureNonEmptyQuestions(sanitizedPracticeQuestions, subject, skill),
+          questions: sanitizedPracticeQuestions,
         },
         cross: finalized.cross,
         tutor: finalized.tutor,
@@ -4663,7 +4675,7 @@ serve(async (req) => {
     let retryFailureReason = "no_questions_returned";
     let bestAttempt: WorkerAttempt | null = null;
     let returnType = "UNKNOWN";
-    let generatedCorePassage = "";
+    let generatedCorePassage: string | null = null;
     let generatedCoreQuestions: Question[] | null = null;
     const markRetry = (reason: string) => {
       retryFailureReason = reason;
@@ -4692,21 +4704,24 @@ serve(async (req) => {
             console.time("OPENAI_CALL");
             const aiStartTime = Date.now();
             const variationId = Math.random().toString(36).slice(2, 8);
-            const passageRes = await generateWithRetry(
-              generatePassagePrompt({
-                grade,
-                subject,
-                skill: effectiveSkill,
-                level,
-                teksCode,
-                contextType,
-              }) + `\nVariation ID: ${variationId}`,
-              2,
-              (data: unknown) => {
-                const raw = data as Record<string, unknown> | null;
-                return Boolean(raw && typeof raw.passage === "string" && raw.passage.trim().length >= 20);
-              },
-            ) as Record<string, unknown> | null;
+            const passageRes = subject === "Reading"
+              ? await generateWithRetry(
+                generatePassagePrompt({
+                  grade,
+                  subject,
+                  skill: effectiveSkill,
+                  level,
+                  teksCode,
+                  contextType,
+                }) + `\nVariation ID: ${variationId}`,
+                2,
+                (data: unknown) => {
+                  const raw = data as Record<string, unknown> | null;
+                  return Boolean(raw && typeof raw.passage === "string" && raw.passage.trim().length >= 20);
+                },
+              ) as Record<string, unknown> | null
+              : { passage: null };
+            const safePassage = subject === "Reading" ? String(passageRes?.passage || "").trim() : null;
             console.log("✅ FLOW STEP: generateQuestionsPrompt");
             let questionRes = await generateWithRetry(
               generateQuestionsPrompt({
@@ -4715,7 +4730,7 @@ serve(async (req) => {
                 skill: effectiveSkill,
                 level,
                 teksCode,
-                passage: String(passageRes?.passage || ""),
+                passage: safePassage,
               }) + `\nVariation ID: ${variationId}`,
               2,
               (data: unknown) => {
@@ -4728,138 +4743,43 @@ serve(async (req) => {
               parsed.questions = Array.isArray(parsed.items) ? parsed.items : [];
             }
 
-            if (parsed.questions.length < 5) {
-              console.warn("⚠️ REPAIRING PARTIAL QUESTIONS");
-              while (parsed.questions.length < 5) {
-                parsed.questions.push({
-                  question: "Which detail best supports the main idea?",
-                  choices: [
-                    "A detail clearly stated in the passage",
-                    "A detail that is unrelated to the passage",
-                    "A repeated idea without support",
-                    "An opinion not supported by evidence",
-                  ],
-                  correct_answer: "A",
-                });
-              }
-            }
-            if (!parsed.passage || String(parsed.passage).length < 30) {
-              console.warn("⚠️ MISSING PASSAGE — INJECTING DEFAULT");
-              parsed.passage =
-                "At Maplewood Elementary, students prepared for the annual science fair. They worked on projects, tested ideas, and collaborated with classmates. The event encouraged creativity and problem-solving as students presented their findings.";
-            }
             console.log("FINAL PRACTICE QUESTIONS:", parsed.questions.length);
             questionRes = parsed;
 
-            if (!questionRes || !Object.keys(questionRes).length) {
-              console.timeEnd("OPENAI_CALL");
-              console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
-              console.warn("⚠️ Empty AI question payload — repairing with guaranteed structure");
-              questionRes = {
-                passage: "Students read a passage and use evidence to make inferences about key ideas.",
-                questions: [],
-              };
-            }
-
-            const coreRawQuestions = questionRes?.questions || questionRes?.items || [];
-            let coreQuestions = await sanitizeQuestions(
-              coreRawQuestions,
-              effectiveSubject,
-              "Practice",
-              effectiveSkill,
-              level,
-              String(passageRes?.passage || ""),
-              grade,
-              repairState,
-            );
-            coreQuestions = sanitizeChoices(coreQuestions);
-            coreQuestions = coreQuestions.map((q) => {
-              if (!q.question || q.choices.length !== 4) {
-                console.warn("⚠️ Weak question — patching");
-                return improveQuestion(q, String(passageRes?.passage || ""));
-              }
-              const patchedChoices = normalizeChoices(q.choices).map((choice) =>
-                isWeakChoice(choice) ? improveChoice(choice, String(passageRes?.passage || "")) : choice
-              ) as [string, string, string, string];
-              return { ...q, choices: patchedChoices };
+            const aiQuestions = questionRes?.questions || questionRes?.items || [];
+            let coreQuestions = (Array.isArray(aiQuestions) ? aiQuestions : []).map((q) => {
+              const item = (q || {}) as Question;
+              const patchedChoices = normalizeChoices(item.choices);
+              return { ...item, choices: patchedChoices } as Question;
             });
-            coreQuestions = await repairWeakQuestions(coreQuestions, String(passageRes?.passage || ""));
-
-            if (coreQuestions.length < 5) {
-              console.warn("⚠️ Not enough valid questions — regenerating missing...");
-              const needed = 5 - coreQuestions.length;
+            if (!coreQuestions.every((q) => isAcceptableAIQuestion(q))) {
+              console.warn("Invalid AI output — regenerating clean questions");
               console.log("✅ FLOW STEP: generateQuestionsPrompt");
-              const extraRes = await generateWithRetry(
+              const regenerated = await generateWithRetry(
                 generateQuestionsPrompt({
                   grade,
                   subject,
                   skill: effectiveSkill,
                   level,
                   teksCode,
-                  passage: String(passageRes?.passage || ""),
-                }),
-                2,
+                  passage: safePassage,
+                }) + `\nVariation ID: ${variationId}\nRegeneration: strict validation failed`,
+                1,
                 (data: unknown) => {
                   const raw = data as Record<string, unknown> | null;
                   return Boolean(raw && Array.isArray(raw.questions) && raw.questions.length > 0);
                 },
               ) as Record<string, unknown> | null;
-              console.log("🧠 RAW AI RESPONSE:", JSON.stringify(extraRes, null, 2));
-              console.log("🧠 PARSED QUESTIONS:", extraRes?.questions);
-
-              const extraRaw = extraRes?.questions || extraRes?.items || [];
-              console.log("STEP 1 RAW:", extraRaw);
-              const beforeSanitize = extraRaw;
-              let extraQuestions = await sanitizeQuestions(
-                extraRaw,
-                effectiveSubject,
-                "Practice",
-                effectiveSkill,
-                level,
-                String(passageRes?.passage || ""),
-                grade,
-                repairState,
-              );
-              console.log("STEP 2 SANITIZED:", extraQuestions);
-              if (!extraQuestions.length) {
-                console.error("❌ SANITIZE WIPED QUESTIONS", beforeSanitize);
-              }
-              extraQuestions = sanitizeChoices(extraQuestions);
-              extraQuestions = extraQuestions.map((q) => improveQuestion(q, String(passageRes?.passage || "")));
-              coreQuestions = [...coreQuestions, ...extraQuestions.slice(0, needed)];
-              console.log("STEP 3 FINAL:", coreQuestions);
+              const regeneratedRaw = regenerated?.questions || regenerated?.items || [];
+              coreQuestions = (Array.isArray(regeneratedRaw) ? regeneratedRaw : []).map((q) => {
+                const item = (q || {}) as Question;
+                const patchedChoices = normalizeChoices(item.choices);
+                return { ...item, choices: patchedChoices } as Question;
+              });
             }
-
-            if (coreQuestions.length === 0) {
-              const repairedQuestions: Question[] = [];
-              while (repairedQuestions.length < 5) {
-                repairedQuestions.push({
-                  question: "Which detail best supports the main idea?",
-                  choices: [
-                    "A detail clearly stated in the passage",
-                    "A detail that is unrelated to the passage",
-                    "A repeated idea without support",
-                    "An opinion not supported by evidence",
-                  ],
-                  correct_answer: "A",
-                });
-              }
-              coreQuestions = repairedQuestions;
-            }
-            coreQuestions = ensureNonEmptyQuestions(coreQuestions, effectiveSubject, effectiveSkill);
-            if (coreQuestions.length < 5) {
-              while (coreQuestions.length < 5) {
-                coreQuestions.push({
-                  question: "Which detail best supports the main idea?",
-                  choices: [
-                    "A detail clearly stated in the passage",
-                    "A detail that is unrelated to the passage",
-                    "A repeated idea without support",
-                    "An opinion not supported by evidence",
-                  ],
-                  correct_answer: "A",
-                });
-              }
+            coreQuestions = coreQuestions.filter((q) => isAcceptableAIQuestion(q)).slice(0, 5);
+            if (!coreQuestions.length) {
+              throw new Error("Invalid AI output after single regeneration attempt");
             }
 
             console.timeEnd("OPENAI_CALL");
@@ -4869,7 +4789,7 @@ serve(async (req) => {
               ? corePassage
               : isUsablePassage(String(passageRes?.passage || ""))
               ? String(passageRes?.passage || "")
-              : "At Maplewood Elementary, students prepared for the annual science fair. They worked on projects, tested ideas, and collaborated with classmates. The event encouraged creativity and problem-solving as students presented their findings.";
+              : null;
             generatedCoreQuestions = coreQuestions;
         }
 
@@ -4882,23 +4802,21 @@ serve(async (req) => {
         const corePassageFromRequest = effectiveMode === "core" && generatedCorePassage
           ? generatedCorePassage
           : typeof body.passage === "string"
-          ? String(body.passage || "").trim()
-          : "";
+          ? body.passage
+          : null;
         const corePassageForChecks = corePassageFromRequest;
-        if (!corePassageForChecks || corePassageForChecks.length < 30) {
+        if (effectiveSubject === "Reading" && (!corePassageForChecks || corePassageForChecks.length < 30)) {
           throw new Error("🚨 PASSAGE MISSING IN FINAL PAYLOAD");
         }
-        const normalizedPractice = await sanitizeQuestions(
-          priorPractice,
-          effectiveSubject,
-          "Practice",
-          effectiveSkill,
-          level,
-          corePassageForChecks,
-          grade,
-          repairState,
-        );
-        const safePracticeQuestions = ensureNonEmptyQuestions(normalizedPractice, effectiveSubject, effectiveSkill);
+        const normalizedPractice = priorPractice.map((q) => {
+          const item = (q || {}) as Question;
+          const patchedChoices = normalizeChoices(item.choices);
+          return { ...item, choices: patchedChoices } as Question;
+        });
+        const safePracticeQuestions = normalizedPractice.filter((q) => isAcceptableAIQuestion(q)).slice(0, 5);
+        if (!safePracticeQuestions.length) {
+          throw new Error("PRACTICE_GENERATION_FAILED");
+        }
         console.log("🧠 CROSS SUBJECT:", effectiveSubject);
         const baseCrossPassage = buildSubjectPassage(effectiveSubject, level);
         if (baseCrossPassage === corePassageForChecks) {
@@ -5190,7 +5108,7 @@ serve(async (req) => {
         );
 
         const payload: WorkerAttempt = {
-          passage: corePassageForChecks,
+          passage: corePassageForChecks ?? null,
           practice: { questions: safePracticeQuestions },
           cross: {
             passage: subjectCrossPassage,
@@ -5206,7 +5124,7 @@ serve(async (req) => {
           answerKey: payload.answerKey,
         });
         bestAttempt = {
-          passage: corePassageForChecks,
+          passage: corePassageForChecks ?? null,
           practice: { questions: safePracticeQuestions },
           cross: payload.cross,
           tutor: payload.tutor,
