@@ -66,7 +66,7 @@ type AnswerKeyEntry = {
 };
 
 type CoreResponse = {
-  passage?: PassageContent;
+  passage?: PassageContent | null;
   practice: {
     questions: Question[];
   };
@@ -1141,12 +1141,12 @@ function generatePassagePrompt(params: {
 
 Return exactly:
 {
-  "passage": ""
+  "passage": null
 }
 
 Rules:
 - Subject is ${subject}; no passage is needed for practice generation.
-- Return an empty string for passage.
+- Return null for passage.
 - No markdown. JSON only.`;
   }
 
@@ -1182,44 +1182,81 @@ function generateQuestionsPrompt(params: {
   subject: CanonicalSubject;
   skill: string;
   level: Level;
-  passage: string;
+  passage: string | null;
   teksCode?: string;
 }): string {
-
   const { grade, subject, skill, level, passage, teksCode = "Unknown" } = params;
-  void subject;
-  void passage;
   void teksCode;
 
-  return `
-Generate a short reading passage and 5 multiple choice questions.
+  if (subject === "Reading") {
+    return `
+Use the passage below.
 
-Requirements:
-- Skill: ${skill}
-- Grade: ${grade}
-- Level: ${level}
+PASSAGE:
+${String(passage || "").trim()}
 
-Return ONLY valid JSON:
+Generate 5 STAAR-style reading questions.
 
+Rules:
+- All questions must rely on the passage
+- All answer choices must be grounded in passage details
+- No outside scenarios
+
+Return JSON:
 {
-  "passage": "short passage (4–6 sentences)",
   "questions": [
     {
-      "question": "clear question",
-      "choices": ["A", "B", "C", "D"],
+      "question": "",
+      "choices": ["", "", "", ""],
       "correct_answer": "A"
     }
   ]
-}
+}`;
+  }
 
-STRICT RULES:
-- EXACTLY 5 questions
-- EXACTLY 4 answer choices per question
-- correct_answer MUST be one of A, B, C, D
-- NO explanations
-- NO extra text
-- NO markdown
-`;
+  if (subject === "Math") {
+    return `
+Generate 5 STAAR-style math WORD PROBLEMS.
+
+Rules:
+- Each question must be a real-world scenario
+- Include numbers and multi-step reasoning
+- NO passage
+- Choices must be numeric or expressions
+
+Return JSON:
+{
+  "questions": [...]
+}`;
+  }
+
+  if (subject === "Science") {
+    return `
+Generate 5 STAAR-style science questions.
+
+Rules:
+- Each question must include a SHORT scenario (2–3 sentences max)
+- Focus on cause/effect, systems, or experiments
+- NO long passage
+
+Return JSON:
+{
+  "questions": [...]
+}`;
+  }
+
+  return `
+Generate 5 STAAR-style social studies questions.
+
+Rules:
+- Each question must include a SHORT scenario (historical or civic)
+- Focus on cause/effect, impact, or decision-making
+- NO long passage
+
+Return JSON:
+{
+  "questions": [...]
+}`;
 }
 
 function crossCurricularPassageTopicRule(subject: CanonicalSubject): string {
@@ -4260,7 +4297,7 @@ serve(async (req) => {
           grade,
           level,
         )
-        : "",
+        : null,
       practice: {
         questions: practice.questions,
       },
@@ -4632,7 +4669,7 @@ serve(async (req) => {
     let retryFailureReason = "no_questions_returned";
     let bestAttempt: WorkerAttempt | null = null;
     let returnType = "UNKNOWN";
-    let generatedCorePassage = "";
+    let generatedCorePassage: string | null = null;
     let generatedCoreQuestions: Question[] | null = null;
     const markRetry = (reason: string) => {
       retryFailureReason = reason;
@@ -4661,21 +4698,24 @@ serve(async (req) => {
             console.time("OPENAI_CALL");
             const aiStartTime = Date.now();
             const variationId = Math.random().toString(36).slice(2, 8);
-            const passageRes = await generateWithRetry(
-              generatePassagePrompt({
-                grade,
-                subject,
-                skill: effectiveSkill,
-                level,
-                teksCode,
-                contextType,
-              }) + `\nVariation ID: ${variationId}`,
-              2,
-              (data: unknown) => {
-                const raw = data as Record<string, unknown> | null;
-                return Boolean(raw && typeof raw.passage === "string" && raw.passage.trim().length >= 20);
-              },
-            ) as Record<string, unknown> | null;
+            const passageRes = subject === "Reading"
+              ? await generateWithRetry(
+                generatePassagePrompt({
+                  grade,
+                  subject,
+                  skill: effectiveSkill,
+                  level,
+                  teksCode,
+                  contextType,
+                }) + `\nVariation ID: ${variationId}`,
+                2,
+                (data: unknown) => {
+                  const raw = data as Record<string, unknown> | null;
+                  return Boolean(raw && typeof raw.passage === "string" && raw.passage.trim().length >= 20);
+                },
+              ) as Record<string, unknown> | null
+              : { passage: null };
+            const safePassage = subject === "Reading" ? String(passageRes?.passage || "").trim() : null;
             console.log("✅ FLOW STEP: generateQuestionsPrompt");
             let questionRes = await generateWithRetry(
               generateQuestionsPrompt({
@@ -4684,7 +4724,7 @@ serve(async (req) => {
                 skill: effectiveSkill,
                 level,
                 teksCode,
-                passage: String(passageRes?.passage || ""),
+                passage: safePassage,
               }) + `\nVariation ID: ${variationId}`,
               2,
               (data: unknown) => {
@@ -4726,7 +4766,7 @@ serve(async (req) => {
                   skill: effectiveSkill,
                   level,
                   teksCode,
-                  passage: String(passageRes?.passage || ""),
+                  passage: safePassage,
                 }) + `\nVariation ID: ${variationId}\nRegeneration: strict validation failed`,
                 1,
                 (data: unknown) => {
@@ -4762,7 +4802,7 @@ serve(async (req) => {
               ? corePassage
               : isUsablePassage(String(passageRes?.passage || ""))
               ? String(passageRes?.passage || "")
-              : "";
+              : null;
             generatedCoreQuestions = coreQuestions;
         }
 
@@ -4773,12 +4813,12 @@ serve(async (req) => {
           : [];
 
         const corePassageFromRequest = effectiveMode === "core" && generatedCorePassage
-          ? generatedCorePassage
+          ? String(generatedCorePassage || "").trim()
           : typeof body.passage === "string"
           ? String(body.passage || "").trim()
-          : "";
+          : null;
         const corePassageForChecks = corePassageFromRequest;
-        if (!corePassageForChecks || corePassageForChecks.length < 30) {
+        if (effectiveSubject === "Reading" && (!corePassageForChecks || corePassageForChecks.length < 30)) {
           throw new Error("🚨 PASSAGE MISSING IN FINAL PAYLOAD");
         }
         const normalizedPractice = await sanitizeQuestions(
@@ -4787,7 +4827,7 @@ serve(async (req) => {
           "Practice",
           effectiveSkill,
           level,
-          corePassageForChecks,
+          String(corePassageForChecks || ""),
           grade,
           repairState,
         );
@@ -5083,7 +5123,7 @@ serve(async (req) => {
         );
 
         const payload: WorkerAttempt = {
-          passage: corePassageForChecks,
+          passage: corePassageForChecks ?? null,
           practice: { questions: safePracticeQuestions },
           cross: {
             passage: subjectCrossPassage,
@@ -5099,7 +5139,7 @@ serve(async (req) => {
           answerKey: payload.answerKey,
         });
         bestAttempt = {
-          passage: corePassageForChecks,
+          passage: corePassageForChecks ?? null,
           practice: { questions: safePracticeQuestions },
           cross: payload.cross,
           tutor: payload.tutor,
