@@ -131,7 +131,6 @@ const SUBJECT_SKILLS = {
 } as const;
 
 const LETTERS: ChoiceLetter[] = ["A", "B", "C", "D"];
-const TRUST_AI_ANSWER_KEY = true;
 const BANNED_PHRASES = [
   "this reflects",
   "this reasoning",
@@ -416,13 +415,31 @@ function shuffleArray<T>(array: T[]): T[] {
 }
 
 function forcePassageChoices(passageText: string): [string, string, string, string] {
-  if (!passageText) return ["", "", "", ""];
+  const fallback: [string, string, string, string] = [
+    "A detail directly supported by the content.",
+    "A partially related detail missing key evidence.",
+    "A broad claim that overgeneralizes the content.",
+    "An unsupported detail not stated in the content.",
+  ];
+  const text = String(passageText || "").trim();
+  if (!text) return fallback;
 
-  const words = passageText.split(/\W+/).filter(Boolean);
+  const words = text
+    .split(/\W+/)
+    .map((word) => word.trim())
+    .filter((word) => word.length >= 4);
 
-  const pick = () => words[Math.floor(Math.random() * words.length)] || "";
+  if (words.length < 4) return fallback;
 
-  return [pick(), pick(), pick(), pick()];
+  const unique = Array.from(new Set(words));
+  const pick = (start: number) => unique[start % unique.length] || "detail";
+
+  return [
+    `Supported by ${pick(0)} in the text.`,
+    `Partly related to ${pick(1)} but missing proof.`,
+    `Too broad compared with ${pick(2)} details.`,
+    `Not stated in the text about ${pick(3)}.`,
+  ];
 }
 
 function buildAlignedExplanation(
@@ -430,11 +447,29 @@ function buildAlignedExplanation(
   passage: string,
   usedEvidence: Set<string>,
   usePassage: boolean,
-) {
-  return {
-    why: String(question?.explanation || "").trim() || "The correct answer is supported by the passage.",
-    mistake: "A common mistake is choosing an answer that is not fully supported by the text.",
-  };
+): { why: string; mistake: string; tip: string } {
+  const normalizedChoices = normalizeChoices(question?.choices);
+  const correctLetter = safeCorrectAnswer(question?.correct_answer);
+  const correctIndex = LETTERS.indexOf(correctLetter);
+  const correctChoice = correctIndex >= 0 ? String(normalizedChoices[correctIndex] || "").trim() : "";
+  const snippet = usePassage ? selectEvidenceSnippet(question, String(passage || ""), usedEvidence) : null;
+  const explicit = String(question?.explanation || "").trim();
+
+  const why = explicit || (usePassage
+    ? (snippet
+      ? `The best answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because the text states: "${summarizeEvidenceIdea(snippet)}."`
+      : `The best answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it is the only option fully supported by the passage.`)
+    : `The best answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it matches the problem's required reasoning.`);
+
+  const mistake = usePassage
+    ? "A common mistake is choosing an option that sounds related but is not directly supported by the passage evidence."
+    : "A common mistake is choosing an option that seems plausible without checking all constraints in the question.";
+
+  const tip = usePassage
+    ? "Go back to the exact line that proves the answer before choosing."
+    : "Test each option against the full question, not just one keyword.";
+
+  return { why, mistake, tip };
 }
 
 function buildDistractorFeedback(question: any): string {
@@ -454,9 +489,9 @@ function selectEvidenceSnippet(
   if (!sentences.length) return null;
 
   const normalizedChoices = normalizeChoices(question?.choices);
-  const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(question?.correct_answer));
+  const correctLetter = safeCorrectAnswer(question?.correct_answer);
   const correctIndex = LETTERS.indexOf(correctLetter);
-  const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
+  const correctChoice = correctIndex >= 0 ? String(normalizedChoices[correctIndex] || "").trim() : "";
   const questionText = String(question?.question || "").trim();
   const anchorText = `${questionText} ${correctChoice}`.toLowerCase();
 
@@ -518,11 +553,19 @@ function selectEvidenceSnippet(
 }
 
 function buildSubjectCrossContent(subject: string, level: string) {
-  throw new Error("CROSS SHOULD NEVER BE EMPTY");
+  const normalizedSubject = canonicalizeSubject(subject);
+  const normalizedLevel = normalizeLevel(level);
+  const passage = buildSubjectPassage(normalizedSubject, normalizedLevel);
+  const skill = SUBJECT_SKILLS[normalizedSubject]?.[0]?.skill || READING_SKILL_DEFAULT;
+  const questions = buildUniversalFallbackQuestions(normalizedSubject, skill).slice(0, 3);
+  return { passage, questions };
 }
 
 function buildELARFallback(level: string) {
-  throw new Error("FALLBACK SHOULD NOT RUN");
+  const normalizedLevel = normalizeLevel(level);
+  const passage = buildSubjectPassage("Reading", normalizedLevel);
+  const questions = buildUniversalFallbackQuestions("Reading", READING_SKILL_DEFAULT).slice(0, 3);
+  return { passage, questions };
 }
 
 function buildThinkPrompt(question: any): string {
@@ -1390,15 +1433,17 @@ Rules:
 
 
 function isValidCoreEnrichmentOutput(data: unknown): boolean {
-  if (!data) return false;
+  if (!data || typeof data !== "object") return false;
   const parsed = data as Record<string, unknown>;
   const cross = parsed.cross as Record<string, unknown> | undefined;
   const tutor = parsed.tutor as Record<string, unknown> | undefined;
   const answerKey = parsed.answerKey as Record<string, unknown> | undefined;
+  const crossQuestions = Array.isArray(cross?.questions) ? cross.questions : [];
+
+  if (!cross || typeof cross.passage !== "string" || !cross.passage.trim()) return false;
+  if (crossQuestions.length !== 3 && crossQuestions.length !== 5) return false;
+
   return Boolean(
-    cross &&
-    typeof cross.passage === "string" &&
-    Array.isArray(cross.questions) &&
     tutor &&
     answerKey &&
     Array.isArray(tutor.practice) &&
