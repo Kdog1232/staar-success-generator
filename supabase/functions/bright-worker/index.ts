@@ -1239,7 +1239,7 @@ Inputs:
 - TEKS: ${teksCode}
 
 Requirements:
-- Passage must be STRICTLY 150-200 words.
+- Passage should be 150–200 words. Do not exceed 220 words.
 - Passage topic must be: ${topicRule}.
 - Passage must include at least TWO of the following:
   - cause/effect
@@ -1251,13 +1251,13 @@ Requirements:
 Question design rules:
 - Generate exactly 5 multiple-choice questions.
 - Every question must assess a READING skill (ELAR), not simple content recall.
-- Each set must include exactly one of each:
-  1) inference
-  2) main idea / central idea
-  3) author's purpose
-  4) evidence-based
-  5) vocabulary in context OR text structure
-- No duplicate question types.
+- Include a mix of:
+  - inference
+  - main idea / central idea
+  - author's purpose
+  - evidence-based
+  - vocabulary in context OR text structure
+- Do not repeat the same type more than twice.
 - Every question must require both:
   - understanding passage content
   - applying a reading skill
@@ -4846,8 +4846,8 @@ serve(async (req) => {
             level,
             teksCode,
           }) + `\nVariation ID: ${variationId}`,
-          2,
-          (data: unknown) => validateCrossCurricular((data || {}) as { passage?: unknown; questions?: unknown[]; cross?: { passage?: unknown; questions?: unknown[] } }),
+          1,
+          () => true,
         ) as Record<string, unknown> | null;
         console.timeEnd("OPENAI_CALL");
         console.log("⏱️ AI Duration:", Date.now() - enrichStartTime);
@@ -4860,9 +4860,38 @@ serve(async (req) => {
           console.warn("⚠️ Empty cross payload — using fallback cross content");
         }
 
+        let cross = {
+          passage: String(scopedCross?.passage || ""),
+          questions: Array.isArray(scopedCross?.questions)
+            ? scopedCross.questions as unknown[]
+            : Array.isArray(scopedCross?.items)
+              ? scopedCross.items as unknown[]
+              : [],
+        };
+        const crossShapeValid = validateCrossCurricular({
+          passage: cross.passage,
+          questions: cross.questions,
+        });
+        if (!crossShapeValid) {
+          console.warn("⚠️ Invalid cross shape from AI — applying guard rails");
+        }
+        if (!Array.isArray(cross.questions) || cross.questions.length === 0) {
+          console.warn("⚠️ Empty cross — using fallback");
+          cross.questions = buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill);
+        }
+        if (cross.questions.length < 5) {
+          cross.questions = [
+            ...cross.questions,
+            ...buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill),
+          ].slice(0, 5);
+        }
+        if (!cross.passage || cross.passage.split(/\s+/).filter(Boolean).length < 120) {
+          cross.passage = buildCrossFallback(effectiveSubject, level, effectiveSkill).passage;
+        }
+
         const parsedCross: Record<string, unknown> = {
-          passage: String(scopedCross?.passage || baseCrossPassage),
-          questions: scopedCross?.questions || scopedCross?.items || buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill),
+          passage: String(cross.passage || baseCrossPassage),
+          questions: cross.questions,
         };
         let subjectCrossPassage = String(parsedCross.passage || "").trim() || baseCrossPassage;
         const originalCrossPassage = subjectCrossPassage;
