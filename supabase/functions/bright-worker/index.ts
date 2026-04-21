@@ -518,17 +518,11 @@ function selectEvidenceSnippet(
 }
 
 function buildSubjectCrossContent(subject: string, level: string) {
-  return {
-    passage: "",
-    questions: [],
-  };
+  throw new Error("CROSS SHOULD NEVER BE EMPTY");
 }
 
 function buildELARFallback(level: string) {
-  return {
-    passage: "",
-    questions: [],
-  };
+  throw new Error("FALLBACK SHOULD NOT RUN");
 }
 
 function buildThinkPrompt(question: any): string {
