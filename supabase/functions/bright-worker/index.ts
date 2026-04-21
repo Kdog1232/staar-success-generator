@@ -4503,6 +4503,13 @@ serve(async (req) => {
       const enrichSkill = String(body.skill || READING_SKILL_DEFAULT).trim() || READING_SKILL_DEFAULT;
       const enrichLevel = normalizeLevel(body.level);
 
+      if (!crossQuestions.length) {
+        return jsonResponse({
+          error: "MISSING_CROSS_INPUT",
+          message: "Cross questions must be generated before enrichment runs.",
+        }, 400);
+      }
+
       const enrichment = await generateWithRetry(
         buildCoreEnrichmentPrompt({
           grade: enrichGrade,
