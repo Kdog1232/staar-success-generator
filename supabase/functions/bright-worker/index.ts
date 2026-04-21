@@ -4625,6 +4625,8 @@ serve(async (req) => {
     let retryFailureReason = "no_questions_returned";
     let bestAttempt: WorkerAttempt | null = null;
     let returnType = "UNKNOWN";
+    let generatedCorePassage = "";
+    let generatedCoreQuestions: Question[] | null = null;
     const markRetry = (reason: string) => {
       retryFailureReason = reason;
       console.log("❌ RETRY REASON:", retryFailureReason);
@@ -4648,7 +4650,7 @@ serve(async (req) => {
       }
       attempts++;
       try {
-          if (effectiveMode === "core") {
+        if (effectiveMode === "core") {
             console.time("OPENAI_CALL");
             const aiStartTime = Date.now();
             const variationId = Math.random().toString(36).slice(2, 8);
@@ -4753,32 +4755,21 @@ serve(async (req) => {
 
             console.timeEnd("OPENAI_CALL");
             console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
-
-            return jsonResponse({
-              passage: isUsablePassage(String(passageRes?.passage || ""))
-                ? String(passageRes?.passage || "")
-                : "Students reviewed several sources and compared evidence before making a careful decision.",
-              practice: { questions: coreQuestions },
-              tutor: {
-                practice: ensureNonEmptySupport(coreQuestions, [], [], "practice").tutor,
-                cross: [],
-              },
-              answerKey: {
-                practice: ensureNonEmptySupport(coreQuestions, [], [], "practice").answerKey,
-                cross: [],
-              },
-              cross: {
-                passage: "",
-                questions: [],
-              },
-            });
+            generatedCorePassage = isUsablePassage(String(passageRes?.passage || ""))
+              ? String(passageRes?.passage || "")
+              : "Students reviewed several sources and compared evidence before making a careful decision.";
+            generatedCoreQuestions = coreQuestions;
         }
 
-        const priorPractice = Array.isArray(body.practiceQuestions)
+        const priorPractice = effectiveMode === "core" && Array.isArray(generatedCoreQuestions)
+          ? generatedCoreQuestions
+          : Array.isArray(body.practiceQuestions)
           ? body.practiceQuestions
           : buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill);
 
-        const corePassageFromRequest = typeof body.passage === "string"
+        const corePassageFromRequest = effectiveMode === "core" && generatedCorePassage
+          ? generatedCorePassage
+          : typeof body.passage === "string"
           ? String(body.passage || "").trim()
           : "";
         const corePassageForChecks = corePassageFromRequest;
