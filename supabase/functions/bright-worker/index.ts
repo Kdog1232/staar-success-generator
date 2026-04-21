@@ -4754,7 +4754,7 @@ serve(async (req) => {
               2,
             ) as Record<string, unknown> | null;
             console.log("✅ FLOW STEP: generateQuestionsPrompt");
-            const questionRes = await generateWithRetry(
+            let questionRes = await generateWithRetry(
               generateQuestionsPrompt({
                 grade,
                 subject,
@@ -4769,6 +4769,11 @@ serve(async (req) => {
                 return Boolean(raw && Array.isArray(raw.questions) && raw.questions.length > 0);
               },
             ) as Record<string, unknown> | null;
+            const parsed = questionRes;
+            if (!parsed?.questions || !Array.isArray(parsed.questions) || parsed.questions.length !== 5) {
+              console.error("❌ INVALID AI OUTPUT:", parsed);
+              throw new Error("INVALID_AI_OUTPUT");
+            }
 
             if (!questionRes || !Object.keys(questionRes).length) {
               console.timeEnd("OPENAI_CALL");
@@ -4820,8 +4825,12 @@ serve(async (req) => {
                   return Boolean(raw && Array.isArray(raw.questions) && raw.questions.length > 0);
                 },
               ) as Record<string, unknown> | null;
+              console.log("🧠 RAW AI RESPONSE:", JSON.stringify(extraRes, null, 2));
+              console.log("🧠 PARSED QUESTIONS:", extraRes?.questions);
 
               const extraRaw = extraRes?.questions || extraRes?.items || [];
+              console.log("STEP 1 RAW:", extraRaw);
+              const beforeSanitize = extraRaw;
               let extraQuestions = await sanitizeQuestions(
                 extraRaw,
                 effectiveSubject,
@@ -4832,14 +4841,26 @@ serve(async (req) => {
                 grade,
                 repairState,
               );
+              console.log("STEP 2 SANITIZED:", extraQuestions);
+              if (!extraQuestions.length) {
+                console.error("❌ SANITIZE WIPED QUESTIONS", beforeSanitize);
+                throw new Error("SANITIZE_FAILURE");
+              }
               extraQuestions = sanitizeChoices(extraQuestions);
               extraQuestions = extraQuestions.map((q) => improveQuestion(q, String(passageRes?.passage || "")));
               coreQuestions = [...coreQuestions, ...extraQuestions.slice(0, needed)];
+              console.log("STEP 3 FINAL:", coreQuestions);
             }
 
             if (coreQuestions.length === 0) {
-              console.warn("⚠️ USING FALLBACK QUESTIONS");
-              coreQuestions = buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill);
+              console.error("❌ CORE QUESTIONS EMPTY — NO FALLBACK");
+              return jsonResponse({
+                error: "AI_FAILED_TO_GENERATE_PRACTICE",
+                details: {
+                  subject: effectiveSubject,
+                  skill: effectiveSkill,
+                },
+              }, 500);
             }
             coreQuestions = ensureNonEmptyQuestions(coreQuestions, effectiveSubject, effectiveSkill);
 
@@ -4855,7 +4876,7 @@ serve(async (req) => {
           ? generatedCoreQuestions
           : Array.isArray(body.practiceQuestions)
           ? body.practiceQuestions
-          : buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill);
+          : [];
 
         const corePassageFromRequest = effectiveMode === "core" && generatedCorePassage
           ? generatedCorePassage
@@ -5191,32 +5212,7 @@ serve(async (req) => {
       } catch (err) {
         console.error("BACKEND ERROR:", err);
         if (isTimedOut()) {
-          returnType = "TIMEOUT_FALLBACK";
-          const fallbackQuestions = buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill);
-          const fallbackCrossQuestions = rebuildCrossFromPractice(
-            fallbackQuestions,
-            effectiveSubject,
-            effectiveSkill,
-          );
-          const fallbackCrossPassage =
-            "Students compared evidence from two short scenarios and selected the conclusion best supported by both.";
-          logReturnMetrics();
-          return jsonResponse({
-            teks: teksCode,
-            skill,
-            grade,
-            passage: "Students evaluated evidence, compared outcomes, and selected the most supported conclusion.",
-            practice: { questions: fallbackQuestions },
-            cross: { passage: fallbackCrossPassage, questions: fallbackCrossQuestions },
-            tutor: {
-              practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").tutor,
-              cross: ensureNonEmptySupport(fallbackCrossQuestions, [], [], "cross").tutor,
-            },
-            answerKey: {
-              practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").answerKey,
-              cross: ensureNonEmptySupport(fallbackCrossQuestions, [], [], "cross").answerKey,
-            },
-          });
+          throw new Error("🚨 FALLBACK TRIGGERED — STOPPING EXECUTION");
         }
         markRetry("no_questions_returned");
       }
@@ -5227,59 +5223,12 @@ serve(async (req) => {
       logReturnMetrics();
       return returnEnrichment(bestAttempt);
     }
-    returnType = "FALLBACK_RESULT";
-    logReturnMetrics();
-    const fallbackQuestions = buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill);
-    const fallbackCrossQuestions = rebuildCrossFromPractice(
-      fallbackQuestions,
-      effectiveSubject,
-      effectiveSkill,
-    );
-    const fallbackCrossPassage =
-      "Students compared evidence from two short scenarios and selected the conclusion best supported by both.";
-    return jsonResponse({
-      teks: teksCode,
-      skill,
-      grade,
-      passage: "Students evaluated evidence, compared outcomes, and selected the most supported conclusion.",
-      practice: { questions: fallbackQuestions },
-      cross: { passage: fallbackCrossPassage, questions: fallbackCrossQuestions },
-      tutor: {
-        practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").tutor,
-        cross: ensureNonEmptySupport(fallbackCrossQuestions, [], [], "cross").tutor,
-      },
-      answerKey: {
-        practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").answerKey,
-        cross: ensureNonEmptySupport(fallbackCrossQuestions, [], [], "cross").answerKey,
-      },
-      fallbackReason: retryFailureReason,
-    });
+    throw new Error("🚨 FALLBACK TRIGGERED — STOPPING EXECUTION");
   } catch (err) {
     console.error("🔥 EDGE FUNCTION ERROR:", err);
-    const fallbackQuestions = buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill);
-    const fallbackCrossQuestions = rebuildCrossFromPractice(
-      fallbackQuestions,
-      effectiveSubject,
-      effectiveSkill,
-    );
-    const fallbackCrossPassage =
-      "Students compared evidence from two short scenarios and selected the conclusion best supported by both.";
     return jsonResponse({
-      teks: teksCode,
-      skill,
-      grade,
-      passage: "Students evaluated evidence, compared outcomes, and selected the most supported conclusion.",
-      practice: { questions: fallbackQuestions },
-      cross: { passage: fallbackCrossPassage, questions: fallbackCrossQuestions },
-      tutor: {
-        practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").tutor,
-        cross: ensureNonEmptySupport(fallbackCrossQuestions, [], [], "cross").tutor,
-      },
-      answerKey: {
-        practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").answerKey,
-        cross: ensureNonEmptySupport(fallbackCrossQuestions, [], [], "cross").answerKey,
-      },
-      fallbackReason: "unexpected_error",
-    }, 200);
+      error: "FALLBACK_TRIGGERED",
+      details: String(err instanceof Error ? err.message : err),
+    }, 500);
   }
 });
