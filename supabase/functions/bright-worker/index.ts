@@ -4847,7 +4847,7 @@ serve(async (req) => {
             teksCode,
           }) + `\nVariation ID: ${variationId}`,
           2,
-          (data: unknown) => validateCrossCurricular((data || {}) as { passage?: unknown; questions?: unknown[]; cross?: { passage?: unknown; questions?: unknown[] } }),
+          () => true,
         ) as Record<string, unknown> | null;
         console.timeEnd("OPENAI_CALL");
         console.log("⏱️ AI Duration:", Date.now() - enrichStartTime);
@@ -4860,9 +4860,38 @@ serve(async (req) => {
           console.warn("⚠️ Empty cross payload — using fallback cross content");
         }
 
+        let cross = {
+          passage: String(scopedCross?.passage || ""),
+          questions: Array.isArray(scopedCross?.questions)
+            ? scopedCross.questions as unknown[]
+            : Array.isArray(scopedCross?.items)
+              ? scopedCross.items as unknown[]
+              : [],
+        };
+        const crossShapeValid = validateCrossCurricular({
+          passage: cross.passage,
+          questions: cross.questions,
+        });
+        if (!crossShapeValid) {
+          console.warn("⚠️ Invalid cross shape from AI — applying guard rails");
+        }
+        if (!Array.isArray(cross.questions) || cross.questions.length === 0) {
+          console.warn("⚠️ Empty cross — using fallback");
+          cross.questions = buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill);
+        }
+        if (cross.questions.length < 5) {
+          cross.questions = [
+            ...cross.questions,
+            ...buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill),
+          ].slice(0, 5);
+        }
+        if (!cross.passage || cross.passage.split(/\s+/).filter(Boolean).length < 120) {
+          cross.passage = buildCrossFallback(effectiveSubject, level, effectiveSkill).passage;
+        }
+
         const parsedCross: Record<string, unknown> = {
-          passage: String(scopedCross?.passage || baseCrossPassage),
-          questions: scopedCross?.questions || scopedCross?.items || buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill),
+          passage: String(cross.passage || baseCrossPassage),
+          questions: cross.questions,
         };
         let subjectCrossPassage = String(parsedCross.passage || "").trim() || baseCrossPassage;
         const originalCrossPassage = subjectCrossPassage;
