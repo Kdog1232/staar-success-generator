@@ -4743,8 +4743,10 @@ serve(async (req) => {
                 });
               }
             }
-            if (!parsed.passage || String(parsed.passage).length < 20) {
-              parsed.passage = "Students read a passage and use evidence to make inferences about key ideas.";
+            if (!parsed.passage || String(parsed.passage).length < 30) {
+              console.warn("⚠️ MISSING PASSAGE — INJECTING DEFAULT");
+              parsed.passage =
+                "At Maplewood Elementary, students prepared for the annual science fair. They worked on projects, tested ideas, and collaborated with classmates. The event encouraged creativity and problem-solving as students presented their findings.";
             }
             console.log("FINAL PRACTICE QUESTIONS:", parsed.questions.length);
             questionRes = parsed;
@@ -4862,11 +4864,12 @@ serve(async (req) => {
 
             console.timeEnd("OPENAI_CALL");
             console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
-            generatedCorePassage = isUsablePassage(String(questionRes?.passage || ""))
-              ? String(questionRes?.passage || "")
+            const corePassage = String(parsed.passage || "");
+            generatedCorePassage = isUsablePassage(corePassage)
+              ? corePassage
               : isUsablePassage(String(passageRes?.passage || ""))
               ? String(passageRes?.passage || "")
-              : "Students read a passage and use evidence to make inferences about key ideas.";
+              : "At Maplewood Elementary, students prepared for the annual science fair. They worked on projects, tested ideas, and collaborated with classmates. The event encouraged creativity and problem-solving as students presented their findings.";
             generatedCoreQuestions = coreQuestions;
         }
 
@@ -4882,6 +4885,9 @@ serve(async (req) => {
           ? String(body.passage || "").trim()
           : "";
         const corePassageForChecks = corePassageFromRequest;
+        if (!corePassageForChecks || corePassageForChecks.length < 30) {
+          throw new Error("🚨 PASSAGE MISSING IN FINAL PAYLOAD");
+        }
         const normalizedPractice = await sanitizeQuestions(
           priorPractice,
           effectiveSubject,
