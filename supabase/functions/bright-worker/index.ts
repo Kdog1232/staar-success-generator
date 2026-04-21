@@ -4881,7 +4881,14 @@ serve(async (req) => {
           console.warn("⚠️ Empty cross payload — using fallback cross content");
         }
 
-        const aiQuestions = scopedCross?.questions || scopedCross?.items || [];
+        const aiQuestions =
+          Array.isArray(scopedCross?.questions)
+            ? scopedCross.questions
+            : Array.isArray(scopedCross?.items)
+            ? scopedCross.items
+            : Array.isArray(crossRes?.questions)
+            ? crossRes.questions
+            : [];
 
         let cross = {
           passage: String(scopedCross?.passage || ""),
@@ -4894,9 +4901,11 @@ serve(async (req) => {
         if (!crossShapeValid) {
           console.warn("⚠️ Invalid cross shape from AI — applying guard rails");
         }
-        if (cross.questions.length === 0) {
-          console.warn("⚠️ AI returned empty AFTER retry → fallback");
+        if (aiQuestions.length === 0) {
+          console.warn("⚠️ TRUE EMPTY → fallback");
           cross.questions = buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill);
+        } else {
+          cross.questions = aiQuestions;
         }
         if (cross.questions.length < 5) {
           cross.questions = [
