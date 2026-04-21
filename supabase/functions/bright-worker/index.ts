@@ -5065,8 +5065,10 @@ serve(async (req) => {
         console.log("🔥 FINAL CROSS PASSAGE:", subjectCrossPassage);
 
         if (!crossQuestions.length) {
-          console.warn("⚠️ Weak or missing cross questions — patching instead");
-          crossQuestions = buildCrossFallback(effectiveSubject, level, effectiveSkill).questions;
+          console.warn("⚠️ Weak or missing cross questions — preserving bundle stability");
+          crossQuestions = ensureNonEmptyQuestions(crossQuestions, effectiveSubject, effectiveSkill);
+          tutorCross = [];
+          answerKeyCross = [];
         }
 
         const practiceSupport = ensureNonEmptySupport(
