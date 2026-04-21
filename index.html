@@ -2284,6 +2284,34 @@
       }));
     }
 
+    function normalizeWorkerPayload(raw = {}, { fallbackPassage = "" } = {}) {
+      const safe = raw && typeof raw === "object" ? raw : {};
+      const legacyQuestions = Array.isArray(safe?.questions) ? safe.questions : [];
+      const explicitPracticeQuestions = Array.isArray(safe?.practice?.questions) ? safe.practice.questions : null;
+      const practiceQuestions = explicitPracticeQuestions ?? legacyQuestions;
+      const crossQuestions = Array.isArray(safe?.cross?.questions) ? safe.cross.questions : [];
+
+      return {
+        ...safe,
+        passage: String(safe?.passage || fallbackPassage || ""),
+        practice: {
+          questions: ensureQuestionIds(practiceQuestions, "practice")
+        },
+        cross: {
+          passage: String(safe?.cross?.passage || ""),
+          questions: ensureQuestionIds(crossQuestions, "cross")
+        },
+        tutor: {
+          practice: Array.isArray(safe?.tutor?.practice) ? safe.tutor.practice : [],
+          cross: Array.isArray(safe?.tutor?.cross) ? safe.tutor.cross : []
+        },
+        answerKey: {
+          practice: Array.isArray(safe?.answerKey?.practice) ? safe.answerKey.practice : [],
+          cross: Array.isArray(safe?.answerKey?.cross) ? safe.answerKey.cross : []
+        }
+      };
+    }
+
     function alignById(questions, tutorArr, answerArr, type = "practice") {
       const modePrefix = type === "cross" ? "cross" : "practice";
       const normalizedQuestions = ensureQuestionIds(questions, modePrefix);
@@ -2738,15 +2766,7 @@
 
         const requestId = Date.now();
         currentRequestId = requestId;
-        currentData = {
-          ...data,
-          practice: {
-            questions: ensureQuestionIds(data?.practice?.questions || [], "practice")
-          },
-          cross: data?.cross || { passage: "", questions: [] },
-          tutor: data?.tutor || { practice: [], cross: [] },
-          answerKey: data?.answerKey || { practice: [], cross: [] }
-        };
+        currentData = normalizeWorkerPayload(data);
         hasRenderedThisRun = false;
         renderPracticeSection(currentData.practice, currentData.passage);
         const toggle = document.getElementById("view-toggle");
@@ -2764,9 +2784,10 @@
           });
           if (currentRequestId !== requestId) return;
 
+          const normalizedCross = normalizeWorkerPayload({ cross }, { fallbackPassage: currentData?.passage || "" });
           currentData.cross = {
-            passage: String(cross?.passage || ""),
-            questions: ensureQuestionIds(Array.isArray(cross?.questions) ? cross.questions : [], "cross")
+            passage: normalizedCross.cross.passage,
+            questions: normalizedCross.cross.questions
           };
           renderTab(currentMode || "practice");
 
@@ -2783,8 +2804,12 @@
           });
           if (currentRequestId !== requestId) return;
 
-          currentData.tutor = support.tutor;
-          currentData.answerKey = support.answerKey;
+          const normalizedSupport = normalizeWorkerPayload({
+            tutor: support?.tutor,
+            answerKey: support?.answerKey
+          });
+          currentData.tutor = normalizedSupport.tutor;
+          currentData.answerKey = normalizedSupport.answerKey;
           renderTab(currentMode || "practice");
         } catch (pipelineErr) {
           console.warn("⚠️ Cross/support pipeline partial failure:", pipelineErr);

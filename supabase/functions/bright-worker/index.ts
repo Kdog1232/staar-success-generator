@@ -3845,6 +3845,14 @@ function validateAndRewriteChoiceStarts(questions: Question[]): Question[] {
 }
 
 function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubject = "Reading"): WorkerAttempt {
+  const legacy = data as WorkerAttempt & { questions?: Question[] };
+  if (Array.isArray(legacy.questions)) {
+    if (!Array.isArray(data.practice?.questions) || data.practice.questions.length === 0) {
+      data.practice = { questions: legacy.questions };
+    }
+    delete legacy.questions;
+  }
+
   const practicePassage = data.passage || "";
   const crossPassage = data.cross?.passage || "";
 
