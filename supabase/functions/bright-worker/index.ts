@@ -1250,6 +1250,9 @@ Requirements:
 
 Question design rules:
 - Generate exactly 5 multiple-choice questions.
+- The "questions" array MUST contain exactly 5 items.
+- NEVER return an empty questions array.
+- If you cannot generate questions, you MUST still return 5.
 - Every question must assess a READING skill (ELAR), not simple content recall.
 - Include a mix of:
   - inference
@@ -4846,8 +4849,17 @@ serve(async (req) => {
             level,
             teksCode,
           }) + `\nVariation ID: ${variationId}`,
-          2,
-          () => true,
+          1,
+          (data) => {
+            const root = data && typeof data === "object"
+              ? data as Record<string, unknown>
+              : null;
+            const crossNode = root?.cross && typeof root.cross === "object"
+              ? root.cross as Record<string, unknown>
+              : null;
+            const q = crossNode?.questions ?? root?.questions;
+            return Array.isArray(q) && q.length >= 3;
+          },
         ) as Record<string, unknown> | null;
         console.log("🧠 RAW AI RESPONSE:", JSON.stringify(crossRes, null, 2));
         console.timeEnd("OPENAI_CALL");
