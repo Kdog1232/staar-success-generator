@@ -4023,6 +4023,24 @@ function ensureNonEmptyQuestions(
   return buildUniversalFallbackQuestions(subject, skill);
 }
 
+function rebuildCrossFromPractice(
+  practiceQuestions: Question[] | undefined,
+  subject: CanonicalSubject,
+  skill: string,
+): Question[] {
+  const normalizedPractice = Array.isArray(practiceQuestions) ? practiceQuestions : [];
+  if (normalizedPractice.length > 0) {
+    return normalizedPractice.slice(0, 3).map((question, index) => ({
+      ...question,
+      question_id: ensureQuestionId(question, index, "cross"),
+    }));
+  }
+  return buildUniversalFallbackQuestions(subject, skill).slice(0, 3).map((question, index) => ({
+    ...question,
+    question_id: ensureQuestionId(question, index, "cross"),
+  }));
+}
+
 function ensureNonEmptySupport(
   questions: Question[],
   tutor: TutorExplanation[] | undefined,
@@ -4243,7 +4261,10 @@ serve(async (req) => {
       let cross = data?.cross as Partial<EnrichmentResponse["cross"]> | undefined;
       if (!cross || !Array.isArray(cross.questions) || cross.questions.length === 0) {
         console.error("❌ CROSS GENERATION FAILED — AI RETURNED EMPTY");
-        cross = { passage: "", questions: [] };
+        cross = {
+          passage: String(cross?.passage || (data as Partial<WorkerAttempt>)?.passage || ""),
+          questions: rebuildCrossFromPractice(practiceQuestions, subject, skill),
+        };
       }
       const sanitizedPracticeQuestions = sanitizeExplanations(
         sanitizeChoices(
@@ -4269,9 +4290,11 @@ serve(async (req) => {
         tutor: { practice: [], cross: [] },
         answerKey: { practice: [], cross: [] },
       }, subject);
-      finalized.cross.questions = ensureNonEmptyQuestions(finalized.cross.questions, subject, skill, "cross");
+      finalized.cross.questions = Array.isArray(finalized.cross.questions) && finalized.cross.questions.length > 0
+        ? finalized.cross.questions
+        : rebuildCrossFromPractice(sanitizedPracticeQuestions, subject, skill);
       if (!String(finalized.cross.passage || "").trim()) {
-        finalized.cross.passage = "";
+        finalized.cross.passage = String(cross?.passage || (data as Partial<WorkerAttempt>)?.passage || "");
       }
       const practiceSupport = ensureNonEmptySupport(
         ensureNonEmptyQuestions(sanitizedPracticeQuestions, subject, skill),
@@ -4304,7 +4327,7 @@ serve(async (req) => {
         skill,
         grade,
         practice: {
-          questions: ensureNonEmptyQuestions([], subject, skill),
+          questions: ensureNonEmptyQuestions(sanitizedPracticeQuestions, subject, skill),
         },
         cross: finalized.cross,
         tutor: finalized.tutor,
@@ -4869,6 +4892,7 @@ serve(async (req) => {
             return Array.isArray(q) && q.length >= 3;
           },
         ) as Record<string, unknown> | null;
+        console.log("🔥 RAW CROSS RESPONSE:", JSON.stringify(crossRes, null, 2));
         console.log("🧠 RAW AI RESPONSE:", JSON.stringify(crossRes, null, 2));
         console.timeEnd("OPENAI_CALL");
         console.log("⏱️ AI Duration:", Date.now() - enrichStartTime);
@@ -4971,7 +4995,9 @@ serve(async (req) => {
           passage: subjectCrossPassage,
           questions: crossQuestions,
         });
-        crossQuestions = ensureNonEmptyQuestions(crossQuestions, effectiveSubject, effectiveSkill, "cross");
+        crossQuestions = Array.isArray(crossQuestions) && crossQuestions.length > 0
+          ? crossQuestions
+          : rebuildCrossFromPractice(safePracticeQuestions, effectiveSubject, effectiveSkill);
         if (!crossValid) {
           console.warn("Validation issue — keeping question");
         }
@@ -5131,6 +5157,13 @@ serve(async (req) => {
         if (isTimedOut()) {
           returnType = "TIMEOUT_FALLBACK";
           const fallbackQuestions = buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill);
+          const fallbackCrossQuestions = rebuildCrossFromPractice(
+            fallbackQuestions,
+            effectiveSubject,
+            effectiveSkill,
+          );
+          const fallbackCrossPassage =
+            "Students compared evidence from two short scenarios and selected the conclusion best supported by both.";
           logReturnMetrics();
           return jsonResponse({
             teks: teksCode,
@@ -5138,14 +5171,14 @@ serve(async (req) => {
             grade,
             passage: "Students evaluated evidence, compared outcomes, and selected the most supported conclusion.",
             practice: { questions: fallbackQuestions },
-            cross: { passage: "", questions: [] },
+            cross: { passage: fallbackCrossPassage, questions: fallbackCrossQuestions },
             tutor: {
               practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").tutor,
-              cross: [],
+              cross: ensureNonEmptySupport(fallbackCrossQuestions, [], [], "cross").tutor,
             },
             answerKey: {
               practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").answerKey,
-              cross: [],
+              cross: ensureNonEmptySupport(fallbackCrossQuestions, [], [], "cross").answerKey,
             },
           });
         }
@@ -5161,40 +5194,54 @@ serve(async (req) => {
     returnType = "FALLBACK_RESULT";
     logReturnMetrics();
     const fallbackQuestions = buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill);
+    const fallbackCrossQuestions = rebuildCrossFromPractice(
+      fallbackQuestions,
+      effectiveSubject,
+      effectiveSkill,
+    );
+    const fallbackCrossPassage =
+      "Students compared evidence from two short scenarios and selected the conclusion best supported by both.";
     return jsonResponse({
       teks: teksCode,
       skill,
       grade,
       passage: "Students evaluated evidence, compared outcomes, and selected the most supported conclusion.",
       practice: { questions: fallbackQuestions },
-      cross: { passage: "", questions: [] },
+      cross: { passage: fallbackCrossPassage, questions: fallbackCrossQuestions },
       tutor: {
         practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").tutor,
-        cross: [],
+        cross: ensureNonEmptySupport(fallbackCrossQuestions, [], [], "cross").tutor,
       },
       answerKey: {
         practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").answerKey,
-        cross: [],
+        cross: ensureNonEmptySupport(fallbackCrossQuestions, [], [], "cross").answerKey,
       },
       fallbackReason: retryFailureReason,
     });
   } catch (err) {
     console.error("🔥 EDGE FUNCTION ERROR:", err);
     const fallbackQuestions = buildUniversalFallbackQuestions(effectiveSubject, effectiveSkill);
+    const fallbackCrossQuestions = rebuildCrossFromPractice(
+      fallbackQuestions,
+      effectiveSubject,
+      effectiveSkill,
+    );
+    const fallbackCrossPassage =
+      "Students compared evidence from two short scenarios and selected the conclusion best supported by both.";
     return jsonResponse({
       teks: teksCode,
       skill,
       grade,
       passage: "Students evaluated evidence, compared outcomes, and selected the most supported conclusion.",
       practice: { questions: fallbackQuestions },
-      cross: { passage: "", questions: [] },
+      cross: { passage: fallbackCrossPassage, questions: fallbackCrossQuestions },
       tutor: {
         practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").tutor,
-        cross: [],
+        cross: ensureNonEmptySupport(fallbackCrossQuestions, [], [], "cross").tutor,
       },
       answerKey: {
         practice: ensureNonEmptySupport(fallbackQuestions, [], [], "practice").answerKey,
-        cross: [],
+        cross: ensureNonEmptySupport(fallbackCrossQuestions, [], [], "cross").answerKey,
       },
       fallbackReason: "unexpected_error",
     }, 200);
