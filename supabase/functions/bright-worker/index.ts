@@ -2386,7 +2386,53 @@ function fixDistractors(
   return [];
 }
 
-function sanitizeQuestions(
+async function repairChoicesBatchWithAI(params: {
+  passage: PassageContent | string;
+  subject: CanonicalSubject;
+  skill: string;
+  items: Array<{ index: number; question: string; choices: unknown }>;
+}): Promise<Record<number, [string, string, string, string]>> {
+  const { passage, subject, skill, items } = params;
+  if (!items.length) return {};
+  const prompt = `
+You are repairing STAAR-style multiple choice answers.
+
+Subject: ${subject}
+Skill: ${skill}
+Passage:
+${getPassageText(passage)}
+
+Broken questions (JSON):
+${JSON.stringify(items.map((item) => ({
+    index: item.index,
+    question: String(item.question || "").trim(),
+    choices: Array.isArray(item.choices) ? item.choices : [],
+  })))}
+
+For EACH item above, return EXACTLY 4 repaired answer choices.
+Rules:
+- Keep alignment to the specific question and passage.
+- No placeholders or generic options.
+- Keep tone/length comparable across choices.
+- Return ONLY JSON object where each key is the item index and value is an array of 4 strings.
+`.trim();
+
+  const repaired = await callOpenAI(prompt, 15000) as unknown;
+  if (!repaired || typeof repaired !== "object" || Array.isArray(repaired)) return {};
+
+  const out: Record<number, [string, string, string, string]> = {};
+  for (const [key, value] of Object.entries(repaired as Record<string, unknown>)) {
+    const index = Number(key);
+    if (!Number.isInteger(index)) continue;
+    if (!Array.isArray(value) || value.length !== 4) continue;
+    const cleaned = value.map((choice) => String(choice || "").trim());
+    if (cleaned.some((choice) => !choice)) continue;
+    out[index] = cleaned as [string, string, string, string];
+  }
+  return out;
+}
+
+async function sanitizeQuestions(
   raw: unknown,
   subject: CanonicalSubject,
   mode: CanonicalMode,
@@ -2394,30 +2440,70 @@ function sanitizeQuestions(
   level: Level = "On Level",
   passage: PassageContent | string = "",
   grade = 5,
-): Question[] {
-  const buildSafeMC = (questionText = "", explanationText = ""): Question => ({
-    type: "mc",
-    question: String(questionText || "").trim() || "Placeholder",
-    choices: ["Option A", "Option B", "Option C", "Option D"],
-    correct_answer: "A",
-    explanation: String(explanationText || "").trim(),
-  });
+  repairState: { used: boolean } | null = null,
+): Promise<Question[]> {
   const incoming = Array.isArray(raw) ? raw.slice(0, 5) : [];
+  const originalQuestions = incoming
+    .map((item) => (item && typeof item === "object" ? withSafeQuestionDefaults(item as Partial<Question>) : null))
+    .filter((item): item is Question => Boolean(item));
   void grade;
   const requestedSkillType = getSkillType(skill);
-  const sanitized: Question[] = incoming.map((item, i) => {
+  const needsRepair = (choices: unknown): boolean => {
+    if (!Array.isArray(choices)) return true;
+    if (choices.length !== 4) return true;
+    return choices.some((c) => !c || !String(c).trim());
+  };
+  const brokenItems = incoming
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => {
+      const q = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      return needsRepair(q.choices);
+    })
+    .map(({ item, index }) => {
+      const q = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      return { index, question: String(q.question || ""), choices: q.choices };
+    });
+  let repairedChoicesByIndex: Record<number, [string, string, string, string]> = {};
+  if (repairState && !repairState.used && brokenItems.length > 0) {
+    repairState.used = true;
+    const repaired = await Promise.race([
+      repairChoicesBatchWithAI({
+        passage,
+        subject,
+        skill,
+        items: brokenItems,
+      }),
+      new Promise<Record<number, [string, string, string, string]> | null>((resolve) => setTimeout(() => resolve(null), 1500)),
+    ]);
+    if (!repaired) {
+      console.warn("⚠️ Repair timeout — using original");
+    } else {
+      repairedChoicesByIndex = repaired;
+    }
+  }
+
+  const sanitized: Question[] = [];
+  for (let i = 0; i < incoming.length; i += 1) {
+    const item = incoming[i];
     const q = item && typeof item === "object" ? item as Record<string, unknown> : {};
-    if (
-      !q.choices ||
-      !Array.isArray(q.choices) ||
-      q.choices.length !== 4 ||
-      q.choices.every((choice) => !String(choice || "").trim())
-    ) {
-      console.warn("⚠️ INVALID_CHOICES_LENGTH in sanitizeQuestions", {
+    let patchedChoices: [string, string, string, string];
+    if (!needsRepair(q.choices)) {
+      patchedChoices = (q.choices as unknown[]).map((c) => String(c || "").trim()) as [string, string, string, string];
+    } else if (repairedChoicesByIndex[i]) {
+      patchedChoices = repairedChoicesByIndex[i];
+      console.warn("⚠️ Using AI to repair choices");
+    } else {
+      patchedChoices = Array.isArray(q.choices)
+        ? q.choices.map((c) => String(c || "").trim()).slice(0, 4) as [string, string, string, string]
+        : ["", "", "", ""];
+    }
+
+    if (!Array.isArray(q.choices) || q.choices.length !== 4 || q.choices.every((choice) => !String(choice || "").trim())) {
+      console.warn("⚠️ Patching question instead of rejecting", {
+        reason: "INVALID_CHOICES_LENGTH",
         question: String(q.question || "").slice(0, 80),
         length: Array.isArray(q.choices) ? q.choices.length : null,
       });
-      return buildSafeMC(String(q.question || ""), String(q.explanation || ""));
     }
     const expectedType = (q.type === "multi_select" || q.type === "scr")
       ? q.type
@@ -2432,11 +2518,17 @@ function sanitizeQuestions(
     const cleanForSubject = (choice: string): string => subject === "Math"
       ? (sanitizeMathChoice(choice) || "0")
       : cleanAnswerChoice(choice);
-    let normalizedChoices = normalizeChoices(q.choices).map(cleanForSubject) as [string, string, string, string];
+    let normalizedChoices = normalizeChoices(patchedChoices).map(cleanForSubject) as [string, string, string, string];
     const normalizedCorrectAnswer = type === "multi_select"
       ? normalizeMultiSelectAnswer(q.correct_answer || "")
       : safeCorrectAnswer(q.correct_answer);
-    const correctChoiceIndex = type === "mc" ? LETTERS.indexOf(normalizedCorrectAnswer as AnswerLetter) : -1;
+    const safeAnswer = type === "multi_select"
+      ? (Array.isArray(normalizedCorrectAnswer) && normalizedCorrectAnswer.length > 0 ? normalizedCorrectAnswer : "A")
+      : safeCorrectAnswer(normalizedCorrectAnswer);
+    if (type !== "multi_select" && !parseAnswerLetter(q.correct_answer)) {
+      console.warn("⚠️ Patching question instead of rejecting", { reason: "INVALID_CORRECT_ANSWER" });
+    }
+    const correctChoiceIndex = type === "mc" ? LETTERS.indexOf(safeAnswer as AnswerLetter) : -1;
     void correctChoiceIndex;
 
     const isReadingMainIdea = subject === "Reading" && isMainIdeaSkill(skill);
@@ -2474,7 +2566,7 @@ function sanitizeQuestions(
       type,
       question: normalizedQuestionText,
       choices: normalizedChoices,
-      correct_answer: normalizedCorrectAnswer,
+      correct_answer: safeAnswer,
       explanation: String(q.explanation || "").trim(),
       paired_with: typeof q.paired_with === "number" ? q.paired_with : undefined,
       sample_answer: String(q.sample_answer || "").trim(),
@@ -2485,11 +2577,10 @@ function sanitizeQuestions(
       parent_tip: String(q.parent_tip || "").trim(),
       visual: sanitizeVisual(q.visual),
     };
-    return base;
-  });
+    sanitized.push(base);
+  }
 
   let questions = sanitized.slice(0, 5);
-  const originalQuestions = questions.slice();
 
   const passageText = getPassageText(passage);
   questions = questions.map((q) => repairQuestion(q, subject, passageText));
@@ -2544,6 +2635,10 @@ function sanitizeQuestions(
     step_by_step: String(q.step_by_step || "").trim(),
     parent_tip: String(q.parent_tip || "").trim(),
   }));
+  if (finalQuestions.length === 0) {
+    console.warn("⚠️ Restoring original AI questions");
+    return originalQuestions;
+  }
   console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", finalQuestions.length);
   const alignedSet = finalQuestions;
   if (!isPassageBased(mode, subject)) {
@@ -2578,10 +2673,15 @@ function sanitizeQuestions(
           || "The correct answer is best supported by details in the passage.",
       };
     });
-    return enforceCrossReadingOnly(validatedCross, passageText);
+    const crossOutput = enforceCrossReadingOnly(validatedCross, passageText);
+    return crossOutput.length ? crossOutput : originalQuestions;
   }
 
-  return alignedSet.slice(0, 5);
+  if (questions.length === 0) {
+    return originalQuestions;
+  }
+  const practiceOutput = alignedSet.slice(0, 5);
+  return practiceOutput.length ? practiceOutput : originalQuestions;
 }
 
 const CROSS_READING_ANGLE_STEMS = [
@@ -3801,6 +3901,7 @@ serve(async (req) => {
   let effectiveSkill = READING_SKILL_DEFAULT;
   let teksCode = "Unknown";
   let contextType = "real-world application";
+  const repairState = { used: false };
 
   const jsonResponse = (payload: Record<string, unknown>, status = 200) =>
     new Response(JSON.stringify({ ...payload, source: "ai" }), {
@@ -3843,7 +3944,7 @@ serve(async (req) => {
       level,
     );
     const gradeSafeCrossPassage = enforceSentenceLength(crossPassage, constraints.maxWordsPerSentence);
-    const crossQuestions = sanitizeQuestions(
+    const crossQuestions = await sanitizeQuestions(
       baseCross.questions || [],
       subject,
       "Cross-Curricular",
@@ -3851,6 +3952,7 @@ serve(async (req) => {
       level,
       gradeSafeCrossPassage,
       grade,
+      repairState,
     );
     const crossPipeline = await runPipeline({
       stems: practiceQuestions,
@@ -3863,7 +3965,7 @@ serve(async (req) => {
     });
     return {
       passage: gradeSafeCrossPassage,
-      questions: sanitizeQuestions(
+      questions: await sanitizeQuestions(
         crossPipeline.questions,
         subject,
         "Cross-Curricular",
@@ -3871,6 +3973,7 @@ serve(async (req) => {
         level,
         gradeSafeCrossPassage,
         grade,
+        repairState,
       ),
     };
   };
@@ -4171,7 +4274,7 @@ serve(async (req) => {
         grade,
         cross: {
           passage: crossContent.passage,
-          questions: sanitizeQuestions(
+          questions: await sanitizeQuestions(
             result.questions,
             subject,
             "Cross-Curricular",
@@ -4179,6 +4282,7 @@ serve(async (req) => {
             level,
             crossContent.passage,
             grade,
+            repairState,
           ),
         },
       });
@@ -4196,7 +4300,7 @@ serve(async (req) => {
         : [];
       const crossPassage = String(bodyCross.passage || "");
 
-      const practiceQuestionSet = sanitizeQuestions(
+      const practiceQuestionSet = await sanitizeQuestions(
         practiceQuestions,
         subject,
         "Practice",
@@ -4204,8 +4308,9 @@ serve(async (req) => {
         level,
         getPassageText(String(body.passage || "")),
         grade,
+        repairState,
       );
-      const crossQuestionSet = sanitizeQuestions(
+      const crossQuestionSet = await sanitizeQuestions(
         crossQuestions,
         subject,
         "Cross-Curricular",
@@ -4213,6 +4318,7 @@ serve(async (req) => {
         level,
         crossPassage,
         grade,
+        repairState,
       );
       const supportFinalized = enforceSingleSourceOfTruth({
         passage: getPassageText(String(body.passage || "")),
@@ -4308,7 +4414,7 @@ serve(async (req) => {
             }
 
             const coreRawQuestions = questionRes?.questions || questionRes?.items || [];
-            let coreQuestions = sanitizeQuestions(
+            let coreQuestions = await sanitizeQuestions(
               coreRawQuestions,
               effectiveSubject,
               "Practice",
@@ -4316,6 +4422,7 @@ serve(async (req) => {
               level,
               String(passageRes?.passage || ""),
               grade,
+              repairState,
             );
             coreQuestions = sanitizeChoices(coreQuestions);
             coreQuestions = coreQuestions.map((q) => {
@@ -4350,7 +4457,7 @@ serve(async (req) => {
               ) as Record<string, unknown> | null;
 
               const extraRaw = extraRes?.questions || extraRes?.items || [];
-              let extraQuestions = sanitizeQuestions(
+              let extraQuestions = await sanitizeQuestions(
                 extraRaw,
                 effectiveSubject,
                 "Practice",
@@ -4358,6 +4465,7 @@ serve(async (req) => {
                 level,
                 String(passageRes?.passage || ""),
                 grade,
+                repairState,
               );
               extraQuestions = sanitizeChoices(extraQuestions);
               extraQuestions = extraQuestions.map((q) => improveQuestion(q, String(passageRes?.passage || "")));
@@ -4397,7 +4505,7 @@ serve(async (req) => {
           ? String(body.passage || "").trim()
           : "";
         const corePassageForChecks = corePassageFromRequest;
-        const normalizedPractice = sanitizeQuestions(
+        const normalizedPractice = await sanitizeQuestions(
           priorPractice,
           effectiveSubject,
           "Practice",
@@ -4405,6 +4513,7 @@ serve(async (req) => {
           level,
           corePassageForChecks,
           grade,
+          repairState,
         );
         const safePracticeQuestions = ensureNonEmptyQuestions(normalizedPractice, effectiveSubject, effectiveSkill);
         console.log("🧠 CROSS SUBJECT:", effectiveSubject);
@@ -4426,7 +4535,7 @@ serve(async (req) => {
             level,
           );
           const gradeSafeCrossPassage = enforceSentenceLength(crossPassage, constraints.maxWordsPerSentence);
-          const crossQuestions = sanitizeQuestions(
+          const crossQuestions = await sanitizeQuestions(
             crossContent.questions || [],
             effectiveSubject,
             "Cross-Curricular",
@@ -4434,6 +4543,7 @@ serve(async (req) => {
             level,
             gradeSafeCrossPassage,
             grade,
+            repairState,
           );
           const result = await runPipeline({
             stems: crossQuestions,
@@ -4442,7 +4552,7 @@ serve(async (req) => {
             crossPassage: gradeSafeCrossPassage,
             questions: crossQuestions,
           });
-          const pipelineCrossQuestions = sanitizeQuestions(
+          const pipelineCrossQuestions = await sanitizeQuestions(
             result.questions,
             effectiveSubject,
             "Cross-Curricular",
@@ -4450,6 +4560,7 @@ serve(async (req) => {
             level,
             gradeSafeCrossPassage,
             grade,
+            repairState,
           );
           const safePipelineCrossQuestions = ensureNonEmptyQuestions(
             pipelineCrossQuestions,
@@ -4479,7 +4590,7 @@ serve(async (req) => {
           const priorCrossPassage = typeof body.crossPassage === "string"
             ? String(body.crossPassage || "").trim()
             : "";
-          const sanitizedCrossQuestions = sanitizeQuestions(
+          const sanitizedCrossQuestions = await sanitizeQuestions(
             priorCrossQuestions,
             effectiveSubject,
             "Cross-Curricular",
@@ -4487,6 +4598,7 @@ serve(async (req) => {
             level,
             priorCrossPassage,
             grade,
+            repairState,
           );
           const tutorPractice = sanitizeTutorExplanations(
             [],
@@ -4620,7 +4732,7 @@ serve(async (req) => {
           console.warn("⚠️ Passage too advanced for grade, keeping AI output");
         }
 
-        let crossQuestions = sanitizeQuestions(
+        let crossQuestions = await sanitizeQuestions(
           parsedCross.questions || [],
           effectiveSubject,
           "Cross-Curricular",
@@ -4628,6 +4740,7 @@ serve(async (req) => {
           level,
           subjectCrossPassage,
           grade,
+          repairState,
         );
         const crossValid = isValidAIOutput({
           passage: subjectCrossPassage,
