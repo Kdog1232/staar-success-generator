@@ -4554,49 +4554,6 @@ serve(async (req) => {
         : [];
       const crossPassage = String(bodyCross.passage || "");
 
-      const seededPracticeQuestions = practiceQuestions.length > 0
-        ? practiceQuestions
-        : buildUniversalFallbackQuestions(subject, effectiveSkill);
-      const seededCrossPassage = crossPassage.trim() || buildSubjectPassage(subject, level);
-      const seededCrossQuestions = crossQuestions.length > 0
-        ? crossQuestions
-        : rebuildCrossFromPractice(seededPracticeQuestions, subject, effectiveSkill);
-
-      const practiceQuestionSet = await sanitizeQuestions(
-        seededPracticeQuestions,
-        subject,
-        "Practice",
-        effectiveSkill,
-        level,
-        getPassageText(String(body.passage || "")),
-        grade,
-        repairState,
-      );
-      const crossQuestionSet = await sanitizeQuestions(
-        seededCrossQuestions,
-        subject,
-        "Cross-Curricular",
-        effectiveSkill,
-        level,
-        seededCrossPassage,
-        grade,
-        repairState,
-      );
-      const supportFinalized = enforceSingleSourceOfTruth({
-        passage: getPassageText(String(body.passage || "")),
-        practice: { questions: practiceQuestionSet },
-        cross: { passage: seededCrossPassage, questions: crossQuestionSet },
-        tutor: { practice: [], cross: [] },
-        answerKey: { practice: [], cross: [] },
-      }, subject);
-
-      return jsonResponse({
-        teks: teksCode,
-        skill,
-        grade,
-        tutor: supportFinalized.tutor,
-        answerKey: supportFinalized.answerKey,
-      });
     }
     console.log("🔥 RAW MODE:", normalizedMode);
     console.log("🔥 EFFECTIVE MODE:", effectiveMode);
