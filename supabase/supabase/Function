@@ -63,196 +63,22 @@ serve(async (req) => {
       subject,
       level,
       skill,
-      standard = "Not provided",
-      tutorMode = false,
-      answerMode = false,
     } = await req.json();
 
-    const prompt = `
-You are an expert STAAR-aligned assessment writer and tutor.
-
-Your task is to generate content, questions, and (optionally) tutor explanations and answer key support.
-
---------------------------------------------------
-INPUTS
---------------------------------------------------
-
-Mode: ${mode}  // "practice" or "cross"
-Subject: ${subject}  // reading | math | science | social studies
-Grade: ${grade}
-Level: ${level}  // low | on | advanced
-Skill: ${skill}
-Standard: ${standard}
-
-Tutor Mode: ${tutorMode}  // true | false
-Answer Key Mode: ${answerMode}  // true | false
-
---------------------------------------------------
-CONTENT RULES
---------------------------------------------------
-
-IF mode = "cross":
-- Always create a passage (1–2 paragraphs)
-- Clear, complete sentences (no fragments)
-- Questions must be based on the passage
-
-IF mode = "practice":
-
-  IF subject = "reading":
-  - Create a passage (1–2 paragraphs)
-
-  IF subject = "math":
-  - Create STAAR-style word problems
-  - No passage
-
-  IF subject = "science":
-  - Create short scenario-based questions (not full passage)
-
-  IF subject = "social studies":
-  - Create short context-based questions (not full passage)
-
---------------------------------------------------
-DIFFICULTY & RIGOR
---------------------------------------------------
-
-LOW:
-- Simple, direct questions
-
-ON LEVEL:
-- Moderate reasoning and some inference
-
-ADVANCED:
-- Multi-step thinking and deeper reasoning
-
-Keep difficulty appropriate for the grade level.
-
---------------------------------------------------
-QUESTIONS
---------------------------------------------------
-
-Create 5 multiple-choice questions aligned to the skill.
-
-Each must include:
-- clear wording
-- answerable content
-
---------------------------------------------------
-ANSWER CHOICES
---------------------------------------------------
-
-Each question must include:
-- 4 choices (A–D)
-- ONE correct answer
-- THREE realistic incorrect answers
-
-Distractors:
-- reflect common student mistakes
-- vary in structure and wording
-
-Avoid:
-- repetitive phrasing
-- robotic language
-- generic stems like “The evidence shows…”
-
---------------------------------------------------
-TUTOR MODE (IF tutorMode = true)
---------------------------------------------------
-
-For EACH question, provide a step-by-step explanation like a real tutor.
-
-The explanation must:
-- break down the question clearly
-- guide the student through how to think
-- reference the passage/problem when needed
-- use simple, student-friendly language
-
-Guide the student step-by-step in a natural way, like a real tutor.
-
-You may break the explanation into steps, but do not force the same structure every time.
-
-Tone:
-- supportive
-- clear
-- instructional (not robotic)
-
---------------------------------------------------
-ANSWER KEY MODE (IF answerMode = true)
---------------------------------------------------
-
-For EACH question, provide:
-
-1. Correct Answer Letter
-2. Explanation (clear and concise)
-3. Common Misconception
-4. Parent Tip (in parentheses)
-
-Keep explanations clear and helpful, but vary wording naturally.
-
-Format:
-
-- explanation: Why the answer is correct
-- misconception: A likely mistake a student might make
-- parent_tip: (A simple, actionable way a parent can help)
-
-Example parent tip:
-(Encourage your child to reread the question and underline key words before choosing an answer.)
-
---------------------------------------------------
-OUTPUT FORMAT
---------------------------------------------------
-
-Return ONLY valid JSON:
-
-{
-  "passage": "...",  // include only if needed
-  "questions": [
-    {
-      "question": "...",
-      "choices": ["...", "...", "...", "..."],
-      "correct_answer": "A",
-      "tutor": "...",         // ONLY if tutorMode = true
-      "explanation": "...",   // ONLY if answerMode = true
-      "misconception": "...", // ONLY if answerMode = true
-      "parent_tip": "..."     // ONLY if answerMode = true
-    }
-  ]
-}
-
---------------------------------------------------
-IMPORTANT
---------------------------------------------------
-
-Write like a real teacher and tutor.
-
-Do NOT:
-- over-explain unnecessarily
-- use repetitive sentence patterns
-- sound robotic
-
-Focus on:
-- clarity
-- realism
-- helping students truly understand
-`;
-
-    const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY");
-
-    if (!OPENAI_KEY) {
-      return new Response(JSON.stringify({ error: "Missing OPENAI_API_KEY" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const aiRes = await fetch("https://api.openai.com/v1/responses", {
+    const brightWorkerMode = String(mode || "").toLowerCase() === "cross" ? "cross" : "core";
+    const aiRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/bright-worker`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${OPENAI_KEY}`,
         "Content-Type": "application/json",
+        Authorization: req.headers.get("Authorization") || "",
+        apikey: req.headers.get("apikey") || Deno.env.get("SUPABASE_ANON_KEY") || "",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
-        input: prompt,
+        mode: brightWorkerMode,
+        grade,
+        subject,
+        level,
+        skill,
       }),
     });
 
@@ -265,8 +91,6 @@ Focus on:
       });
     }
 
-    const text = data.output?.[0]?.content?.[0]?.text || "No response generated";
-
     await supabase
       .from("profiles")
       .update({
@@ -274,7 +98,7 @@ Focus on:
       })
       .eq("id", user.id);
 
-    return new Response(JSON.stringify({ text }), {
+    return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
