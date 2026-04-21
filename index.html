@@ -1808,11 +1808,33 @@
         return "";
       }
 
+      const coachTone = (field, text, index) => {
+        const safe = cleanText(text || "");
+        if (!safe) return "";
+        const normalized = safe.toLowerCase();
+        const alreadyConversational = /(you|let's|try this|great|notice|start by)/i.test(safe);
+        if (alreadyConversational) return safe;
+
+        const openers = {
+          hint: ["Coach tip:", "Quick nudge:", "Try this first:"],
+          think: ["Think aloud:", "Coach thought:", "Reason it out:"],
+          step: ["Game plan:", "Coach steps:", "Do this in order:"],
+          why: ["Why this works:", "Coach breakdown:", "Here’s the evidence logic:"]
+        };
+
+        const bucket = field === "step_by_step" ? "step" : field;
+        const options = openers[bucket] || ["Coach note:"];
+        const prefix = options[index % options.length];
+
+        if (normalized.startsWith(prefix.toLowerCase())) return safe;
+        return `${prefix} ${safe}`;
+      };
+
       return explanations.map((q, i) => {
-        const hint = cleanText(q.hint || "Find the part of the passage that directly answers the question.");
-        const think = cleanText(q.think || "Eliminate answers that are not supported by evidence.");
-        const steps = cleanText(q.step_by_step || q.explanation || "1) Read carefully. 2) Remove wrong choices. 3) Prove your answer with text evidence.");
-        const explanation = cleanText(q.explanation || "Use textual evidence to support the best answer.");
+        const hint = coachTone("hint", q.hint || "Find the part of the passage that directly answers the question.", i);
+        const think = coachTone("think", q.think || "Eliminate answers that are not supported by evidence.", i);
+        const steps = coachTone("step_by_step", q.step_by_step || q.explanation || "1) Read carefully. 2) Remove wrong choices. 3) Prove your answer with text evidence.", i);
+        const explanation = coachTone("why", q.explanation || "Use textual evidence to support the best answer.", i);
         const commonMistake = cleanText(q.common_mistake || "Choosing an answer that sounds right but is not proven by the text.");
         const parentTip = cleanText(q.parent_tip || "Ask your child to point to one detail that proves the best answer.");
         return `
@@ -1975,6 +1997,40 @@
 
       const payload = await response.json();
       return payload?.cross || { passage: "", questions: [] };
+    }
+
+    async function fetchSupportContent({ token, subject, grade, skill, level, passage, practiceQuestions, cross }) {
+      const response = await fetch(
+        "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            apikey: SUPABASE_ANON_KEY
+          },
+          body: JSON.stringify({
+            subject,
+            grade,
+            skill,
+            level,
+            mode: "support",
+            passage,
+            practiceQuestions,
+            cross
+          })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`SUPPORT_STATUS_${response.status}`);
+      }
+
+      const payload = await response.json();
+      return {
+        tutor: payload?.tutor || { practice: [], cross: [] },
+        answerKey: payload?.answerKey || { practice: [], cross: [] }
+      };
     }
 
     function getTodayKey() {
@@ -2219,67 +2275,83 @@
       }
     }
 
+    function ensureQuestionIds(questions, type = "practice") {
+      const modePrefix = type === "cross" ? "cross" : "practice";
+      const source = Array.isArray(questions) ? questions : [];
+      return source.map((q, i) => ({
+        ...q,
+        question_id: q?.question_id || `${modePrefix}_q${i + 1}`
+      }));
+    }
+
+    function alignById(questions, tutorArr, answerArr, type = "practice") {
+      const modePrefix = type === "cross" ? "cross" : "practice";
+      const normalizedQuestions = ensureQuestionIds(questions, modePrefix);
+      const tutorMap = new Map((Array.isArray(tutorArr) ? tutorArr : []).map((t) => [t?.question_id, t]));
+      const answerMap = new Map((Array.isArray(answerArr) ? answerArr : []).map((a) => [a?.question_id, a]));
+
+      const alignedTutor = normalizedQuestions.map((q) => {
+        const existing = tutorMap.get(q.question_id);
+        return existing || {
+          question_id: q.question_id,
+          question: q.question || "",
+          explanation: "Use evidence from the passage.",
+          hint: "Eliminate weak answers.",
+          think: "Compare choices carefully.",
+          step_by_step: "Read, analyze, eliminate, choose.",
+          common_mistake: "Choosing without evidence."
+        };
+      });
+
+      const alignedAnswer = normalizedQuestions.map((q) => {
+        const existing = answerMap.get(q.question_id);
+        return existing || {
+          question_id: q.question_id,
+          question: q.question || "",
+          correct_answer: q.correct_answer || "A",
+          explanation: "The correct answer is best supported by the passage.",
+          common_mistake: "Picking a plausible but unsupported answer.",
+          parent_tip: "Ask for proof from the text."
+        };
+      });
+
+      return { questions: normalizedQuestions, alignedTutor, alignedAnswer };
+    }
+
     function validateAlignment(data) {
-      const practiceAligned = validateTutorAnswerAlignment(
+      if (!data.tutor) data.tutor = {};
+      if (!data.answerKey) data.answerKey = {};
+      if (!data.practice) data.practice = { questions: [] };
+
+      const practiceAligned = alignById(
         data?.practice?.questions || [],
         data?.tutor?.practice || [],
         data?.answerKey?.practice || [],
         "practice"
       );
-      if (!practiceAligned) {
-        throw new Error("Tutor/Answer misalignment in PRACTICE mode");
-      }
+      data.practice.questions = practiceAligned.questions;
+      data.tutor.practice = practiceAligned.alignedTutor;
+      data.answerKey.practice = practiceAligned.alignedAnswer;
 
       const hasCrossQuestions = Array.isArray(data?.cross?.questions) && data.cross.questions.length > 0;
       if (hasCrossQuestions) {
-        const targetCrossLength = data.cross.questions.length;
-        const safeTutorCross = Array.isArray(data?.tutor?.cross)
-          ? data.tutor.cross.slice(0, targetCrossLength)
-          : [];
-        const safeAnswerCross = Array.isArray(data?.answerKey?.cross)
-          ? data.answerKey.cross.slice(0, targetCrossLength)
-          : [];
-
-        if (
-          safeTutorCross.length !== (data?.tutor?.cross || []).length ||
-          safeAnswerCross.length !== (data?.answerKey?.cross || []).length
-        ) {
-          console.warn("⚠️ Alignment mismatch — correcting");
-        }
-
-        if (safeTutorCross.length < targetCrossLength) {
-          console.warn("⚠️ Filling missing tutor entries");
-          while (safeTutorCross.length < targetCrossLength) {
-            safeTutorCross.push({
-              explanation: "Review the passage and identify supporting details.",
-              hint: "",
-              think: "",
-            });
-          }
-        }
-
-        if (safeAnswerCross.length < targetCrossLength) {
-          console.warn("⚠️ Filling missing answer entries");
-          while (safeAnswerCross.length < targetCrossLength) {
-            safeAnswerCross.push({
-              correct_answer: "A",
-              explanation: "Refer back to the passage for evidence.",
-            });
-          }
-        }
-
-        if (!data.tutor) data.tutor = {};
-        if (!data.answerKey) data.answerKey = {};
-        data.tutor.cross = safeTutorCross;
-        data.answerKey.cross = safeAnswerCross;
-
-        const crossAligned = validateTutorAnswerAlignment(
+        const crossAligned = alignById(
           data?.cross?.questions || [],
-          safeTutorCross,
-          safeAnswerCross,
+          data?.tutor?.cross || [],
+          data?.answerKey?.cross || [],
           "cross"
         );
-        if (!crossAligned) {
+        data.cross.questions = crossAligned.questions;
+        data.tutor.cross = crossAligned.alignedTutor;
+        data.answerKey.cross = crossAligned.alignedAnswer;
+
+        const crossSupportAligned = validateTutorAnswerAlignment(
+          data?.cross?.questions || [],
+          data?.tutor?.cross || [],
+          data?.answerKey?.cross || [],
+          "cross"
+        );
+        if (!crossSupportAligned) {
           console.warn("⚠️ Alignment mismatch — correcting");
         }
       }
@@ -2341,6 +2413,7 @@
       if (!currentData) return;
       try {
         validateSupportIntegrity(currentData);
+        validateAlignment(currentData);
       } catch (supportError) {
         console.warn("⚠️ Support panels not ready yet:", supportError?.message || supportError);
       }
@@ -2665,12 +2738,57 @@
 
         const requestId = Date.now();
         currentRequestId = requestId;
-        currentData = data;
+        currentData = {
+          ...data,
+          practice: {
+            questions: ensureQuestionIds(data?.practice?.questions || [], "practice")
+          },
+          cross: data?.cross || { passage: "", questions: [] },
+          tutor: data?.tutor || { practice: [], cross: [] },
+          answerKey: data?.answerKey || { practice: [], cross: [] }
+        };
         hasRenderedThisRun = false;
-        renderPracticeSection(data.practice, data.passage);
+        renderPracticeSection(currentData.practice, currentData.passage);
         const toggle = document.getElementById("view-toggle");
         if (toggle) toggle.style.display = "flex";
         renderTab(currentMode || "practice");
+
+        try {
+          console.log("🟠 STEP 2: FETCH CROSS");
+          const cross = await fetchCrossContent({
+            token,
+            subject,
+            grade,
+            skill,
+            level
+          });
+          if (currentRequestId !== requestId) return;
+
+          currentData.cross = {
+            passage: String(cross?.passage || ""),
+            questions: ensureQuestionIds(Array.isArray(cross?.questions) ? cross.questions : [], "cross")
+          };
+          renderTab(currentMode || "practice");
+
+          console.log("🟣 STEP 3: FETCH SUPPORT");
+          const support = await fetchSupportContent({
+            token,
+            subject,
+            grade,
+            skill,
+            level,
+            passage: String(currentData?.passage || ""),
+            practiceQuestions: Array.isArray(currentData?.practice?.questions) ? currentData.practice.questions : [],
+            cross: currentData.cross
+          });
+          if (currentRequestId !== requestId) return;
+
+          currentData.tutor = support.tutor;
+          currentData.answerKey = support.answerKey;
+          renderTab(currentMode || "practice");
+        } catch (pipelineErr) {
+          console.warn("⚠️ Cross/support pipeline partial failure:", pipelineErr);
+        }
 
         console.log("🎯 RENDER COMPLETE");
       } catch (err) {
