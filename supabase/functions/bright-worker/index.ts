@@ -1239,7 +1239,7 @@ Inputs:
 - TEKS: ${teksCode}
 
 Requirements:
-- Passage must be STRICTLY 150-200 words.
+- Passage should be 150–200 words. Do not exceed 220 words.
 - Passage topic must be: ${topicRule}.
 - Passage must include at least TWO of the following:
   - cause/effect
@@ -1251,13 +1251,13 @@ Requirements:
 Question design rules:
 - Generate exactly 5 multiple-choice questions.
 - Every question must assess a READING skill (ELAR), not simple content recall.
-- Each set must include exactly one of each:
-  1) inference
-  2) main idea / central idea
-  3) author's purpose
-  4) evidence-based
-  5) vocabulary in context OR text structure
-- No duplicate question types.
+- Include a mix of:
+  - inference
+  - main idea / central idea
+  - author's purpose
+  - evidence-based
+  - vocabulary in context OR text structure
+- Do not repeat the same type more than twice.
 - Every question must require both:
   - understanding passage content
   - applying a reading skill
