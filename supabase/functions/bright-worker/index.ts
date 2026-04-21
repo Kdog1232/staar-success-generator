@@ -552,19 +552,20 @@ function selectEvidenceSnippet(
   return null;
 }
 
-function buildSubjectCrossContent(subject: string, level: string) {
-  const normalizedSubject = canonicalizeSubject(subject);
-  const normalizedLevel = normalizeLevel(level);
-  const passage = buildSubjectPassage(normalizedSubject, normalizedLevel);
-  const skill = SUBJECT_SKILLS[normalizedSubject]?.[0]?.skill || READING_SKILL_DEFAULT;
-  const questions = buildUniversalFallbackQuestions(normalizedSubject, skill).slice(0, 3);
-  return { passage, questions };
-}
-
-function buildELARFallback(level: string) {
-  const normalizedLevel = normalizeLevel(level);
-  const passage = buildSubjectPassage("Reading", normalizedLevel);
-  const questions = buildUniversalFallbackQuestions("Reading", READING_SKILL_DEFAULT).slice(0, 3);
+function buildCrossFallbackContent(subject: CanonicalSubject, level: Level, skill: string): {
+  passage: string;
+  questions: Question[];
+} {
+  const passage = buildSubjectPassage(subject, level);
+  const effectiveSkill = String(skill || "").trim() || SUBJECT_SKILLS[subject]?.[0]?.skill || READING_SKILL_DEFAULT;
+  const seed = buildUniversalFallbackQuestions(subject, effectiveSkill);
+  const questions = Array.from({ length: 5 }, (_, index) => {
+    const template = seed[index % seed.length] || seed[0];
+    return {
+      ...template,
+      question: `${String(template?.question || "").trim()} (${index + 1})`,
+    } as Question;
+  });
   return { passage, questions };
 }
 
@@ -4247,7 +4248,7 @@ serve(async (req) => {
     practiceQuestions: Question[];
   }) => {
     const { grade, subject, skill, level, practiceQuestions } = params;
-    const baseCross = subject === "Reading" ? buildELARFallback(level) : buildSubjectCrossContent(subject, level);
+    const baseCross = buildCrossFallbackContent(subject, level, skill);
     const constraints = getGradeConstraints(grade);
     const crossPassage = ensurePassageLength(
       baseCross.passage,
@@ -4654,7 +4655,7 @@ serve(async (req) => {
 
     // 🚀 NEW MODE ROUTING
     if (effectiveMode === "cross") {
-      const crossContent = buildSubjectCrossContent(subject, level);
+      const crossContent = buildCrossFallbackContent(subject, level, effectiveSkill);
       const result = await runPipeline({
         stems: crossContent.questions,
         crossSubject: subject,
