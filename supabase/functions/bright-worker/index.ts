@@ -1206,7 +1206,10 @@ ${subject === "Reading" ? `- Each question must assess a different reading skill
   - 2 plausible distractors grounded in passage details but incorrect
   - 1 clearly incorrect but still academic distractor
   - All answer choices must sound equally strong
-- Do not create duplicate questions` : ""}
+- Do not create duplicate questions
+- Each question MUST directly reference the passage.
+- Do NOT generate generic or reusable questions.
+- Every question must include a specific idea, action, or detail from the passage.` : ""}
 
 Return JSON only.`;
 }
@@ -1254,6 +1257,9 @@ Question design rules:
   - understanding passage content
   - applying a reading skill
 - Questions must require thinking, not simple recall.
+- Each question MUST directly reference the passage.
+- Do NOT generate generic or reusable questions.
+- Every question must include a specific idea, action, or detail from the passage.
 
 Distractor quality:
 - Each question has exactly 4 choices.
@@ -2520,6 +2526,32 @@ function fixDistractors(
   return [];
 }
 
+function isGenericQuestion(q: string): boolean {
+  const patterns = [
+    "why does this happen",
+    "what can we infer",
+    "how does the character",
+    "what is the effect",
+    "why might the author",
+    "how does this affect",
+  ];
+
+  const lower = String(q || "").toLowerCase();
+  return patterns.some((pattern) => lower.includes(pattern)) && lower.length < 120;
+}
+
+function isPassageAnchored(q: string, passage: string): boolean {
+  const passageWords = String(passage || "").toLowerCase().split(/\W+/).filter(Boolean);
+  return String(q || "").toLowerCase().split(/\W+/).some((word) => word && passageWords.includes(word));
+}
+
+function rewriteQuestion(q: string, passage: string, index: number): string {
+  void q;
+  void index;
+  const sentence = (String(passage || "").split(".")[0] || "").trim() || "the main idea in the passage";
+  return `Which detail from the passage best supports ${sentence.toLowerCase()}?`;
+}
+
 async function repairChoicesBatchWithAI(params: {
   passage: PassageContent | string;
   subject: CanonicalSubject;
@@ -2728,6 +2760,17 @@ async function sanitizeQuestions(
   let questions = sanitized.slice(0, 5);
 
   const passageText = getPassageText(passage);
+  if (passageText.trim()) {
+    questions = questions.map((q, i) => {
+      if (isGenericQuestion(q.question) || !isPassageAnchored(q.question, passageText)) {
+        return {
+          ...q,
+          question: rewriteQuestion(q.question, passageText, i),
+        };
+      }
+      return q;
+    });
+  }
   questions = questions.map((q) => repairQuestion(q, subject, passageText));
   questions = validateOnce(questions, passageText);
 
@@ -4511,8 +4554,16 @@ serve(async (req) => {
         : [];
       const crossPassage = String(bodyCross.passage || "");
 
+      const seededPracticeQuestions = practiceQuestions.length > 0
+        ? practiceQuestions
+        : buildUniversalFallbackQuestions(subject, effectiveSkill);
+      const seededCrossPassage = crossPassage.trim() || buildSubjectPassage(subject, level);
+      const seededCrossQuestions = crossQuestions.length > 0
+        ? crossQuestions
+        : rebuildCrossFromPractice(seededPracticeQuestions, subject, effectiveSkill);
+
       const practiceQuestionSet = await sanitizeQuestions(
-        practiceQuestions,
+        seededPracticeQuestions,
         subject,
         "Practice",
         effectiveSkill,
@@ -4522,19 +4573,19 @@ serve(async (req) => {
         repairState,
       );
       const crossQuestionSet = await sanitizeQuestions(
-        crossQuestions,
+        seededCrossQuestions,
         subject,
         "Cross-Curricular",
         effectiveSkill,
         level,
-        crossPassage,
+        seededCrossPassage,
         grade,
         repairState,
       );
       const supportFinalized = enforceSingleSourceOfTruth({
         passage: getPassageText(String(body.passage || "")),
         practice: { questions: practiceQuestionSet },
-        cross: { passage: crossPassage, questions: crossQuestionSet },
+        cross: { passage: seededCrossPassage, questions: crossQuestionSet },
         tutor: { practice: [], cross: [] },
         answerKey: { practice: [], cross: [] },
       }, subject);
