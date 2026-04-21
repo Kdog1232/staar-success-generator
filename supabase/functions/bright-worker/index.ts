@@ -5,7 +5,7 @@ type Level = "Below" | "On Level" | "Advanced";
 type ChoiceLetter = "A" | "B" | "C" | "D";
 type AnswerLetter = "A" | "B" | "C" | "D";
 type CanonicalSubject = "Reading" | "Math" | "Science" | "Social Studies";
-type CanonicalMode = "Practice" | "Cross-Curricular" | "Tutor" | "Answer Key";
+type CanonicalMode = "Practice" | "Cross-Curricular" | "Support" | "Tutor" | "Answer Key";
 type TutorBuildMode = "practice" | "cross";
 
 type CrossConnection = {
@@ -4547,7 +4547,13 @@ serve(async (req) => {
     } else {
       effectiveMode = "core";
     }
-    contentMode = effectiveMode === "cross" ? "Cross-Curricular" : "Practice";
+    if (effectiveMode === "cross") {
+      contentMode = "Cross-Curricular";
+    } else if (effectiveMode === "support") {
+      contentMode = "Support";
+    } else {
+      contentMode = "Practice";
+    }
     effectiveSubject = subject;
     effectiveSkill = skill ?? "Main Idea";
 
