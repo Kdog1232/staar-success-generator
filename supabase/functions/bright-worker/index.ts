@@ -450,8 +450,8 @@ function buildAlignedExplanation(
 ): { why: string; mistake: string; tip: string } {
   const normalizedChoices = normalizeChoices(question?.choices);
   const correctLetter = safeCorrectAnswer(question?.correct_answer);
-  const correctIndex = LETTERS.indexOf(correctLetter);
-  const correctChoice = correctIndex >= 0 ? String(normalizedChoices[correctIndex] || "").trim() : "";
+  const correctIndex = Math.max(0, LETTERS.indexOf(correctLetter));
+  const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
   const snippet = usePassage ? selectEvidenceSnippet(question, String(passage || ""), usedEvidence) : null;
   const explicit = String(question?.explanation || "").trim();
 
@@ -490,8 +490,8 @@ function selectEvidenceSnippet(
 
   const normalizedChoices = normalizeChoices(question?.choices);
   const correctLetter = safeCorrectAnswer(question?.correct_answer);
-  const correctIndex = LETTERS.indexOf(correctLetter);
-  const correctChoice = correctIndex >= 0 ? String(normalizedChoices[correctIndex] || "").trim() : "";
+  const correctIndex = Math.max(0, LETTERS.indexOf(correctLetter));
+  const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
   const questionText = String(question?.question || "").trim();
   const anchorText = `${questionText} ${correctChoice}`.toLowerCase();
 
@@ -1441,7 +1441,7 @@ function isValidCoreEnrichmentOutput(data: unknown): boolean {
   const crossQuestions = Array.isArray(cross?.questions) ? cross.questions : [];
 
   if (!cross || typeof cross.passage !== "string" || !cross.passage.trim()) return false;
-  if (crossQuestions.length !== 3 && crossQuestions.length !== 5) return false;
+  if (crossQuestions.length !== 5) return false;
 
   return Boolean(
     tutor &&
@@ -1714,12 +1714,12 @@ function buildUniversalChoices(
 // }
 
 function normalizeChoices(choices: unknown): [string, string, string, string] {
-  if (!Array.isArray(choices)) return ["", "", "", ""];
+  if (!Array.isArray(choices)) return forcePassageChoices("");
 
   const cleaned = choices.map(c => String(c || "").trim());
 
   // Ensure structure ONLY (do not rewrite content)
-  while (cleaned.length < 4) cleaned.push("");
+  while (cleaned.length < 4) cleaned.push("Unsupported option.");
 
   return cleaned.slice(0, 4) as [string, string, string, string];
 }
@@ -2743,7 +2743,7 @@ async function sanitizeQuestions(
     } else {
       patchedChoices = Array.isArray(q.choices)
         ? q.choices.map((c) => String(c || "").trim()).slice(0, 4) as [string, string, string, string]
-        : ["", "", "", ""];
+        : forcePassageChoices("");
     }
 
     if (!Array.isArray(q.choices) || q.choices.length !== 4 || q.choices.every((choice) => !String(choice || "").trim())) {
@@ -3629,7 +3629,7 @@ function generateAnswerKey(
     try {
       const normalizedChoices = normalizeChoices(q.choices);
       const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
-      const correctIndex = LETTERS.indexOf(correctLetter);
+      const correctIndex = Math.max(0, LETTERS.indexOf(correctLetter));
       const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
       const distractor = normalizedChoices
         .map((choice, idx) => ({ letter: LETTERS[idx], choice: String(choice || "").trim() }))
@@ -3965,7 +3965,7 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
     const passageText = getPassageText(passage);
     const normalizedChoices = normalizeChoices(q.choices);
     const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
-    const correctIndex = LETTERS.indexOf(correctLetter);
+    const correctIndex = Math.max(0, LETTERS.indexOf(correctLetter));
     const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
     const wrongOption = normalizedChoices
       .map((choice, idx) => ({ letter: LETTERS[idx], choice: String(choice || "").trim() }))
@@ -4023,7 +4023,7 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
     const passageText = getPassageText(passage);
     const normalizedChoices = normalizeChoices(q.choices);
     const correctLetter = normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer));
-    const correctIndex = LETTERS.indexOf(correctLetter);
+    const correctIndex = Math.max(0, LETTERS.indexOf(correctLetter));
     const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
     const wrongOption = normalizedChoices
       .map((choice, idx) => ({ letter: LETTERS[idx], choice: String(choice || "").trim() }))
