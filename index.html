@@ -2849,39 +2849,49 @@
           let safeCross = { passage: "", questions: [] };
 
           try {
-            const cross = await fetchCrossContent({
-              token,
-              subject,
-              grade,
-              skill,
-              level
-            });
-            if (currentRequestId !== requestId) return;
+  const cross = await fetchCrossContent({
+    token,
+    subject,
+    grade,
+    skill,
+    level
+  });
 
-            console.log("🌎 CROSS READY");
-            const normalizedCross = normalizeWorkerPayload({ cross }, { fallbackPassage: currentData?.passage || "" });
-            safeCross = {
-              passage: normalizedCross.cross.passage,
-              questions: normalizedCross.cross.questions
-            };
+  if (currentRequestId !== requestId) return;
 
-            crossDataState = safeCross;
-            currentData.cross = crossDataState;
+  console.log("🌎 CROSS READY");
 
-            renderCrossSection(crossDataState, crossDataState.passage || "");
-            console.log("CROSS READY:", crossDataState);
-          } catch (crossErr) {
-            console.warn("❌ CROSS FAILED:", crossErr);
-            if (currentRequestId !== requestId) return;
+  const normalizedCross = normalizeWorkerPayload(
+    { cross },
+    { fallbackPassage: currentData?.passage || "" }
+  );
 
-            crossDataState = safeCross;
-            currentData.cross = crossDataState;
+  safeCross = {
+    passage: normalizedCross.cross.passage,
+    questions: normalizedCross.cross.questions
+  };
 
-            if (crossSection) {
-              crossSection.innerHTML = `<div class="muted-note">Cross unavailable</div>`;
-            }
-          }
+  crossDataState = safeCross;
+  currentData.cross = crossDataState;
 
+  renderCrossSection(crossDataState, crossDataState.passage || "");
+  setMode("cross");
+
+  console.log("CROSS READY:", crossDataState);
+
+} catch (crossErr) {
+  console.warn("❌ CROSS FAILED:", crossErr);
+  if (currentRequestId !== requestId) return;
+
+  crossDataState = safeCross;
+  currentData.cross = crossDataState;
+
+  if (crossSection) {
+    crossSection.innerHTML = `<div class="muted-note">Cross unavailable</div>`;
+  }
+
+  setMode("cross");
+}
           try {
             const support = await fetchSupportContent({
               token,
