@@ -425,6 +425,16 @@ function summarizeEvidenceIdea(evidence: string): string {
     .replace(/[.!?]+$/, "");
 }
 
+function fallbackEvidenceSnippet(passage: string): string {
+  const completeSentences = splitPassageSentences(passage)
+    .map((sentence) => String(sentence || "").trim())
+    .filter((sentence) => sentence.length > 20 && isCompleteSentence(sentence))
+    .map((sentence) => summarizeEvidenceIdea(sentence))
+    .filter((sentence) => sentence.length > 20);
+
+  return completeSentences[0] || "the passage provides clear evidence";
+}
+
 function buildAlignedExplanation(
   question: any,
   passage: string,
@@ -453,15 +463,12 @@ function buildAlignedExplanation(
     ? (() => {
       let boundedSnippet = snippet || "";
       if (!boundedSnippet || boundedSnippet.length < 15) {
-        const fallback = splitPassageSentences(passage)[0] || "";
-        boundedSnippet = fallback;
+        boundedSnippet = fallbackEvidenceSnippet(passage);
       }
       const cleanSnippet = summarizeEvidenceIdea(boundedSnippet);
-
-      const evidence =
-        cleanSnippet && cleanSnippet.length > 15
-          ? cleanSnippet
-          : summarizeEvidenceIdea(String(passage || "").split(".")[0]);
+      const evidence = cleanSnippet && cleanSnippet.length > 15
+        ? cleanSnippet
+        : fallbackEvidenceSnippet(passage);
       return `${passageStarter} "${summarizeEvidenceIdea(evidence)}" supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}`;
     })()
     : `Focus on the moment when each condition in the problem is checked in order. That process supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`);
@@ -489,14 +496,16 @@ function buildAnswerKeyExplanation(
   const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
   let snippet = usePassage ? selectEvidenceSnippet(question, String(passage || ""), usedEvidence) : null;
   if (!snippet || snippet.length < 15) {
-    const fallback = splitPassageSentences(passage)[0] || "";
-    snippet = fallback;
+    snippet = fallbackEvidenceSnippet(passage);
   }
   const cleanSnippet = summarizeEvidenceIdea(snippet || "");
+  const evidence = cleanSnippet && cleanSnippet.length > 15
+    ? cleanSnippet
+    : fallbackEvidenceSnippet(passage);
 
   return {
     why: usePassage
-      ? `The passage explains that "${cleanSnippet}", which supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`
+      ? `The passage explains that "${evidence}", which supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`
       : `The explanation supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} based on the question requirements.`,
     mistake: "This distractor may seem correct but is not supported by the passage.",
     tip: "Check the exact detail that confirms the correct answer.",
