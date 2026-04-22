@@ -1330,6 +1330,40 @@ Question design rules:
 - Use a balanced mix of reading skills across the set (main idea, inference, structure, and purpose).
 - Keep all questions grounded in the passage; avoid background-knowledge-only items.
 
+RIGOR & LEVEL GUIDELINES:
+
+GENERAL:
+- Avoid direct retrieval questions (answers should not be found in a single sentence)
+- Prioritize inference, supporting details, and reasoning over simple recall
+
+- Questions should require the student to:
+  - connect multiple details
+  - interpret meaning
+  - explain relationships or changes
+
+LEVEL ADJUSTMENT:
+
+Below Level:
+- Keep language simple and direct
+- Still require thinking, but reduce complexity of reasoning steps
+- Focus on clear supporting details and basic inference
+
+On Level:
+- Use full grade-level expectations
+- Include a mix of supporting detail, inference, and structure questions
+
+Advanced Level:
+- Emphasize deeper reasoning and interpretation
+- Include questions that require:
+  - connecting ideas across the passage
+  - analyzing meaning or impact
+  - selecting the BEST evidence rather than obvious details
+
+IMPORTANT:
+- Keep all questions grounded in the passage
+- Maintain clarity and readability
+- Do NOT make questions confusing or overly complex
+
 Skill focus checks:
 - Main/Central idea questions must reflect the full passage, not a single detail or event.
 - Inference questions must require reasoning beyond directly stated wording.
