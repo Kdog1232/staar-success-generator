@@ -1304,6 +1304,15 @@ Question design rules:
 - Each question MUST directly reference the passage.
 - Do NOT generate generic or reusable questions.
 - Every question must include a specific idea, action, or detail from the passage.
+- Maintain similar rigor to Practice Mode question quality.
+- Use a balanced mix of reading skills across the set (main idea, inference, structure, and purpose).
+- Keep all questions grounded in the passage; avoid background-knowledge-only items.
+
+Skill focus checks:
+- Main/Central idea questions must reflect the full passage, not a single detail or event.
+- Inference questions must require reasoning beyond directly stated wording.
+- Structure questions must focus on organization of ideas (cause/effect, problem/solution, sequence), not topic or purpose labels.
+- Purpose questions must ask why the author includes specific details and connect those details to the broader message.
 
 Distractor quality:
 - Each question has exactly 4 choices.
@@ -1311,6 +1320,7 @@ Distractor quality:
 - Two plausible distractors based on passage details but incorrect.
 - Choices must be similar in tone and length.
 - Keep structure simple and clear.
+- Distractors should be plausible misunderstandings (detail confusion, partial reasoning) without being obviously wrong.
 
 Output format:
 Return JSON only:
