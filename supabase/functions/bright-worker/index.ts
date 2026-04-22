@@ -1312,6 +1312,9 @@ Requirements:
 - Passage topic must be: ${topicRule}.
 - Passage must support reasoning questions with enough usable detail.
 - Include at least one clear cause/effect or comparison relationship.
+- Passage must be fully complete (no cut-off sentences).
+- Final sentence must clearly conclude the idea.
+- Do NOT leave unfinished comparisons or thoughts.
 
 Question design rules:
 - Generate exactly 5 multiple-choice questions.
@@ -1329,6 +1332,10 @@ Question design rules:
 - Maintain similar rigor to Practice Mode question quality.
 - Use a balanced mix of reading skills across the set (main idea, inference, structure, and purpose).
 - Keep all questions grounded in the passage; avoid background-knowledge-only items.
+- Every question MUST include 4 complete answer choices.
+- Do NOT use placeholders like "Unsupported option".
+- Each choice must be meaningful and connected to the passage.
+- If unsure, generate the best possible answer rather than leaving blank.
 
 RIGOR & LEVEL GUIDELINES:
 
