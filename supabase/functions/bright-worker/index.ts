@@ -2967,8 +2967,10 @@ async function sanitizeQuestions(
       const repaired = repairQuestion(question, subject, passageText);
       return {
         ...repaired,
-        explanation: String(repaired.explanation || "").trim()
-          || "The correct answer is best supported by details in the passage.",
+        explanation: ensureUsableExplanation(
+          repaired.explanation,
+          subject,
+        ),
       };
     });
     const crossOutput = enforceCrossReadingOnly(validatedCross, passageText);
