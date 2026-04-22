@@ -2144,7 +2144,7 @@
       if (modeStatus) modeStatus.textContent = "Mode: Practice Mode ON";
       if (practiceSection) {
         practiceSection.innerHTML = "";
-        practiceSection.style.display = "none";
+        practiceSection.style.display = "block";
       }
       if (crossSection) {
         crossSection.innerHTML = "";
@@ -2271,6 +2271,7 @@
           ${crossQuestionMarkup}
         </section>
       `;
+      crossSection.style.display = "block";
     }
 
     function renderTutorSection(tutorData, mode = currentMode) {
@@ -2889,11 +2890,14 @@
 
         ensureWorksheetShell();
         renderPracticeSection(practiceDataState, normalizedCore?.passage || "");
+        currentMode = "practice";
+        const practiceSection = document.getElementById("practice-section");
+        if (practiceSection) {
+          practiceSection.style.display = "block";
+        }
         const toggle = document.getElementById("view-toggle");
         if (toggle) toggle.style.display = "flex";
-        if (currentMode !== "practice") {
-          renderTab(currentMode);
-        }
+        renderTab("practice");
 
         const crossSection = document.getElementById("cross-section");
         const tutorSection = document.getElementById("tutor-section");
@@ -2925,6 +2929,9 @@
             currentData.cross = crossDataState;
 
             renderCrossSection(crossDataState, crossDataState.passage || "");
+            if (crossSection) {
+              crossSection.style.display = "block";
+            }
             if (currentMode !== "practice") {
               renderTab(currentMode);
             }
