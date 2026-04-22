@@ -2106,7 +2106,7 @@
       crossSection.innerHTML = "";
       tutorSection.innerHTML = "";
       answerSection.innerHTML = "";
-      practiceSection.style.display = "none";
+      practiceSection.style.display = "block";
       crossSection.style.display = "none";
       tutorSection.style.display = "none";
       answerSection.style.display = "none";
@@ -2801,15 +2801,14 @@
     }
 
     async function generate() {
-      console.log("🚀 GENERATE STARTED");
-      const btn = document.getElementById("generate-btn");
-
       if (isGenerating) {
         console.warn("⚠️ BLOCKED — already running");
         return;
       }
 
       isGenerating = true;
+      console.log("🚀 GENERATE STARTED");
+      const btn = document.getElementById("generate-btn");
 
       try {
         if (btn) {
