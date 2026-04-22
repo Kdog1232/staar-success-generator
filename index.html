@@ -2493,7 +2493,7 @@
       }
 
       renderActivePanels();
-      renderTab(currentModeValue, { fromGenerate: true });
+      renderTab(currentModeValue);
       setMode(currentModeValue);
     }
 
@@ -2523,18 +2523,7 @@
       }
     }
 
-    function renderTab(tab = currentMode, options = {}) {
-      const { fromGenerate = false } = options;
-
-      if (fromGenerate && hasRenderedThisRun) {
-        console.log("⛔ SKIPPING duplicate render (generate)");
-        return;
-      }
-
-      if (fromGenerate) {
-        hasRenderedThisRun = true;
-      }
-
+    function renderTab(tab = currentMode) {
       const practiceSection = document.getElementById("practice-section");
       const crossSection = document.getElementById("cross-section");
       const tutorSection = document.getElementById("tutor-section");
@@ -2831,10 +2820,13 @@
         const requestId = Date.now();
         currentRequestId = requestId;
         currentData = normalizeWorkerPayload(data);
-        hasRenderedThisRun = false;
-        renderPracticeSection(currentData.practice, currentData.passage);
+        renderPracticeSection(
+          { questions: currentData?.practice?.questions || [] },
+          currentData?.passage || ""
+        );
         const toggle = document.getElementById("view-toggle");
         if (toggle) toggle.style.display = "flex";
+        hasRenderedThisRun = true;
         renderTab(currentMode || "practice");
 
         const crossSection = document.getElementById("cross-section");
@@ -2862,6 +2854,17 @@
               passage: normalizedCross.cross.passage,
               questions: normalizedCross.cross.questions
             };
+
+            const crossContainer = document.getElementById("cross-section");
+
+            if (crossContainer && currentData?.cross?.questions?.length) {
+              crossContainer.innerHTML = `
+                <h3>🌎 Cross-Curricular Mode</h3>
+                ${renderPassage(currentData.cross.passage)}
+                ${renderCross(currentData.cross)}
+              `;
+              crossContainer.style.display = "block";
+            }
             renderTab(currentMode || "practice");
           })
           .catch((pipelineErr) => {
@@ -2888,6 +2891,16 @@
             });
             currentData.tutor = normalizedSupport.tutor;
             currentData.answerKey = normalizedSupport.answerKey;
+
+            const tutorSectionEl = document.getElementById("tutor-section");
+            if (tutorSectionEl) {
+              tutorSectionEl.innerHTML = renderTutor(currentData.tutor.practice, "Practice");
+            }
+
+            const answerSectionEl = document.getElementById("answer-section");
+            if (answerSectionEl) {
+              answerSectionEl.innerHTML = renderAnswerKey(currentData.answerKey.practice, "Practice");
+            }
             renderTab(currentMode || "practice");
           })
           .catch((pipelineErr) => {
