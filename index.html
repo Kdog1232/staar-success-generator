@@ -2106,7 +2106,7 @@
       crossSection.innerHTML = "";
       tutorSection.innerHTML = "";
       answerSection.innerHTML = "";
-      practiceSection.style.display = "none";
+      practiceSection.style.display = "block";
       crossSection.style.display = "none";
       tutorSection.style.display = "none";
       answerSection.style.display = "none";
@@ -2144,7 +2144,7 @@
       if (modeStatus) modeStatus.textContent = "Mode: Practice Mode ON";
       if (practiceSection) {
         practiceSection.innerHTML = "";
-        practiceSection.style.display = "none";
+        practiceSection.style.display = "block";
       }
       if (crossSection) {
         crossSection.innerHTML = "";
@@ -2271,6 +2271,7 @@
           ${crossQuestionMarkup}
         </section>
       `;
+      crossSection.style.display = "block";
     }
 
     function renderTutorSection(tutorData, mode = currentMode) {
@@ -2800,15 +2801,14 @@
     }
 
     async function generate() {
-      console.log("🚀 GENERATE STARTED");
-      const btn = document.getElementById("generate-btn");
-
       if (isGenerating) {
         console.warn("⚠️ BLOCKED — already running");
         return;
       }
 
       isGenerating = true;
+      console.log("🚀 GENERATE STARTED");
+      const btn = document.getElementById("generate-btn");
 
       try {
         if (btn) {
@@ -2889,11 +2889,14 @@
 
         ensureWorksheetShell();
         renderPracticeSection(practiceDataState, normalizedCore?.passage || "");
+        currentMode = "practice";
+        const practiceSection = document.getElementById("practice-section");
+        if (practiceSection) {
+          practiceSection.style.display = "block";
+        }
         const toggle = document.getElementById("view-toggle");
         if (toggle) toggle.style.display = "flex";
-        if (currentMode !== "practice") {
-          renderTab(currentMode);
-        }
+        renderTab("practice");
 
         const crossSection = document.getElementById("cross-section");
         const tutorSection = document.getElementById("tutor-section");
@@ -2904,49 +2907,54 @@
           tutorSection.innerHTML = "<div>⏳ Loading tutor...</div>";
         }
 
-        fetchCrossContent({
-          token,
-          subject,
-          grade,
-          skill,
-          level
-        })
-          .then((cross) => {
-            if (currentRequestId !== requestId) return null;
+        (async () => {
+          let safeCross = { passage: "", questions: [] };
+
+          try {
+            const cross = await fetchCrossContent({
+              token,
+              subject,
+              grade,
+              skill,
+              level
+            });
+            if (currentRequestId !== requestId) return;
 
             console.log("🌎 CROSS READY");
             const normalizedCross = normalizeWorkerPayload({ cross }, { fallbackPassage: currentData?.passage || "" });
-            crossDataState = {
+            safeCross = {
               passage: normalizedCross.cross.passage,
               questions: normalizedCross.cross.questions
             };
+
+            crossDataState = safeCross;
             currentData.cross = crossDataState;
 
             renderCrossSection(crossDataState, crossDataState.passage || "");
+            if (crossSection) {
+              crossSection.style.display = "block";
+            }
             if (currentMode !== "practice") {
               renderTab(currentMode);
             }
+          } catch (crossErr) {
+            console.warn("❌ CROSS FAILED:", crossErr);
+            if (currentRequestId !== requestId) return;
 
-            return crossDataState;
-          })
-          .catch((crossErr) => {
-            console.warn("⚠️ Cross failed — continuing without it", crossErr);
-            if (currentRequestId !== requestId) return null;
-
-            crossDataState = { passage: "", questions: [] };
+            crossDataState = safeCross;
             currentData.cross = crossDataState;
-            renderCrossSection(crossDataState, "");
+
+            if (crossSection) {
+              crossSection.innerHTML = `<div class="muted-note">Cross unavailable</div>`;
+            }
 
             if (currentMode !== "practice") {
               renderTab(currentMode);
             }
+          }
 
-            return crossDataState;
-          })
-          .then((safeCross) => {
-            if (!safeCross || currentRequestId !== requestId) return null;
-
-            return fetchSupportContent({
+          try {
+            const support = await fetchSupportContent({
               token,
               subject,
               grade,
@@ -2956,8 +2964,6 @@
               practiceQuestions: Array.isArray(currentData?.practice?.questions) ? currentData.practice.questions : [],
               cross: safeCross
             });
-          })
-          .then((support) => {
             if (!support || currentRequestId !== requestId) return;
 
             console.log("🧠 SUPPORT READY");
@@ -2975,10 +2981,10 @@
             if (currentMode !== "practice") {
               renderTab(currentMode);
             }
-          })
-          .catch((supportErr) => {
+          } catch (supportErr) {
             console.warn("⚠️ Support failed:", supportErr);
-          });
+          }
+        })();
 
         console.log("🎯 RENDER COMPLETE");
       } catch (err) {
