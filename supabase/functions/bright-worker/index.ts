@@ -451,7 +451,12 @@ function buildAlignedExplanation(
   const passageStarter = passageStarters[starterIndex];
   const why = (usePassage
     ? (() => {
-      const evidence = snippet || String(passage || "").split(".")[0];
+      const cleanSnippet = summarizeEvidenceIdea(snippet || "");
+
+      const evidence =
+        cleanSnippet && cleanSnippet.length > 15
+          ? cleanSnippet
+          : summarizeEvidenceIdea(String(passage || "").split(".")[0]);
       return `${passageStarter} "${summarizeEvidenceIdea(evidence)}" supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}`;
     })()
     : `Focus on the moment when each condition in the problem is checked in order. That process supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`);
