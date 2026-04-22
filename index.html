@@ -2150,16 +2150,34 @@
 
         const questionList = Array.isArray(practice.questions) ? practice.questions : [];
         const selectedSubject = document.getElementById("subject")?.value || "Reading";
-        const showPassage = selectedSubject === "Reading" && cleanText(passageText || "").length > 0;
+        const showPassage =
+          selectedSubject === "Reading" ||
+          selectedSubject === "Science" ||
+          selectedSubject === "Social Studies";
+        const hasPassage = cleanText(passageText || "").length > 0;
+        const passageLabel =
+          selectedSubject === "Reading"
+            ? "📖 Passage"
+            : selectedSubject === "Science"
+            ? "🧪 Short Text"
+            : selectedSubject === "Social Studies"
+            ? "🌎 Short Text"
+            : "";
+        const questionLabel = selectedSubject === "Math" ? "🧮 Word Problems" : "❓ Questions";
         let html = `
           <div class="mode-label">Practice Mode</div>
-          ${showPassage ? `
+          ${showPassage && hasPassage ? `
           <section class="worksheet-section">
-            <h3>📖 Passage</h3>
+            <h3>${passageLabel}</h3>
             ${renderPassage(passageText || "")}
           </section>` : ""}
+          ${showPassage && !hasPassage ? `
           <section class="worksheet-section">
-            <h3>❓ Questions</h3>
+            <h3>${passageLabel}</h3>
+            <p>⚠️ Content did not include a passage</p>
+          </section>` : ""}
+          <section class="worksheet-section">
+            <h3>${questionLabel}</h3>
         `;
 
         questionList.forEach((q, i) => {
