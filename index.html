@@ -2890,6 +2890,8 @@
         ensureWorksheetShell();
         renderPracticeSection(practiceDataState, normalizedCore?.passage || "");
         currentMode = "practice";
+        document.querySelectorAll(".mode-btn").forEach((btnEl) => btnEl.classList.remove("active"));
+        document.getElementById("practice-tab")?.classList.add("active");
         const practiceSection = document.getElementById("practice-section");
         if (practiceSection) {
           practiceSection.style.display = "block";
@@ -2945,6 +2947,7 @@
             currentData.cross = crossDataState;
 
             if (crossSection) {
+              crossSection.style.display = "block";
               crossSection.innerHTML = `<div class="muted-note">Cross unavailable</div>`;
             }
 
