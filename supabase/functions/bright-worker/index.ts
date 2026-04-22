@@ -3609,8 +3609,8 @@ function generateTutor(
           (correctAnswer ? `Which detail leads to ${correctAnswer} only after you reason through the prompt?` : "Which detail in the passage or problem gives the strongest support?"),
         step_by_step: String(q.step_by_step || "").trim() ||
           (correctAnswer
-            ? `1. Read the question and identify what it asks.\n2. Find the strongest supporting detail in the passage or problem.\n3. Explain why that detail supports one conclusion.\n4. Confirm the correct answer is ${correctAnswer}.`
-            : "1. Read the question and identify what it asks.\n2. Find the strongest supporting detail.\n3. Explain how that detail supports your conclusion."),
+            ? `1. Read the question and identify what it asks.\n2. Locate the exact line or fact in the passage or problem.\n3. Explain what that detail proves.\n4. Confirm the correct answer is ${correctAnswer}.`
+            : "1. Read the question and identify what it asks.\n2. Locate the exact supporting line or fact.\n3. Explain how that detail supports your conclusion."),
       };
     } catch (err) {
       console.error("Tutor build failed:", err);
@@ -3650,17 +3650,17 @@ function generateAnswerKey(
       const evidence = shouldUsePassage
         ? (selectEvidenceSnippet(q, scopedPassageText, usedEvidence) ||
           getRelevantSnippet(scopedPassageText, q.question, correctChoice) ||
-          "the strongest supporting detail in the passage")
-        : "the strongest detail provided in the question";
-      const evidenceIdea = summarizeEvidenceIdea(evidence);
+          "a stated detail from the passage")
+        : "a stated detail from the prompt";
+      const groundedEvidence = evidence.replace(/\s+/g, " ").trim();
       const explanationStyles = [
-        `For "${String(q.question || "").trim()}", start with the passage idea about ${evidenceIdea}. That points to ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
-        `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} fits best because the text emphasizes ${evidenceIdea}, which matches the question focus.`,
-        `A careful read of the evidence about ${evidenceIdea} makes ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} the strongest option.`,
+        `The passage says "${groundedEvidence}," which directly supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
+        `When you read "${groundedEvidence}," the best conclusion is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
+        `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is correct because "${groundedEvidence}" shows that idea clearly.`,
       ];
       const explanationLead = explanationStyles[index % explanationStyles.length];
       const explanation = distractor
-        ? `${explanationLead} ${distractor.letter} (${distractor.choice}) is incorrect because it does not match the same evidence as precisely.`
+        ? `${explanationLead} ${distractor.letter} (${distractor.choice}) sounds possible, but that choice is not what this specific detail actually supports.`
         : explanationLead;
       const commonMistake = distractor
         ? `${distractor.letter} can seem related, but it is not the best-supported interpretation of the passage evidence.`
@@ -4049,19 +4049,21 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
       getRelevantSnippet(passageText, q.question, correctChoice) ||
       "a specific detail stated in the passage";
     const groundedEvidence = evidenceSnippet.replace(/\s+/g, " ").trim();
-    const evidenceIdea = summarizeEvidenceIdea(evidenceSnippet).replace(/\s+/g, " ").trim();
 
     const explanationVariants = [
-      `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is correct because "${groundedEvidence}" directly supports it.`,
-      `The best answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}; this matches "${groundedEvidence}" in the passage.`,
-      `Choose ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}. The detail "${groundedEvidence}" directly supports that conclusion.`,
-      `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is the correct choice since "${groundedEvidence}" provides direct support.`,
+      `In the passage, "${groundedEvidence}" points directly to ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
+      `Because the text states "${groundedEvidence}," ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is the conclusion that fits.`,
+      `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} matches what happens in the passage: "${groundedEvidence}".`,
+      `The line "${groundedEvidence}" explains why ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is correct.`,
     ];
-    const explanation = explanationVariants[Math.abs(variant) % explanationVariants.length];
+    const explanationLead = explanationVariants[Math.abs(variant) % explanationVariants.length];
+    const explanation = wrongOption
+      ? `${explanationLead} ${wrongOption.letter} (${wrongOption.choice}) is a tempting distractor, but it adds an idea the passage detail does not show.`
+      : explanationLead;
 
     const mistakeVariants = wrongOption
       ? [
-        `A common mistake is choosing ${wrongOption.letter} (${wrongOption.choice}) because it sounds related to ${evidenceIdea}, but it is not fully supported by the quoted detail.`,
+        `A common mistake is choosing ${wrongOption.letter} (${wrongOption.choice}) because it sounds related, but it is not fully supported by the quoted detail.`,
         `Students often pick ${wrongOption.letter} (${wrongOption.choice}) when they focus on topic words and skip what "${groundedEvidence}" actually shows.`,
         `${wrongOption.letter} (${wrongOption.choice}) can seem reasonable at first glance, but it overreaches beyond the evidence in "${groundedEvidence}".`,
       ]
