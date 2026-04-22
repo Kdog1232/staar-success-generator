@@ -1256,6 +1256,10 @@
     let structuredQuestions = [];
     let generatedPassage = "";
     let currentData = null;
+    let practiceDataState = null;
+    let crossDataState = null;
+    let tutorDataState = null;
+    let answerKeyDataState = null;
     let currentRequestId = 0;
     let cachedSession = null;
     let cachedUser = null;
@@ -1904,8 +1908,16 @@
         : data?.practice?.questions;
 
       if (!questionsToUse || !questionsToUse.length) {
-        console.warn("⚠️ Missing question set for mode:", mode);
-        questionsToUse = isCross ? [] : (data?.practice?.questions || []);
+        if (isCross) {
+          console.warn("⚠️ Cross not ready yet");
+          return {
+            isCross,
+            passageToUse,
+            questionsToUse: []
+          };
+        }
+        console.warn("⚠️ Missing practice question set for mode:", mode);
+        questionsToUse = data?.practice?.questions || [];
       }
 
       console.log("🔥 MODE:", mode);
@@ -2779,6 +2791,14 @@
       }
     }
 
+    function resetGeneratedPanelsState() {
+      practiceDataState = null;
+      crossDataState = null;
+      tutorDataState = null;
+      answerKeyDataState = null;
+      currentData = null;
+    }
+
     async function generate() {
       console.log("🚀 GENERATE STARTED");
       const btn = document.getElementById("generate-btn");
@@ -2853,12 +2873,22 @@
 
         const requestId = Date.now();
         currentRequestId = requestId;
-        currentData = normalizeWorkerPayload(data);
+        resetGeneratedPanelsState();
+
+        const normalizedCore = normalizeWorkerPayload(data);
+        practiceDataState = {
+          questions: normalizedCore?.practice?.questions || []
+        };
+        currentData = {
+          ...normalizedCore,
+          practice: practiceDataState,
+          cross: { passage: "", questions: [] },
+          tutor: { practice: [], cross: [] },
+          answerKey: { practice: [], cross: [] }
+        };
+
         ensureWorksheetShell();
-        renderPracticeSection(
-          { questions: currentData?.practice?.questions || [] },
-          currentData?.passage || ""
-        );
+        renderPracticeSection(practiceDataState, normalizedCore?.passage || "");
         const toggle = document.getElementById("view-toggle");
         if (toggle) toggle.style.display = "flex";
         if (currentMode !== "practice") {
@@ -2867,10 +2897,10 @@
 
         const crossSection = document.getElementById("cross-section");
         const tutorSection = document.getElementById("tutor-section");
-        if (crossSection && !currentData?.cross?.questions?.length) {
+        if (crossSection && !crossDataState?.questions?.length) {
           crossSection.innerHTML = "<div>⏳ Loading cross...</div>";
         }
-        if (tutorSection && !currentData?.tutor?.practice?.length) {
+        if (tutorSection && !tutorDataState?.practice?.length) {
           tutorSection.innerHTML = "<div>⏳ Loading tutor...</div>";
         }
 
@@ -2886,20 +2916,14 @@
 
             console.log("🌎 CROSS READY");
             const normalizedCross = normalizeWorkerPayload({ cross }, { fallbackPassage: currentData?.passage || "" });
-            currentData.cross = {
+            crossDataState = {
               passage: normalizedCross.cross.passage,
               questions: normalizedCross.cross.questions
             };
+            currentData.cross = crossDataState;
 
-            const crossContainer = document.getElementById("cross-section");
-
-            if (crossContainer && currentData?.cross?.questions?.length) {
-              crossContainer.innerHTML = `
-                <h3>🌎 Cross-Curricular Mode</h3>
-                ${renderPassage(currentData.cross.passage)}
-                ${renderCross(currentData.cross)}
-              `;
-              crossContainer.style.display = "block";
+            if (Array.isArray(crossDataState?.questions) && crossDataState.questions.length > 0) {
+              renderCrossSection(crossDataState, crossDataState.passage || "");
             }
             if (currentMode !== "practice") {
               renderTab(currentMode);
@@ -2927,18 +2951,13 @@
               tutor: support?.tutor,
               answerKey: support?.answerKey
             });
-            currentData.tutor = normalizedSupport.tutor;
-            currentData.answerKey = normalizedSupport.answerKey;
+            tutorDataState = normalizedSupport.tutor;
+            answerKeyDataState = normalizedSupport.answerKey;
+            currentData.tutor = tutorDataState;
+            currentData.answerKey = answerKeyDataState;
 
-            const tutorSectionEl = document.getElementById("tutor-section");
-            if (tutorSectionEl) {
-              tutorSectionEl.innerHTML = renderTutor(currentData.tutor.practice, "Practice");
-            }
-
-            const answerSectionEl = document.getElementById("answer-section");
-            if (answerSectionEl) {
-              answerSectionEl.innerHTML = renderAnswerKey(currentData.answerKey.practice, "Practice");
-            }
+            renderTutorSection(tutorDataState, getActiveMode());
+            renderAnswerSection(answerKeyDataState, getActiveMode());
             if (currentMode !== "practice") {
               renderTab(currentMode);
             }
