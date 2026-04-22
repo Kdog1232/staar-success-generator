@@ -535,7 +535,11 @@ function selectEvidenceSnippet(
     return firstUnused;
   }
 
-  return null;
+  const firstSentence = sentences[0] || null;
+  if (firstSentence) {
+    usedEvidence.add(firstSentence);
+  }
+  return firstSentence;
 }
 
 function buildCrossFallbackContent(subject: CanonicalSubject, level: Level, skill: string): {
