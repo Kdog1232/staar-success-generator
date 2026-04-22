@@ -417,6 +417,14 @@ function forcePassageChoices(passageText: string): [string, string, string, stri
   return ["", "", "", ""];
 }
 
+function summarizeEvidenceIdea(evidence: string): string {
+  return String(evidence || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^["'\s]+|["'\s]+$/g, "")
+    .replace(/[.!?]+$/, "");
+}
+
 function buildAlignedExplanation(
   question: any,
   passage: string,
@@ -442,9 +450,10 @@ function buildAlignedExplanation(
   ) % passageStarters.length;
   const passageStarter = passageStarters[starterIndex];
   const why = (usePassage
-    ? (snippet
-      ? `${passageStarter} "${String(snippet || "").replace(/\s+/g, " ").trim().replace(/^["'\s]+|["'\s]+$/g, "").replace(/[.!?]+$/, "")}." That detail supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} when you match it to what the question asks.`
-      : `${passageStarter} the line that directly answers the question. That evidence supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`)
+    ? (() => {
+      const evidence = snippet || String(passage || "").split(".")[0];
+      return `${passageStarter} "${summarizeEvidenceIdea(evidence)}" supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}`;
+    })()
     : `Focus on the moment when each condition in the problem is checked in order. That process supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`);
 
   const mistake = usePassage
@@ -3642,7 +3651,7 @@ function generateAnswerKey(
       const evidence = shouldUsePassage
         ? (selectEvidenceSnippet(q, scopedPassageText, usedEvidence) ||
           getRelevantSnippet(scopedPassageText, q.question, correctChoice) ||
-          "a stated detail from the passage")
+          String(scopedPassageText || "").split(".")[0])
         : "a stated detail from the prompt";
       const groundedEvidence = evidence.replace(/\s+/g, " ").trim();
       const explanationStyles = [
