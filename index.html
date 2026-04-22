@@ -1388,7 +1388,6 @@
       const banner = document.getElementById("upgrade-banner");
       outputDiv.innerText = "Your STAAR practice will appear here...";
       viewToggle.style.display = "none";
-      currentMode = "practice";
       contentMode = "standard";
       resetGenerateState();
       lastGeneratedContentMode = null;
@@ -2095,69 +2094,27 @@
     }
 
     function clearRenderedSections() {
-      const practiceSection = document.getElementById("practice-section");
-      const crossSection = document.getElementById("cross-section");
-      const tutorSection = document.getElementById("tutor-section");
-      const answerSection = document.getElementById("answer-section");
-      if (!practiceSection || !crossSection || !tutorSection || !answerSection) return;
-      console.log("🧹 CLEAN UI");
-
-      practiceSection.innerHTML = "";
-      crossSection.innerHTML = "";
-      tutorSection.innerHTML = "";
-      answerSection.innerHTML = "";
-      practiceSection.style.display = "block";
-      crossSection.style.display = "none";
-      tutorSection.style.display = "none";
-      answerSection.style.display = "none";
+      document.getElementById("practice-section").innerHTML = "";
+      document.getElementById("cross-section").innerHTML = "";
+      document.getElementById("tutor-section").innerHTML = "";
+      document.getElementById("answer-section").innerHTML = "";
     }
 
     function ensureWorksheetShell() {
+      if (document.getElementById("practice-section")) return;
+
       const outputContainer = document.getElementById("output");
       if (!outputContainer) return;
 
-      const hasShell =
-        document.getElementById("practice-section") &&
-        document.getElementById("cross-section") &&
-        document.getElementById("tutor-section") &&
-        document.getElementById("answer-section");
-
-      if (!hasShell) {
-        outputContainer.innerHTML = `
-          <div class="worksheet">
-            <p class="mode-status" id="mode-status">Mode: Practice Mode ON</p>
-            <div id="practice-section" class="practice-section"></div>
-            <div id="cross-section" class="cross-section" style="display: none;"></div>
-            <div id="tutor-section" class="think-section" style="display: none;"></div>
-            <div id="answer-section" class="answer-section" style="display: none;"></div>
-          </div>
-        `;
-        return;
-      }
-
-      const modeStatus = document.getElementById("mode-status");
-      const practiceSection = document.getElementById("practice-section");
-      const crossSection = document.getElementById("cross-section");
-      const tutorSection = document.getElementById("tutor-section");
-      const answerSection = document.getElementById("answer-section");
-
-      if (modeStatus) modeStatus.textContent = "Mode: Practice Mode ON";
-      if (practiceSection) {
-        practiceSection.innerHTML = "";
-        practiceSection.style.display = "block";
-      }
-      if (crossSection) {
-        crossSection.innerHTML = "";
-        crossSection.style.display = "none";
-      }
-      if (tutorSection) {
-        tutorSection.innerHTML = "";
-        tutorSection.style.display = "none";
-      }
-      if (answerSection) {
-        answerSection.innerHTML = "";
-        answerSection.style.display = "none";
-      }
+      outputContainer.innerHTML = `
+        <div class="worksheet">
+          <p id="mode-status">Mode: Practice Mode ON</p>
+          <div id="practice-section"></div>
+          <div id="cross-section" style="display:none;"></div>
+          <div id="tutor-section" style="display:none;"></div>
+          <div id="answer-section" style="display:none;"></div>
+        </div>
+      `;
     }
 
     function toTabLabel(tab) {
@@ -2194,7 +2151,6 @@
         if (!practice?.questions) {
           console.error("❌ INVALID PRACTICE DATA:", practiceData);
           container.innerHTML = "<div style='color:red;'>Invalid data format</div>";
-          container.style.display = "block";
           return;
         }
 
@@ -2240,34 +2196,30 @@
         html += `</section>`;
 
         container.innerHTML = html;
-        container.style.display = "block";
-
-        console.log("✅ DOM UPDATED");
+        console.log("🧠 PRACTICE RENDERED");
       } catch (err) {
         console.error("💥 RENDER CRASH:", err);
         container.innerHTML = `     <div style="color:red;font-weight:600;">
       Render failed. Check console.     </div>
   `;
-        container.style.display = "block";
       }
     }
 
     function renderCrossSection(crossData, crossText) {
       const crossSection = document.getElementById("cross-section");
       if (!crossSection) return;
-      if (!crossData || !Array.isArray(crossData.questions) || crossData.questions.length === 0) {
-        console.warn("⚠️ Cross section skipped due to missing cross questions");
-        return;
-      }
+      const crossQuestions = Array.isArray(crossData?.questions) ? crossData.questions : [];
 
       crossSection.innerHTML = `
         <div class="worksheet-section">
           <h3>🌎 Cross-Curricular</h3>
           ${renderPassage(crossText || crossData.passage || "")}
-          ${renderCross(crossData)}
+          ${crossQuestions.length
+            ? renderCross({ ...crossData, questions: crossQuestions })
+            : `<p class="muted-note">Cross-Curricular Questions not available.</p>`}
         </div>
       `;
-      crossSection.style.display = "block";
+      console.log("🌎 CROSS RENDERED");
     }
 
     function renderTutorSection(tutorData, mode = currentMode) {
@@ -2540,7 +2492,6 @@
       }
 
       renderActivePanels();
-      renderTab(currentModeValue);
       setMode(currentModeValue);
     }
 
@@ -2570,26 +2521,22 @@
       }
     }
 
-    function renderTab(tab = currentMode) {
+    function setMode(mode) {
+      currentMode = mode;
+
       const practiceSection = document.getElementById("practice-section");
       const crossSection = document.getElementById("cross-section");
       const tutorSection = document.getElementById("tutor-section");
       const answerSection = document.getElementById("answer-section");
-      if (!practiceSection || !crossSection || !tutorSection || !answerSection) return;
 
-      if (currentData?.cross?.questions?.length && !crossSection.innerHTML.trim()) {
-        renderCrossSection(currentData.cross, currentData?.cross?.passage || "");
+      if (practiceSection && crossSection && tutorSection && answerSection) {
+        practiceSection.style.display = mode === "practice" ? "block" : "none";
+        crossSection.style.display = mode === "cross" ? "block" : "none";
+        tutorSection.style.display = mode === "tutor" ? "block" : "none";
+        answerSection.style.display = mode === "answer" ? "block" : "none";
       }
 
-      practiceSection.style.display = tab === "practice" ? "block" : "none";
-      crossSection.style.display = tab === "cross" ? "block" : "none";
-      tutorSection.style.display = tab === "tutor" ? "block" : "none";
-      answerSection.style.display = tab === "answer" ? "block" : "none";
-      console.log("✅ RENDER COMPLETE");
-    }
-
-    function setMode(mode) {
-      currentMode = mode;
+      console.log("🎯 MODE:", mode);
 
       if (currentMode === "cross") {
         contentMode = "cross_curricular";
@@ -2618,7 +2565,6 @@
       if (currentData) {
         renderActivePanels();
       }
-      renderTab(mode);
     }
 
     function toggleView(view) {
@@ -2884,22 +2830,15 @@
         };
 
         ensureWorksheetShell();
+        clearRenderedSections();
         renderPracticeSection(practiceDataState, normalizedCore?.passage || "");
-        currentMode = "practice";
-        document.querySelectorAll(".mode-btn").forEach((btnEl) => btnEl.classList.remove("active"));
-        document.getElementById("practice-tab")?.classList.add("active");
-        const practiceSection = document.getElementById("practice-section");
-        if (practiceSection) {
-          practiceSection.style.display = "block";
-        }
+        setMode("practice");
         const toggle = document.getElementById("view-toggle");
         if (toggle) toggle.style.display = "flex";
-        renderTab("practice");
 
         const crossSection = document.getElementById("cross-section");
         const tutorSection = document.getElementById("tutor-section");
         if (crossSection) {
-          crossSection.style.display = "block";
           crossSection.innerHTML = "<div>⏳ Loading cross...</div>";
         }
         if (tutorSection && !tutorDataState?.practice?.length) {
