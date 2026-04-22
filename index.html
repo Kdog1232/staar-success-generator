@@ -1996,7 +1996,7 @@
       }
 
       const payload = await response.json();
-      return payload?.cross || { passage: "", questions: [] };
+      return payload?.cross || { passage: null, questions: [] };
     }
 
     async function fetchSupportContent({ token, subject, grade, skill, level, passage, practiceQuestions, cross }) {
@@ -2149,12 +2149,15 @@
         }
 
         const questionList = Array.isArray(practice.questions) ? practice.questions : [];
+        const selectedSubject = document.getElementById("subject")?.value || "Reading";
+        const showPassage = selectedSubject === "Reading" && cleanText(passageText || "").length > 0;
         let html = `
           <div class="mode-label">Practice Mode</div>
+          ${showPassage ? `
           <section class="worksheet-section">
             <h3>📖 Passage</h3>
             ${renderPassage(passageText || "")}
-          </section>
+          </section>` : ""}
           <section class="worksheet-section">
             <h3>❓ Questions</h3>
         `;
