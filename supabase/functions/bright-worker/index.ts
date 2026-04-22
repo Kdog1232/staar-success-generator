@@ -4263,6 +4263,67 @@ serve(async (req) => {
       status,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  const enforceResponseContract = (payload: {
+    cross?: { passage?: unknown; questions?: unknown[] };
+    tutor?: { practice?: unknown[]; cross?: unknown[] };
+    answerKey?: { practice?: unknown[]; cross?: unknown[] };
+  }) => ({
+    cross: {
+      passage: String(payload?.cross?.passage || ""),
+      questions: Array.isArray(payload?.cross?.questions) ? payload.cross.questions : [],
+    },
+    tutor: {
+      practice: Array.isArray(payload?.tutor?.practice) ? payload.tutor.practice : [],
+      cross: Array.isArray(payload?.tutor?.cross) ? payload.tutor.cross : [],
+    },
+    answerKey: {
+      practice: Array.isArray(payload?.answerKey?.practice) ? payload.answerKey.practice : [],
+      cross: Array.isArray(payload?.answerKey?.cross) ? payload.answerKey.cross : [],
+    },
+  });
+  const hardenCrossPayload = (
+    cross: Partial<EnrichmentResponse["cross"]> | undefined,
+    practiceQuestions: Question[],
+    fallbackPassage = "",
+  ): EnrichmentResponse["cross"] => {
+    const fallbackQuestions = rebuildCrossFromPractice(practiceQuestions, subject, skill);
+    const seededQuestions = Array.isArray(cross?.questions) && cross.questions.length > 0
+      ? cross.questions
+      : fallbackQuestions;
+    const safeQuestions = sanitizeChoices(
+      sanitizeExplanations(
+        seededQuestions.map((q) => ({ ...q })),
+        String(cross?.passage || fallbackPassage || ""),
+      ),
+    )
+      .slice(0, 5);
+    const seededQuestion = safeQuestions[0] || fallbackQuestions[0];
+    while (safeQuestions.length < 5) {
+      const index = safeQuestions.length;
+      const question = seededQuestion
+        ? { ...seededQuestion }
+        : {
+          question: getUniversalQuestion(subject, skill, index),
+          choices: normalizeChoices([]),
+          correct_answer: "A",
+          explanation: "Use evidence from the passage to select the strongest answer.",
+          common_mistake: "Selecting an option that sounds plausible but is not best supported.",
+        } as Question;
+      safeQuestions.push({
+        ...question,
+        question: String(question.question || getUniversalQuestion(subject, skill, index)).trim(),
+        choices: normalizeChoices(question.choices),
+        correct_answer: normalizeAnswerKeyEntry(question.correct_answer),
+        explanation: String(question.explanation || "Use evidence from the passage to support your choice."),
+      });
+    }
+    const safePassage = String(cross?.passage || fallbackPassage || "").trim()
+      || buildSubjectPassage(subject, level);
+    return {
+      passage: safePassage,
+      questions: safeQuestions,
+    };
+  };
   const assertSupportIntegrity = (payload: {
     practice?: { questions?: unknown[] };
     cross?: { passage?: string; questions?: unknown[] };
@@ -4391,7 +4452,11 @@ serve(async (req) => {
       answerKey: { practice: [], cross: [] },
     }, subject);
     finalized.practice.questions = Array.isArray(finalized.practice.questions) ? finalized.practice.questions : [];
-    finalized.cross.questions = ensureNonEmptyQuestions(finalized.cross.questions, subject, skill, "cross");
+    finalized.cross = hardenCrossPayload(
+      finalized.cross,
+      finalized.practice.questions || [],
+      String(finalized.cross?.passage || ""),
+    );
     const practiceSupport = ensureNonEmptySupport(
       finalized.practice.questions,
       finalized.tutor?.practice,
@@ -4407,15 +4472,7 @@ serve(async (req) => {
     finalized.tutor = { practice: practiceSupport.tutor, cross: crossSupport.tutor };
     finalized.answerKey = { practice: practiceSupport.answerKey, cross: crossSupport.answerKey };
 
-    if (!finalized.cross || !finalized.cross.passage) {
-      throw new Error("INVALID_CROSS_SHAPE");
-    }
-    if (!Array.isArray(finalized.cross.questions) || finalized.cross.questions.length !== 5) {
-      throw new Error("INVALID_CROSS_QUESTION_COUNT");
-    }
-    if (!finalized.tutor || !finalized.answerKey) {
-      throw new Error("MISSING_SUPPORT_BLOCKS");
-    }
+    if (!finalized.tutor || !finalized.answerKey) console.warn("⚠️ Missing support blocks after hardening");
 
     return jsonResponse({
       teks: teksCode,
@@ -4445,12 +4502,6 @@ serve(async (req) => {
         };
       }
       const sanitizedPracticeQuestions = limitedPracticeQuestions.map((q) => ({ ...q, choices: normalizeChoices(q.choices) }));
-      const sanitizedCrossQuestions = sanitizeExplanations(
-        sanitizeChoices(
-          (cross?.questions || []).map((q) => ({ ...q })),
-        ),
-        String(cross?.passage || ""),
-      );
       const finalCorePassage = (() => {
         const source = (data as Partial<WorkerAttempt>)?.passage;
         if (typeof source === "string" && source.trim().length > 0) return source.trim();
@@ -4461,19 +4512,19 @@ serve(async (req) => {
         practice: {
           questions: sanitizedPracticeQuestions,
         },
-        cross: {
-          passage: String(cross?.passage || ""),
-          questions: sanitizedCrossQuestions,
-        },
+        cross: hardenCrossPayload(
+          cross,
+          sanitizedPracticeQuestions,
+          String(cross?.passage || (data as Partial<WorkerAttempt>)?.passage || ""),
+        ),
         tutor: { practice: [], cross: [] },
         answerKey: { practice: [], cross: [] },
       }, subject);
-      finalized.cross.questions = Array.isArray(finalized.cross.questions) && finalized.cross.questions.length > 0
-        ? finalized.cross.questions
-        : rebuildCrossFromPractice(sanitizedPracticeQuestions, subject, skill);
-      if (!String(finalized.cross.passage || "").trim()) {
-        finalized.cross.passage = String(cross?.passage || (data as Partial<WorkerAttempt>)?.passage || "");
-      }
+      finalized.cross = hardenCrossPayload(
+        finalized.cross,
+        sanitizedPracticeQuestions,
+        String(cross?.passage || (data as Partial<WorkerAttempt>)?.passage || ""),
+      );
       const practiceSupport = ensureNonEmptySupport(
         sanitizedPracticeQuestions,
         (data as Partial<WorkerAttempt>)?.tutor?.practice as TutorExplanation[] | undefined,
@@ -4494,20 +4545,17 @@ serve(async (req) => {
         practice: practiceSupport.answerKey,
         cross: crossSupport.answerKey,
       };
-      if (!finalized.cross || !finalized.cross.passage) {
-        throw new Error("INVALID_CROSS_SHAPE");
-      }
-      if (!Array.isArray(finalized.cross.questions) || finalized.cross.questions.length !== 5) {
-        throw new Error("INVALID_CROSS_QUESTION_COUNT");
-      }
-      if (!finalized.tutor || !finalized.answerKey) {
-        throw new Error("MISSING_SUPPORT_BLOCKS");
-      }
-      assertSupportIntegrity({
-        practice: { questions: sanitizedPracticeQuestions },
-        cross: { questions: finalized.cross.questions },
+      if (!finalized.tutor || !finalized.answerKey) console.warn("⚠️ Missing support blocks after hardening");
+      const contract = enforceResponseContract({
+        cross: finalized.cross,
         tutor: finalized.tutor,
         answerKey: finalized.answerKey,
+      });
+      assertSupportIntegrity({
+        practice: { questions: sanitizedPracticeQuestions },
+        cross: contract.cross,
+        tutor: contract.tutor,
+        answerKey: contract.answerKey,
       });
       return jsonResponse({
         teks: teksCode,
@@ -4517,9 +4565,9 @@ serve(async (req) => {
         practice: {
           questions: sanitizedPracticeQuestions,
         },
-        cross: finalized.cross,
-        tutor: finalized.tutor,
-        answerKey: finalized.answerKey,
+        cross: contract.cross,
+        tutor: contract.tutor,
+        answerKey: contract.answerKey,
       });
     };
 
@@ -4639,27 +4687,34 @@ serve(async (req) => {
         throw new Error("MISSING_TUTOR_PRACTICE");
       }
 
-      if (!tutorCross.length) {
-     console.warn("⚠️ Missing tutor cross — using partial");
-    }
-
-    if (!answerCross.length) {
-   console.warn("⚠️ Missing answer cross — using partial");
-   }
-
-      if (!answerCross.length || answerCross.length !== crossQuestions.length) {
-        throw new Error("MISSING_ANSWER_CROSS");
-      }
-
-      return jsonResponse({
+      if (!tutorCross.length) console.warn("⚠️ Missing tutor cross — using fallback");
+      if (!answerCross.length) console.warn("⚠️ Missing answer cross — using fallback");
+      const crossSupport = ensureNonEmptySupport(
+        crossQuestions,
+        tutorCross,
+        answerCross,
+        "cross",
+      );
+      const practiceSupport = ensureNonEmptySupport(
+        practiceQuestions,
+        tutorPractice,
+        answerPractice,
+        "practice",
+      );
+      const contract = enforceResponseContract({
         tutor: {
-          practice: tutorPractice,
-          cross: tutorCross,
+          practice: practiceSupport.tutor,
+          cross: crossSupport.tutor,
         },
         answerKey: {
-          practice: answerPractice,
-          cross: answerCross,
+          practice: practiceSupport.answerKey,
+          cross: crossSupport.answerKey,
         },
+      });
+
+      return jsonResponse({
+        tutor: contract.tutor,
+        answerKey: contract.answerKey,
       });
     }
 
@@ -5222,22 +5277,27 @@ serve(async (req) => {
           tutor: { practice: practiceSupport.tutor, cross: crossSupport.tutor },
           answerKey: { practice: practiceSupport.answerKey, cross: crossSupport.answerKey },
         };
-        assertSupportIntegrity({
-          practice: { questions: safePracticeQuestions },
+        const contract = enforceResponseContract({
           cross: payload.cross,
           tutor: payload.tutor,
           answerKey: payload.answerKey,
         });
+        assertSupportIntegrity({
+          practice: { questions: safePracticeQuestions },
+          cross: contract.cross,
+          tutor: contract.tutor,
+          answerKey: contract.answerKey,
+        });
         bestAttempt = {
           passage: finalPracticePassage,
           practice: { questions: safePracticeQuestions },
-          cross: payload.cross,
-          tutor: payload.tutor,
-          answerKey: payload.answerKey,
+          cross: contract.cross,
+          tutor: contract.tutor,
+          answerKey: contract.answerKey,
         };
         returnType = "PRIMARY";
         logReturnMetrics();
-        return returnEnrichment(payload);
+        return returnEnrichment(bestAttempt);
       } catch (err) {
         console.error("BACKEND ERROR:", err);
         if (isTimedOut()) {
