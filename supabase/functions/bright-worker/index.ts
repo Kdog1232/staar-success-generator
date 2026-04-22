@@ -2916,56 +2916,9 @@ async function sanitizeQuestions(
   }
 
   let questions = sanitized.slice(0, 5);
-
   const passageText = getPassageText(passage);
-  if (passageText.trim()) {
-    questions = questions.map((q, i) => {
-      if (isGenericQuestion(q.question) || !isPassageAnchored(q.question, passageText)) {
-        return {
-          ...q,
-          question: rewriteQuestion(q.question, passageText, i),
-        };
-      }
-      return q;
-    });
-  }
-  questions = questions.map((q) => repairQuestion(q, subject, passageText));
-  questions = validateOnce(questions, passageText);
-
-  let weakCount = 0;
-  let skillWarningCount = 0;
-  questions = questions.map((q) => {
-    if (!matchesSkill(q, skill)) {
-      skillWarningCount += 1;
-      console.warn("⚠️ Skill misalignment — keeping question");
-    }
-    const valid = isValidQuestion(q, passageText) && hasReasonableAlignment(q, passageText);
-    if (!valid) {
-      weakCount += 1;
-      console.warn("⚠️ Bad answers detected — keeping question");
-      return repairQuestion(q, subject, passageText);
-    }
-    return q;
-  });
-  if (weakCount > 0) {
-    console.warn(`⚠️ Weak question warnings on ${weakCount} questions — kept and repaired`);
-  }
-  if (skillWarningCount > 0) {
-    console.warn(`⚠️ Skill warnings on ${skillWarningCount} questions — keeping all questions`);
-  }
-  if (questions.length === 0 && originalQuestions.length > 0) {
-    console.warn("No questions after validation pass — restoring original AI output");
-    questions = originalQuestions;
-  }
-
-  let previousValidQuestion: Question | null = null;
-  questions = questions.map((q) => {
-    if (finalValidation(q, passageText, skill)) {
-      previousValidQuestion = q;
-      return q;
-    }
-    return previousValidQuestion || q;
-  });
+  void passageText;
+  void skill;
 
   if (questions.length < 5) {
     console.warn("⚠️ Fewer than 5 questions after validation — keeping available questions without regeneration");
@@ -2981,10 +2934,7 @@ async function sanitizeQuestions(
     step_by_step: String(q.step_by_step || "").trim(),
     parent_tip: String(q.parent_tip || "").trim(),
   }));
-  if (finalQuestions.length === 0) {
-    console.warn("⚠️ Restoring original AI questions");
-    return originalQuestions;
-  }
+  if (finalQuestions.length === 0) return originalQuestions;
   console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", finalQuestions.length);
   const alignedSet = finalQuestions;
   if (!isPassageBased(mode, subject)) {
@@ -3003,24 +2953,7 @@ async function sanitizeQuestions(
   }
 
   if (mode === "Cross-Curricular") {
-    const validatedCross = alignedSet.map((question) => {
-      const needsChoiceRepair = !Array.isArray(question.choices) || question.choices.length !== 4;
-      const needsAnswerRepair = typeof question.correct_answer !== "string"
-        || !["A", "B", "C", "D"].includes(question.correct_answer);
-      const needsExplanationRepair = !String(question.explanation || "").trim();
-      if (!needsChoiceRepair && !needsAnswerRepair && !needsExplanationRepair) {
-        return question;
-      }
-      console.warn("⚠️ Cross-curricular validation warning — keeping and repairing question");
-      const repaired = repairQuestion(question, subject, passageText);
-      return {
-        ...repaired,
-        explanation: ensureUsableExplanation(
-          repaired.explanation,
-          subject,
-        ),
-      };
-    });
+    const validatedCross = alignedSet;
     const crossOutput = enforceCrossReadingOnly(validatedCross, passageText);
     return crossOutput.length ? crossOutput : originalQuestions;
   }
@@ -3972,11 +3905,14 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
   let validatedCross: Question[] = [];
   if (data.cross?.questions) {
     validatedCross = [...data.cross.questions]
-      .map((q) => repairQuestion(q, subject, crossPassage));
+      .map((q) => ({
+        ...q,
+        choices: normalizeChoices(q.choices),
+      }));
     data.cross.questions = validatedCross;
   }
   data.practice.questions = validatedPractice.slice(0, 5);
-  data.cross.questions = validateAndRewriteChoiceStarts(validatedCross);
+  data.cross.questions = validatedCross.slice(0, 5);
 
   const buildBoundSupport = (
     q: Question,
@@ -4365,6 +4301,16 @@ serve(async (req) => {
     finalized.tutor = { practice: practiceSupport.tutor, cross: crossSupport.tutor };
     finalized.answerKey = { practice: practiceSupport.answerKey, cross: crossSupport.answerKey };
 
+    if (!finalized.cross || !finalized.cross.passage) {
+      throw new Error("INVALID_CROSS_SHAPE");
+    }
+    if (!Array.isArray(finalized.cross.questions) || finalized.cross.questions.length !== 5) {
+      throw new Error("INVALID_CROSS_QUESTION_COUNT");
+    }
+    if (!finalized.tutor || !finalized.answerKey) {
+      throw new Error("MISSING_SUPPORT_BLOCKS");
+    }
+
     return jsonResponse({
       teks: teksCode,
       skill,
@@ -4442,6 +4388,15 @@ serve(async (req) => {
         practice: practiceSupport.answerKey,
         cross: crossSupport.answerKey,
       };
+      if (!finalized.cross || !finalized.cross.passage) {
+        throw new Error("INVALID_CROSS_SHAPE");
+      }
+      if (!Array.isArray(finalized.cross.questions) || finalized.cross.questions.length !== 5) {
+        throw new Error("INVALID_CROSS_QUESTION_COUNT");
+      }
+      if (!finalized.tutor || !finalized.answerKey) {
+        throw new Error("MISSING_SUPPORT_BLOCKS");
+      }
       assertSupportIntegrity({
         practice: { questions: sanitizedPracticeQuestions },
         cross: { questions: finalized.cross.questions },
