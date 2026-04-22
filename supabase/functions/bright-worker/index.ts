@@ -1257,6 +1257,20 @@ Requirements:
 - Every question and choice must be answerable from the passage.
 - Keep output concise.
 
+Practice Mode rigor enforcement (CRITICAL):
+- Eliminate ALL simple recall questions.
+- If a question can be answered by copying one sentence from the passage, rewrite that question.
+- At least 3 of the 5 questions MUST be inference-based.
+- No more than 1 direct recall question is allowed.
+- Every question must require thinking beyond the text.
+- Reject stems like:
+  - "What did ___ do?"
+  - "What did ___ find?"
+  - "Which season...?"
+  - Any single stated-fact question.
+- Before finalizing, self-check: if more than 1 question is recall, rewrite until compliant.
+- Questions should not feel like a basic worksheet; they must require analysis and justification.
+
 Return JSON:
 {
   "passage": "",
