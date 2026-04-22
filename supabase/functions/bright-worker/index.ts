@@ -1736,14 +1736,6 @@ As the groups compared exact lines across the reports, they noticed how wording 
   return "Two groups reviewed two article collections to understand why readers preferred different reading formats. Some readers said shorter pieces helped them find key ideas quickly, while others preferred longer selections with more examples and context. The groups compared exact lines, checked which claims were supported by multiple details, and revised conclusions to match the strongest evidence in each source. When two sources appeared to conflict, they re-read the original lines and identified how word choice changed meaning. Their final report explained how careful reading and evidence-based reasoning led to clearer conclusions.";
 }
 
-function enforceValidPassage(passage: string): string {
-  if (!isCompletePassage(passage)) {
-    throw new Error("INVALID_PASSAGE");
-  }
-  return passage;
-}
-
-
 function buildExplanation(answer: string, question: string): string {
   const cleanAnswer = String(answer || "").trim();
   const prompt = String(question || "").toLowerCase();
@@ -4958,25 +4950,63 @@ serve(async (req) => {
             : q.question,
         }));
 
+        const getCrossPayloadFromResponse = (raw: Record<string, unknown> | null) => {
+          const scoped = raw?.cross && typeof raw.cross === "object"
+            ? raw.cross as Record<string, unknown>
+            : raw;
+          const payloadQuestions =
+            Array.isArray(scoped?.questions)
+              ? scoped.questions
+              : Array.isArray(scoped?.items)
+              ? scoped.items
+              : Array.isArray(raw?.questions)
+              ? raw.questions
+              : [];
+          return {
+            passage: String(scoped?.passage || ""),
+            questions: Array.isArray(payloadQuestions) ? payloadQuestions : [],
+          };
+        };
         const parsedCross: Record<string, unknown> = {
           passage: String(cross.passage || baseCrossPassage),
           questions: cross.questions,
         };
         let subjectCrossPassage = String(parsedCross.passage || "").trim() || baseCrossPassage;
-        const originalCrossPassage = subjectCrossPassage;
-        let regeneratedCrossPassage = false;
-        if (subjectCrossPassage) {
-          try {
-            subjectCrossPassage = enforceValidPassage(subjectCrossPassage);
-          } catch {
-            console.warn("Invalid passage — retrying generation");
+        if (subjectCrossPassage && !isCompletePassage(subjectCrossPassage)) {
+          console.warn("❌ Invalid cross passage detected");
+          const cleanedPassage = splitPassageSentences(subjectCrossPassage)
+            .filter((sentence) => isCompleteSentence(sentence))
+            .join(" ");
+
+          if (isCompletePassage(cleanedPassage)) {
+            subjectCrossPassage = cleanedPassage;
+          } else {
+            console.warn("🔁 Regenerating cross passage...");
+            const retryCrossRes = await generateWithRetry(
+              generateCrossCurricularPrompt({
+                grade,
+                subject: effectiveSubject,
+                skill: effectiveSkill,
+                level,
+                teksCode,
+              }) + `\nVariation ID: ${variationId}-retry`,
+            ) as Record<string, unknown> | null;
+            const retryCross = getCrossPayloadFromResponse(retryCrossRes);
+            if (!isCompletePassage(retryCross.passage)) {
+              console.warn("Cross failed — using safe fallback");
+              subjectCrossPassage = baseCrossPassage;
+              parsedCross.questions = rebuildCrossFromPractice(
+                safePracticeQuestions,
+                effectiveSubject,
+                effectiveSkill,
+              );
+            } else {
+              subjectCrossPassage = retryCross.passage;
+              parsedCross.questions = retryCross.questions;
+            }
           }
-          regeneratedCrossPassage = subjectCrossPassage !== originalCrossPassage;
-          parsedCross.passage = subjectCrossPassage;
         }
-        if (regeneratedCrossPassage) {
-          console.warn("⚠️ Cross passage regenerated after validation — keeping regenerated passage");
-        }
+        parsedCross.passage = subjectCrossPassage;
         if (!validateCrossPassage(subjectCrossPassage) || subjectCrossPassage === corePassageForChecks) {
           console.warn("⚠️ Invalid or duplicated cross passage, forcing subject passage");
           subjectCrossPassage = baseCrossPassage;
