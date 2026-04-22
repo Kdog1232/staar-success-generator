@@ -912,15 +912,6 @@ function isGenericChoice(choice: string): boolean {
   ].some((pattern) => pattern.test(normalized));
 }
 
-function isValidQuestion(q: Question): boolean {
-  return Boolean(
-    String(q?.question || "").trim() &&
-    Array.isArray(q?.choices) &&
-    q.choices.length === 4 &&
-    new Set(q.choices.map((choice) => String(choice || "").trim())).size > 0,
-  );
-}
-
 function isValidPassage(passage: string): boolean {
   return isUsablePassage(passage);
 }
