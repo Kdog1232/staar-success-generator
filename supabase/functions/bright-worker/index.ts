@@ -451,7 +451,12 @@ function buildAlignedExplanation(
   const passageStarter = passageStarters[starterIndex];
   const why = (usePassage
     ? (() => {
-      const cleanSnippet = summarizeEvidenceIdea(snippet || "");
+      let boundedSnippet = snippet || "";
+      if (!boundedSnippet || boundedSnippet.length < 15) {
+        const fallback = splitPassageSentences(passage)[0] || "";
+        boundedSnippet = fallback;
+      }
+      const cleanSnippet = summarizeEvidenceIdea(boundedSnippet);
 
       const evidence =
         cleanSnippet && cleanSnippet.length > 15
@@ -470,6 +475,32 @@ function buildAlignedExplanation(
     : "Test each option against the full question, not just one keyword.";
 
   return { why, mistake, tip };
+}
+
+function buildAnswerKeyExplanation(
+  question: any,
+  passage: string,
+  usedEvidence: Set<string>,
+  usePassage: boolean,
+): { why: string; mistake: string; tip: string } {
+  const normalizedChoices = normalizeChoices(question?.choices);
+  const correctLetter = safeCorrectAnswer(question?.correct_answer);
+  const correctIndex = Math.max(0, LETTERS.indexOf(correctLetter));
+  const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
+  let snippet = usePassage ? selectEvidenceSnippet(question, String(passage || ""), usedEvidence) : null;
+  if (!snippet || snippet.length < 15) {
+    const fallback = splitPassageSentences(passage)[0] || "";
+    snippet = fallback;
+  }
+  const cleanSnippet = summarizeEvidenceIdea(snippet || "");
+
+  return {
+    why: usePassage
+      ? `The passage explains that "${cleanSnippet}", which supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`
+      : `The explanation supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} based on the question requirements.`,
+    mistake: "This distractor may seem correct but is not supported by the passage.",
+    tip: "Check the exact detail that confirms the correct answer.",
+  };
 }
 
 function buildDistractorFeedback(question: any): string {
@@ -3566,7 +3597,7 @@ function buildCrossAnswerFallback(
   passage: string,
 ): Pick<AnswerKeyEntry, "explanation" | "common_mistake" | "parent_tip"> {
   void subject;
-  const aligned = buildAlignedExplanation(question, passage, new Set<string>(), true);
+  const aligned = buildAnswerKeyExplanation(question, passage, new Set<string>(), true);
   const distractorFeedback = buildDistractorFeedback(question);
   return {
     explanation: `${aligned.why} ${distractorFeedback}`.trim(),
@@ -3659,26 +3690,18 @@ function generateAnswerKey(
       const distractor = normalizedChoices
         .map((choice, idx) => ({ letter: LETTERS[idx], choice: String(choice || "").trim() }))
         .find((entry) => entry.letter !== correctLetter && entry.choice);
-      const evidence = shouldUsePassage
-        ? (selectEvidenceSnippet(q, scopedPassageText, usedEvidence) ||
-          getRelevantSnippet(scopedPassageText, q.question, correctChoice) ||
-          String(scopedPassageText || "").split(".")[0])
-        : "a stated detail from the prompt";
-      const groundedEvidence = evidence.replace(/\s+/g, " ").trim();
-      const explanationStyles = [
-        `The passage says "${groundedEvidence}," which directly supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
-        `When you read "${groundedEvidence}," the best conclusion is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
-        `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is correct because "${groundedEvidence}" shows that idea clearly.`,
-      ];
-      const explanationLead = explanationStyles[index % explanationStyles.length];
+      const aligned = buildAnswerKeyExplanation(q, scopedPassageText, usedEvidence, shouldUsePassage);
+      const explanationLead = aligned.why || (shouldUsePassage
+        ? `The passage supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`
+        : `The question supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`);
       const explanation = distractor
         ? `${explanationLead} ${distractor.letter} (${distractor.choice}) sounds possible, but that choice is not what this specific detail actually supports.`
         : explanationLead;
       const commonMistake = distractor
         ? `${distractor.letter} can seem related, but it is not the best-supported interpretation of the passage evidence.`
-        : "One trap is selecting an answer that sounds plausible without checking passage evidence.";
+        : aligned.mistake;
 
-      const parentTip = variedParentTip(index);
+      const parentTip = aligned.tip || variedParentTip(index);
       return {
         question_id: ensureQuestionId(q, index, mode),
         correct_answer: correctLetter || "",
@@ -4972,44 +4995,41 @@ serve(async (req) => {
           questions: cross.questions,
         };
         let subjectCrossPassage = String(parsedCross.passage || "").trim() || baseCrossPassage;
-        if (subjectCrossPassage && !isCompletePassage(subjectCrossPassage)) {
-          console.warn("❌ Invalid cross passage detected");
-          const cleanedPassage = splitPassageSentences(subjectCrossPassage)
-            .filter((sentence) => isCompleteSentence(sentence))
-            .join(" ");
+        const isUsable = Boolean(subjectCrossPassage && subjectCrossPassage.length > 80);
+        if (!isUsable) {
+          console.warn("Weak cross passage — retrying...");
+          const retryCrossRes = await generateWithRetry(
+            generateCrossCurricularPrompt({
+              grade,
+              subject: effectiveSubject,
+              skill: effectiveSkill,
+              level,
+              teksCode,
+            }) + `\nVariation ID: ${variationId}-retry`,
+          ) as Record<string, unknown> | null;
+          const retryCross = getCrossPayloadFromResponse(retryCrossRes);
+          subjectCrossPassage = String(retryCross.passage || "").trim();
 
-          if (isCompletePassage(cleanedPassage)) {
-            subjectCrossPassage = cleanedPassage;
+          if (
+            !isCompletePassage(subjectCrossPassage) ||
+            subjectCrossPassage === corePassageForChecks
+          ) {
+            console.warn("Retry failed — using safe fallback");
+            subjectCrossPassage = baseCrossPassage;
+            parsedCross.questions = rebuildCrossFromPractice(
+              safePracticeQuestions,
+              effectiveSubject,
+              effectiveSkill,
+            );
           } else {
-            console.warn("🔁 Regenerating cross passage...");
-            const retryCrossRes = await generateWithRetry(
-              generateCrossCurricularPrompt({
-                grade,
-                subject: effectiveSubject,
-                skill: effectiveSkill,
-                level,
-                teksCode,
-              }) + `\nVariation ID: ${variationId}-retry`,
-            ) as Record<string, unknown> | null;
-            const retryCross = getCrossPayloadFromResponse(retryCrossRes);
-            if (!isCompletePassage(retryCross.passage)) {
-              console.warn("Cross failed — using safe fallback");
-              subjectCrossPassage = baseCrossPassage;
-              parsedCross.questions = rebuildCrossFromPractice(
+            parsedCross.questions = retryCross.questions?.length
+              ? retryCross.questions
+              : rebuildCrossFromPractice(
                 safePracticeQuestions,
                 effectiveSubject,
                 effectiveSkill,
               );
-            } else {
-              subjectCrossPassage = retryCross.passage;
-              parsedCross.questions = retryCross.questions;
-            }
           }
-        }
-        parsedCross.passage = subjectCrossPassage;
-        if (!validateCrossPassage(subjectCrossPassage) || subjectCrossPassage === corePassageForChecks) {
-          console.warn("⚠️ Invalid or duplicated cross passage, forcing subject passage");
-          subjectCrossPassage = baseCrossPassage;
         }
         const constraints = getGradeConstraints(grade);
         subjectCrossPassage = ensurePassageLength(
@@ -5025,6 +5045,7 @@ serve(async (req) => {
         if (violatesGradeLevel(subjectCrossPassage, grade)) {
           console.warn("⚠️ Passage too advanced for grade, keeping AI output");
         }
+        parsedCross.passage = subjectCrossPassage;
 
         let crossQuestions = await sanitizeQuestions(
           parsedCross.questions || [],
