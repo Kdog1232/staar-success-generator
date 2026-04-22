@@ -1388,7 +1388,6 @@
       const banner = document.getElementById("upgrade-banner");
       outputDiv.innerText = "Your STAAR practice will appear here...";
       viewToggle.style.display = "none";
-      currentMode = "practice";
       contentMode = "standard";
       resetGenerateState();
       lastGeneratedContentMode = null;
@@ -2525,17 +2524,17 @@
     function setMode(mode) {
       currentMode = mode;
 
-      document.getElementById("practice-section").style.display =
-        mode === "practice" ? "block" : "none";
+      const practiceSection = document.getElementById("practice-section");
+      const crossSection = document.getElementById("cross-section");
+      const tutorSection = document.getElementById("tutor-section");
+      const answerSection = document.getElementById("answer-section");
 
-      document.getElementById("cross-section").style.display =
-        mode === "cross" ? "block" : "none";
-
-      document.getElementById("tutor-section").style.display =
-        mode === "tutor" ? "block" : "none";
-
-      document.getElementById("answer-section").style.display =
-        mode === "answer" ? "block" : "none";
+      if (practiceSection && crossSection && tutorSection && answerSection) {
+        practiceSection.style.display = mode === "practice" ? "block" : "none";
+        crossSection.style.display = mode === "cross" ? "block" : "none";
+        tutorSection.style.display = mode === "tutor" ? "block" : "none";
+        answerSection.style.display = mode === "answer" ? "block" : "none";
+      }
 
       console.log("🎯 MODE:", mode);
 
