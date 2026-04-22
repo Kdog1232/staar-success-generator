@@ -2908,24 +2908,27 @@
           tutorSection.innerHTML = "<div>⏳ Loading tutor...</div>";
         }
 
-        const crossRequest = fetchCrossContent({
-          token,
-          subject,
-          grade,
-          skill,
-          level
-        });
+        (async () => {
+          let safeCross = { passage: "", questions: [] };
 
-        crossRequest
-          .then((cross) => {
+          try {
+            const cross = await fetchCrossContent({
+              token,
+              subject,
+              grade,
+              skill,
+              level
+            });
             if (currentRequestId !== requestId) return;
 
             console.log("🌎 CROSS READY");
             const normalizedCross = normalizeWorkerPayload({ cross }, { fallbackPassage: currentData?.passage || "" });
-            crossDataState = {
+            safeCross = {
               passage: normalizedCross.cross.passage,
               questions: normalizedCross.cross.questions
             };
+
+            crossDataState = safeCross;
             currentData.cross = crossDataState;
 
             renderCrossSection(crossDataState, crossDataState.passage || "");
@@ -2935,12 +2938,11 @@
             if (currentMode !== "practice") {
               renderTab(currentMode);
             }
-          })
-          .catch((crossErr) => {
+          } catch (crossErr) {
             console.warn("❌ CROSS FAILED:", crossErr);
             if (currentRequestId !== requestId) return;
 
-            crossDataState = { passage: "", questions: [] };
+            crossDataState = safeCross;
             currentData.cross = crossDataState;
 
             if (crossSection) {
@@ -2950,19 +2952,10 @@
             if (currentMode !== "practice") {
               renderTab(currentMode);
             }
-          });
+          }
 
-        crossRequest
-          .then((cross) => {
-            if (currentRequestId !== requestId) return null;
-
-            const normalizedCross = normalizeWorkerPayload({ cross }, { fallbackPassage: currentData?.passage || "" });
-            const safeCross = {
-              passage: normalizedCross.cross.passage,
-              questions: normalizedCross.cross.questions
-            };
-
-            return fetchSupportContent({
+          try {
+            const support = await fetchSupportContent({
               token,
               subject,
               grade,
@@ -2972,8 +2965,6 @@
               practiceQuestions: Array.isArray(currentData?.practice?.questions) ? currentData.practice.questions : [],
               cross: safeCross
             });
-          })
-          .then((support) => {
             if (!support || currentRequestId !== requestId) return;
 
             console.log("🧠 SUPPORT READY");
@@ -2991,10 +2982,10 @@
             if (currentMode !== "practice") {
               renderTab(currentMode);
             }
-          })
-          .catch((supportErr) => {
+          } catch (supportErr) {
             console.warn("⚠️ Support failed:", supportErr);
-          });
+          }
+        })();
 
         console.log("🎯 RENDER COMPLETE");
       } catch (err) {
