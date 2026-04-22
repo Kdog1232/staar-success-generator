@@ -2253,23 +2253,19 @@
     }
 
     function renderCrossSection(crossData, crossText) {
-      const crossSection = document.getElementById("cross-block") || document.getElementById("cross-section");
+      const crossSection = document.getElementById("cross-section");
       if (!crossSection) return;
       if (!crossData || !Array.isArray(crossData.questions) || crossData.questions.length === 0) {
         console.warn("⚠️ Cross section skipped due to missing cross questions");
         return;
       }
-      const crossQuestionMarkup = renderCross(crossData);
+
       crossSection.innerHTML = `
-        <div class="mode-label">Cross-Curricular Mode</div>
-        <section class="worksheet-section">
-          <h3>📖 Passage</h3>
-          ${renderPassage(crossText)}
-        </section>
-        <section class="worksheet-section">
-          <h3>🌎 Subject-Driven Questions on the Passage</h3>
-          ${crossQuestionMarkup}
-        </section>
+        <div class="worksheet-section">
+          <h3>🌎 Cross-Curricular</h3>
+          ${renderPassage(crossText || crossData.passage || "")}
+          ${renderCross(crossData)}
+        </div>
       `;
       crossSection.style.display = "block";
     }
