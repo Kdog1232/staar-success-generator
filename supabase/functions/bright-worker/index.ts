@@ -3147,40 +3147,17 @@ async function generateWithRetry(
   validateOutput: (data: unknown) => boolean = isValidAIOutput,
   options: { returnLastInvalid?: boolean } = {},
 ) {
-  let validResult: unknown = null;
-  let lastResult: unknown = null;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const result = await callOpenAI(prompt, 35000);
-      if (result) {
-        lastResult = result;
-      }
-      console.log("RAW AI RESPONSE:", JSON.stringify(result, null, 2));
-
-      if (result && validateOutput(result)) {
-        console.warn("✅ VALID OUTPUT — CONTINUING PIPELINE");
-        validResult = result;
-        break;
-      }
-
-      console.warn("⚠️ Invalid output — retrying...");
-
-    } catch (err) {
-      console.warn("⚠️ Generation failed — retrying...", err);
-    }
+  void attempts;
+  void validateOutput;
+  void options;
+  try {
+    const result = await callOpenAI(prompt, 35000);
+    console.log("RAW AI RESPONSE:", JSON.stringify(result, null, 2));
+    return result;
+  } catch (err) {
+    console.warn("⚠️ Generation failed", err);
+    return null;
   }
-
-  if (validResult) {
-    return validResult;
-  }
-
-  if (options.returnLastInvalid && lastResult) {
-    console.warn("⚠️ ALL ATTEMPTS FAILED VALIDATION — USING RAW OUTPUT");
-    return lastResult;
-  }
-
-  console.error("❌ ALL ATTEMPTS FAILED — NO FALLBACK");
-  return null;
 }
 
 function validateDistractorQuality(questions: Question[], passage: PassageContent | string): boolean {
