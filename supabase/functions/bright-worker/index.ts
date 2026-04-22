@@ -428,11 +428,24 @@ function buildAlignedExplanation(
   const correctIndex = Math.max(0, LETTERS.indexOf(correctLetter));
   const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
   const snippet = usePassage ? selectEvidenceSnippet(question, String(passage || ""), usedEvidence) : null;
+  const passageStarters = [
+    "Look closely at the part where",
+    "The key detail is",
+    "The passage shows that",
+    "Notice how the text explains",
+    "Focus on the moment when",
+  ];
+  const starterIndex = Math.abs(
+    String(question?.question || "")
+      .split("")
+      .reduce((sum, ch) => sum + ch.charCodeAt(0), 0),
+  ) % passageStarters.length;
+  const passageStarter = passageStarters[starterIndex];
   const why = (usePassage
     ? (snippet
-      ? `Start by looking at "${summarizeEvidenceIdea(snippet)}" and connect that detail to what the question asks. That reasoning leads to ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`
-      : `Start by identifying the passage detail that directly addresses the question. The strongest evidence supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`)
-    : `Start by identifying what the problem is asking and checking each condition in order. That process supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`);
+      ? `${passageStarter} "${summarizeEvidenceIdea(snippet)}." That detail supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} when you match it to what the question asks.`
+      : `${passageStarter} the line that directly answers the question. That evidence supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`)
+    : `Focus on the moment when each condition in the problem is checked in order. That process supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`);
 
   const mistake = usePassage
     ? "A common mistake is choosing an option that sounds related but is not directly supported by the passage evidence."
