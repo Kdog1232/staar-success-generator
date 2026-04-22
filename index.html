@@ -1928,8 +1928,9 @@
 
     function validateTutorAnswerAlignment(questions = [], tutorEntries = [], answerEntries = [], modePrefix = "practice") {
       if (!Array.isArray(questions) || !Array.isArray(tutorEntries) || !Array.isArray(answerEntries)) return false;
-      if (questions.length !== 5 || tutorEntries.length !== 5 || answerEntries.length !== 5) return false;
-      return questions.every((_, i) => {
+      if (questions.length === 0) return false;
+      let validCount = 0;
+      questions.forEach((_, i) => {
         const expectedId = `${modePrefix}_q${i + 1}`;
         const tutor = tutorEntries[i] || {};
         const answer = answerEntries[i] || {};
@@ -1938,8 +1939,10 @@
         const answerOk = (matchesQuestionId(answer.question_id, modePrefix, i) || answer.question_id === expectedId) &&
           answer.correct_answer &&
           answer.explanation;
-        return Boolean(tutorOk && answerOk);
+        if (tutorOk && answerOk) validCount++;
       });
+
+      return validCount >= Math.ceil(questions.length * 0.6);
     }
 
     async function fetchPracticeEnrichment({ token, subject, grade, skill, level, passage, questions }) {
@@ -1958,6 +1961,7 @@
             skill,
             level,
             passage,
+            practice: Array.isArray(questions) ? questions : [],
             questions
           })
         }
