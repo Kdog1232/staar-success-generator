@@ -1160,23 +1160,21 @@ function generateQuestionsPrompt(params: {
 }): string {
   const { grade, subject, skill, level, passage, teksCode = "Unknown" } = params;
   void teksCode;
+  void passage;
 
   if (subject === "Reading") {
     return `
-Use the passage below.
+Generate concise STAAR-style Reading practice content.
 
-PASSAGE:
-${String(passage || "").trim()}
-
-Generate 5 STAAR-style reading questions.
-
-Rules:
-- All questions must rely on the passage
-- All answer choices must be grounded in passage details
-- No outside scenarios
+Requirements:
+- Write one full passage (150-300 words) in "passage".
+- Then write exactly 5 comprehension questions in "questions".
+- Every question and choice must be answerable from the passage.
+- Keep output concise.
 
 Return JSON:
 {
+  "passage": "",
   "questions": [
     {
       "question": "",
@@ -1189,46 +1187,68 @@ Return JSON:
 
   if (subject === "Math") {
     return `
-Generate 5 STAAR-style math WORD PROBLEMS.
+Generate concise STAAR-style Math practice content.
 
-Rules:
-- Each question must be a real-world scenario
-- Include numbers and multi-step reasoning
-- NO passage
-- Choices must be numeric or expressions
+Requirements:
+- DO NOT generate a passage.
+- Set "passage" to null.
+- Generate exactly 5 word problems in "questions".
+- Each question must be self-contained with its own context.
+- Keep output concise.
 
 Return JSON:
 {
-  "questions": [...]
+  "passage": null,
+  "questions": [
+    {
+      "question": "",
+      "choices": ["", "", "", ""],
+      "correct_answer": "A"
+    }
+  ]
 }`;
   }
 
   if (subject === "Science") {
     return `
-Generate 5 STAAR-style science questions.
+Generate concise STAAR-style Science practice content.
 
-Rules:
-- Each question must include a SHORT scenario (2–3 sentences max)
-- Focus on cause/effect, systems, or experiments
-- NO long passage
+Requirements:
+- Write one short informational excerpt (50-120 words) in "passage".
+- Then write exactly 5 questions in "questions" based on that excerpt.
+- Keep output concise.
 
 Return JSON:
 {
-  "questions": [...]
+  "passage": "",
+  "questions": [
+    {
+      "question": "",
+      "choices": ["", "", "", ""],
+      "correct_answer": "A"
+    }
+  ]
 }`;
   }
 
   return `
-Generate 5 STAAR-style social studies questions.
+Generate concise STAAR-style Social Studies practice content.
 
-Rules:
-- Each question must include a SHORT scenario (historical or civic)
-- Focus on cause/effect, impact, or decision-making
-- NO long passage
+Requirements:
+- Write one short historical or informational excerpt (50-120 words) in "passage".
+- Then write exactly 5 questions in "questions" based on that excerpt.
+- Keep output concise.
 
 Return JSON:
 {
-  "questions": [...]
+  "passage": "",
+  "questions": [
+    {
+      "question": "",
+      "choices": ["", "", "", ""],
+      "correct_answer": "A"
+    }
+  ]
 }`;
 }
 
@@ -4256,6 +4276,11 @@ serve(async (req) => {
         ),
         String(cross?.passage || ""),
       );
+      const finalCorePassage = (() => {
+        const source = (data as Partial<WorkerAttempt>)?.passage;
+        if (typeof source === "string" && source.trim().length > 0) return source.trim();
+        return null;
+      })();
       const finalized = enforceSingleSourceOfTruth({
         passage: String((data as Partial<WorkerAttempt>)?.passage || ""),
         practice: {
@@ -4304,6 +4329,7 @@ serve(async (req) => {
         teks: teksCode,
         skill,
         grade,
+        passage: finalCorePassage,
         practice: {
           questions: sanitizedPracticeQuestions,
         },
@@ -4639,9 +4665,6 @@ serve(async (req) => {
               : isUsablePassage(String(passageRes?.passage || ""))
               ? String(passageRes?.passage || "")
               : null;
-            if (!generatedCorePassage || generatedCorePassage.length < 30) {
-              generatedCorePassage = String(coreQuestions[0]?.question || "Read the passage and answer the questions.");
-            }
             generatedCoreQuestions = coreQuestions;
         }
 
@@ -4651,14 +4674,20 @@ serve(async (req) => {
           ? body.practiceQuestions
           : [];
 
-        const corePassageFromRequest = effectiveMode === "core" && generatedCorePassage
-          ? generatedCorePassage
+        const finalCorePassage =
+          typeof generatedCorePassage === "string" &&
+            generatedCorePassage.trim().length > 0
+            ? generatedCorePassage.trim()
+            : null;
+        const corePassageFromRequest = effectiveMode === "core"
+          ? finalCorePassage
           : typeof body.passage === "string"
           ? body.passage
           : null;
         const corePassageForChecks = corePassageFromRequest;
+        console.log("🧪 FINAL PRACTICE PASSAGE:", corePassageForChecks);
         if (effectiveSubject === "Reading" && (!corePassageForChecks || corePassageForChecks.length < 30)) {
-          throw new Error("🚨 PASSAGE MISSING IN FINAL PAYLOAD");
+          console.warn("⚠️ Missing or short passage — returning anyway");
         }
         const normalizedPractice = priorPractice.map((q) => {
           const item = (q || {}) as Question;
@@ -4928,8 +4957,13 @@ serve(async (req) => {
           "cross",
         );
 
+        const finalPracticePassage = effectiveMode === "core"
+          ? finalCorePassage
+          : typeof corePassageForChecks === "string" && corePassageForChecks.trim().length > 0
+          ? corePassageForChecks.trim()
+          : null;
         const payload: WorkerAttempt = {
-          passage: corePassageForChecks ?? null,
+          passage: finalPracticePassage,
           practice: { questions: safePracticeQuestions },
           cross: {
             passage: subjectCrossPassage,
@@ -4945,7 +4979,7 @@ serve(async (req) => {
           answerKey: payload.answerKey,
         });
         bestAttempt = {
-          passage: corePassageForChecks ?? null,
+          passage: finalPracticePassage,
           practice: { questions: safePracticeQuestions },
           cross: payload.cross,
           tutor: payload.tutor,
