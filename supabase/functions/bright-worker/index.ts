@@ -443,7 +443,7 @@ function buildAlignedExplanation(
   const passageStarter = passageStarters[starterIndex];
   const why = (usePassage
     ? (snippet
-      ? `${passageStarter} "${summarizeEvidenceIdea(snippet)}." That detail supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} when you match it to what the question asks.`
+      ? `${passageStarter} "${String(snippet || "").replace(/\s+/g, " ").trim().replace(/^["'\s]+|["'\s]+$/g, "").replace(/[.!?]+$/, "")}." That detail supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} when you match it to what the question asks.`
       : `${passageStarter} the line that directly answers the question. That evidence supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`)
     : `Focus on the moment when each condition in the problem is checked in order. That process supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`);
 
@@ -718,14 +718,6 @@ function extractKeyConcept(answer: string): string {
     .filter((word) => word.length > 4)
     .slice(0, 3);
   return concepts.join(" ") || "the key details";
-}
-
-function summarizeEvidenceIdea(snippet: string): string {
-  const cleaned = String(snippet || "").replace(/\s+/g, " ").trim().replace(/^["'\s]+|["'\s]+$/g, "");
-  if (!cleaned) return "the strongest idea in the passage";
-  const words = cleaned.split(/\s+/).filter(Boolean);
-  const compact = words.length > 22 ? `${words.slice(0, 22).join(" ")}...` : cleaned;
-  return compact.replace(/[.!?]+$/, "");
 }
 
 function variedParentTip(index: number): string {
@@ -4003,7 +3995,6 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
     const evidenceSnippet = selectEvidenceSnippet(q, passageText, usedEvidence) ||
       getRelevantSnippet(passageText, q.question, correctChoice) ||
       "a specific detail stated in the passage";
-    const evidenceIdea = summarizeEvidenceIdea(evidenceSnippet).replace(/\s+/g, " ").trim();
     const groundedEvidence = evidenceSnippet.replace(/\s+/g, " ").trim();
 
     const explanationVariants = [
@@ -4014,7 +4005,7 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
     ];
     const explanationLead = explanationVariants[Math.abs(variant) % explanationVariants.length];
     const explanationTail = wrongOption
-      ? ` A common trap is choosing an option that sounds related to ${evidenceIdea} without matching what the quoted detail actually shows.`
+      ? ` A common trap is choosing an option that sounds related to "${groundedEvidence}" without matching what the quoted detail actually shows.`
       : " A common trap is choosing an option that sounds related without checking the exact passage wording.";
     const explanation = `${explanationLead}${explanationTail}`;
 
