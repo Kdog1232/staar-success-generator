@@ -4241,7 +4241,7 @@ serve(async (req) => {
   let subject: CanonicalSubject = "Reading";
   let skill = READING_SKILL_DEFAULT;
   let level: Level = "On Level";
-  let effectiveMode: "core" | "cross" | "support" | "enrichment" = "core";
+  let effectiveMode: "core" | "cross" | "support" | "enrichment" | "practice_only" = "core";
   let contentMode: CanonicalMode = "Practice";
   let effectiveSubject: CanonicalSubject = "Reading";
   let effectiveSkill = READING_SKILL_DEFAULT;
@@ -4685,6 +4685,8 @@ serve(async (req) => {
       effectiveMode = "support";
     } else if (normalizedMode === "enrichment") {
       effectiveMode = "enrichment";
+    } else if (normalizedMode === "practice_only") {
+      effectiveMode = "practice_only";
     } else {
       effectiveMode = "core";
     }
@@ -4692,6 +4694,8 @@ serve(async (req) => {
       contentMode = "Cross-Curricular";
     } else if (effectiveMode === "support") {
       contentMode = "Support";
+    } else if (effectiveMode === "practice_only") {
+      contentMode = "Practice";
     } else {
       contentMode = "Practice";
     }
@@ -4846,6 +4850,27 @@ serve(async (req) => {
               ? String(passageRes?.passage || "")
               : null;
             generatedCoreQuestions = finalQuestions;
+        }
+
+        if (effectiveMode === "practice_only") {
+          const coreQuestions = (Array.isArray(generatedCoreQuestions) ? generatedCoreQuestions : []).map((q) => ({
+            ...(q as Question),
+            choices: normalizeChoices((q as Question).choices),
+          }));
+          if (!coreQuestions.length) {
+            throw new Error("NO_QUESTIONS_FROM_AI");
+          }
+          const finalPracticePassage = typeof generatedCorePassage === "string" && generatedCorePassage.trim().length > 0
+            ? generatedCorePassage.trim()
+            : "";
+          returnType = "PRACTICE_ONLY";
+          logReturnMetrics();
+          return jsonResponse({
+            practice: {
+              passage: finalPracticePassage,
+              questions: coreQuestions.slice(0, 5),
+            },
+          });
         }
 
         const priorPractice = effectiveMode === "core" && Array.isArray(generatedCoreQuestions)

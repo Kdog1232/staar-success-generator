@@ -1,0 +1,58 @@
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const payload = {
+    grade: body.grade,
+    subject: body.subject,
+    skill: body.skill,
+    level: body.level,
+    mode: "practice_only",
+  };
+
+  const target = new URL(req.url);
+  target.pathname = target.pathname.replace(/\/generate-practice$/, "/bright-worker");
+
+  const res = await fetch(target.toString(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      authorization: req.headers.get("authorization") || "",
+      apikey: req.headers.get("apikey") || "",
+      "x-client-info": req.headers.get("x-client-info") || "",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    return new Response(JSON.stringify(data), {
+      status: res.status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  return new Response(JSON.stringify({ practice: data.practice }), {
+    status: 200,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+});
