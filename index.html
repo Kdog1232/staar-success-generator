@@ -2869,6 +2869,7 @@
             currentData.cross = crossDataState;
 
             renderCrossSection(crossDataState, crossDataState.passage || "");
+            setMode("cross");
             console.log("CROSS READY:", crossDataState);
           } catch (crossErr) {
             console.warn("❌ CROSS FAILED:", crossErr);
