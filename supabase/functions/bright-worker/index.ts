@@ -428,13 +428,11 @@ function buildAlignedExplanation(
   const correctIndex = Math.max(0, LETTERS.indexOf(correctLetter));
   const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
   const snippet = usePassage ? selectEvidenceSnippet(question, String(passage || ""), usedEvidence) : null;
-  const explicit = String(question?.explanation || "").trim();
-
-  const why = explicit || (usePassage
+  const why = (usePassage
     ? (snippet
-      ? `The best answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because the text states: "${summarizeEvidenceIdea(snippet)}."`
-      : `The best answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it is the only option fully supported by the passage.`)
-    : `The best answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it matches the problem's required reasoning.`);
+      ? `Start by looking at "${summarizeEvidenceIdea(snippet)}" and connect that detail to what the question asks. That reasoning leads to ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`
+      : `Start by identifying the passage detail that directly addresses the question. The strongest evidence supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`)
+    : `Start by identifying what the problem is asking and checking each condition in order. That process supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`);
 
   const mistake = usePassage
     ? "A common mistake is choosing an option that sounds related but is not directly supported by the passage evidence."
@@ -1521,6 +1519,10 @@ Rules:
 - When explaining mistakes, briefly describe why a student might choose the wrong answer
 - Keep explanations grounded ONLY in the provided passage or problem
 - Use natural teacher-like language instead of repeating labels like A, B, C, or D
+- Begin explanation.why with reasoning from the passage/problem, not with the answer
+- Confirm the correct answer at the END of explanation.why after the reasoning
+- Do not list every incorrect option; mention a wrong choice only when needed to teach a misconception
+- Do not use phrases like "validated answer" or "the best answer is" as opening framing
 - Do not rewrite questions or answer choices
 - Return only valid JSON with no extra text
 `;
@@ -3586,37 +3588,29 @@ function generateTutor(
   return questions.slice(0, 5).map((q, index) => {
     try {
       const { letter, choice } = getQuestionCorrectPair(q);
-      const normalizedChoices = normalizeChoices(q.choices);
       const correctAnswer = letter ? `${letter}. ${choice}` : "";
-      const wrongChoiceGuidance = letter
-        ? normalizedChoices
-          .map((candidate, candidateIndex) => ({ letter: LETTERS[candidateIndex], candidate }))
-          .filter((entry) => entry.letter !== letter)
-          .map((entry) =>
-            `❌ ${entry.letter}. ${entry.candidate} — This option does not match the validated correct answer (${correctAnswer}).`
-          )
-          .join("\n")
-        : "";
       const aligned = buildAlignedExplanation(q, scopedPassageText, usedEvidence, shouldUsePassage);
       const baseExplanation = shouldUsePassage
         ? aligned.why
         : (String(q.explanation || "").trim() ||
-          (correctAnswer ? `The validated correct answer is ${correctAnswer}.` : "Use the validated question answer and supporting evidence."));
-      const explanation = wrongChoiceGuidance ? `${baseExplanation}\n\n${wrongChoiceGuidance}` : baseExplanation;
+          (correctAnswer
+            ? `Start by following the question requirements one step at a time, then match your reasoning to evidence from the prompt. This confirms ${correctAnswer}.`
+            : "Start by following the question requirements one step at a time and matching each part to clear evidence."));
+      const explanation = baseExplanation;
 
       return {
         question_id: ensureQuestionId(q, index, mode),
         question: String(q.question || "").trim(),
         explanation,
-        common_mistake: String(q.common_mistake || "").trim() || "Choosing an option without matching it to the validated answer and passage evidence.",
+        common_mistake: String(q.common_mistake || "").trim() || "Choosing an option before checking the strongest evidence in the passage or problem.",
         hint: String(q.hint || "").trim() ||
-          (correctAnswer ? `Use the validated answer: ${correctAnswer}.` : "Read the validated answer and match it to passage evidence."),
+          "Start by finding the exact detail that the question depends on, then use it to test your choice.",
         think: String(q.think || "").trim() ||
-          (correctAnswer ? `How does the passage support ${correctAnswer}?` : "Which passage detail supports the validated answer?"),
+          (correctAnswer ? `Which detail leads to ${correctAnswer} only after you reason through the prompt?` : "Which detail in the passage or problem gives the strongest support?"),
         step_by_step: String(q.step_by_step || "").trim() ||
           (correctAnswer
-            ? `1. Read the question.\n2. Identify the validated answer (${correctAnswer}).\n3. Confirm passage evidence supports it.\n4. Eliminate choices that do not match that evidence.`
-            : "1. Read the question.\n2. Locate the validated answer.\n3. Match it to passage evidence."),
+            ? `1. Read the question and identify what it asks.\n2. Find the strongest supporting detail in the passage or problem.\n3. Explain why that detail supports one conclusion.\n4. Confirm the correct answer is ${correctAnswer}.`
+            : "1. Read the question and identify what it asks.\n2. Find the strongest supporting detail.\n3. Explain how that detail supports your conclusion."),
       };
     } catch (err) {
       console.error("Tutor build failed:", err);
@@ -4000,15 +3994,15 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
     const groundedEvidence = evidenceSnippet.replace(/\s+/g, " ").trim();
 
     const explanationVariants = [
-      `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is correct because "${groundedEvidence}" directly answers the question.`,
-      `Because "${groundedEvidence}" happens in the text, the most supported conclusion is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
-      `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} fits the evidence, while other options conflict with the detail "${groundedEvidence}".`,
-      `The passage detail "${groundedEvidence}" supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} since it matches both the claim and context in the question.`,
+      `Start by locating "${groundedEvidence}" in the passage and deciding what that detail proves. That reasoning confirms ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
+      `Notice the passage detail "${groundedEvidence}" first, then connect it to the question focus. Following that logic leads to ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
+      `Read "${groundedEvidence}" and explain the conclusion it supports before choosing any option. That step-by-step check points to ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
+      `Use "${groundedEvidence}" as your anchor and test which claim it fully supports. After that reasoning, ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is the best match.`,
     ];
     const explanationLead = explanationVariants[Math.abs(variant) % explanationVariants.length];
     const explanationTail = wrongOption
-      ? ` ${wrongOption.letter} (${wrongOption.choice}) is a common misread because it sounds related to ${evidenceIdea}, but it misses what the quoted detail actually shows.`
-      : " The other options fall apart when you test them against the same passage detail.";
+      ? ` A common trap is choosing an option that sounds related to ${evidenceIdea} without matching what the quoted detail actually shows.`
+      : " A common trap is choosing an option that sounds related without checking the exact passage wording.";
     const explanation = `${explanationLead}${explanationTail}`;
 
     const commonMistake = wrongOption
@@ -4026,9 +4020,9 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
       `If "${groundedEvidence}" is true, which option is fully supported and which ones overreach?`,
     ];
     const stepVariants = [
-      `1. Read the question carefully.\n2. Locate the evidence: "${groundedEvidence}".\n3. Check which choice matches that idea completely.\n4. Keep ${correctLetter} and eliminate choices that only partly fit.`,
-      `1. Identify what the question asks you to prove.\n2. Re-read "${groundedEvidence}".\n3. Compare each option to that detail.\n4. Select ${correctLetter} because it is the best evidence match.`,
-      `1. Start with the passage line "${groundedEvidence}".\n2. Decide what conclusion that detail supports.\n3. Test all options against that conclusion.\n4. Choose ${correctLetter} and cross out weaker matches.`,
+      `1. Read the question carefully.\n2. Locate the evidence: "${groundedEvidence}".\n3. Explain the conclusion that detail supports.\n4. Confirm ${correctLetter} as the answer that best matches the evidence.`,
+      `1. Identify what the question asks you to prove.\n2. Re-read "${groundedEvidence}".\n3. Compare options to that detail.\n4. Confirm ${correctLetter} because it is the best evidence match.`,
+      `1. Start with the passage line "${groundedEvidence}".\n2. Decide what conclusion that detail supports.\n3. Test options against that conclusion.\n4. Confirm ${correctLetter} after checking the strongest support.`,
     ];
     const hint = hintVariants[Math.abs(variant) % hintVariants.length];
     const think = thinkVariants[Math.abs(variant + 1) % thinkVariants.length];
