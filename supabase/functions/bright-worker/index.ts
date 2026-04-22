@@ -1440,11 +1440,16 @@ Rules:
 - Do NOT mix them
 - Maintain alignment with each question
 - For each tutor item, return explanation.why, explanation.mistake, and explanation.tip
-- Keep each explanation part under 20 words
-- Use concrete details from the question/passage (names, actions, facts)
-- Do not use generic phrases like "supported by the passage"
-- Do not rewrite questions or choices
-- No extra text outside JSON
+- Keep each explanation part concise (1–2 short sentences)
+- Use concrete details from the question or passage (names, actions, facts)
+- Prefer specific details instead of generic phrasing
+- Vary explanation tone across questions to avoid repetition
+- Guide thinking step-by-step when helpful (e.g., “Start by…”, “Notice that…”)
+- When explaining mistakes, briefly describe why a student might choose the wrong answer
+- Keep explanations grounded ONLY in the provided passage or problem
+- Use natural teacher-like language instead of repeating labels like A, B, C, or D
+- Do not rewrite questions or answer choices
+- Return only valid JSON with no extra text
 `;
 }
 
