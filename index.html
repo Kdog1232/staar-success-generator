@@ -2837,47 +2837,62 @@
         if (toggle) toggle.style.display = "flex";
         renderTab(currentMode || "practice");
 
-        try {
-          console.log("🟠 STEP 2: FETCH CROSS");
-          const cross = await fetchCrossContent({
-            token,
-            subject,
-            grade,
-            skill,
-            level
-          });
-          if (currentRequestId !== requestId) return;
-
-          const normalizedCross = normalizeWorkerPayload({ cross }, { fallbackPassage: currentData?.passage || "" });
-          currentData.cross = {
-            passage: normalizedCross.cross.passage,
-            questions: normalizedCross.cross.questions
-          };
-          renderTab(currentMode || "practice");
-
-          console.log("🟣 STEP 3: FETCH SUPPORT");
-          const support = await fetchSupportContent({
-            token,
-            subject,
-            grade,
-            skill,
-            level,
-            passage: String(currentData?.passage || ""),
-            practiceQuestions: Array.isArray(currentData?.practice?.questions) ? currentData.practice.questions : [],
-            cross: currentData.cross
-          });
-          if (currentRequestId !== requestId) return;
-
-          const normalizedSupport = normalizeWorkerPayload({
-            tutor: support?.tutor,
-            answerKey: support?.answerKey
-          });
-          currentData.tutor = normalizedSupport.tutor;
-          currentData.answerKey = normalizedSupport.answerKey;
-          renderTab(currentMode || "practice");
-        } catch (pipelineErr) {
-          console.warn("⚠️ Cross/support pipeline partial failure:", pipelineErr);
+        const crossSection = document.getElementById("cross-section");
+        const tutorSection = document.getElementById("tutor-section");
+        if (crossSection && !currentData?.cross?.questions?.length) {
+          crossSection.innerHTML = "<div>⏳ Loading cross...</div>";
         }
+        if (tutorSection && !currentData?.tutor?.practice?.length) {
+          tutorSection.innerHTML = "<div>⏳ Loading tutor...</div>";
+        }
+
+        fetchCrossContent({
+          token,
+          subject,
+          grade,
+          skill,
+          level
+        })
+          .then((cross) => {
+            if (currentRequestId !== requestId) return;
+
+            console.log("🌎 CROSS READY");
+            const normalizedCross = normalizeWorkerPayload({ cross }, { fallbackPassage: currentData?.passage || "" });
+            currentData.cross = {
+              passage: normalizedCross.cross.passage,
+              questions: normalizedCross.cross.questions
+            };
+            renderTab(currentMode || "practice");
+          })
+          .catch((pipelineErr) => {
+            console.warn("⚠️ Cross pipeline partial failure:", pipelineErr);
+          });
+
+        fetchSupportContent({
+          token,
+          subject,
+          grade,
+          skill,
+          level,
+          passage: String(currentData?.passage || ""),
+          practiceQuestions: Array.isArray(currentData?.practice?.questions) ? currentData.practice.questions : [],
+          cross: null
+        })
+          .then((support) => {
+            if (currentRequestId !== requestId) return;
+
+            console.log("🧠 SUPPORT READY");
+            const normalizedSupport = normalizeWorkerPayload({
+              tutor: support?.tutor,
+              answerKey: support?.answerKey
+            });
+            currentData.tutor = normalizedSupport.tutor;
+            currentData.answerKey = normalizedSupport.answerKey;
+            renderTab(currentMode || "practice");
+          })
+          .catch((pipelineErr) => {
+            console.warn("⚠️ Support pipeline partial failure:", pipelineErr);
+          });
 
         console.log("🎯 RENDER COMPLETE");
       } catch (err) {
