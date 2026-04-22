@@ -1435,6 +1435,38 @@ Generate:
 
 ----------------------------------------
 
+LEVEL ADJUSTMENT GUIDELINES (UNIVERSAL):
+
+Below Level:
+- Prefer clearer wording and more direct language
+- Break complex ideas into simpler steps or sentences
+- Keep concepts accessible without reducing thinking difficulty
+
+On Level:
+- Use grade-appropriate vocabulary and structure
+- Maintain full rigor and standard expectations
+
+Above Level:
+- Allow more complex wording and multi-step reasoning
+- Use more abstract or layered ideas when appropriate
+
+IMPORTANT RULES:
+- These are GUIDELINES, not strict requirements
+- Always return a complete response (never fail generation)
+- DO NOT simplify questions into basic recall
+- Maintain reasoning, problem-solving, or inference across ALL subjects
+
+SUBJECT APPLICATION:
+- Reading → maintain inference and interpretation
+- Math → maintain multi-step reasoning and problem solving
+- Science → maintain cause/effect and concept explanation
+- Social Studies → maintain analysis of ideas, events, or impacts
+
+FINAL RULE:
+Adjust difficulty through LANGUAGE and STRUCTURE — NOT by reducing thinking depth
+
+----------------------------------------
+
 Rules:
 - Keep practice and cross SEPARATE
 - Do NOT mix them
