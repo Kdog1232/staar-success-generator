@@ -2533,9 +2533,6 @@
       if (currentData?.cross?.questions?.length && !crossSection.innerHTML.trim()) {
         renderCrossSection(currentData.cross, currentData?.cross?.passage || "");
       }
-      if (currentData?.tutor || currentData?.answerKey) {
-        renderActivePanels();
-      }
 
       practiceSection.style.display = tab === "practice" ? "block" : "none";
       crossSection.style.display = tab === "cross" ? "block" : "none";
@@ -2827,7 +2824,9 @@
         const toggle = document.getElementById("view-toggle");
         if (toggle) toggle.style.display = "flex";
         hasRenderedThisRun = true;
-        renderTab(currentMode || "practice");
+        if (currentMode !== "practice") {
+          renderTab(currentMode);
+        }
 
         const crossSection = document.getElementById("cross-section");
         const tutorSection = document.getElementById("tutor-section");
@@ -2865,7 +2864,9 @@
               `;
               crossContainer.style.display = "block";
             }
-            renderTab(currentMode || "practice");
+            if (currentMode !== "practice") {
+              renderTab(currentMode);
+            }
           })
           .catch((pipelineErr) => {
             console.warn("⚠️ Cross pipeline partial failure:", pipelineErr);
@@ -2901,7 +2902,9 @@
             if (answerSectionEl) {
               answerSectionEl.innerHTML = renderAnswerKey(currentData.answerKey.practice, "Practice");
             }
-            renderTab(currentMode || "practice");
+            if (currentMode !== "practice") {
+              renderTab(currentMode);
+            }
           })
           .catch((pipelineErr) => {
             console.warn("⚠️ Support pipeline partial failure:", pipelineErr);
