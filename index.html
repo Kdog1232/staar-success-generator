@@ -2904,15 +2904,17 @@
           tutorSection.innerHTML = "<div>⏳ Loading tutor...</div>";
         }
 
-        fetchCrossContent({
+        const crossRequest = fetchCrossContent({
           token,
           subject,
           grade,
           skill,
           level
-        })
+        });
+
+        crossRequest
           .then((cross) => {
-            if (currentRequestId !== requestId) return null;
+            if (currentRequestId !== requestId) return;
 
             console.log("🌎 CROSS READY");
             const normalizedCross = normalizeWorkerPayload({ cross }, { fallbackPassage: currentData?.passage || "" });
@@ -2926,25 +2928,32 @@
             if (currentMode !== "practice") {
               renderTab(currentMode);
             }
-
-            return crossDataState;
           })
           .catch((crossErr) => {
-            console.warn("⚠️ Cross failed — continuing without it", crossErr);
-            if (currentRequestId !== requestId) return null;
+            console.warn("❌ CROSS FAILED:", crossErr);
+            if (currentRequestId !== requestId) return;
 
             crossDataState = { passage: "", questions: [] };
             currentData.cross = crossDataState;
-            renderCrossSection(crossDataState, "");
+
+            if (crossSection) {
+              crossSection.innerHTML = `<div class="muted-note">Cross unavailable</div>`;
+            }
 
             if (currentMode !== "practice") {
               renderTab(currentMode);
             }
+          });
 
-            return crossDataState;
-          })
-          .then((safeCross) => {
-            if (!safeCross || currentRequestId !== requestId) return null;
+        crossRequest
+          .then((cross) => {
+            if (currentRequestId !== requestId) return null;
+
+            const normalizedCross = normalizeWorkerPayload({ cross }, { fallbackPassage: currentData?.passage || "" });
+            const safeCross = {
+              passage: normalizedCross.cross.passage,
+              questions: normalizedCross.cross.questions
+            };
 
             return fetchSupportContent({
               token,
