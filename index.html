@@ -2816,6 +2816,7 @@
         const requestId = Date.now();
         currentRequestId = requestId;
         resetGeneratedPanelsState();
+        const hadExistingData = Boolean(currentData);
 
         const normalizedCore = normalizeWorkerPayload(data);
         practiceDataState = {
@@ -2830,7 +2831,10 @@
         };
 
         ensureWorksheetShell();
-        clearRenderedSections();
+        // Only clear once at the start of the very first generation.
+        if (!hadExistingData) {
+          clearRenderedSections();
+        }
         renderPracticeSection(practiceDataState, normalizedCore?.passage || "");
         setMode("practice");
         const toggle = document.getElementById("view-toggle");
