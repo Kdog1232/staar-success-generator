@@ -2912,7 +2912,7 @@
           level
         })
           .then((cross) => {
-            if (currentRequestId !== requestId) return;
+            if (currentRequestId !== requestId) return null;
 
             console.log("🌎 CROSS READY");
             const normalizedCross = normalizeWorkerPayload({ cross }, { fallbackPassage: currentData?.passage || "" });
@@ -2922,29 +2922,43 @@
             };
             currentData.cross = crossDataState;
 
-            if (Array.isArray(crossDataState?.questions) && crossDataState.questions.length > 0) {
-              renderCrossSection(crossDataState, crossDataState.passage || "");
-            }
+            renderCrossSection(crossDataState, crossDataState.passage || "");
             if (currentMode !== "practice") {
               renderTab(currentMode);
             }
-          })
-          .catch((pipelineErr) => {
-            console.warn("⚠️ Cross pipeline partial failure:", pipelineErr);
-          });
 
-        fetchSupportContent({
-          token,
-          subject,
-          grade,
-          skill,
-          level,
-          passage: String(currentData?.passage || ""),
-          practiceQuestions: Array.isArray(currentData?.practice?.questions) ? currentData.practice.questions : [],
-          cross: null
-        })
+            return crossDataState;
+          })
+          .catch((crossErr) => {
+            console.warn("⚠️ Cross failed — continuing without it", crossErr);
+            if (currentRequestId !== requestId) return null;
+
+            crossDataState = { passage: "", questions: [] };
+            currentData.cross = crossDataState;
+            renderCrossSection(crossDataState, "");
+
+            if (currentMode !== "practice") {
+              renderTab(currentMode);
+            }
+
+            return crossDataState;
+          })
+          .then((safeCross) => {
+            if (!safeCross || currentRequestId !== requestId) return null;
+
+            return fetchSupportContent({
+              token,
+              subject,
+              grade,
+              skill,
+              level,
+              passage: String(currentData?.passage || ""),
+              practiceQuestions: Array.isArray(currentData?.practice?.questions) ? currentData.practice.questions : [],
+              cross: safeCross
+            });
+          })
           .then((support) => {
-            if (currentRequestId !== requestId) return;
+            if (!support || currentRequestId !== requestId) return;
 
             console.log("🧠 SUPPORT READY");
             const normalizedSupport = normalizeWorkerPayload({
@@ -2962,8 +2976,8 @@
               renderTab(currentMode);
             }
           })
-          .catch((pipelineErr) => {
-            console.warn("⚠️ Support pipeline partial failure:", pipelineErr);
+          .catch((supportErr) => {
+            console.warn("⚠️ Support failed:", supportErr);
           });
 
         console.log("🎯 RENDER COMPLETE");
