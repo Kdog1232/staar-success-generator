@@ -956,8 +956,49 @@ function isUsablePassage(passage: string): boolean {
   return Boolean(text && text.length > 60);
 }
 
+function splitPassageSentences(passage: string): string[] {
+  return String(passage || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function isCompleteSentence(sentence: string): boolean {
+  const trimmed = String(sentence || "").trim();
+  if (!trimmed) return false;
+  if (!/[.!?]["')\]]*$/.test(trimmed)) return false;
+
+  const withoutTerminalPunctuation = trimmed
+    .replace(/[.!?]["')\]]*$/, "")
+    .trim();
+  if (!withoutTerminalPunctuation) return false;
+
+  const lower = withoutTerminalPunctuation.toLowerCase();
+  if (/[,:;\-–—]$/.test(withoutTerminalPunctuation)) return false;
+  const forbiddenEndings = ["and the", "which", "it", "this"];
+  if (forbiddenEndings.some((ending) => lower.endsWith(ending))) return false;
+
+  const words = withoutTerminalPunctuation.split(/\s+/).filter(Boolean);
+  if (words.length < 6) return false;
+
+  const hasVerbSignal = /\b(is|are|was|were|be|been|being|has|have|had|do|does|did|can|could|will|would|should|may|might|must|include|includes|included|show|shows|showed|create|creates|created)\b/i
+    .test(withoutTerminalPunctuation) ||
+    /\b\w+(ed|ing)\b/i.test(withoutTerminalPunctuation);
+  return hasVerbSignal;
+}
+
 function isCompletePassage(passage: string): boolean {
-  return isUsablePassage(passage);
+  if (!isUsablePassage(passage)) return false;
+  const sentences = splitPassageSentences(passage);
+  if (sentences.length < 5 || sentences.length > 7) return false;
+  if (!sentences.every((sentence) => isCompleteSentence(sentence))) return false;
+
+  const finalSentence = sentences[sentences.length - 1] || "";
+  const finalLower = finalSentence.toLowerCase();
+  const hasConclusionSignal = /\b(finally|overall|therefore|as a result|in conclusion|in the end|ultimately|concluded|decided|recommended|showed)\b/.test(finalLower);
+  return hasConclusionSignal || finalSentence.length >= 50;
 }
 
 function hasConnectedIdeas(passage: string): boolean {
@@ -1319,9 +1360,18 @@ Requirements:
 - Passage topic must be: ${topicRule}.
 - Passage must support reasoning questions with enough usable detail.
 - Include at least one clear cause/effect or comparison relationship.
-- Passage must be fully complete (no cut-off sentences).
+- Passage must include 5–7 full sentences.
+- Every sentence must express a complete idea.
+- NEVER output incomplete sentences.
 - Final sentence must clearly conclude the idea.
 - Do NOT leave unfinished comparisons or thoughts.
+- Do NOT end any sentence with:
+  - "and the"
+  - "which"
+  - "it"
+  - "this"
+  - a trailing comma or other unfinished punctuation
+- If any sentence is incomplete or feels cut off, rewrite the entire passage before writing questions.
 
 Question design rules:
 - Generate exactly 5 multiple-choice questions.
