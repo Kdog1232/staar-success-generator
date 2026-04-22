@@ -55,6 +55,12 @@ type TutorExplanation = {
   step_by_step?: string;
 };
 
+type TutorExplanationParts = {
+  why?: string;
+  mistake?: string;
+  tip?: string;
+};
+
 type AnswerKeyEntry = {
   question_id: string;
   correct_answer: string;
@@ -1366,13 +1372,21 @@ function buildCoreEnrichmentPrompt(params: {
     "practice": [
       {
         "question_id": "practice-1",
-        "explanation": "string"
+        "explanation": {
+          "why": "string",
+          "mistake": "string",
+          "tip": "string"
+        }
       }
     ],
     "cross": [
       {
         "question_id": "cross-1",
-        "explanation": "string"
+        "explanation": {
+          "why": "string",
+          "mistake": "string",
+          "tip": "string"
+        }
       }
     ]
   },
@@ -1425,8 +1439,10 @@ Rules:
 - Keep practice and cross SEPARATE
 - Do NOT mix them
 - Maintain alignment with each question
-- Explanations must reference the passage when needed
-- Keep explanations to 1–2 sentences
+- For each tutor item, return explanation.why, explanation.mistake, and explanation.tip
+- Keep each explanation part under 20 words
+- Use concrete details from the question/passage (names, actions, facts)
+- Do not use generic phrases like "supported by the passage"
 - Do not rewrite questions or choices
 - No extra text outside JSON
 `;
@@ -1465,9 +1481,35 @@ function normalizeEnrichmentSupport(enrichment: Record<string, unknown> | null):
     ? enrichment.answerKey as Record<string, unknown>
     : null;
 
+  const normalizeTutorEntry = (entry: unknown): TutorExplanation => {
+    const raw = (entry && typeof entry === "object") ? entry as Record<string, unknown> : {};
+    const nested = (raw.explanation && typeof raw.explanation === "object")
+      ? raw.explanation as TutorExplanationParts
+      : null;
+    return {
+      question_id: String(raw.question_id || "").trim(),
+      question: String(raw.question || "").trim(),
+      explanation: nested
+        ? String(nested.why || "").trim()
+        : String(raw.explanation || "").trim(),
+      common_mistake: nested
+        ? String(nested.mistake || "").trim()
+        : String(raw.common_mistake || "").trim(),
+      hint: nested
+        ? String(nested.tip || "").trim()
+        : String(raw.hint || "").trim(),
+      think: String(raw.think || "").trim(),
+      step_by_step: String(raw.step_by_step || "").trim(),
+    };
+  };
+
   const tutor = {
-    practice: Array.isArray(tutorNode?.practice) ? tutorNode.practice as TutorExplanation[] : [],
-    cross: Array.isArray(tutorNode?.cross) ? tutorNode.cross as TutorExplanation[] : [],
+    practice: Array.isArray(tutorNode?.practice)
+      ? tutorNode.practice.map((entry) => normalizeTutorEntry(entry))
+      : [],
+    cross: Array.isArray(tutorNode?.cross)
+      ? tutorNode.cross.map((entry) => normalizeTutorEntry(entry))
+      : [],
   };
 
   const answerKey = {
@@ -3645,7 +3687,8 @@ function validateTutorAnswerKeyAlignment(
   answerKey: AnswerKeyEntry[],
   mode: "practice" | "cross",
 ): boolean {
-  if (questions.length !== 5 || tutor.length !== 5 || answerKey.length !== 5) return false;
+  if (!questions.length) return false;
+  if (tutor.length < questions.length || answerKey.length < questions.length) return false;
   return questions.every((q, index) => {
     const expectedId = ensureQuestionId(q, index, mode);
     const tutorEntry = tutor[index];
@@ -4647,15 +4690,20 @@ serve(async (req) => {
             questionRes = parsed;
 
             const aiQuestions = questionRes?.questions || questionRes?.items || [];
-            let coreQuestions = (Array.isArray(aiQuestions) ? aiQuestions : []).map((q) => {
+            const coreQuestions = (Array.isArray(aiQuestions) ? aiQuestions : []).map((q) => {
               const item = (q || {}) as Question;
               const patchedChoices = normalizeChoices(item.choices);
               return { ...item, choices: patchedChoices } as Question;
-            });
+            }).filter((q) =>
+              typeof q.question === "string" &&
+              q.question.length > 10 &&
+              Array.isArray(q.choices) &&
+              q.choices.length === 4
+            );
             if (!coreQuestions.length) {
-              throw new Error("NO_QUESTIONS_FROM_AI");
+              throw new Error("NO_VALID_QUESTIONS");
             }
-            coreQuestions = coreQuestions.slice(0, 5);
+            const finalQuestions = coreQuestions.slice(0, 5);
 
             console.timeEnd("OPENAI_CALL");
             console.log("⏱️ AI Duration:", Date.now() - aiStartTime);
@@ -4665,7 +4713,7 @@ serve(async (req) => {
               : isUsablePassage(String(passageRes?.passage || ""))
               ? String(passageRes?.passage || "")
               : null;
-            generatedCoreQuestions = coreQuestions;
+            generatedCoreQuestions = finalQuestions;
         }
 
         const priorPractice = effectiveMode === "core" && Array.isArray(generatedCoreQuestions)
