@@ -2902,7 +2902,8 @@
 
         const crossSection = document.getElementById("cross-section");
         const tutorSection = document.getElementById("tutor-section");
-        if (crossSection && !crossDataState?.questions?.length) {
+        if (crossSection) {
+          crossSection.style.display = "block";
           crossSection.innerHTML = "<div>⏳ Loading cross...</div>";
         }
         if (tutorSection && !tutorDataState?.practice?.length) {
@@ -2936,9 +2937,8 @@
             if (crossSection) {
               crossSection.style.display = "block";
             }
-            if (currentMode !== "practice") {
-              renderTab(currentMode);
-            }
+            console.log("CROSS READY:", crossDataState);
+            console.log("CROSS DISPLAY:", crossSection?.style.display);
           } catch (crossErr) {
             console.warn("❌ CROSS FAILED:", crossErr);
             if (currentRequestId !== requestId) return;
@@ -2949,10 +2949,6 @@
             if (crossSection) {
               crossSection.style.display = "block";
               crossSection.innerHTML = `<div class="muted-note">Cross unavailable</div>`;
-            }
-
-            if (currentMode !== "practice") {
-              renderTab(currentMode);
             }
           }
 
@@ -2981,9 +2977,6 @@
 
             renderTutorSection(tutorDataState, getActiveMode());
             renderAnswerSection(answerKeyDataState, getActiveMode());
-            if (currentMode !== "practice") {
-              renderTab(currentMode);
-            }
           } catch (supportErr) {
             console.warn("⚠️ Support failed:", supportErr);
           }
