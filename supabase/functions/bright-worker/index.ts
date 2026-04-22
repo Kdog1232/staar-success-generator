@@ -858,9 +858,31 @@ function buildMistakeAndTip(subject: string, question: string, wrongChoice: stri
   };
 }
 
-function ensureUsableExplanation(explanation: string): string {
+function ensureUsableExplanation(
+  explanation: string,
+  subject: string
+): string {
   const trimmed = String(explanation || "").trim();
-  return trimmed || "Work through the problem carefully and check each step.";
+
+  if (trimmed.length > 20) {
+    return trimmed;
+  }
+
+  const s = subject.toLowerCase();
+
+  if (s.includes("math")) {
+    return "Check each step and make sure the operations match what the problem is asking.";
+  }
+
+  if (s.includes("science")) {
+    return "Think about the cause-and-effect relationship and which answer best matches the evidence.";
+  }
+
+  if (s.includes("social")) {
+    return "Think about the events and relationships and which answer best fits the context.";
+  }
+
+  return "Think about what the passage shows and which answer best matches the main idea or detail.";
 }
 
 function getLevelInstruction(level: Level): string {
@@ -2945,8 +2967,10 @@ async function sanitizeQuestions(
       const repaired = repairQuestion(question, subject, passageText);
       return {
         ...repaired,
-        explanation: String(repaired.explanation || "").trim()
-          || "The correct answer is best supported by details in the passage.",
+        explanation: ensureUsableExplanation(
+          repaired.explanation,
+          subject,
+        ),
       };
     });
     const crossOutput = enforceCrossReadingOnly(validatedCross, passageText);
