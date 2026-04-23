@@ -63,14 +63,17 @@
     }
 
     .header-inner {
+      position: relative;
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: center;
       gap: 16px;
       width: 100%;
     }
 
     .logo {
+      position: absolute;
+      left: 0;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -79,16 +82,9 @@
     }
 
     .logo img {
-      height: 32px;
+      height: 50px;
       width: auto;
       display: block;
-    }
-
-    .logo-text {
-      font-weight: 600;
-      font-size: 16px;
-      color: #334155;
-      line-height: 1;
     }
 
     .header-content {
@@ -1153,7 +1149,6 @@
       <div class="header-inner">
         <a href="/" class="logo">
           <img src="/logo.png" alt="STAAR Success Logo" />
-          <span class="logo-text">STAAR Success</span>
         </a>
         <div class="header-content">
           <h1>10-Minute Daily Practice That Feels Like a Personal Tutor</h1>
@@ -1163,7 +1158,7 @@
     </header>
 
     <section class="hero hero-cta">
-      <h1>Generate Practice in Seconds</h1>
+      <h2>Generate Practice in Seconds</h2>
       <p>Get tutor-style explanations instantly — no prep required.</p>
     </section>
 
