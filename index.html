@@ -557,9 +557,36 @@
       max-width: 600px;
       margin: 32px auto 0;
       padding: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .hero-logo-wrapper {
+      background: white;
+      border-radius: 20px;
+      padding: 20px 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 3px solid rgba(255,255,255,0.6);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      max-width: 100%;
+      overflow: hidden;
+    }
+
+    .hero-logo-wrapper img {
+      width: 100%;
+      max-width: 500px;
+      height: auto;
+      object-fit: contain;
     }
 
     @media (max-width: 768px) {
+      .hero-logo-wrapper img {
+        max-width: 90%;
+      }
+
       .header-inner {
         gap: 10px;
       }
@@ -1161,8 +1188,9 @@
     </header>
 
     <section class="hero hero-cta">
-      <h2>Generate Practice in Seconds</h2>
-      <p>Get tutor-style explanations instantly — no prep required.</p>
+      <div class="hero-logo-wrapper">
+        <img src="/logo.png" alt="Logo" />
+      </div>
     </section>
 
     <section class="value-card section" aria-label="Key benefits">
