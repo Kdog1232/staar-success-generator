@@ -55,12 +55,6 @@ type TutorExplanation = {
   step_by_step?: string;
 };
 
-type TutorExplanationParts = {
-  why?: string;
-  mistake?: string;
-  tip?: string;
-};
-
 type AnswerKeyEntry = {
   question_id: string;
   correct_answer: string;
@@ -1546,112 +1540,96 @@ function buildCoreEnrichmentPrompt(params: {
   crossQuestions: Question[];
   crossPassage?: string;
 }): string {
-  const compactPractice = params.practiceQuestions.map((q, i) => ({
-  question_id: `practice-${i + 1}`,
-  question: q.question,
-  choices: q.choices,
-  correct_answer: q.correct_answer
-}));
- const compactCross = params.crossQuestions.map((q, i) => ({
-  question_id: `cross-${i + 1}`,
-  question: q.question,
-  choices: q.choices,
-  correct_answer: q.correct_answer
-}));
+  const compactPractice = params.practiceQuestions.map((q) => ({
+    question: q.question,
+    choices: q.choices,
+    correct_answer: q.correct_answer,
+  }));
+  const compactCross = params.crossQuestions.map((q) => ({
+    question: q.question,
+    choices: q.choices,
+    correct_answer: q.correct_answer,
+  }));
   const crossPassage = String(params.crossPassage || "").trim();
 
-  return `Return JSON only:
+  return `
+You are generating structured tutoring support for STAAR practice.
+
+You MUST return JSON ONLY.
+DO NOT include any explanation.
+DO NOT include markdown.
+DO NOT include extra text.
+
+--------------------------------------------------
+REQUIRED OUTPUT FORMAT
+--------------------------------------------------
+
 {
-  "cross": {
-    "passage": "${crossPassage || ""}",
-    "questions": ${JSON.stringify(compactCross)}
-  },
   "tutor": {
     "practice": [
       {
-        "question_id": "practice-1",
-        "explanation": {
-          "why": "string",
-          "mistake": "string",
-          "tip": "string"
-        }
+        "questionIndex": number,
+        "hint": string,
+        "strategy": string,
+        "step_by_step": string
       }
     ],
     "cross": [
       {
-        "question_id": "cross-1",
-        "explanation": {
-          "why": "string",
-          "mistake": "string",
-          "tip": "string"
-        }
+        "questionIndex": number,
+        "hint": string,
+        "strategy": string,
+        "step_by_step": string
       }
     ]
   },
   "answerKey": {
     "practice": [
       {
-        "question_id": "practice-1",
-        "correct_answer": "A",
-        "explanation": "string"
+        "questionIndex": number,
+        "correct_answer": string,
+        "explanation": string,
+        "why": string
       }
     ],
     "cross": [
       {
-        "question_id": "cross-1",
-        "correct_answer": "A",
-        "explanation": "string"
+        "questionIndex": number,
+        "correct_answer": string,
+        "explanation": string,
+        "why": string
       }
     ]
   }
 }
 
-You are generating Tutor explanations and Answer Key.
-
-You are given:
+--------------------------------------------------
+INPUT DATA
+--------------------------------------------------
 
 Practice Questions:
 ${JSON.stringify(compactPractice)}
 
+Cross Passage:
+${crossPassage}
+
 Cross Questions:
 ${JSON.stringify(compactCross)}
 
-Cross Passage:
-${crossPassage || "(none)"}
+--------------------------------------------------
+RULES (STRICT)
+--------------------------------------------------
 
-----------------------------------------
+- ALWAYS return ALL fields
+- NEVER return {}
+- NEVER omit tutor.cross or answerKey.cross
+- If unsure, generate best possible answer
+- Each array MUST match question count
+- questionIndex must align to input order (0-based)
 
-Generate:
-
-1. Tutor explanations for:
-   - ALL practice questions
-   - ALL cross questions
-
-2. Answer key for:
-   - ALL practice questions
-   - ALL cross questions
-
-----------------------------------------
-
-Rules:
-- Keep practice and cross SEPARATE
-- Do NOT mix them
-- Maintain alignment with each question
-- For each tutor item, return explanation.why, explanation.mistake, and explanation.tip
-- Keep each explanation part concise (1–2 short sentences)
-- Use concrete details from the question or passage (names, actions, facts)
-- Prefer specific details instead of generic phrasing
-- Vary explanation tone across questions to avoid repetition
-- Guide thinking step-by-step when helpful (e.g., “Start by…”, “Notice that…”)
-- When explaining mistakes, briefly describe why a student might choose the wrong answer
-- Keep explanations grounded ONLY in the provided passage or problem
-- Use natural teacher-like language instead of repeating labels like A, B, C, or D
-- Begin explanation.why with reasoning from the passage/problem, not with the answer
-- Confirm the correct answer at the END of explanation.why after the reasoning
-- Do not list every incorrect option; mention a wrong choice only when needed to teach a misconception
-- Do not use phrases like "validated answer" or "the best answer is" as opening framing
-- Do not rewrite questions or answer choices
-- Return only valid JSON with no extra text
+--------------------------------------------------
+RETURN JSON ONLY
+--------------------------------------------------
 `;
 }
 
@@ -1677,54 +1655,83 @@ function isValidCoreEnrichmentOutput(data: unknown): boolean {
   );
 }
 
-function normalizeEnrichmentSupport(enrichment: Record<string, unknown> | null): {
+function normalizeEnrichmentSupport(
+  data: Record<string, unknown> | null,
+  practiceQuestions: Question[],
+  crossQuestions: Question[],
+): {
   tutor: { practice: TutorExplanation[]; cross: TutorExplanation[] };
   answerKey: { practice: AnswerKeyEntry[]; cross: AnswerKeyEntry[] };
 } {
-  const tutorNode = enrichment?.tutor && typeof enrichment.tutor === "object"
-    ? enrichment.tutor as Record<string, unknown>
+  const safePracticeLength = practiceQuestions.length;
+  const safeCrossLength = crossQuestions.length;
+  const tutorNode = data?.tutor && typeof data.tutor === "object"
+    ? data.tutor as Record<string, unknown>
     : null;
-  const answerNode = enrichment?.answerKey && typeof enrichment.answerKey === "object"
-    ? enrichment.answerKey as Record<string, unknown>
+  const answerNode = data?.answerKey && typeof data.answerKey === "object"
+    ? data.answerKey as Record<string, unknown>
     : null;
 
-  const normalizeTutorEntry = (entry: unknown): TutorExplanation => {
-    const raw = (entry && typeof entry === "object") ? entry as Record<string, unknown> : {};
-    const nested = (raw.explanation && typeof raw.explanation === "object")
-      ? raw.explanation as TutorExplanationParts
-      : null;
-    return {
-      question_id: String(raw.question_id || "").trim(),
-      question: String(raw.question || "").trim(),
-      explanation: nested
-        ? String(nested.why || "").trim()
-        : String(raw.explanation || "").trim(),
-      common_mistake: nested
-        ? String(nested.mistake || "").trim()
-        : String(raw.common_mistake || "").trim(),
-      hint: nested
-        ? String(nested.tip || "").trim()
-        : String(raw.hint || "").trim(),
-      think: String(raw.think || "").trim(),
-      step_by_step: String(raw.step_by_step || "").trim(),
-    };
+  return {
+    tutor: {
+      practice: Array.from({ length: safePracticeLength }, (_, i) => {
+        const source = Array.isArray(tutorNode?.practice) && typeof tutorNode.practice[i] === "object"
+          ? tutorNode.practice[i] as Record<string, unknown>
+          : {};
+        return {
+          question_id: ensureQuestionId(practiceQuestions[i], i, "practice"),
+          question: String(practiceQuestions[i]?.question || "").trim(),
+          explanation: String(source.strategy || "").trim() || "Use evidence from the passage.",
+          common_mistake: "Choosing an answer without enough supporting evidence.",
+          hint: String(source.hint || "").trim() || "Think about what the question is asking.",
+          think: "",
+          step_by_step: String(source.step_by_step || "").trim() || "Read carefully and eliminate wrong answers.",
+        };
+      }),
+      cross: Array.from({ length: safeCrossLength }, (_, i) => {
+        const source = Array.isArray(tutorNode?.cross) && typeof tutorNode.cross[i] === "object"
+          ? tutorNode.cross[i] as Record<string, unknown>
+          : {};
+        return {
+          question_id: ensureQuestionId(crossQuestions[i], i, "cross"),
+          question: String(crossQuestions[i]?.question || "").trim(),
+          explanation: String(source.strategy || "").trim() || "Focus on key details.",
+          common_mistake: "Ignoring important evidence from the cross passage.",
+          hint: String(source.hint || "").trim() || "Look back at the passage for clues.",
+          think: "",
+          step_by_step: String(source.step_by_step || "").trim() || "Break the question down step by step.",
+        };
+      }),
+    },
+    answerKey: {
+      practice: Array.from({ length: safePracticeLength }, (_, i) => {
+        const source = Array.isArray(answerNode?.practice) && typeof answerNode.practice[i] === "object"
+          ? answerNode.practice[i] as Record<string, unknown>
+          : {};
+        const explanation = String(source.explanation || "").trim() || "This is supported by the passage.";
+        return {
+          question_id: ensureQuestionId(practiceQuestions[i], i, "practice"),
+          correct_answer: normalizeAnswerKeyEntry(String(source.correct_answer || "").trim() || "A"),
+          explanation,
+          common_mistake: String(source.why || "").trim() || "The correct answer matches the main idea.",
+          parent_tip: "",
+        };
+      }),
+      cross: Array.from({ length: safeCrossLength }, (_, i) => {
+        const source = Array.isArray(answerNode?.cross) && typeof answerNode.cross[i] === "object"
+          ? answerNode.cross[i] as Record<string, unknown>
+          : {};
+        const explanation = String(source.explanation || "").trim() || "This is supported by the passage.";
+        return {
+          question_id: ensureQuestionId(crossQuestions[i], i, "cross"),
+          correct_answer: normalizeAnswerKeyEntry(String(source.correct_answer || "").trim() || "A"),
+          explanation,
+          common_mistake: String(source.why || "").trim() || "The correct answer aligns with the evidence.",
+          parent_tip: "",
+        };
+      }),
+    },
   };
-
-  const tutor = {
-    practice: Array.isArray(tutorNode?.practice)
-      ? tutorNode.practice.map((entry) => normalizeTutorEntry(entry))
-      : [],
-    cross: Array.isArray(tutorNode?.cross)
-      ? tutorNode.cross.map((entry) => normalizeTutorEntry(entry))
-      : [],
-  };
-
-  const answerKey = {
-    practice: Array.isArray(answerNode?.practice) ? answerNode.practice as AnswerKeyEntry[] : [],
-    cross: Array.isArray(answerNode?.cross) ? answerNode.cross as AnswerKeyEntry[] : [],
-  };
-
-  return { tutor, answerKey };
 }
 
 function buildSubjectPassage(subject: CanonicalSubject, level: Level = "On Level"): string {
@@ -4677,7 +4684,14 @@ serve(async (req) => {
           crossPassage,
         }),
       ) as Record<string, unknown> | null;
-      const { tutor, answerKey } = normalizeEnrichmentSupport(enrichment);
+      if (!enrichment || Object.keys(enrichment).length === 0) {
+        throw new Error("ENRICHMENT_EMPTY_RESPONSE");
+      }
+      const { tutor, answerKey } = normalizeEnrichmentSupport(
+        enrichment,
+        practiceQuestions,
+        crossQuestions,
+      );
       const tutorPractice = tutor.practice;
       const tutorCross = tutor.cross;
       const answerPractice = answerKey.practice;
@@ -5204,7 +5218,14 @@ serve(async (req) => {
             crossPassage: subjectCrossPassage,
           }),
         ) as Record<string, unknown> | null;
-        const { tutor: crossTutor, answerKey: crossAnswer } = normalizeEnrichmentSupport(crossEnrichment);
+        if (!crossEnrichment || Object.keys(crossEnrichment).length === 0) {
+          throw new Error("ENRICHMENT_EMPTY_RESPONSE");
+        }
+        const { tutor: crossTutor, answerKey: crossAnswer } = normalizeEnrichmentSupport(
+          crossEnrichment,
+          safePracticeQuestions,
+          crossQuestions,
+        );
 
         tutorPractice = sanitizeTutorExplanations(
           crossTutor.practice,
