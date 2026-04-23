@@ -1522,7 +1522,18 @@ Below-level cross questions should:
 - Avoid definition-only or term-identification questions.
 `
     : "";
-  const crossQuestionFocus = subject === "Math"
+  const crossQuestionFocus = subject === "Reading"
+    ? `
+Question design rules (Reading cross-curricular):
+- Focus on reading skills (inference, main idea, structure, author's purpose) using the passage context.
+- Avoid simple fact-retrieval and content-only recall questions.
+- Require students to connect multiple details to justify answers.
+- Include a balanced set:
+  - inference and supporting-detail reasoning
+  - at least one structure/purpose style item
+  - one question where two plausible answers must be separated with evidence.
+`
+    : subject === "Math"
     ? `
 Question design rules (Math cross-curricular):
 - Focus on questions that require using numbers from the passage to solve problems.
@@ -1547,14 +1558,21 @@ Question design rules (Science cross-curricular):
   - optional light inference tied to scientific evidence.
 ${crossScienceInvestigationFocus}
 `
+    : subject === "Social Studies"
+    ? `
+Question design rules (Social Studies cross-curricular):
+- Focus on cause/effect, decisions, and likely outcomes grounded in passage events.
+- Avoid reading-only question types such as structure or author's purpose.
+- Require students to analyze why people/groups made choices and what consequences followed.
+- Include a balanced set:
+  - mostly cause/effect and decision-analysis questions
+  - at least one outcomes/consequences question
+  - optional light inference tied to historical or civic context from the passage.
+`
     : `
 Question design rules:
-- Every question must assess a READING skill (ELAR), not simple content recall.
-- Every question must require both:
-  - understanding passage content
-  - applying a reading skill
+- Focus on subject-aligned reasoning using passage evidence.
 - Questions must require thinking, not simple recall.
-- Use a balanced mix of reading skills across the set (main idea, inference, structure, and purpose).
 `;
 
   return `You are a senior STAAR item writer. Generate cross-curricular content with strong subject-aligned rigor.
