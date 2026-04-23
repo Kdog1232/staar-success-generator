@@ -3774,36 +3774,38 @@ function buildAnswerKeyFromPractice(questions: Question[]): { practice: AnswerKe
 }
 
 function sanitizeTutorExplanations(
-  _raw: unknown,
+  raw: unknown,
   sourceQuestions: Question[],
   subject: CanonicalSubject,
   mode: "practice" | "cross",
   crossPassage = "",
 ): TutorExplanation[] {
+  const aiEntries = Array.isArray(raw) ? raw as TutorExplanation[] : [];
   if (mode === "cross") {
-    return Array.isArray(_raw) ? _raw as TutorExplanation[] : [];
+    return aiEntries;
   }
-  void subject;
-  const baseQuestions = sourceQuestions.slice(0, 5);
-  if (baseQuestions.length === 0) return [];
-  return generateTutor(baseQuestions, subject, mode, "On Level", crossPassage);
+  if (aiEntries.length > 0) return aiEntries;
+  void crossPassage;
+  return buildTutorFromPractice(sourceQuestions.slice(0, 5)).practice;
 }
 
 function sanitizeAnswerKey(
-  _raw: unknown,
+  raw: unknown,
   sourceQuestions: Question[],
   subject: CanonicalSubject,
   _tutor: TutorExplanation[],
   mode: "practice" | "cross",
   crossPassage = "",
 ): AnswerKeyEntry[] {
+  const aiEntries = Array.isArray(raw) ? raw as AnswerKeyEntry[] : [];
   if (mode === "cross") {
-    return Array.isArray(_raw) ? _raw as AnswerKeyEntry[] : [];
+    return aiEntries;
   }
   void subject;
-  const baseQuestions = sourceQuestions.slice(0, 5);
-  if (baseQuestions.length === 0) return [];
-  return generateAnswerKey(baseQuestions, subject, mode, "On Level", crossPassage);
+  void _tutor;
+  void crossPassage;
+  if (aiEntries.length > 0) return aiEntries;
+  return buildAnswerKeyFromPractice(sourceQuestions.slice(0, 5)).practice;
 }
 
 function validateTutorAnswerKeyAlignment(
@@ -4225,26 +4227,10 @@ function ensureNonEmptySupport(
       answerKey: Array.isArray(answerKey) ? answerKey : [],
     };
   }
-  const safeTutor = Array.isArray(tutor) && tutor.length > 0
-    ? tutor
-    : questions.map((q, i) => ({
-      question_id: ensureQuestionId(q, i, mode),
-      question: String(q.question || "").trim(),
-      explanation: String(q.explanation || "").trim() || "Use evidence from the content to justify the answer.",
-      common_mistake: String(q.common_mistake || "").trim() || "Choosing a plausible option without full evidence.",
-      hint: String(q.hint || "").trim() || "Find the detail that best supports one option.",
-      think: String(q.think || "").trim() || "Compare each option against the strongest evidence.",
-      step_by_step: String(q.step_by_step || "").trim() || "Read, cite evidence, eliminate weak options, choose the best-supported answer.",
-    }));
-  const safeAnswerKey = Array.isArray(answerKey) && answerKey.length > 0
-    ? answerKey
-    : questions.map((q, i) => ({
-      question_id: ensureQuestionId(q, i, mode),
-      correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
-      explanation: String(q.explanation || "").trim() || "The correct answer is the option best supported by evidence.",
-      common_mistake: String(q.common_mistake || "").trim() || "Selecting a choice with partial support only.",
-      parent_tip: String(q.parent_tip || "").trim() || "Have your child explain which detail proves the answer.",
-    }));
+  const fallbackTutor = buildTutorFromPractice(questions).practice;
+  const fallbackAnswerKey = buildAnswerKeyFromPractice(questions).practice;
+  const safeTutor = Array.isArray(tutor) && tutor.length > 0 ? tutor : fallbackTutor;
+  const safeAnswerKey = Array.isArray(answerKey) && answerKey.length > 0 ? answerKey : fallbackAnswerKey;
   return { tutor: safeTutor, answerKey: safeAnswerKey };
 }
 
@@ -4784,31 +4770,57 @@ serve(async (req) => {
 
     // 🚀 NEW MODE ROUTING
     if (effectiveMode === "cross") {
-      const crossContent = buildCrossFallbackContent(subject, level, effectiveSkill);
+      const aiCross = await generateWithRetry(
+        generateCrossCurricularPrompt({
+          grade,
+          subject,
+          skill: effectiveSkill,
+          level,
+          teksCode,
+        }),
+      ) as Record<string, unknown> | null;
+      const scopedCross = aiCross?.cross && typeof aiCross.cross === "object"
+        ? aiCross.cross as Record<string, unknown>
+        : aiCross;
+      const crossPayload = {
+        passage: String(scopedCross?.passage || ""),
+        questions: Array.isArray(scopedCross?.questions)
+          ? scopedCross.questions
+          : Array.isArray(scopedCross?.items)
+          ? scopedCross.items
+          : [],
+      };
+      const crossPassage = String(crossPayload.passage || "").trim() || buildSubjectPassage(subject, level);
       const result = await runPipeline({
         stems: [],
         crossSubject: subject,
         subject,
         skill: effectiveSkill,
         level,
-        crossPassage: crossContent.passage,
+        crossPassage: crossPassage,
         questions: [],
       });
-      let crossQuestions = Array.isArray(result.questions) ? result.questions : [];
-      crossQuestions = await sanitizeQuestions(
-        crossQuestions,
-        subject,
-        "Cross-Curricular",
-        effectiveSkill,
-        level,
-        crossContent.passage,
-        grade,
-        repairState,
-      );
+      let crossQuestions = Array.isArray(crossPayload.questions)
+        ? crossPayload.questions.slice(0, 5)
+        : [];
+      if (!crossQuestions.length && Array.isArray(result.questions)) {
+        crossQuestions = result.questions;
+      }
+      if (!Array.isArray(crossQuestions) || crossQuestions.length === 0) {
+        crossQuestions = await sanitizeQuestions(
+          crossQuestions,
+          subject,
+          "Cross-Curricular",
+          effectiveSkill,
+          level,
+          crossPassage,
+          grade,
+          repairState,
+        );
+      }
 
       if (!crossQuestions.length) {
-        console.warn("⚠️ AI returned no cross questions — using fallback");
-        crossQuestions = rebuildCrossFromPractice(crossContent.questions, subject, effectiveSkill);
+        console.warn("❌ No cross questions from AI");
       }
       crossQuestions = crossQuestions.slice(0, 5);
 
@@ -4817,7 +4829,7 @@ serve(async (req) => {
         skill,
         grade,
         cross: {
-          passage: crossContent.passage,
+          passage: crossPassage,
           questions: crossQuestions,
         },
       });
@@ -5072,8 +5084,7 @@ serve(async (req) => {
         });
 
         if (!cross?.questions?.length) {
-          console.warn("⚠️ Cross empty — rebuilding from practice");
-          cross.questions = rebuildCrossFromPractice(safePracticeQuestions, effectiveSubject, effectiveSkill);
+          console.warn("❌ No cross questions from AI");
         }
 
         const getCrossPayloadFromResponse = (raw: Record<string, unknown> | null) => {
@@ -5119,19 +5130,10 @@ serve(async (req) => {
           ) {
             console.warn("Retry failed — using safe fallback");
             subjectCrossPassage = baseCrossPassage;
-            parsedCross.questions = rebuildCrossFromPractice(
-              safePracticeQuestions,
-              effectiveSubject,
-              effectiveSkill,
-            );
           } else {
             parsedCross.questions = retryCross.questions?.length
               ? retryCross.questions
-              : rebuildCrossFromPractice(
-                safePracticeQuestions,
-                effectiveSubject,
-                effectiveSkill,
-              );
+              : [];
           }
         }
         const constraints = getGradeConstraints(grade);
@@ -5150,52 +5152,17 @@ serve(async (req) => {
         }
         parsedCross.passage = subjectCrossPassage;
 
-        const fallbackCrossQuestions = rebuildCrossFromPractice(
-          safePracticeQuestions,
-          effectiveSubject,
-          effectiveSkill,
-        );
-        const rebuildQuestion = (_q: unknown, index: number): Question => {
-          if (fallbackCrossQuestions[index]) return fallbackCrossQuestions[index];
-          if (fallbackCrossQuestions[0]) return fallbackCrossQuestions[0];
-          return {
-            question: getUniversalQuestion(effectiveSubject, effectiveSkill, index),
-            choices: buildUniversalChoices(effectiveSubject, subjectCrossPassage, level),
-            correct_answer: "A",
-          };
-        };
-        const finalCrossQuestions = (Array.isArray(parsedCross.questions) ? parsedCross.questions : []).map((q, index) => {
-          if (isValidQuestion(q)) return q as Question;
-
-          console.warn("⚠️ Rebuilding invalid cross question:", q);
-          return rebuildQuestion(q, index);
-        });
+        const finalCrossQuestions = Array.isArray(parsedCross.questions)
+          ? parsedCross.questions.slice(0, 5)
+          : [];
         const finalCrossPayload = {
           passage: aiCrossSafe.passage,
           questions: finalCrossQuestions,
         };
         let crossQuestions = finalCrossPayload.questions;
-        const crossValid = isValidAIOutput({
-          passage: subjectCrossPassage,
-          questions: crossQuestions,
-        });
-        crossQuestions = Array.isArray(crossQuestions) && crossQuestions.length > 0
-          ? crossQuestions
-          : rebuildCrossFromPractice(safePracticeQuestions, effectiveSubject, effectiveSkill);
-        crossQuestions = crossQuestions.slice(0, 5);
-        if (!crossValid) {
-          console.warn("⚠️ Cross validation weak — keeping anyway");
-        }
-        if (!crossQuestions || crossQuestions.length < 5) {
-          console.warn("⚠️ Final cross fallback triggered");
-          crossQuestions = rebuildCrossFromPractice(safePracticeQuestions, effectiveSubject, effectiveSkill);
-        }
-        let crossSource = "ai";
-        if (!aiQuestions.length) crossSource = "rebuild";
-        if (crossQuestions.length < 5) crossSource = "hybrid";
-        console.log("🚀 FINAL CROSS SOURCE:", crossSource);
-        if (crossSource !== "ai") {
-          console.warn("⚠️ Non-AI cross used");
+        if (!Array.isArray(crossQuestions)) crossQuestions = [];
+        if (!aiQuestions.length) {
+          console.warn("❌ Cross came back empty from AI");
         }
         let tutorPractice = sanitizeTutorExplanations(
           [],
@@ -5213,9 +5180,6 @@ serve(async (req) => {
         );
         let answerKeyCross: AnswerKeyEntry[] = [];
         console.log("CROSS QUESTIONS COUNT:", crossQuestions.length);
-        if (!crossQuestions.length) {
-          throw new Error("CROSS_GENERATION_FAILED");
-        }
         console.log("✅ FLOW STEP: buildCoreEnrichmentPrompt");
         const crossEnrichment = await generateWithRetry(
           buildCoreEnrichmentPrompt({
@@ -5278,10 +5242,6 @@ serve(async (req) => {
 
         console.log("🔥 FINAL CROSS SUBJECT:", effectiveSubject);
         console.log("🔥 FINAL CROSS PASSAGE:", subjectCrossPassage);
-
-        if (!crossQuestions.length) {
-          throw new Error("CROSS_GENERATION_FAILED");
-        }
 
         console.log("🧠 FINAL CROSS QUESTIONS (POST-PIPELINE):", crossQuestions);
 
