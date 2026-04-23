@@ -1362,6 +1362,17 @@ Return JSON:
   }
 
   if (subject === "Math") {
+    const onLevelMathGuidance = level === "On Level"
+      ? `
+On-Level multi-step expectations:
+- On-Level problems should often include a second step after the first calculation.
+- Use situations with remaining amounts, giving away items, change, or value comparisons.
+- Students should have to decide what to do next, not just run one operation.
+- Avoid having most problems solved in a single step.
+- Include at least 2 problems that clearly require more than one step to solve.
+`
+      : "";
+
     return `
 Generate concise STAAR-style Math practice content.
 
