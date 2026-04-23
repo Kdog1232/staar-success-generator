@@ -2866,13 +2866,20 @@
     { fallbackPassage: currentData?.passage || "" }
   );
 
+  console.log("RAW CROSS:", cross);
+  console.log("NORMALIZED CROSS:", normalizedCross);
+
   safeCross = {
-    passage: normalizedCross.cross.passage,
-    questions: normalizedCross.cross.questions
+    passage: normalizedCross?.cross?.passage || cross?.passage || "",
+    questions:
+      normalizedCross?.cross?.questions?.length
+        ? normalizedCross.cross.questions
+        : ensureQuestionIds(cross?.questions || [], "cross")
   };
 
   crossDataState = safeCross;
   currentData.cross = crossDataState;
+  console.log("FINAL CROSS STATE:", crossDataState);
 
   renderCrossSection(crossDataState, crossDataState.passage || "");
   setMode("cross");
