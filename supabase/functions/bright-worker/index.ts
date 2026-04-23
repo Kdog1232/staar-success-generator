@@ -2302,14 +2302,14 @@ Variation ID: ${variationSeed}
   }
 }
 
-function isValidQuestion(q: Question, passage: PassageContent | string): boolean {
-  void passage;
-  if (!q) return false;
-  if (!Array.isArray(q.choices) || q.choices.length !== 4) return false;
-  if (typeof q.correct_answer !== "string") return false;
-  if (!["A", "B", "C", "D"].includes(String(q.correct_answer).toUpperCase())) return false;
-  if (!String(q.question || "").trim()) return false;
-  return true;
+function isValidQuestion(q: any): boolean {
+  return (
+    q &&
+    typeof q.question === "string" &&
+    Array.isArray(q.choices) &&
+    q.choices.length === 4 &&
+    q.choices.every((c: unknown) => typeof c === "string" && c.trim().length > 0)
+  );
 }
 
 function hasReasonableAlignment(q: Question, passage: PassageContent | string): boolean {
@@ -5005,18 +5005,23 @@ serve(async (req) => {
           console.warn("⚠️ Empty cross payload — using fallback cross content");
         }
 
-        const aiQuestions =
-          Array.isArray(scopedCross?.questions)
-            ? scopedCross.questions
-            : Array.isArray(scopedCross?.items)
-            ? scopedCross.items
-            : Array.isArray(crossRes?.questions)
-            ? crossRes.questions
-            : [];
+        const aiCross = {
+          passage: String(scopedCross?.passage || ""),
+          questions:
+            Array.isArray(scopedCross?.questions)
+              ? scopedCross.questions
+              : Array.isArray(scopedCross?.items)
+              ? scopedCross.items
+              : Array.isArray(crossRes?.questions)
+              ? crossRes.questions
+              : [],
+        };
+        const aiCrossSafe = structuredClone(aiCross);
+        const aiQuestions = Array.isArray(aiCrossSafe.questions) ? aiCrossSafe.questions : [];
 
         let cross = {
-          passage: String(scopedCross?.passage || ""),
-          questions: Array.isArray(aiQuestions) ? aiQuestions as unknown[] : [],
+          passage: String(aiCrossSafe.passage || ""),
+          questions: aiQuestions as unknown[],
         };
         const crossShapeValid = validateCrossCurricular({
           passage: cross.passage,
@@ -5046,21 +5051,6 @@ serve(async (req) => {
           console.warn("⚠️ Cross empty — rebuilding from practice");
           cross.questions = rebuildCrossFromPractice(safePracticeQuestions, effectiveSubject, effectiveSkill);
         }
-
-        cross.questions = (Array.isArray(cross.questions) ? cross.questions : []).map((item) => {
-          const q = item && typeof item === "object" ? item as Record<string, unknown> : {};
-          return {
-            question: String(q.question || "Which statement is best supported?"),
-            choices: normalizeChoices(q.choices),
-            correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
-          };
-        });
-        cross.questions = cross.questions.map((q, i) => ({
-          ...q,
-          question: q.question.length < 20
-            ? getUniversalQuestion(effectiveSubject, effectiveSkill, i)
-            : q.question,
-        }));
 
         const getCrossPayloadFromResponse = (raw: Record<string, unknown> | null) => {
           const scoped = raw?.cross && typeof raw.cross === "object"
@@ -5136,16 +5126,31 @@ serve(async (req) => {
         }
         parsedCross.passage = subjectCrossPassage;
 
-        let crossQuestions = await sanitizeQuestions(
-          parsedCross.questions || [],
+        const fallbackCrossQuestions = rebuildCrossFromPractice(
+          safePracticeQuestions,
           effectiveSubject,
-          "Cross-Curricular",
           effectiveSkill,
-          level,
-          subjectCrossPassage,
-          grade,
-          repairState,
         );
+        const rebuildQuestion = (_q: unknown, index: number): Question => {
+          if (fallbackCrossQuestions[index]) return fallbackCrossQuestions[index];
+          if (fallbackCrossQuestions[0]) return fallbackCrossQuestions[0];
+          return {
+            question: getUniversalQuestion(effectiveSubject, effectiveSkill, index),
+            choices: buildUniversalChoices(effectiveSubject, subjectCrossPassage, level),
+            correct_answer: "A",
+          };
+        };
+        const finalCrossQuestions = (Array.isArray(parsedCross.questions) ? parsedCross.questions : []).map((q, index) => {
+          if (isValidQuestion(q)) return q as Question;
+
+          console.warn("⚠️ Rebuilding invalid cross question:", q);
+          return rebuildQuestion(q, index);
+        });
+        const finalCrossPayload = {
+          passage: aiCrossSafe.passage,
+          questions: finalCrossQuestions,
+        };
+        let crossQuestions = finalCrossPayload.questions;
         const crossValid = isValidAIOutput({
           passage: subjectCrossPassage,
           questions: crossQuestions,
@@ -5183,8 +5188,8 @@ serve(async (req) => {
           "practice",
         );
         let answerKeyCross: AnswerKeyEntry[] = [];
-        console.log("CROSS QUESTIONS COUNT:", cross?.questions?.length);
-        if (!cross?.questions?.length) {
+        console.log("CROSS QUESTIONS COUNT:", crossQuestions.length);
+        if (!crossQuestions.length) {
           throw new Error("CROSS_GENERATION_FAILED");
         }
         console.log("✅ FLOW STEP: buildCoreEnrichmentPrompt");
