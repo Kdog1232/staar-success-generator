@@ -2010,7 +2010,14 @@
       }
 
       const payload = await response.json();
-      return payload?.cross || { passage: null, questions: [] };
+      const scopedCross = payload?.cross && typeof payload.cross === "object"
+        ? payload.cross
+        : payload;
+
+      return {
+        passage: typeof scopedCross?.passage === "string" ? scopedCross.passage : "",
+        questions: Array.isArray(scopedCross?.questions) ? scopedCross.questions : []
+      };
     }
 
     async function fetchSupportContent({ token, subject, grade, skill, level, passage, practiceQuestions, cross }) {
@@ -2857,61 +2864,70 @@
           let safeCross = { passage: "", questions: [] };
 
           try {
-  const cross = await fetchCrossContent({
-    token,
-    subject,
-    grade,
-    skill,
-    level
-  });
+            const cross = await fetchCrossContent({
+              token,
+              subject,
+              grade,
+              skill,
+              level
+            });
 
-  if (currentRequestId !== requestId) return;
+            if (currentRequestId !== requestId) return;
 
-  console.log("🌎 CROSS READY");
+            console.log("RAW CROSS RESPONSE:", cross);
+            console.log("🌎 CROSS READY");
 
-  const normalizedCross = normalizeWorkerPayload(
-    { cross },
-    { fallbackPassage: currentData?.passage || "" }
-  );
+            const normalizedCross = normalizeWorkerPayload(
+              { cross },
+              { fallbackPassage: currentData?.passage || "" }
+            );
+            const rawQuestions = ensureQuestionIds(
+              Array.isArray(cross?.questions) ? cross.questions : [],
+              "cross"
+            );
+            const normalizedQuestions = ensureQuestionIds(
+              normalizedCross?.cross?.questions || [],
+              "cross"
+            );
 
-  console.log("RAW CROSS:", cross);
-  console.log("NORMALIZED CROSS:", normalizedCross);
+            if (rawQuestions.length && !normalizedQuestions.length) {
+              console.warn("⚠️ normalizeWorkerPayload dropped cross questions");
+            }
 
-  safeCross = {
-    passage: normalizedCross?.cross?.passage || cross?.passage || "",
-    questions:
-      normalizedCross?.cross?.questions?.length
-        ? normalizedCross.cross.questions
-        : ensureQuestionIds(cross?.questions || [], "cross")
-  };
+            console.log("NORMALIZED CROSS:", normalizedCross);
+            console.log("CROSS QUESTION COUNTS:", {
+              raw: rawQuestions.length,
+              normalized: normalizedQuestions.length
+            });
 
-  if (safeCross?.questions?.length) {
-    crossDataState = safeCross;
-    currentData.cross = crossDataState;
-  }
-  console.log("FINAL CROSS STATE:", crossDataState);
-  console.log("CROSS BEFORE RENDER:", crossDataState);
+            safeCross = {
+              passage: cross?.passage || normalizedCross?.cross?.passage || "",
+              questions: rawQuestions.length ? rawQuestions : normalizedQuestions
+            };
 
-  renderCrossSection(crossDataState || safeCross, (crossDataState || safeCross).passage || "");
-  setMode("cross");
+            crossDataState = safeCross;
+            currentData.cross = crossDataState;
 
-  console.log("CROSS READY:", crossDataState);
+            console.log("FINAL CROSS STATE:", crossDataState);
+            console.log("CROSS BEFORE RENDER:", crossDataState);
 
-} catch (crossErr) {
-  console.warn("❌ CROSS FAILED:", crossErr);
-  if (currentRequestId !== requestId) return;
+            renderCrossSection(crossDataState, crossDataState.passage || "");
+            setMode("cross");
 
-  if (safeCross?.questions?.length) {
-    crossDataState = safeCross;
-    currentData.cross = crossDataState;
-  }
+            console.log("CROSS READY:", crossDataState);
+          } catch (crossErr) {
+            console.warn("❌ CROSS FAILED:", crossErr);
+            if (currentRequestId !== requestId) return;
 
-  if (crossSection) {
-    crossSection.innerHTML = `<div class="muted-note">Cross unavailable</div>`;
-  }
+            crossDataState = safeCross;
+            currentData.cross = crossDataState;
 
-  setMode("cross");
-}
+            if (crossSection) {
+              crossSection.innerHTML = `<div class="muted-note">Cross unavailable</div>`;
+            }
+
+            setMode("cross");
+          }
           try {
             const support = await fetchSupportContent({
               token,
