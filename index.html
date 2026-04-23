@@ -246,6 +246,20 @@
       box-shadow: none;
     }
 
+    #signup-btn {
+      background: #f1f5f9;
+      color: #334155;
+      box-shadow: none;
+    }
+
+    #signup-btn:hover:not(:disabled),
+    #signup-btn:active {
+      box-shadow: none;
+      transform: none;
+      background: #f1f5f9;
+      color: #334155;
+    }
+
     .worksheet-card {
       margin-top: 0;
       padding: 26px;
@@ -442,25 +456,26 @@
       border: 1px solid #e2e8f0;
       border-radius: 12px;
       padding: 10px 16px;
-      font-weight: 500;
+      font-weight: 600;
       color: #334155;
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: all 0.18s ease;
     }
 
     .mode-btn:hover {
-      background: #e0e7ff;
+      background: #e8edf3;
+      box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);
     }
 
     .mode-btn.active {
       background: linear-gradient(135deg, #4f46e5, #6366f1);
       color: white;
       border: none;
-      box-shadow: 0 6px 16px rgba(79,70,229,0.25);
+      box-shadow: 0 8px 18px rgba(79,70,229,0.28);
     }
 
     .mode-btn:active {
-      transform: scale(0.97);
+      transform: scale(0.98);
     }
 
     .generate-btn:active {
@@ -611,9 +626,10 @@
     }
 
     .card {
-      padding: 16px;
+      padding: 18px;
       margin-bottom: 16px;
       border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
     }
 
     .practice-section {
@@ -622,14 +638,17 @@
 
     .cross-section {
       background: #f0f9ff;
+      margin-top: 12px;
     }
 
     .think-section {
       background: #f9fafb;
+      margin-top: 12px;
     }
 
     .answer-section {
       background: #f0fdf4;
+      margin-top: 12px;
     }
 
     .split-container {
@@ -682,7 +701,7 @@
     .question-text {
       font-weight: 600;
       font-size: 19px;
-      line-height: 1.45;
+      line-height: 1.5;
       margin: 0 0 10px;
     }
 
@@ -701,7 +720,7 @@
       gap: 8px;
       padding-left: 4px;
       font-size: 14px;
-      line-height: 1.45;
+      line-height: 1.5;
       font-weight: 400;
     }
 
@@ -762,7 +781,7 @@
     .helper-text {
       font-size: 13px;
       color: #6b7280;
-      line-height: 1.45;
+      line-height: 1.55;
       margin: 4px 0;
     }
 
@@ -852,9 +871,9 @@
     }
 
     .answer-card {
-      padding: 12px 14px;
+      padding: 16px;
       margin-bottom: 16px;
-      border-radius: 10px;
+      border-radius: 12px;
       border: 1px solid #bbf7d0;
       background: #f0fdf4;
     }
@@ -872,9 +891,9 @@
     }
 
     .tutor-item {
-      padding: 12px 14px;
+      padding: 16px;
       border: 1px solid #e5e7eb;
-      border-radius: 10px;
+      border-radius: 12px;
       background: #f9fafb;
       margin-bottom: 14px;
     }
@@ -896,9 +915,27 @@
     }
 
     .mode-label {
-      font-size: 12px;
-      color: #9ca3af;
-      margin-bottom: 6px;
+      font-size: 14px;
+      color: #475569;
+      margin-bottom: 10px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    .loading-dots::after {
+      content: "";
+      display: inline-block;
+      width: 1.2em;
+      text-align: left;
+      animation: loadingDots 1.2s steps(4, end) infinite;
+    }
+
+    @keyframes loadingDots {
+      0% { content: ""; }
+      25% { content: "."; }
+      50% { content: ".."; }
+      75% { content: "..."; }
+      100% { content: ""; }
     }
 
     .testimonial-section {
@@ -1047,14 +1084,14 @@
   <div class="container app-container">
     <div id="upgrade-banner" class="upgrade-banner">🎉 You now have unlimited access!</div>
     <header class="header section">
-      <h1>10-Minute Daily Practice That Feels Like Tutoring</h1>
-      <p>Aligned to TEKS standards and STAAR expectations</p>
-      <p>Ideal for parents, teachers, tutors, and homeschool educators</p>
+      <h1>10-Minute Daily Practice That Feels Like a Personal Tutor</h1>
+      <p>Build real understanding across reading, math, science, and social studies with instant practice and explanations.</p>
+      <p>Used by parents, homeschoolers, and educators to build confidence and improve learning outcomes.</p>
     </header>
 
     <section class="hero">
-      <h1>STAAR Practice That Feels Like a Tutor</h1>
-      <p>Generate rigorous practice, explanations, and cross-curricular questions in seconds.</p>
+      <h1>Generate Practice with Tutor-Style Explanations in Seconds</h1>
+      <p>Create high-quality practice across subjects instantly — no prep required.</p>
     </section>
 
     <section class="value-card section" aria-label="Key benefits">
@@ -1110,26 +1147,31 @@
         </div>
       </div>
 
-      <form id="auth-box" class="auth-box" onsubmit="event.preventDefault(); signIn();">
-        <input id="email" class="auth-input" type="email" autocomplete="email" placeholder="Enter email" />
-        <input id="password" class="auth-input" type="password" autocomplete="current-password" placeholder="Enter password" />
+      <div id="auth-section" style="display: none;">
+        <button id="auth-mode-toggle" type="button" class="forgot-btn" onclick="toggleAuthMode()">
+          Already have an account? Log in
+        </button>
+        <form id="auth-box" class="auth-box" onsubmit="event.preventDefault(); signIn();">
+          <input id="email" class="auth-input" type="email" autocomplete="email" placeholder="Enter email" />
+          <input id="password" class="auth-input" type="password" autocomplete="current-password" placeholder="Enter password" />
 
-        <button type="button" onclick="signUp()" class="generate-btn" style="margin-bottom:6px;">
-          Sign Up
-        </button>
+          <button id="signup-btn" type="button" onclick="signUp()" class="generate-btn" style="margin-bottom:6px;">
+            Sign Up
+          </button>
 
-        <button type="submit" class="generate-btn auth-secondary">
-          Log In
-        </button>
-        <button type="button" onclick="forgotPassword()" class="forgot-btn">
-          Forgot Password?
-        </button>
-        <div id="auth-feedback" style="display:none; margin-top:8px; padding:10px; border-radius:10px; font-weight:600;"></div>
-      </form>
+          <button id="login-btn" type="submit" class="generate-btn auth-secondary">
+            Log In
+          </button>
+          <button id="forgot-btn" type="button" onclick="forgotPassword()" class="forgot-btn">
+            Forgot Password?
+          </button>
+          <div id="auth-feedback" style="display:none; margin-top:8px; padding:10px; border-radius:10px; font-weight:600;"></div>
+        </form>
+      </div>
 
       <button id="generate-btn" class="generate-btn" type="button">Generate STAAR Pack</button>
       <p id="auth-required-note" style="display:none; margin-top:10px; color:#7a2e00; font-weight:600;">
-        Please sign up or log in to generate a STAAR pack.
+        Create a free account to generate your first practice set.
       </p>
       <p id="usage-status" style="margin-top:8px; color:#1e3a5f; font-weight:600;"></p>
     </section>
@@ -1264,6 +1306,8 @@
     let cachedSession = null;
     let cachedUser = null;
     let authReady = false;
+    let authRevealRequested = false;
+    let authMode = "signup";
 
     function resetGenerateState() {
       const generateBtn = document.getElementById("generate-btn");
@@ -1359,15 +1403,55 @@
       }
     }
 
+    function applyAuthMode(mode = "signup") {
+      authMode = mode === "login" ? "login" : "signup";
+      const signupBtn = document.getElementById("signup-btn");
+      const loginBtn = document.getElementById("login-btn");
+      const forgotBtn = document.getElementById("forgot-btn");
+      const authToggle = document.getElementById("auth-mode-toggle");
+
+      const isLoginMode = authMode === "login";
+      if (signupBtn) signupBtn.style.display = isLoginMode ? "none" : "block";
+      if (loginBtn) loginBtn.style.display = isLoginMode ? "block" : "none";
+      if (forgotBtn) forgotBtn.style.display = isLoginMode ? "inline-block" : "none";
+      if (authToggle) {
+        authToggle.textContent = isLoginMode
+          ? "Need an account? Sign up"
+          : "Already have an account? Log in";
+      }
+    }
+
+    function toggleAuthMode() {
+      applyAuthMode(authMode === "login" ? "signup" : "login");
+    }
+
+    function revealAuthSection(message = "Create a free account to generate your STAAR pack.") {
+      const authSection = document.getElementById("auth-section");
+      if (!authSection) return;
+      authRevealRequested = true;
+      authSection.style.display = "block";
+      applyAuthMode(authMode);
+      showAuthFeedback(message, "info");
+      authSection.scrollIntoView({ behavior: "smooth" });
+    }
+
     function setAppAuthenticatedState(isAuthenticated) {
+      const authSection = document.getElementById("auth-section");
       const authBox = document.getElementById("auth-box");
       const generateBtn = document.getElementById("generate-btn");
       const authRequiredNote = document.getElementById("auth-required-note");
       const profileSection = document.getElementById("profile-section");
 
-      authBox.style.display = isAuthenticated ? "none" : "block";
-      generateBtn.disabled = !isAuthenticated;
-      authRequiredNote.style.display = isAuthenticated ? "none" : "block";
+      if (authSection) {
+        authSection.style.display = isAuthenticated ? "none" : (authRevealRequested ? "block" : "none");
+      }
+      if (authBox) {
+        authBox.style.display = isAuthenticated ? "none" : "block";
+      }
+      if (generateBtn) {
+        generateBtn.disabled = false;
+      }
+      authRequiredNote.style.display = "none";
       profileSection.style.display = isAuthenticated ? "flex" : "none";
     }
 
@@ -2114,7 +2198,7 @@
       outputContainer.innerHTML = `
         <div class="worksheet">
           <div class="muted-note" style="padding: 14px 0; font-weight: 600;">
-            ⏳ Generating your STAAR practice...
+            ⏳ Generating your STAAR practice<span class="loading-dots" aria-hidden="true"></span>
           </div>
         </div>
       `;
@@ -2670,6 +2754,7 @@
         if (data.session) {
           cachedSession = data.session;
           cachedUser = data.session.user ?? null;
+          authRevealRequested = false;
           showAuthFeedback("Account created! You are now logged in.", "success");
           const user = await requireAuth({ showPrompt: false });
           if (user) {
@@ -2702,6 +2787,7 @@
         } else {
           cachedSession = data?.session ?? null;
           cachedUser = cachedSession?.user ?? null;
+          authRevealRequested = false;
           showAuthFeedback("Logged in successfully!", "success");
           const user = await requireAuth({ showPrompt: false });
           if (user) {
@@ -2848,24 +2934,33 @@
 
         console.log("✅ DATA RECEIVED:", data);
 
-        const normalizedCore = normalizeWorkerPayload(data);
-        practiceDataState = {
-          questions: normalizedCore?.practice?.questions || []
-        };
+        ensureWorksheetShell();
+
+        practiceDataState = data?.practice || { questions: [] };
+        generatedPassage = data?.passage || "";
+        renderPracticeSection(practiceDataState, generatedPassage);
+        setMode("practice");
+        const toggle = document.getElementById("view-toggle");
+        if (toggle) toggle.style.display = "flex";
+
+        const normalizedCore = normalizeWorkerPayload({
+          ...data,
+          practice: practiceDataState,
+          passage: generatedPassage
+        });
         currentData = {
           ...normalizedCore,
-          practice: practiceDataState,
+          practice: {
+            questions: ensureQuestionIds(
+              Array.isArray(practiceDataState?.questions) ? practiceDataState.questions : [],
+              "practice"
+            )
+          },
+          passage: generatedPassage,
           cross: { passage: "", questions: [] },
           tutor: { practice: [], cross: [] },
           answerKey: { practice: [], cross: [] }
         };
-
-        ensureWorksheetShell();
-        clearRenderedSections();
-        renderPracticeSection(practiceDataState, normalizedCore?.passage || "");
-        setMode("practice");
-        const toggle = document.getElementById("view-toggle");
-        if (toggle) toggle.style.display = "flex";
 
         const crossSection = document.getElementById("cross-section");
         const tutorSection = document.getElementById("tutor-section");
@@ -2927,8 +3022,9 @@
             console.log("FINAL CROSS STATE:", crossDataState);
             console.log("CROSS BEFORE RENDER:", crossDataState);
 
-            renderCrossSection(crossDataState, crossDataState.passage || "");
-            setMode("cross");
+            if (crossSection) {
+              crossSection.innerHTML = renderCross(crossDataState);
+            }
 
             console.log("CROSS READY:", crossDataState);
           } catch (crossErr) {
@@ -2942,7 +3038,6 @@
               crossSection.innerHTML = `<div class="muted-note">Cross unavailable</div>`;
             }
 
-            setMode("cross");
           }
           try {
             const support = await fetchSupportContent({
@@ -2967,8 +3062,16 @@
             currentData.tutor = tutorDataState;
             currentData.answerKey = answerKeyDataState;
 
-            renderTutorSection(tutorDataState, getActiveMode());
-            renderAnswerSection(answerKeyDataState, getActiveMode());
+            const tutorTarget = Array.isArray(tutorDataState?.practice) ? tutorDataState.practice : [];
+            const answerTarget = Array.isArray(answerKeyDataState?.practice) ? answerKeyDataState.practice : [];
+
+            if (tutorSection) {
+              tutorSection.innerHTML = renderTutor(tutorTarget, "tutor");
+            }
+            const answerSection = document.getElementById("answer-section");
+            if (answerSection) {
+              answerSection.innerHTML = renderAnswerKey(answerTarget, "answer");
+            }
           } catch (supportErr) {
             console.warn("⚠️ Support failed:", supportErr);
           }
@@ -3005,6 +3108,7 @@
     window.signIn = signIn;
     window.logout = logout;
     window.forgotPassword = forgotPassword;
+    window.toggleAuthMode = toggleAuthMode;
 
     document.querySelectorAll(".mode-btn").forEach((modeBtn) => {
       modeBtn.addEventListener("click", () => {
@@ -3027,10 +3131,22 @@
 
         console.log("🔥 CLICK CONFIRMED");
 
+        if (!cachedUser) {
+          const { data } = await supabase.auth.getSession();
+          cachedSession = data?.session ?? null;
+          cachedUser = cachedSession?.user ?? null;
+        }
+
+        if (!cachedUser) {
+          revealAuthSection("Create a free account to generate your first practice set.");
+          return;
+        }
+
         await generate();
       };
 
       console.log("✅ Button wired safely");
+      applyAuthMode("signup");
     });
 
     window.addEventListener("error", (e) => {
