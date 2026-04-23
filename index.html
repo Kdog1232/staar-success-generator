@@ -59,21 +59,25 @@
 
     .header {
       text-align: center;
+      padding-top: 10px;
       margin-bottom: 22px;
     }
 
     .header-inner {
-      position: relative;
       display: flex;
       align-items: center;
-      justify-content: center;
+      justify-content: space-between;
       gap: 16px;
       width: 100%;
     }
 
+    .header-inner::after {
+      content: "";
+      width: 50px;
+      flex-shrink: 0;
+    }
+
     .logo {
-      position: absolute;
-      left: 0;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -82,14 +86,14 @@
     }
 
     .logo img {
-      height: 50px;
+      height: 42px;
       width: auto;
       display: block;
     }
 
     .header-content {
-      text-align: center;
       flex: 1;
+      text-align: center;
       max-width: 700px;
       margin: 0 auto;
     }
@@ -557,12 +561,11 @@
 
     @media (max-width: 768px) {
       .header-inner {
-        flex-direction: column;
-        gap: 12px;
+        gap: 10px;
       }
 
-      .logo {
-        justify-content: center;
+      .header-inner::after {
+        display: none;
       }
     }
 
