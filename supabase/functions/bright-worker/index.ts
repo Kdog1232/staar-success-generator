@@ -1761,7 +1761,7 @@ RULES (STRICT)
 - If unsure, generate best possible answer
 - Each array MUST match question count
 - questionIndex must align to input order (0-based)
-- Avoid responses that could apply to any passage or question. Make each one feel specific to the situation.
+- Every hint, strategy, and why must be question-specific (INVALID if it could apply to any passage/question).
 - Whenever possible, refer to a specific moment, action, or reaction from the passage (paraphrase; do not force direct quotes).
 - Vary how you guide the student across questions; do not repeat the same advice pattern or sentence starters.
 - Do not reuse generic coaching phrases like "use evidence", "point to a detail", or "choose with evidence" as repeated templates.
