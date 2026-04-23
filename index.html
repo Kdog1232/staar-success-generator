@@ -2108,6 +2108,21 @@
       document.getElementById("answer-section").innerHTML = "";
     }
 
+    function showLoadingUI() {
+      const outputContainer = document.getElementById("output");
+      if (!outputContainer) return;
+      outputContainer.innerHTML = `
+        <div class="worksheet">
+          <div class="muted-note" style="padding: 14px 0; font-weight: 600;">
+            ⏳ Generating your STAAR practice...
+          </div>
+        </div>
+      `;
+
+      const toggle = document.getElementById("view-toggle");
+      if (toggle) toggle.style.display = "none";
+    }
+
     function ensureWorksheetShell() {
       if (document.getElementById("practice-section")) return;
 
@@ -2764,6 +2779,8 @@
       }
 
       isGenerating = true;
+      const requestId = Date.now();
+      currentRequestId = requestId;
       console.log("🚀 GENERATE STARTED");
       const btn = document.getElementById("generate-btn");
 
@@ -2772,6 +2789,9 @@
           btn.disabled = true;
           btn.textContent = "Generating...";
         }
+
+        resetGeneratedPanelsState();
+        showLoadingUI();
 
         console.log("🟡 STEP 1: SESSION CHECK");
 
@@ -2827,10 +2847,6 @@
         const data = await res.json();
 
         console.log("✅ DATA RECEIVED:", data);
-
-        const requestId = Date.now();
-        currentRequestId = requestId;
-        resetGeneratedPanelsState();
 
         const normalizedCore = normalizeWorkerPayload(data);
         practiceDataState = {
