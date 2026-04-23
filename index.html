@@ -2209,7 +2209,13 @@
     function renderCrossSection(crossData, crossText) {
       const crossSection = document.getElementById("cross-section");
       if (!crossSection) return;
-      const crossQuestions = Array.isArray(crossData?.questions) ? crossData.questions : [];
+
+      if (!crossData || !Array.isArray(crossData.questions)) {
+        crossSection.innerHTML = `<div class="muted-note">Cross unavailable</div>`;
+        return;
+      }
+
+      const crossQuestions = crossData.questions;
 
       crossSection.innerHTML = `
         <div class="worksheet-section">
@@ -2217,9 +2223,10 @@
           ${renderPassage(crossText || crossData.passage || "")}
           ${crossQuestions.length
             ? renderCross({ ...crossData, questions: crossQuestions })
-            : `<p class="muted-note">Cross-Curricular Questions not available.</p>`}
+            : `<div>⚠️ No questions returned</div>`}
         </div>
       `;
+      crossSection.style.display = "block";
       console.log("🌎 CROSS RENDERED");
     }
 
@@ -2878,11 +2885,14 @@
         : ensureQuestionIds(cross?.questions || [], "cross")
   };
 
-  crossDataState = safeCross;
-  currentData.cross = crossDataState;
+  if (safeCross?.questions?.length) {
+    crossDataState = safeCross;
+    currentData.cross = crossDataState;
+  }
   console.log("FINAL CROSS STATE:", crossDataState);
+  console.log("CROSS BEFORE RENDER:", crossDataState);
 
-  renderCrossSection(crossDataState, crossDataState.passage || "");
+  renderCrossSection(crossDataState || safeCross, (crossDataState || safeCross).passage || "");
   setMode("cross");
 
   console.log("CROSS READY:", crossDataState);
@@ -2891,8 +2901,10 @@
   console.warn("❌ CROSS FAILED:", crossErr);
   if (currentRequestId !== requestId) return;
 
-  crossDataState = safeCross;
-  currentData.cross = crossDataState;
+  if (safeCross?.questions?.length) {
+    crossDataState = safeCross;
+    currentData.cross = crossDataState;
+  }
 
   if (crossSection) {
     crossSection.innerHTML = `<div class="muted-note">Cross unavailable</div>`;
