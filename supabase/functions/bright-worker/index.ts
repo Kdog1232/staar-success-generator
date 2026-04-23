@@ -1719,15 +1719,9 @@ function buildCoreEnrichmentPrompt(params: {
   return `
 You are generating structured tutoring support for STAAR practice.
 
-You MUST return JSON ONLY.
-DO NOT include any explanation.
-DO NOT include markdown.
-DO NOT include extra text.
+Return JSON only. No markdown. No extra text.
 
---------------------------------------------------
-REQUIRED OUTPUT FORMAT
---------------------------------------------------
-
+OUTPUT FORMAT:
 {
   "tutor": {
     "practice": [
@@ -1767,10 +1761,7 @@ REQUIRED OUTPUT FORMAT
   }
 }
 
---------------------------------------------------
-INPUT DATA
---------------------------------------------------
-
+INPUT DATA:
 Practice Questions:
 ${JSON.stringify(compactPractice)}
 
@@ -1780,28 +1771,35 @@ ${crossPassage}
 Cross Questions:
 ${JSON.stringify(compactCross)}
 
---------------------------------------------------
-RULES (STRICT)
---------------------------------------------------
+GENERAL RULES:
+- Be specific to each question
+- Avoid generic explanations
+- Guide thinking step-by-step
+- Keep all fields present
+- Arrays must match question count
+- questionIndex must match input order (0-based)
 
-- ALWAYS return ALL fields
-- NEVER return {}
-- NEVER omit tutor.cross or answerKey.cross
-- If unsure, generate best possible answer
-- Each array MUST match question count
-- questionIndex must align to input order (0-based)
-- Every hint, strategy, and why must be question-specific (INVALID if it could apply to any passage/question).
-- Whenever possible, refer to a specific moment, action, or reaction from the passage (paraphrase; do not force direct quotes).
-- Vary how you guide the student across questions; do not repeat the same advice pattern or sentence starters.
-- Do not reuse generic coaching phrases like "use evidence", "point to a detail", or "choose with evidence" as repeated templates.
-- Alternate support language naturally (for example: "Which part supports that?", "Where do you see that happening?", "What moment best matches your answer?").
-- "why" entries must explain why the correct answer fits this specific passage moment and why a tempting wrong idea could seem plausible.
+SUBJECT GUIDANCE:
+- Math: show step-by-step calculations using given numbers
+- Science: explain cause and effect clearly
+- Social Studies: explain decisions and outcomes
+- Reading: reference specific parts of the passage
 
---------------------------------------------------
-RETURN JSON ONLY
---------------------------------------------------
+LIMIT OUTPUT COMPLEXITY:
+- Keep explanations concise (1–2 sentences max)
+- Keep step_by_step to 3 steps max
+- Keep hints short (1 sentence)
+- Do not over-explain
+
+OUTPUT CONSTRAINTS:
+- Be concise and efficient
+- Do not produce long explanations
+- Focus only on the key reasoning needed
+
+Return valid JSON only.
 `;
 }
+
 
 
 function isValidCoreEnrichmentOutput(data: unknown): boolean {
@@ -1813,7 +1811,8 @@ function isValidCoreEnrichmentOutput(data: unknown): boolean {
   const crossQuestions = Array.isArray(cross?.questions) ? cross.questions : [];
 
   if (!cross || typeof cross.passage !== "string" || !cross.passage.trim()) return false;
-  if (crossQuestions.length !== 5) return false;
+  // Be tolerant of partial/malformed model output; sanitizers can recover shape.
+  if (crossQuestions.length < 3) return false;
 
   return Boolean(
     tutor &&
@@ -4139,14 +4138,38 @@ function sanitizeTutorExplanations(
   crossPassage = "",
 ): TutorExplanation[] {
   const aiEntries = Array.isArray(raw) ? raw as TutorExplanation[] : [];
-  const genericCoachPattern = /\b(use evidence|point to (a|one) detail|choose with evidence|look back at the passage|think about what the (question|text) is asking)\b/i;
-  const hintStarters = [
-    "Which part supports that idea?",
-    "Where do you see that happening?",
-    "What moment best matches your answer?",
-    "Which action in the text pushes you toward one choice?",
-    "Which reaction in the passage confirms your thinking?",
-  ];
+  const genericCoachPattern = /\b(choose the best answer|look back at the passage|think about the question|read carefully)\b/i;
+  const hintStarters = subject === "Math"
+    ? [
+      "What numbers should you use first?",
+      "Which calculation comes first?",
+      "What do you need to find before the final answer?",
+      "What operation should you start with?",
+      "How can you break this into steps?",
+    ]
+    : subject === "Science"
+    ? [
+      "What is changing in this situation?",
+      "What effect does that change cause?",
+      "What happens when this increases or decreases?",
+      "Which variable matters most here?",
+      "What result would you expect?",
+    ]
+    : subject === "Social Studies"
+    ? [
+      "What decision was made here?",
+      "What happened as a result?",
+      "Why would they make that choice?",
+      "What was the outcome of that action?",
+      "What effect followed this event?",
+    ]
+    : [
+      "Which part supports that idea?",
+      "Where do you see that happening?",
+      "What moment best matches your answer?",
+      "Which action in the text pushes you toward one choice?",
+      "Which reaction in the passage confirms your thinking?",
+    ];
   const fallback = mode === "cross"
     ? sourceQuestions.slice(0, 5).map((q) => buildCrossTutorFallback(subject, q, crossPassage))
     : buildTutorFromPractice(sourceQuestions.slice(0, 5)).practice;
@@ -4164,29 +4187,47 @@ function sanitizeTutorExplanations(
     const existingHint = String(fromAi.hint || "").trim();
     const hint = (!existingHint || genericCoachPattern.test(existingHint))
       ? (mode === "cross" && evidence
-        ? `${starter} Think about the part where ${evidence}.`
-        : `${starter} Focus on the part of the question that decides between the two closest choices.`)
+        ? (subject === "Math"
+          ? `${starter} What should you calculate first before the final answer?`
+          : subject === "Science"
+          ? `${starter} Which change here actually drives the outcome?`
+          : subject === "Social Studies"
+          ? `${starter} What decision matters most, and what followed from it?`
+          : `${starter} Which part where ${evidence} actually proves your idea?`)
+        : `${starter} Which detail decides between the two closest choices?`)
       : existingHint;
 
     const existingExplanation = String(fromAi.explanation || "").trim();
     const conciseExisting = existingExplanation.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ").trim();
     const explanation = (!conciseExisting || genericCoachPattern.test(conciseExisting))
       ? (mode === "cross" && evidence
-        ? `The best answer matches the moment where ${evidence}. Another choice can seem reasonable if it uses a related detail, but it misses what this moment actually shows.`
-        : `The best answer fits the key condition in this question. A tempting wrong choice usually matches one detail but misses the full requirement.`)
+        ? `Start by looking at the moment where ${evidence}. This part matters because it reveals the key idea, while a common trap is choosing an option that only sounds related.`
+        : `Notice the exact condition in the question. This is where students get confused: a nearby choice may fit one detail but still miss the full requirement.`)
       : conciseExisting;
 
     const existingSteps = String(fromAi.step_by_step || "").trim();
-    const stepByStep = existingSteps || (mode === "cross"
-      ? "1. Find the moment in the passage tied to the question.\n2. Match that moment to the strongest choice.\n3. Eliminate options that only partly fit."
-      : "1. Identify exactly what the question asks.\n2. Compare the two closest choices.\n3. Pick the option that fully matches the requirement.");
+    const stepByStep = existingSteps || (
+      subject === "Math"
+        ? "1. Identify what you need and the key numbers.\n2. Choose the operation that unlocks the solution.\n3. Solve carefully and check your final answer."
+        : subject === "Science"
+        ? "1. Identify what is changing in the setup.\n2. Track the effect that change should cause.\n3. Choose the option that keeps the cause-and-effect chain consistent."
+        : subject === "Social Studies"
+        ? "1. Identify the key decision or action in the scenario.\n2. Notice what happened next as the consequence.\n3. Eliminate choices that miss that decision-to-outcome link."
+        : "1. Identify exactly what the question asks you to prove.\n2. Focus on the passage detail that decides between answers.\n3. Eliminate choices that only partially fit that detail."
+    );
 
     return {
       question_id: expectedId,
       question: questionText,
       explanation,
       common_mistake: String(fromAi.common_mistake || "").trim() ||
-        "Choosing an answer that sounds related without checking the exact requirement.",
+        (subject === "Math"
+          ? "Using the wrong operation or skipping a step can lead to the wrong answer."
+          : subject === "Science"
+          ? "Confusing the cause and effect or misreading the variable can lead to an incorrect answer."
+          : subject === "Social Studies"
+          ? "Misunderstanding the decision or its outcome can lead to an incorrect answer."
+          : "Choosing an answer that sounds correct without fully checking the passage."),
       hint,
       think: String(fromAi.think || "").trim() || buildThinkPrompt(q),
       step_by_step: stepByStep,
@@ -4205,7 +4246,7 @@ function sanitizeAnswerKey(
   const aiEntries = Array.isArray(raw) ? raw as AnswerKeyEntry[] : [];
   void subject;
   void _tutor;
-  const genericCoachPattern = /\b(use evidence|point to (a|one) detail|choose with evidence|look back at the passage|think about what the (question|text) is asking)\b/i;
+  const genericCoachPattern = /\b(choose the best answer|look back at the passage|think about the question|read carefully)\b/i;
   const fallback = mode === "cross"
     ? sourceQuestions.slice(0, 5).map((q, i) => ({
       question_id: ensureQuestionId(q, i, mode),
@@ -4228,9 +4269,15 @@ function sanitizeAnswerKey(
     const currentExplanation = String(fromAi?.explanation || "").trim();
     const conciseExisting = currentExplanation.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ").trim();
     const explanation = (!conciseExisting || genericCoachPattern.test(conciseExisting))
-      ? (mode === "cross" && evidence
-        ? `Choice ${correct} fits because it matches the moment where ${evidence}. A nearby wrong option can sound right when it mentions a related detail but misses the passage's main point in that moment.`
-        : `Choice ${correct} best satisfies what the question asks. A tempting wrong option may match part of the prompt, but not the full requirement.`)
+      ? (subject === "Math"
+        ? `Choice ${correct} works because the correct operation order with the given numbers leads to that result. A common trap is using a quick operation that looks right but skips a needed step.`
+        : subject === "Science"
+        ? `Choice ${correct} works because it keeps the cause-and-effect relationship consistent from change to outcome. Watch for options that mix up the variable and the result.`
+        : subject === "Social Studies"
+        ? `Choice ${correct} works because it matches the actual consequence of the decision or event. This is where students get confused by options that sound historical but miss the outcome.`
+        : mode === "cross" && evidence
+        ? `Choice ${correct} works because it matches the moment where ${evidence}, which is the key reasoning leap. The common trap is picking a choice tied to a nearby detail that misses that core point.`
+        : `Choice ${correct} works because it captures the key idea the question is testing, while nearby options only partially fit.`)
       : conciseExisting;
 
     return {
@@ -4238,8 +4285,21 @@ function sanitizeAnswerKey(
       correct_answer: correct || normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer)),
       explanation,
       common_mistake: String(fromAi?.common_mistake || "").trim() ||
-        "A tempting distractor sounds related but does not match the strongest support.",
-      parent_tip: String(fromAi?.parent_tip || "").trim() || variedParentTip(i),
+        (subject === "Math"
+          ? "Using the wrong operation or skipping a step can lead to the wrong answer."
+          : subject === "Science"
+          ? "Confusing the cause and effect or misreading the variable can lead to an incorrect answer."
+          : subject === "Social Studies"
+          ? "Misunderstanding the decision or its outcome can lead to an incorrect answer."
+          : "Choosing an answer that sounds correct without fully checking the passage."),
+      parent_tip: String(fromAi?.parent_tip || "").trim() ||
+        (subject === "Math"
+          ? "Have your child explain each step and check their calculations."
+          : subject === "Science"
+          ? "Ask what changed and what effect it caused."
+          : subject === "Social Studies"
+          ? "Ask why the decision led to that outcome."
+          : "Ask your child what part of the passage supports their answer."),
     };
   });
 }
@@ -5629,10 +5689,10 @@ serve(async (req) => {
           }),
         ) as Record<string, unknown> | null;
         if (!crossEnrichment || Object.keys(crossEnrichment).length === 0) {
-          throw new Error("ENRICHMENT_EMPTY_RESPONSE");
+          console.warn("⚠️ Empty enrichment payload — using sanitizer fallbacks");
         }
         const { tutor: crossTutor, answerKey: crossAnswer } = normalizeEnrichmentSupport(
-          crossEnrichment,
+          crossEnrichment || {},
           safePracticeQuestions,
           crossQuestions,
         );
@@ -5733,7 +5793,8 @@ serve(async (req) => {
       } catch (err) {
         console.error("BACKEND ERROR:", err);
         if (isTimedOut()) {
-          throw new Error("🚨 FALLBACK TRIGGERED — STOPPING EXECUTION");
+          console.warn("⚠️ Timed out while generating support — returning best available payload");
+          break;
         }
         markRetry("no_questions_returned");
       }
@@ -5744,7 +5805,62 @@ serve(async (req) => {
       logReturnMetrics();
       return returnEnrichment(bestAttempt);
     }
-    throw new Error("🚨 FALLBACK TRIGGERED — STOPPING EXECUTION");
+    const fallbackPracticeSource = Array.isArray(generatedCoreQuestions) && generatedCoreQuestions.length
+      ? generatedCoreQuestions
+      : Array.isArray(body.practiceQuestions)
+      ? body.practiceQuestions as Question[]
+      : [];
+    const fallbackPractice = ensureNonEmptyQuestions(
+      fallbackPracticeSource.map((q) => ({ ...(q as Question), choices: normalizeChoices((q as Question).choices) })),
+      effectiveSubject,
+      effectiveSkill,
+      "practice",
+    ).slice(0, 5);
+    const fallbackCrossPassage = buildSubjectPassage(effectiveSubject, level);
+    const fallbackCrossQuestions = rebuildCrossFromPractice(fallbackPractice, effectiveSubject, effectiveSkill);
+    const fallbackSupportPractice = ensureNonEmptySupport(
+      fallbackPractice,
+      [],
+      [],
+      "practice",
+    );
+    const fallbackSupportCross = ensureNonEmptySupport(
+      fallbackCrossQuestions,
+      [],
+      [],
+      "cross",
+    );
+    const fallbackAttempt: WorkerAttempt = {
+      passage: effectiveMode === "core" ? (generatedCorePassage || null) : null,
+      practice: { questions: fallbackPractice },
+      cross: {
+        passage: fallbackCrossPassage,
+        questions: fallbackCrossQuestions,
+      },
+      tutor: { practice: fallbackSupportPractice.tutor, cross: fallbackSupportCross.tutor },
+      answerKey: { practice: fallbackSupportPractice.answerKey, cross: fallbackSupportCross.answerKey },
+    };
+    returnType = "SAFE_FALLBACK";
+    logReturnMetrics();
+    return jsonResponse({
+      teks: teksCode,
+      skill,
+      grade,
+      ...(effectiveSubject === "Reading" ? { passage: fallbackAttempt.passage } : {}),
+      practice: { questions: Array.isArray(fallbackAttempt.practice?.questions) ? fallbackAttempt.practice.questions : [] },
+      cross: {
+        passage: String(fallbackAttempt.cross?.passage || fallbackCrossPassage),
+        questions: Array.isArray(fallbackAttempt.cross?.questions) ? fallbackAttempt.cross.questions : [],
+      },
+      tutor: {
+        practice: Array.isArray(fallbackAttempt.tutor?.practice) ? fallbackAttempt.tutor.practice : [],
+        cross: Array.isArray(fallbackAttempt.tutor?.cross) ? fallbackAttempt.tutor.cross : [],
+      },
+      answerKey: {
+        practice: Array.isArray(fallbackAttempt.answerKey?.practice) ? fallbackAttempt.answerKey.practice : [],
+        cross: Array.isArray(fallbackAttempt.answerKey?.cross) ? fallbackAttempt.answerKey.cross : [],
+      },
+    });
   } catch (err) {
     console.error("🔥 EDGE FUNCTION ERROR:", err);
     return jsonResponse({
