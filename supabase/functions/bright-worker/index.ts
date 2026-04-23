@@ -1719,15 +1719,9 @@ function buildCoreEnrichmentPrompt(params: {
   return `
 You are generating structured tutoring support for STAAR practice.
 
-You MUST return JSON ONLY.
-DO NOT include any explanation.
-DO NOT include markdown.
-DO NOT include extra text.
+Return JSON only. No markdown. No extra text.
 
---------------------------------------------------
-REQUIRED OUTPUT FORMAT
---------------------------------------------------
-
+OUTPUT FORMAT:
 {
   "tutor": {
     "practice": [
@@ -1767,10 +1761,7 @@ REQUIRED OUTPUT FORMAT
   }
 }
 
---------------------------------------------------
-INPUT DATA
---------------------------------------------------
-
+INPUT DATA:
 Practice Questions:
 ${JSON.stringify(compactPractice)}
 
@@ -1860,6 +1851,7 @@ RETURN JSON ONLY
 --------------------------------------------------
 `;
 }
+
 
 
 function isValidCoreEnrichmentOutput(data: unknown): boolean {
@@ -4261,8 +4253,8 @@ function sanitizeTutorExplanations(
     const conciseExisting = existingExplanation.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ").trim();
     const explanation = (!conciseExisting || genericCoachPattern.test(conciseExisting))
       ? (mode === "cross" && evidence
-        ? `The best answer matches the moment where ${evidence}. Another choice can seem reasonable if it uses a related detail, but it misses what this moment actually shows.`
-        : `The best answer fits the key condition in this question. A tempting wrong choice usually matches one detail but misses the full requirement.`)
+        ? `Start by looking at the moment where ${evidence}. This part matters because it reveals the key idea, while a common trap is choosing an option that only sounds related.`
+        : `Notice the exact condition in the question. This is where students get confused: a nearby choice may fit one detail but still miss the full requirement.`)
       : conciseExisting;
 
     const existingSteps = String(fromAi.step_by_step || "").trim();
@@ -5749,10 +5741,10 @@ serve(async (req) => {
           }),
         ) as Record<string, unknown> | null;
         if (!crossEnrichment || Object.keys(crossEnrichment).length === 0) {
-          throw new Error("ENRICHMENT_EMPTY_RESPONSE");
+          console.warn("⚠️ Empty enrichment payload — using sanitizer fallbacks");
         }
         const { tutor: crossTutor, answerKey: crossAnswer } = normalizeEnrichmentSupport(
-          crossEnrichment,
+          crossEnrichment || {},
           safePracticeQuestions,
           crossQuestions,
         );
@@ -5853,7 +5845,8 @@ serve(async (req) => {
       } catch (err) {
         console.error("BACKEND ERROR:", err);
         if (isTimedOut()) {
-          throw new Error("🚨 FALLBACK TRIGGERED — STOPPING EXECUTION");
+          console.warn("⚠️ Timed out while generating support — returning best available payload");
+          break;
         }
         markRetry("no_questions_returned");
       }
@@ -5864,7 +5857,62 @@ serve(async (req) => {
       logReturnMetrics();
       return returnEnrichment(bestAttempt);
     }
-    throw new Error("🚨 FALLBACK TRIGGERED — STOPPING EXECUTION");
+    const fallbackPracticeSource = Array.isArray(generatedCoreQuestions) && generatedCoreQuestions.length
+      ? generatedCoreQuestions
+      : Array.isArray(body.practiceQuestions)
+      ? body.practiceQuestions as Question[]
+      : [];
+    const fallbackPractice = ensureNonEmptyQuestions(
+      fallbackPracticeSource.map((q) => ({ ...(q as Question), choices: normalizeChoices((q as Question).choices) })),
+      effectiveSubject,
+      effectiveSkill,
+      "practice",
+    ).slice(0, 5);
+    const fallbackCrossPassage = buildSubjectPassage(effectiveSubject, level);
+    const fallbackCrossQuestions = rebuildCrossFromPractice(fallbackPractice, effectiveSubject, effectiveSkill);
+    const fallbackSupportPractice = ensureNonEmptySupport(
+      fallbackPractice,
+      [],
+      [],
+      "practice",
+    );
+    const fallbackSupportCross = ensureNonEmptySupport(
+      fallbackCrossQuestions,
+      [],
+      [],
+      "cross",
+    );
+    const fallbackAttempt: WorkerAttempt = {
+      passage: effectiveMode === "core" ? (generatedCorePassage || null) : null,
+      practice: { questions: fallbackPractice },
+      cross: {
+        passage: fallbackCrossPassage,
+        questions: fallbackCrossQuestions,
+      },
+      tutor: { practice: fallbackSupportPractice.tutor, cross: fallbackSupportCross.tutor },
+      answerKey: { practice: fallbackSupportPractice.answerKey, cross: fallbackSupportCross.answerKey },
+    };
+    returnType = "SAFE_FALLBACK";
+    logReturnMetrics();
+    return jsonResponse({
+      teks: teksCode,
+      skill,
+      grade,
+      ...(effectiveSubject === "Reading" ? { passage: fallbackAttempt.passage } : {}),
+      practice: { questions: Array.isArray(fallbackAttempt.practice?.questions) ? fallbackAttempt.practice.questions : [] },
+      cross: {
+        passage: String(fallbackAttempt.cross?.passage || fallbackCrossPassage),
+        questions: Array.isArray(fallbackAttempt.cross?.questions) ? fallbackAttempt.cross.questions : [],
+      },
+      tutor: {
+        practice: Array.isArray(fallbackAttempt.tutor?.practice) ? fallbackAttempt.tutor.practice : [],
+        cross: Array.isArray(fallbackAttempt.tutor?.cross) ? fallbackAttempt.tutor.cross : [],
+      },
+      answerKey: {
+        practice: Array.isArray(fallbackAttempt.answerKey?.practice) ? fallbackAttempt.answerKey.practice : [],
+        cross: Array.isArray(fallbackAttempt.answerKey?.cross) ? fallbackAttempt.answerKey.cross : [],
+      },
+    });
   } catch (err) {
     console.error("🔥 EDGE FUNCTION ERROR:", err);
     return jsonResponse({
