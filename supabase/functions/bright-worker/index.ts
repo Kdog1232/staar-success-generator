@@ -1632,6 +1632,12 @@ RULES (STRICT)
 - If unsure, generate best possible answer
 - Each array MUST match question count
 - questionIndex must align to input order (0-based)
+- Every hint, strategy, and why must be question-specific (INVALID if it could apply to any passage/question).
+- Whenever possible, refer to a specific moment, action, or reaction from the passage (paraphrase; do not force direct quotes).
+- Vary how you guide the student across questions; do not repeat the same advice pattern or sentence starters.
+- Do not reuse generic coaching phrases like "use evidence", "point to a detail", or "choose with evidence" as repeated templates.
+- Alternate support language naturally (for example: "Which part supports that?", "Where do you see that happening?", "What moment best matches your answer?").
+- "why" entries must explain why the correct answer fits this specific passage moment and why a tempting wrong idea could seem plausible.
 
 --------------------------------------------------
 RETURN JSON ONLY
@@ -3787,12 +3793,59 @@ function sanitizeTutorExplanations(
   crossPassage = "",
 ): TutorExplanation[] {
   const aiEntries = Array.isArray(raw) ? raw as TutorExplanation[] : [];
-  if (mode === "cross") {
-    return aiEntries;
-  }
-  if (aiEntries.length > 0) return aiEntries;
-  void crossPassage;
-  return buildTutorFromPractice(sourceQuestions.slice(0, 5)).practice;
+  const genericCoachPattern = /\b(use evidence|point to (a|one) detail|choose with evidence|look back at the passage|think about what the (question|text) is asking)\b/i;
+  const hintStarters = [
+    "Which part supports that idea?",
+    "Where do you see that happening?",
+    "What moment best matches your answer?",
+    "Which action in the text pushes you toward one choice?",
+    "Which reaction in the passage confirms your thinking?",
+  ];
+  const fallback = mode === "cross"
+    ? sourceQuestions.slice(0, 5).map((q) => buildCrossTutorFallback(subject, q, crossPassage))
+    : buildTutorFromPractice(sourceQuestions.slice(0, 5)).practice;
+  const base = aiEntries.length > 0 ? aiEntries.slice(0, 5) : fallback;
+  const usedEvidence = new Set<string>();
+
+  return sourceQuestions.slice(0, 5).map((q, i) => {
+    const fromAi = base[i] || fallback[i] || buildPracticeTutorFallback(subject, q);
+    const expectedId = ensureQuestionId(q, i, mode);
+    const questionText = String(q.question || "").trim();
+    const evidence = mode === "cross"
+      ? summarizeEvidenceIdea(selectEvidenceSnippet(q, crossPassage, usedEvidence) || fallbackEvidenceSnippet(crossPassage))
+      : "";
+    const starter = hintStarters[i % hintStarters.length];
+    const existingHint = String(fromAi.hint || "").trim();
+    const hint = (!existingHint || genericCoachPattern.test(existingHint))
+      ? (mode === "cross" && evidence
+        ? `${starter} Think about the part where ${evidence}.`
+        : `${starter} Focus on the part of the question that decides between the two closest choices.`)
+      : existingHint;
+
+    const existingExplanation = String(fromAi.explanation || "").trim();
+    const conciseExisting = existingExplanation.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ").trim();
+    const explanation = (!conciseExisting || genericCoachPattern.test(conciseExisting))
+      ? (mode === "cross" && evidence
+        ? `The best answer matches the moment where ${evidence}. Another choice can seem reasonable if it uses a related detail, but it misses what this moment actually shows.`
+        : `The best answer fits the key condition in this question. A tempting wrong choice usually matches one detail but misses the full requirement.`)
+      : conciseExisting;
+
+    const existingSteps = String(fromAi.step_by_step || "").trim();
+    const stepByStep = existingSteps || (mode === "cross"
+      ? "1. Find the moment in the passage tied to the question.\n2. Match that moment to the strongest choice.\n3. Eliminate options that only partly fit."
+      : "1. Identify exactly what the question asks.\n2. Compare the two closest choices.\n3. Pick the option that fully matches the requirement.");
+
+    return {
+      question_id: expectedId,
+      question: questionText,
+      explanation,
+      common_mistake: String(fromAi.common_mistake || "").trim() ||
+        "Choosing an answer that sounds related without checking the exact requirement.",
+      hint,
+      think: String(fromAi.think || "").trim() || buildThinkPrompt(q),
+      step_by_step: stepByStep,
+    };
+  });
 }
 
 function sanitizeAnswerKey(
@@ -3804,14 +3857,45 @@ function sanitizeAnswerKey(
   crossPassage = "",
 ): AnswerKeyEntry[] {
   const aiEntries = Array.isArray(raw) ? raw as AnswerKeyEntry[] : [];
-  if (mode === "cross") {
-    return aiEntries;
-  }
   void subject;
   void _tutor;
-  void crossPassage;
-  if (aiEntries.length > 0) return aiEntries;
-  return buildAnswerKeyFromPractice(sourceQuestions.slice(0, 5)).practice;
+  const genericCoachPattern = /\b(use evidence|point to (a|one) detail|choose with evidence|look back at the passage|think about what the (question|text) is asking)\b/i;
+  const fallback = mode === "cross"
+    ? sourceQuestions.slice(0, 5).map((q, i) => ({
+      question_id: ensureQuestionId(q, i, mode),
+      correct_answer: normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer)),
+      ...buildCrossAnswerFallback(subject, q, crossPassage),
+    }))
+    : buildAnswerKeyFromPractice(sourceQuestions.slice(0, 5)).practice;
+  const base = aiEntries.length > 0 ? aiEntries.slice(0, 5) : fallback;
+  const usedEvidence = new Set<string>();
+
+  return sourceQuestions.slice(0, 5).map((q, i) => {
+    const fromAi = base[i] || fallback[i];
+    const correct = normalizeAnswer(
+      String(fromAi?.correct_answer || normalizeAnswerKeyEntry(q.correct_answer) || ""),
+    );
+    const expectedId = ensureQuestionId(q, i, mode);
+    const evidence = mode === "cross"
+      ? summarizeEvidenceIdea(selectEvidenceSnippet(q, crossPassage, usedEvidence) || fallbackEvidenceSnippet(crossPassage))
+      : "";
+    const currentExplanation = String(fromAi?.explanation || "").trim();
+    const conciseExisting = currentExplanation.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ").trim();
+    const explanation = (!conciseExisting || genericCoachPattern.test(conciseExisting))
+      ? (mode === "cross" && evidence
+        ? `Choice ${correct} fits because it matches the moment where ${evidence}. A nearby wrong option can sound right when it mentions a related detail but misses the passage's main point in that moment.`
+        : `Choice ${correct} best satisfies what the question asks. A tempting wrong option may match part of the prompt, but not the full requirement.`)
+      : conciseExisting;
+
+    return {
+      question_id: expectedId,
+      correct_answer: correct || normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer)),
+      explanation,
+      common_mistake: String(fromAi?.common_mistake || "").trim() ||
+        "A tempting distractor sounds related but does not match the strongest support.",
+      parent_tip: String(fromAi?.parent_tip || "").trim() || variedParentTip(i),
+    };
+  });
 }
 
 function validateTutorAnswerKeyAlignment(
