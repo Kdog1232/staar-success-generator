@@ -1781,21 +1781,79 @@ Cross Questions:
 ${JSON.stringify(compactCross)}
 
 --------------------------------------------------
-RULES (STRICT)
+TUTOR + ANSWER KEY INTELLIGENCE RULES
 --------------------------------------------------
 
+You are a high-quality STAAR tutor. Your goal is to teach thinking, not just give answers.
+
+GENERAL RULES (ALL SUBJECTS)
+- Every explanation must be specific to the question (no generic advice)
+- Avoid repeating the same phrases across questions
+- Each response must feel like a real teacher guiding a student step-by-step
+- Vary language naturally across questions
 - ALWAYS return ALL fields
 - NEVER return {}
 - NEVER omit tutor.cross or answerKey.cross
 - If unsure, generate best possible answer
 - Each array MUST match question count
 - questionIndex must align to input order (0-based)
-- Every hint, strategy, and why must be question-specific (INVALID if it could apply to any passage/question).
-- Whenever possible, refer to a specific moment, action, or reaction from the passage (paraphrase; do not force direct quotes).
-- Vary how you guide the student across questions; do not repeat the same advice pattern or sentence starters.
-- Do not reuse generic coaching phrases like "use evidence", "point to a detail", or "choose with evidence" as repeated templates.
-- Alternate support language naturally (for example: "Which part supports that?", "Where do you see that happening?", "What moment best matches your answer?").
-- "why" entries must explain why the correct answer fits this specific passage moment and why a tempting wrong idea could seem plausible.
+
+SUBJECT-SPECIFIC TUTOR BEHAVIOR
+MATH:
+- Explain exact steps using numbers from the problem
+- Clearly state the order of operations (first, next, last)
+- Reference actual values from the question
+- Show how to break the problem into parts
+- Avoid vague language; be precise
+
+SCIENCE:
+- Focus on cause-and-effect relationships
+- Explain what happens when a variable changes
+- Use reasoning patterns like: when ___ increases, ___ happens
+- Explain what this leads to and why
+- Emphasize reasoning and prediction
+
+SOCIAL STUDIES:
+- Focus on decisions, actions, and consequences
+- Explain why people or groups made choices
+- Connect actions to outcomes
+- Use historical or civic reasoning
+
+READING:
+- Refer to specific moments, ideas, or patterns in the passage
+- Focus on inference, structure, and author’s purpose
+- Help the student connect multiple ideas
+
+HINT RULES
+- Give a starting point, not the answer
+- Point the student toward the first step of thinking
+- Keep hints specific to the question
+
+STEP-BY-STEP RULES
+- Break the thinking into clear steps
+- Each step should move the student closer to the answer
+- Do not skip reasoning steps
+
+"WHY" (CORRECT ANSWER EXPLANATION)
+- Explain why the correct answer works
+- Reference the actual situation (numbers, events, or ideas)
+- Make the reasoning clear and logical
+
+"MISTAKE" (WRONG THINKING)
+- Describe a realistic wrong approach
+- Do not restate the correct steps
+- Focus on common student errors (wrong operation, skipped step, misunderstood cause/effect, misread situation)
+
+PARENT TIP RULES
+- Keep it simple and actionable
+- Adapt to subject:
+  - Math: Have your child explain each step and check their calculations.
+  - Reading: Ask your child what part of the passage most supports their answer.
+  - Science: Ask what changed and what effect it caused.
+  - Social Studies: Ask why the decision led to that outcome.
+
+FINAL GOAL
+- Every response should feel like a real tutor helping a student think step-by-step, not a generic AI explanation.
 
 --------------------------------------------------
 RETURN JSON ONLY
@@ -1813,7 +1871,8 @@ function isValidCoreEnrichmentOutput(data: unknown): boolean {
   const crossQuestions = Array.isArray(cross?.questions) ? cross.questions : [];
 
   if (!cross || typeof cross.passage !== "string" || !cross.passage.trim()) return false;
-  if (crossQuestions.length !== 5) return false;
+  // Be tolerant of partial/malformed model output; sanitizers can recover shape.
+  if (crossQuestions.length < 3) return false;
 
   return Boolean(
     tutor &&
@@ -4139,14 +4198,38 @@ function sanitizeTutorExplanations(
   crossPassage = "",
 ): TutorExplanation[] {
   const aiEntries = Array.isArray(raw) ? raw as TutorExplanation[] : [];
-  const genericCoachPattern = /\b(use evidence|point to (a|one) detail|choose with evidence|look back at the passage|think about what the (question|text) is asking)\b/i;
-  const hintStarters = [
-    "Which part supports that idea?",
-    "Where do you see that happening?",
-    "What moment best matches your answer?",
-    "Which action in the text pushes you toward one choice?",
-    "Which reaction in the passage confirms your thinking?",
-  ];
+  const genericCoachPattern = /\b(choose the best answer|look back at the passage|think about the question|read carefully)\b/i;
+  const hintStarters = subject === "Math"
+    ? [
+      "What numbers should you use first?",
+      "Which calculation comes first?",
+      "What do you need to find before the final answer?",
+      "What operation should you start with?",
+      "How can you break this into steps?",
+    ]
+    : subject === "Science"
+    ? [
+      "What is changing in this situation?",
+      "What effect does that change cause?",
+      "What happens when this increases or decreases?",
+      "Which variable matters most here?",
+      "What result would you expect?",
+    ]
+    : subject === "Social Studies"
+    ? [
+      "What decision was made here?",
+      "What happened as a result?",
+      "Why would they make that choice?",
+      "What was the outcome of that action?",
+      "What effect followed this event?",
+    ]
+    : [
+      "Which part supports that idea?",
+      "Where do you see that happening?",
+      "What moment best matches your answer?",
+      "Which action in the text pushes you toward one choice?",
+      "Which reaction in the passage confirms your thinking?",
+    ];
   const fallback = mode === "cross"
     ? sourceQuestions.slice(0, 5).map((q) => buildCrossTutorFallback(subject, q, crossPassage))
     : buildTutorFromPractice(sourceQuestions.slice(0, 5)).practice;
@@ -4164,7 +4247,13 @@ function sanitizeTutorExplanations(
     const existingHint = String(fromAi.hint || "").trim();
     const hint = (!existingHint || genericCoachPattern.test(existingHint))
       ? (mode === "cross" && evidence
-        ? `${starter} Think about the part where ${evidence}.`
+        ? (subject === "Math"
+          ? `${starter} Use the numbers in the problem to guide your steps.`
+          : subject === "Science"
+          ? `${starter} Think about how the change described affects the outcome.`
+          : subject === "Social Studies"
+          ? `${starter} Focus on what decision was made and what happened next.`
+          : `${starter} Think about the part where ${evidence}.`)
         : `${starter} Focus on the part of the question that decides between the two closest choices.`)
       : existingHint;
 
@@ -4177,16 +4266,28 @@ function sanitizeTutorExplanations(
       : conciseExisting;
 
     const existingSteps = String(fromAi.step_by_step || "").trim();
-    const stepByStep = existingSteps || (mode === "cross"
-      ? "1. Find the moment in the passage tied to the question.\n2. Match that moment to the strongest choice.\n3. Eliminate options that only partly fit."
-      : "1. Identify exactly what the question asks.\n2. Compare the two closest choices.\n3. Pick the option that fully matches the requirement.");
+    const stepByStep = existingSteps || (
+      subject === "Math"
+        ? "1. Identify the important numbers.\n2. Decide what operation to use first.\n3. Solve step by step.\n4. Check your answer."
+        : subject === "Science"
+        ? "1. Identify what is changing.\n2. Determine the effect of that change.\n3. Connect cause and effect."
+        : subject === "Social Studies"
+        ? "1. Identify the decision or action.\n2. Determine what happened because of it.\n3. Connect cause and outcome."
+        : "1. Identify what the question is asking.\n2. Find the relevant part of the passage.\n3. Match it to the best answer."
+    );
 
     return {
       question_id: expectedId,
       question: questionText,
       explanation,
       common_mistake: String(fromAi.common_mistake || "").trim() ||
-        "Choosing an answer that sounds related without checking the exact requirement.",
+        (subject === "Math"
+          ? "Using the wrong operation or skipping a step can lead to the wrong answer."
+          : subject === "Science"
+          ? "Confusing the cause and effect or misreading the variable can lead to an incorrect answer."
+          : subject === "Social Studies"
+          ? "Misunderstanding the decision or its outcome can lead to an incorrect answer."
+          : "Choosing an answer that sounds correct without fully checking the passage."),
       hint,
       think: String(fromAi.think || "").trim() || buildThinkPrompt(q),
       step_by_step: stepByStep,
@@ -4205,7 +4306,7 @@ function sanitizeAnswerKey(
   const aiEntries = Array.isArray(raw) ? raw as AnswerKeyEntry[] : [];
   void subject;
   void _tutor;
-  const genericCoachPattern = /\b(use evidence|point to (a|one) detail|choose with evidence|look back at the passage|think about what the (question|text) is asking)\b/i;
+  const genericCoachPattern = /\b(choose the best answer|look back at the passage|think about the question|read carefully)\b/i;
   const fallback = mode === "cross"
     ? sourceQuestions.slice(0, 5).map((q, i) => ({
       question_id: ensureQuestionId(q, i, mode),
@@ -4228,9 +4329,15 @@ function sanitizeAnswerKey(
     const currentExplanation = String(fromAi?.explanation || "").trim();
     const conciseExisting = currentExplanation.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ").trim();
     const explanation = (!conciseExisting || genericCoachPattern.test(conciseExisting))
-      ? (mode === "cross" && evidence
+      ? (subject === "Math"
+        ? `Choice ${correct} is correct because the calculation using the given numbers leads to this result. A wrong answer may come from using the wrong operation or skipping a step.`
+        : subject === "Science"
+        ? `Choice ${correct} is correct because it correctly explains the cause-and-effect relationship described. A wrong answer may confuse the variable or outcome.`
+        : subject === "Social Studies"
+        ? `Choice ${correct} is correct because it matches the outcome of the decision or event. A wrong answer may misinterpret the consequence.`
+        : mode === "cross" && evidence
         ? `Choice ${correct} fits because it matches the moment where ${evidence}. A nearby wrong option can sound right when it mentions a related detail but misses the passage's main point in that moment.`
-        : `Choice ${correct} best satisfies what the question asks. A tempting wrong option may match part of the prompt, but not the full requirement.`)
+        : `Choice ${correct} fits best based on the passage details and reasoning required.`)
       : conciseExisting;
 
     return {
@@ -4238,8 +4345,21 @@ function sanitizeAnswerKey(
       correct_answer: correct || normalizeAnswer(normalizeAnswerKeyEntry(q.correct_answer)),
       explanation,
       common_mistake: String(fromAi?.common_mistake || "").trim() ||
-        "A tempting distractor sounds related but does not match the strongest support.",
-      parent_tip: String(fromAi?.parent_tip || "").trim() || variedParentTip(i),
+        (subject === "Math"
+          ? "Using the wrong operation or skipping a step can lead to the wrong answer."
+          : subject === "Science"
+          ? "Confusing the cause and effect or misreading the variable can lead to an incorrect answer."
+          : subject === "Social Studies"
+          ? "Misunderstanding the decision or its outcome can lead to an incorrect answer."
+          : "Choosing an answer that sounds correct without fully checking the passage."),
+      parent_tip: String(fromAi?.parent_tip || "").trim() ||
+        (subject === "Math"
+          ? "Have your child explain each step and check their calculations."
+          : subject === "Science"
+          ? "Ask what changed and what effect it caused."
+          : subject === "Social Studies"
+          ? "Ask why the decision led to that outcome."
+          : "Ask your child what part of the passage supports their answer."),
     };
   });
 }
