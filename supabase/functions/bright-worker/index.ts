@@ -4792,6 +4792,23 @@ serve(async (req) => {
         crossPassage: crossContent.passage,
         questions: crossContent.questions,
       });
+      let crossQuestions = Array.isArray(result.questions) ? result.questions : [];
+      crossQuestions = await sanitizeQuestions(
+        crossQuestions,
+        subject,
+        "Cross-Curricular",
+        effectiveSkill,
+        level,
+        crossContent.passage,
+        grade,
+        repairState,
+      );
+
+      if (!crossQuestions.length) {
+        console.warn("⚠️ AI returned no cross questions — using fallback");
+        crossQuestions = rebuildCrossFromPractice(crossContent.questions, subject, effectiveSkill);
+      }
+      crossQuestions = crossQuestions.slice(0, 5);
 
       return jsonResponse({
         teks: teksCode,
@@ -4799,16 +4816,7 @@ serve(async (req) => {
         grade,
         cross: {
           passage: crossContent.passage,
-          questions: await sanitizeQuestions(
-            result.questions,
-            subject,
-            "Cross-Curricular",
-            effectiveSkill,
-            level,
-            crossContent.passage,
-            grade,
-            repairState,
-          ),
+          questions: crossQuestions,
         },
       });
     }
