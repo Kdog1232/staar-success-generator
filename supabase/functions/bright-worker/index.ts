@@ -4786,11 +4786,13 @@ serve(async (req) => {
     if (effectiveMode === "cross") {
       const crossContent = buildCrossFallbackContent(subject, level, effectiveSkill);
       const result = await runPipeline({
-        stems: crossContent.questions,
+        stems: [],
         crossSubject: subject,
         subject,
+        skill: effectiveSkill,
+        level,
         crossPassage: crossContent.passage,
-        questions: crossContent.questions,
+        questions: [],
       });
       let crossQuestions = Array.isArray(result.questions) ? result.questions : [];
       crossQuestions = await sanitizeQuestions(
