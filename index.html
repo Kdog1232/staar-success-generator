@@ -485,23 +485,42 @@
     .hero {
       text-align: center;
       margin-bottom: 32px;
-      padding: 32px 20px;
+      padding: 80px 20px 60px;
       background: linear-gradient(135deg, #4f46e5, #6366f1);
       color: white;
       border-radius: 16px;
       box-shadow: 0 20px 40px rgba(79,70,229,0.25);
     }
 
+    .hero * {
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .hero-text {
+      max-width: 700px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
     .hero h1 {
-      font-size: 30px;
+      font-size: 42px;
       font-weight: 700;
       color: white;
-      margin-bottom: 6px;
+      margin-bottom: 16px;
     }
 
     .hero p {
       color: rgba(255,255,255,0.9);
-      font-size: 15px;
+      font-size: 20px;
+      font-weight: 500;
+      margin-bottom: 24px;
+    }
+
+    .hero-cta {
+      max-width: 600px;
+      margin: 32px auto 0;
+      padding: 32px;
     }
 
     #generate-btn {
@@ -1083,15 +1102,14 @@
 <body>
   <div class="container app-container">
     <div id="upgrade-banner" class="upgrade-banner">🎉 You now have unlimited access!</div>
-    <header class="header section">
+    <header class="header section hero-text">
       <h1>10-Minute Daily Practice That Feels Like a Personal Tutor</h1>
       <p>Build real understanding across reading, math, science, and social studies with instant practice and explanations.</p>
-      <p>Used by parents, homeschoolers, and educators to build confidence and improve learning outcomes.</p>
     </header>
 
-    <section class="hero">
-      <h1>Generate Practice with Tutor-Style Explanations in Seconds</h1>
-      <p>Create high-quality practice across subjects instantly — no prep required.</p>
+    <section class="hero hero-cta">
+      <h1>Generate Practice in Seconds</h1>
+      <p>Get tutor-style explanations instantly — no prep required.</p>
     </section>
 
     <section class="value-card section" aria-label="Key benefits">
@@ -1635,6 +1653,14 @@
         cachedUser = cachedSession?.user ?? null;
 
         if (!cachedUser) {
+          authRevealRequested = true;
+          applyAuthMode("login");
+          setAppAuthenticatedState(false);
+          stopProfileUpdatesSubscription();
+          resetProtectedUI();
+          if (event === "SIGNED_OUT") {
+            redirectToLogin();
+          }
           return;
         }
         // Only update lightweight auth state here.
