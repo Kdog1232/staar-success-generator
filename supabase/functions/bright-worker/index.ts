@@ -1771,32 +1771,84 @@ ${crossPassage}
 Cross Questions:
 ${JSON.stringify(compactCross)}
 
-GENERAL RULES:
-- Be specific to each question
-- Avoid generic explanations
-- Guide thinking step-by-step
-- Keep all fields present
-- Arrays must match question count
-- questionIndex must match input order (0-based)
+--------------------------------------------------
+TUTOR + ANSWER KEY INTELLIGENCE RULES
+--------------------------------------------------
 
-SUBJECT GUIDANCE:
-- Math: show step-by-step calculations using given numbers
-- Science: explain cause and effect clearly
-- Social Studies: explain decisions and outcomes
-- Reading: reference specific parts of the passage
+You are a high-quality STAAR tutor. Your goal is to teach thinking, not just give answers.
 
-LIMIT OUTPUT COMPLEXITY:
-- Keep explanations concise (1–2 sentences max)
-- Keep step_by_step to 3 steps max
-- Keep hints short (1 sentence)
-- Do not over-explain
+GENERAL RULES (ALL SUBJECTS)
+- Every explanation must be specific to the question (no generic advice)
+- Avoid repeating the same phrases across questions
+- Each response must feel like a real teacher guiding a student step-by-step
+- Vary language naturally across questions
+- ALWAYS return ALL fields
+- NEVER return {}
+- NEVER omit tutor.cross or answerKey.cross
+- If unsure, generate best possible answer
+- Each array MUST match question count
+- questionIndex must align to input order (0-based)
 
-OUTPUT CONSTRAINTS:
-- Be concise and efficient
-- Do not produce long explanations
-- Focus only on the key reasoning needed
+SUBJECT-SPECIFIC TUTOR BEHAVIOR
+MATH:
+- Explain exact steps using numbers from the problem
+- Clearly state the order of operations (first, next, last)
+- Reference actual values from the question
+- Show how to break the problem into parts
+- Avoid vague language; be precise
 
-Return valid JSON only.
+SCIENCE:
+- Focus on cause-and-effect relationships
+- Explain what happens when a variable changes
+- Use reasoning patterns like: when ___ increases, ___ happens
+- Explain what this leads to and why
+- Emphasize reasoning and prediction
+
+SOCIAL STUDIES:
+- Focus on decisions, actions, and consequences
+- Explain why people or groups made choices
+- Connect actions to outcomes
+- Use historical or civic reasoning
+
+READING:
+- Refer to specific moments, ideas, or patterns in the passage
+- Focus on inference, structure, and author’s purpose
+- Help the student connect multiple ideas
+
+HINT RULES
+- Give a starting point, not the answer
+- Point the student toward the first step of thinking
+- Keep hints specific to the question
+
+STEP-BY-STEP RULES
+- Break the thinking into clear steps
+- Each step should move the student closer to the answer
+- Do not skip reasoning steps
+
+"WHY" (CORRECT ANSWER EXPLANATION)
+- Explain why the correct answer works
+- Reference the actual situation (numbers, events, or ideas)
+- Make the reasoning clear and logical
+
+"MISTAKE" (WRONG THINKING)
+- Describe a realistic wrong approach
+- Do not restate the correct steps
+- Focus on common student errors (wrong operation, skipped step, misunderstood cause/effect, misread situation)
+
+PARENT TIP RULES
+- Keep it simple and actionable
+- Adapt to subject:
+  - Math: Have your child explain each step and check their calculations.
+  - Reading: Ask your child what part of the passage most supports their answer.
+  - Science: Ask what changed and what effect it caused.
+  - Social Studies: Ask why the decision led to that outcome.
+
+FINAL GOAL
+- Every response should feel like a real tutor helping a student think step-by-step, not a generic AI explanation.
+
+--------------------------------------------------
+RETURN JSON ONLY
+--------------------------------------------------
 `;
 }
 
@@ -4188,13 +4240,13 @@ function sanitizeTutorExplanations(
     const hint = (!existingHint || genericCoachPattern.test(existingHint))
       ? (mode === "cross" && evidence
         ? (subject === "Math"
-          ? `${starter} What should you calculate first before the final answer?`
+          ? `${starter} Use the numbers in the problem to guide your steps.`
           : subject === "Science"
-          ? `${starter} Which change here actually drives the outcome?`
+          ? `${starter} Think about how the change described affects the outcome.`
           : subject === "Social Studies"
-          ? `${starter} What decision matters most, and what followed from it?`
-          : `${starter} Which part where ${evidence} actually proves your idea?`)
-        : `${starter} Which detail decides between the two closest choices?`)
+          ? `${starter} Focus on what decision was made and what happened next.`
+          : `${starter} Think about the part where ${evidence}.`)
+        : `${starter} Focus on the part of the question that decides between the two closest choices.`)
       : existingHint;
 
     const existingExplanation = String(fromAi.explanation || "").trim();
@@ -4208,12 +4260,12 @@ function sanitizeTutorExplanations(
     const existingSteps = String(fromAi.step_by_step || "").trim();
     const stepByStep = existingSteps || (
       subject === "Math"
-        ? "1. Identify what you need and the key numbers.\n2. Choose the operation that unlocks the solution.\n3. Solve carefully and check your final answer."
+        ? "1. Identify the important numbers.\n2. Decide what operation to use first.\n3. Solve step by step.\n4. Check your answer."
         : subject === "Science"
-        ? "1. Identify what is changing in the setup.\n2. Track the effect that change should cause.\n3. Choose the option that keeps the cause-and-effect chain consistent."
+        ? "1. Identify what is changing.\n2. Determine the effect of that change.\n3. Connect cause and effect."
         : subject === "Social Studies"
-        ? "1. Identify the key decision or action in the scenario.\n2. Notice what happened next as the consequence.\n3. Eliminate choices that miss that decision-to-outcome link."
-        : "1. Identify exactly what the question asks you to prove.\n2. Focus on the passage detail that decides between answers.\n3. Eliminate choices that only partially fit that detail."
+        ? "1. Identify the decision or action.\n2. Determine what happened because of it.\n3. Connect cause and outcome."
+        : "1. Identify what the question is asking.\n2. Find the relevant part of the passage.\n3. Match it to the best answer."
     );
 
     return {
@@ -4270,14 +4322,14 @@ function sanitizeAnswerKey(
     const conciseExisting = currentExplanation.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ").trim();
     const explanation = (!conciseExisting || genericCoachPattern.test(conciseExisting))
       ? (subject === "Math"
-        ? `Choice ${correct} works because the correct operation order with the given numbers leads to that result. A common trap is using a quick operation that looks right but skips a needed step.`
+        ? `Choice ${correct} is correct because the calculation using the given numbers leads to this result. A wrong answer may come from using the wrong operation or skipping a step.`
         : subject === "Science"
-        ? `Choice ${correct} works because it keeps the cause-and-effect relationship consistent from change to outcome. Watch for options that mix up the variable and the result.`
+        ? `Choice ${correct} is correct because it correctly explains the cause-and-effect relationship described. A wrong answer may confuse the variable or outcome.`
         : subject === "Social Studies"
-        ? `Choice ${correct} works because it matches the actual consequence of the decision or event. This is where students get confused by options that sound historical but miss the outcome.`
+        ? `Choice ${correct} is correct because it matches the outcome of the decision or event. A wrong answer may misinterpret the consequence.`
         : mode === "cross" && evidence
-        ? `Choice ${correct} works because it matches the moment where ${evidence}, which is the key reasoning leap. The common trap is picking a choice tied to a nearby detail that misses that core point.`
-        : `Choice ${correct} works because it captures the key idea the question is testing, while nearby options only partially fit.`)
+        ? `Choice ${correct} fits because it matches the moment where ${evidence}. A nearby wrong option can sound right when it mentions a related detail but misses the passage's main point in that moment.`
+        : `Choice ${correct} fits best based on the passage details and reasoning required.`)
       : conciseExisting;
 
     return {
