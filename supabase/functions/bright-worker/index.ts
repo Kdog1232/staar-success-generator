@@ -267,17 +267,23 @@ const TUTOR_STYLE_RULES = [
   "TUTOR STYLE (CRITICAL):",
   "- Explain thinking like a real teacher talking to a student",
   "- Use varied sentence structure and avoid repeated phrasing",
-  "- Focus on WHY the answer is correct using passage evidence",
+  "- Focus on WHY the answer is correct using passage meaning and evidence",
   "- Explain wrong answers based on specific misunderstandings",
   "- Keep explanations concise and clear",
+  "- Keep explanations natural and conversational, like a teacher guiding a student.",
+  "- Make all hints and explanations feel connected to the specific passage.",
+  "- Whenever possible, refer to events, reactions, or details from the passage.",
+  "- Help the student think about what actually happened in the text.",
+  "- Avoid generic advice that could apply to any passage.",
+  "- Do not force quotes or exact wording from the passage.",
+  "- Focus on meaning, not exact phrasing.",
+  "- Each explanation should help the student connect the question to a moment or idea in the passage, not just general reading strategies.",
   "EVIDENCE VARIATION (CRITICAL):",
-  "- Each question must use a different part of the passage as evidence.",
-  "- Do not reuse the same passage sentence across questions.",
-  "- If evidence is reused, regenerate the explanation.",
+  "- Whenever possible, use different parts of the passage across questions.",
+  "- Avoid reusing the same passage detail in every explanation unless needed.",
   "GROUNDING RULE (CRITICAL):",
-  "- All explanations must reference a real, specific detail from the passage.",
+  "- Ground explanations in a real, specific detail or moment from the passage when possible.",
   "- Do not use abstract phrases such as \"the strongest detail\", \"this shows\", or \"this proves\".",
-  "- If no real detail is used, the explanation is invalid and must be rewritten.",
   "- Do NOT repeat incomplete or broken phrases",
   "- If a sentence is incomplete, paraphrase it into a full idea",
   "EXPLANATION VARIATION (CRITICAL):",
@@ -4049,20 +4055,20 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
     const groundedEvidence = evidenceSnippet.replace(/\s+/g, " ").trim();
 
     const explanationVariants = [
-      `Start by locating "${groundedEvidence}" in the passage and deciding what that detail proves. That reasoning confirms ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
-      `Notice the passage detail "${groundedEvidence}" first, then connect it to the question focus. Following that logic leads to ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
-      `Read "${groundedEvidence}" and explain the conclusion it supports before choosing any option. That step-by-step check points to ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
-      `Use "${groundedEvidence}" as your anchor and test which claim it fully supports. After that reasoning, ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is the best match.`,
+      `Start with "${groundedEvidence}" and ask yourself what that detail is really telling you.`,
+      `Look closely at "${groundedEvidence}" first, then connect it to what the question is asking.`,
+      `Read "${groundedEvidence}" and explain what conclusion that detail supports before choosing any option.`,
+      `Use "${groundedEvidence}" as your anchor and test which claim it fully supports.`,
     ];
     const explanationLead = explanationVariants[Math.abs(variant) % explanationVariants.length];
     const explanationTail = wrongOption
       ? ` A common trap is choosing an option that sounds related to "${groundedEvidence}" without matching what the quoted detail actually shows.`
       : " A common trap is choosing an option that sounds related without checking the exact passage wording.";
-    const explanation = `${explanationLead}${explanationTail}`;
+    const explanation = `${explanationLead}${explanationTail} Which choice best matches that exact idea?`;
 
     const commonMistake = wrongOption
-      ? `Students often choose ${wrongOption.letter} (${wrongOption.choice}) when they focus on the topic but ignore the exact wording in "${groundedEvidence}".`
-      : `One trap here is picking a familiar-sounding choice without checking which passage idea actually proves the answer.`;
+      ? `Students often choose a topic-related option too quickly and miss what "${groundedEvidence}" actually says.`
+      : `One trap here is picking a familiar-sounding choice without checking which passage idea is actually supported.`;
 
     const hintVariants = [
       `Use this passage detail as your anchor: "${groundedEvidence}".`,
@@ -4075,9 +4081,9 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
       `If "${groundedEvidence}" is true, which option is fully supported and which ones overreach?`,
     ];
     const stepVariants = [
-      `1. Read the question carefully.\n2. Locate the evidence: "${groundedEvidence}".\n3. Explain the conclusion that detail supports.\n4. Confirm ${correctLetter} as the answer that best matches the evidence.`,
-      `1. Identify what the question asks you to prove.\n2. Re-read "${groundedEvidence}".\n3. Compare options to that detail.\n4. Confirm ${correctLetter} because it is the best evidence match.`,
-      `1. Start with the passage line "${groundedEvidence}".\n2. Decide what conclusion that detail supports.\n3. Test options against that conclusion.\n4. Confirm ${correctLetter} after checking the strongest support.`,
+      `1. Read the question carefully.\n2. Locate the evidence: "${groundedEvidence}".\n3. Explain the conclusion that detail supports.\n4. Choose the option that best matches that evidence.`,
+      `1. Identify what the question asks you to prove.\n2. Re-read "${groundedEvidence}".\n3. Compare options to that detail.\n4. Eliminate choices that do not match the passage idea.`,
+      `1. Start with the passage line "${groundedEvidence}".\n2. Decide what conclusion that detail supports.\n3. Test options against that conclusion.\n4. Pick the choice that stays closest to the text.`,
     ];
     const hint = hintVariants[Math.abs(variant) % hintVariants.length];
     const think = thinkVariants[Math.abs(variant + 1) % thinkVariants.length];
@@ -4106,10 +4112,10 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
     const groundedEvidence = evidenceSnippet.replace(/\s+/g, " ").trim();
 
     const explanationVariants = [
-      `In the passage, "${groundedEvidence}" points directly to ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
-      `Because the text states "${groundedEvidence}," ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is the conclusion that fits.`,
-      `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} matches what happens in the passage: "${groundedEvidence}".`,
-      `The line "${groundedEvidence}" explains why ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is correct.`,
+      `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because the passage states "${groundedEvidence}".`,
+      `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is correct because "${groundedEvidence}" directly supports it.`,
+      `The passage detail "${groundedEvidence}" proves that ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is the best answer.`,
+      `${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} is the strongest choice, and this is shown by "${groundedEvidence}".`,
     ];
     const explanationLead = explanationVariants[Math.abs(variant) % explanationVariants.length];
     const explanation = wrongOption
