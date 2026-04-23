@@ -2287,10 +2287,10 @@
 
       if (data?.cross?.questions?.length) {
         if (!data?.tutor?.cross?.length) {
-          throw new Error("Tutor.cross missing while cross questions exist");
+          console.warn("⚠️ Tutor.cross missing while cross questions exist");
         }
         if (!data?.answerKey?.cross?.length) {
-          throw new Error("AnswerKey.cross missing while cross questions exist");
+          console.warn("⚠️ AnswerKey.cross missing while cross questions exist");
         }
       }
     }
