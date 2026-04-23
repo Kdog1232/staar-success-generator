@@ -1200,21 +1200,21 @@ function subjectStructure(subject: CanonicalSubject): string {
 
   if (subject === "Science") {
     return [
-      "Q1 concept understanding",
+      "Q1 light recall / confidence check",
       "Q2 scenario analysis",
-      "Q3 cause and effect",
-      "Q4 data analysis",
-      "Q5 evidence-based reasoning",
+      "Q3 cause → effect reasoning",
+      "Q4 conditions → outcome analysis",
+      "Q5 process → result explanation",
     ].join("\n");
   }
 
   if (subject === "Social Studies") {
     return [
-      "Q1 main idea",
-      "Q2 cause and effect",
-      "Q3 key detail",
-      "Q4 historical/civic reasoning",
-      "Q5 best evidence",
+      "Q1 light recall / confidence check",
+      "Q2 decision → consequence",
+      "Q3 event → impact",
+      "Q4 short-term vs long-term effect",
+      "Q5 historical/civic reasoning",
     ].join("\n");
   }
 
@@ -1289,6 +1289,38 @@ function generateQuestionsPrompt(params: {
   teksCode?: string;
 }): string {
   const { grade, subject, skill, level, passage, teksCode = "Unknown" } = params;
+  const normalizedSkill = String(skill || "").toLowerCase();
+  const levelThinkingGuidance = level === "Advanced"
+    ? `
+Advanced questions should:
+- require deeper reasoning or multiple steps
+- involve applying ideas to new situations
+- include prediction, comparison, or evaluation
+- avoid simple recall or one-step answers
+`
+    : level === "Below"
+    ? `
+Below-level questions should:
+- focus on direct relationships and clear support from the prompt
+- use simple reasoning with minimal steps
+- build confidence before deeper analysis
+`
+    : `
+On-Level questions should:
+- focus on clear cause/effect or direct relationships
+- require basic reasoning or simple application
+- avoid overly complex or multi-step thinking
+`;
+  const scienceInvestigationFocus = normalizedSkill.includes("scientific investigation")
+    ? `
+- For scientific investigation:
+  - Do NOT generate definition or vocabulary-focused questions.
+  - Focus on scenarios, experiments, or changes in conditions.
+  - Include questions that ask what will happen, why it happens, or how variables affect outcomes.
+  - At least 3 questions should ask students to predict or explain investigation results.
+  - Focus on reasoning about processes, not just recalling facts.
+`
+    : "";
   void teksCode;
   void passage;
 
@@ -1349,7 +1381,19 @@ Requirements:
 - Set "passage" to null.
 - Generate exactly 5 word problems in "questions".
 - Each question must be self-contained with its own context.
-- Keep output concise.${onLevelMathGuidance}
+- Problems should usually require more than one step to solve.
+- Whenever possible:
+  - combine operations (for example, multiply then subtract, or divide then add)
+  - include a second action after an initial calculation
+  - require students to decide what to do first before calculating
+- Avoid simple one-step problems unless needed for variety.
+- At least some problems should require multiple steps or decisions to reach the final answer.
+- Include a mix of:
+  - problems where a value is found first and then used in a second calculation
+  - problems involving comparison or remaining amounts
+  - problems that require interpreting the situation before solving
+${levelThinkingGuidance}
+- Keep output concise.
 
 Return JSON:
 {
@@ -1371,6 +1415,19 @@ Generate concise STAAR-style Science practice content.
 Requirements:
 - Write one short informational excerpt (50-120 words) in "passage".
 - Then write exactly 5 questions in "questions" based on that excerpt.
+- Do NOT generate definition-only or identification-only sets.
+- Allow at most 1 light recall question; at least 4 questions must require reasoning.
+- Prioritize:
+  - cause → effect
+  - conditions → outcome
+  - process → result
+  - real-world application of concepts
+- Prefer "what happens if..." or "which result is most likely..." style prompts over term-definition prompts.
+- Include variables, observations, or simple experimental setups whenever possible.
+- If questions drift into pure vocabulary recall, revise them toward scenario-based reasoning.
+${scienceInvestigationFocus}
+${levelThinkingGuidance}
+- If a question can be answered by memorizing one sentence, rewrite it to require thinking.
 - Keep output concise.
 
 Return JSON:
@@ -1392,6 +1449,16 @@ Generate concise STAAR-style Social Studies practice content.
 Requirements:
 - Write one short historical or informational excerpt (50-120 words) in "passage".
 - Then write exactly 5 questions in "questions" based on that excerpt.
+- Do NOT generate sets that only ask for names, dates, or numbers.
+- Allow at most 1 light recall question; at least 4 questions must require reasoning.
+- Prioritize:
+  - why events happened
+  - effects of decisions
+  - short-term vs long-term impacts
+  - how events influenced people or society
+- Match reasoning depth to level (On-Level = direct relationships; Advanced = multi-step prediction/comparison/evaluation).
+${levelThinkingGuidance}
+- If a question can be answered by memorizing one sentence, rewrite it to require thinking.
 - Keep output concise.
 
 Return JSON:
@@ -1424,8 +1491,73 @@ function generateCrossCurricularPrompt(params: {
 }): string {
   const { grade, subject, skill, level, teksCode = "Unknown" } = params;
   const topicRule = crossCurricularPassageTopicRule(subject);
+  const normalizedSkill = String(skill || "").toLowerCase();
+  const crossLevelThinking = level === "Advanced"
+    ? `
+Advanced cross questions should:
+- require deeper reasoning or multiple steps
+- apply ideas to new situations from the passage
+- include prediction, comparison, or evaluation
+- avoid simple recall or one-step answers
+`
+    : level === "On Level"
+    ? `
+On-Level cross questions should:
+- focus on clear cause/effect or direct relationships
+- require basic reasoning or simple application
+- avoid unnecessary complexity while still requiring thought
+`
+    : `
+Below-level cross questions should:
+- stay clear and direct
+- use simple reasoning with strong support from the passage
+- build toward more complex reasoning gradually
+`;
+  const crossScienceInvestigationFocus = subject === "Science" && normalizedSkill.includes("scientific investigation")
+    ? `
+- For scientific investigation sets, emphasize experiment logic:
+  - scenario/condition-change questions
+  - variable → outcome reasoning
+  - result interpretation and prediction
+- Avoid definition-only or term-identification questions.
+`
+    : "";
+  const crossQuestionFocus = subject === "Math"
+    ? `
+Question design rules (Math cross-curricular):
+- Focus on questions that require using numbers from the passage to solve problems.
+- Avoid reading-only question types such as main idea, structure, or author's purpose.
+- At least 3 questions should involve calculation or numerical decision-making.
+- Students should need to use values in the passage (totals, differences, rates, comparisons, or remaining amounts).
+- Include a balanced set:
+  - mostly numerical reasoning questions
+  - at least one comparison/decision question
+  - optional light inference tied to numeric evidence.
+`
+    : subject === "Science"
+    ? `
+Question design rules (Science cross-curricular):
+- Focus on questions that require applying scientific ideas from the passage.
+- Avoid reading-only question types such as main idea, structure, or author's purpose.
+- Focus on what will happen, why it happens, or how variables affect outcomes.
+- Questions should require thinking like a scientist, not just understanding the text.
+- Include a balanced set:
+  - mostly prediction/application questions
+  - at least one variable-focused question
+  - optional light inference tied to scientific evidence.
+${crossScienceInvestigationFocus}
+`
+    : `
+Question design rules:
+- Every question must assess a READING skill (ELAR), not simple content recall.
+- Every question must require both:
+  - understanding passage content
+  - applying a reading skill
+- Questions must require thinking, not simple recall.
+- Use a balanced mix of reading skills across the set (main idea, inference, structure, and purpose).
+`;
 
-  return `You are a senior STAAR item writer. Generate cross-curricular content with strong reading rigor.
+  return `You are a senior STAAR item writer. Generate cross-curricular content with strong subject-aligned rigor.
 
 Inputs:
 - Grade: ${grade}
@@ -1457,16 +1589,13 @@ Question design rules:
 - The "questions" array MUST contain exactly 5 items.
 - NEVER return an empty questions array.
 - If you cannot generate questions, you MUST still return 5.
-- Every question must assess a READING skill (ELAR), not simple content recall.
-- Every question must require both:
-  - understanding passage content
-  - applying a reading skill
-- Questions must require thinking, not simple recall.
+${crossQuestionFocus}
+- Match the reasoning depth to the requested level:
+${crossLevelThinking}
 - Each question MUST directly reference the passage.
 - Do NOT generate generic or reusable questions.
 - Every question must include a specific idea, action, or detail from the passage.
 - Maintain similar rigor to Practice Mode question quality.
-- Use a balanced mix of reading skills across the set (main idea, inference, structure, and purpose).
 - Keep all questions grounded in the passage; avoid background-knowledge-only items.
 - Every question MUST include 4 complete answer choices.
 - Do NOT use placeholders like "Unsupported option".
@@ -3061,7 +3190,6 @@ async function sanitizeQuestions(
 
   let questions = sanitized.slice(0, 5);
   const passageText = getPassageText(passage);
-  void passageText;
   void skill;
 
   if (questions.length < 5) {
@@ -3080,7 +3208,10 @@ async function sanitizeQuestions(
   }));
   if (finalQuestions.length === 0) return originalQuestions;
   console.log("🔥 VALIDATION COMPLETE — CLEAN QUESTIONS:", finalQuestions.length);
-  const alignedSet = finalQuestions;
+  const subjectAligned = enforceScienceSocialReasoningMix(subject, finalQuestions, passageText);
+  const alignedSet = subject === "Math"
+    ? enforceMathMultiStepMix(subjectAligned)
+    : subjectAligned;
   if (!isPassageBased(mode, subject)) {
     for (const q of alignedSet) {
       if (!Array.isArray(q.choices) || q.choices.length !== 4) continue;
@@ -3098,6 +3229,14 @@ async function sanitizeQuestions(
 
   if (mode === "Cross-Curricular") {
     const validatedCross = alignedSet;
+    if (subject === "Math") {
+      const crossMathOutput = enforceMathMultiStepMix(validatedCross);
+      return crossMathOutput.length ? crossMathOutput : originalQuestions;
+    }
+    if (subject === "Science") {
+      const scienceCrossOutput = enforceScienceCrossApplication(validatedCross);
+      return scienceCrossOutput.length ? scienceCrossOutput : originalQuestions;
+    }
     const crossOutput = enforceCrossReadingOnly(validatedCross, passageText);
     return crossOutput.length ? crossOutput : originalQuestions;
   }
@@ -3117,6 +3256,14 @@ const CROSS_READING_ANGLE_STEMS = [
   "What is the author’s purpose for including these specific details in the passage?",
 ] as const;
 
+const SCIENCE_CROSS_APPLICATION_STEMS = [
+  "If one condition in the investigation changes, what result is most likely?",
+  "Which variable change would most likely increase or decrease the observed outcome?",
+  "Why would changing this condition affect the process described in the passage?",
+  "Based on the passage evidence, what prediction best fits the next trial?",
+  "Which setup would most likely produce the strongest effect in this investigation?",
+] as const;
+
 function hasCrossComputationLeak(text: string): boolean {
   const t = String(text || "").toLowerCase();
   const hasForbiddenWord = /\b(calculate|solve|total|sum|multiply|product|quotient|equation|formula|compute|evaluate expression)\b/i.test(t);
@@ -3126,6 +3273,20 @@ function hasCrossComputationLeak(text: string): boolean {
 
 function rewriteCrossQuestionStem(index: number): string {
   return CROSS_READING_ANGLE_STEMS[index % CROSS_READING_ANGLE_STEMS.length];
+}
+
+function rewriteScienceCrossStem(index: number): string {
+  return SCIENCE_CROSS_APPLICATION_STEMS[index % SCIENCE_CROSS_APPLICATION_STEMS.length];
+}
+
+function isReadingOnlyCrossStem(question: string): boolean {
+  const q = String(question || "").toLowerCase();
+  return q.includes("main idea") ||
+    q.includes("author's purpose") ||
+    q.includes("author’s purpose") ||
+    q.includes("organized") ||
+    q.includes("structure") ||
+    q.includes("what can be inferred");
 }
 
 function buildCrossReadingChoices(
@@ -3207,6 +3368,22 @@ function enforceCrossReadingOnly(
     ...q,
     question: rewriteCrossQuestionStem(idx),
   }));
+}
+
+function enforceScienceCrossApplication(
+  questions: Question[],
+): Question[] {
+  const output: Question[] = [];
+  for (const q of questions) {
+    const needsRewrite = isReadingOnlyCrossStem(String(q.question || ""));
+    output.push({
+      ...q,
+      question: needsRewrite ? rewriteScienceCrossStem(output.length) : String(q.question || "").trim(),
+      choices: normalizeChoices(q.choices),
+    });
+    if (output.length === 5) break;
+  }
+  return output;
 }
 
 function validateSkillAlignment(skill: string, questions: Question[]): boolean {
@@ -3307,6 +3484,146 @@ function validateQuestionDepth(level: Level, questions: Question[]): boolean {
   if (level === "Below") return lowCount >= 2 && highCount <= 3;
   if (level === "Advanced") return highCount >= 3;
   return highCount >= 1;
+}
+
+function isLikelyRecallStem(question: string): boolean {
+  const stem = String(question || "").toLowerCase().trim();
+  if (!stem) return false;
+  return /^(what is|what was|who was|who is|when did|where did|how much|which person|which date|define|identify|name)\b/.test(stem) ||
+    /\b(according to the passage, )?(who|when|where)\b/.test(stem);
+}
+
+function rewriteRecallStemForReasoning(subject: CanonicalSubject, question: string, passage: string, index: number): string {
+  const topic = extractKeyTopic(passage || question || "");
+  if (subject === "Science") {
+    const stems = [
+      `Based on the passage, why does ${topic} most likely change under these conditions?`,
+      `Based on the investigation, which condition most likely caused the outcome described for ${topic}?`,
+      `Which explanation best connects the process in the passage to the result involving ${topic}?`,
+      `How would changing one condition in the passage most likely affect the outcome for ${topic}?`,
+    ];
+    return stems[index % stems.length];
+  }
+  if (subject === "Social Studies") {
+    const stems = [
+      `Based on the passage, why was the decision about ${topic} important for later events?`,
+      `Which outcome best explains the long-term impact of ${topic} in the passage?`,
+      `How did the decision or event involving ${topic} most influence people or society?`,
+      `Which cause-and-effect relationship best explains what happened after ${topic}?`,
+    ];
+    return stems[index % stems.length];
+  }
+  return question;
+}
+
+function enforceScienceSocialReasoningMix(
+  subject: CanonicalSubject,
+  questions: Question[],
+  passage: string,
+): Question[] {
+  if (subject !== "Science" && subject !== "Social Studies") return questions;
+  const fixed = questions.map((q) => ({ ...q }));
+  const recallIndexes = fixed
+    .map((q, i) => ({ i, recall: isLikelyRecallStem(String(q.question || "")) }))
+    .filter((entry) => entry.recall)
+    .map((entry) => entry.i);
+
+  if (recallIndexes.length <= 1) return fixed;
+
+  // Keep at most one lighter recall item (prefer the first question as confidence builder).
+  const keepRecallIndex = recallIndexes.includes(0) ? 0 : recallIndexes[0];
+  for (const idx of recallIndexes) {
+    if (idx === keepRecallIndex) continue;
+    fixed[idx].question = rewriteRecallStemForReasoning(subject, String(fixed[idx].question || ""), passage, idx);
+  }
+  return fixed;
+}
+
+function isLikelyOneStepMathQuestion(question: string): boolean {
+  const q = String(question || "").toLowerCase();
+  if (!q.trim()) return false;
+  const multiStepSignals = [
+    "then",
+    "after",
+    "before",
+    "remaining",
+    "left",
+    "difference",
+    "compare",
+    "altogether",
+    "in total",
+    "per",
+    "each",
+    "first",
+    "next",
+  ];
+  const hasMultiSignal = multiStepSignals.some((signal) => q.includes(signal));
+  if (hasMultiSignal) return false;
+  const operationSignals = ["sum", "total", "difference", "product", "quotient", "plus", "minus", "times", "divide", "multipl", "add", "subtract"];
+  const operationCount = operationSignals.filter((signal) => q.includes(signal)).length;
+  return operationCount <= 1;
+}
+
+function rewriteMathForMultiStep(index: number): string {
+  const templates = [
+    "A student group buys equal packs for an event, then uses part of the supplies. How many items are left after the event?",
+    "A store compares two pricing plans for the same number of items. Which plan costs less, and by how much?",
+    "A team calculates total earnings from ticket sales, then subtracts expenses. What is the final amount?",
+    "A class divides students into equal groups and then adds late arrivals. How many students are in all groups now?",
+    "A club tracks supplies used each day and the supplies restocked later. What is the net change in supplies?",
+  ];
+  return templates[index % templates.length];
+}
+
+function isLikelyMathReasoningStem(question: string): boolean {
+  const q = String(question || "").toLowerCase();
+  if (!q.trim()) return false;
+  const reasoningSignals = [
+    "how much",
+    "how many",
+    "total",
+    "difference",
+    "left",
+    "remaining",
+    "cost",
+    "rate",
+    "percent",
+    "average",
+    "plan costs less",
+    "by how much",
+    "net change",
+  ];
+  return reasoningSignals.some((signal) => q.includes(signal));
+}
+
+function enforceMathMultiStepMix(questions: Question[]): Question[] {
+  const fixed = questions.map((q) => ({ ...q }));
+  const oneStepIndexes = fixed
+    .map((q, i) => ({ i, oneStep: isLikelyOneStepMathQuestion(String(q.question || "")) }))
+    .filter((entry) => entry.oneStep)
+    .map((entry) => entry.i);
+  const reasoningCount = fixed.filter((q) => isLikelyMathReasoningStem(String(q.question || ""))).length;
+  const multiStepCount = fixed.length - oneStepIndexes.length;
+
+  // Soft enforcement targets:
+  // - at least some multi-step structure (target 2+)
+  // - majority numeric reasoning stems (target 3+)
+  if (multiStepCount >= 2 && reasoningCount >= 3) return fixed;
+
+  const indexesToRewrite = [...oneStepIndexes];
+  if (indexesToRewrite.length === 0) {
+    for (let i = 0; i < fixed.length; i += 1) indexesToRewrite.push(i);
+  }
+
+  let rewritesNeeded = Math.max(0, 2 - multiStepCount);
+  rewritesNeeded = Math.max(rewritesNeeded, Math.max(0, 3 - reasoningCount));
+  rewritesNeeded = Math.min(rewritesNeeded, indexesToRewrite.length);
+  for (const idx of indexesToRewrite) {
+    if (rewritesNeeded <= 0) break;
+    fixed[idx].question = rewriteMathForMultiStep(idx);
+    rewritesNeeded -= 1;
+  }
+  return fixed;
 }
 
 function validateRigorAlignment(level: Level, passage: PassageContent | string, questions: Question[]): boolean {
