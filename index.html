@@ -2015,7 +2015,7 @@
 
     async function fetchSupportContent({ token, subject, grade, skill, level, passage, practiceQuestions, cross }) {
       const response = await fetch(
-        "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
+        "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker/enrich",
         {
           method: "POST",
           headers: {
@@ -2028,10 +2028,11 @@
             grade,
             skill,
             level,
-            mode: "support",
             passage,
             practiceQuestions,
-            cross
+            cross,
+            crossPassage: cross?.passage || "",
+            crossQuestions: Array.isArray(cross?.questions) ? cross.questions : []
           })
         }
       );
