@@ -5157,10 +5157,10 @@ serve(async (req) => {
         }),
       ) as Record<string, unknown> | null;
       if (!enrichment || Object.keys(enrichment).length === 0) {
-        throw new Error("ENRICHMENT_EMPTY_RESPONSE");
+        console.warn("⚠️ Enrichment empty — continuing with fallback normalization");
       }
       const { tutor, answerKey } = normalizeEnrichmentSupport(
-        enrichment,
+        enrichment && Object.keys(enrichment).length ? enrichment : null,
         practiceQuestions,
         crossQuestions,
       );
