@@ -1785,6 +1785,7 @@ GENERAL RULES (ALL SUBJECTS)
 - ALWAYS return ALL fields
 - NEVER return {}
 - NEVER omit tutor.cross or answerKey.cross
+- If any section is incomplete, still return your best attempt for all sections.
 - If unsure, generate best possible answer
 - Each array MUST match question count
 - questionIndex must align to input order (0-based)
@@ -4777,8 +4778,8 @@ function ensureNonEmptySupport(
   }
   const fallbackTutor = buildTutorFromPractice(questions).practice;
   const fallbackAnswerKey = buildAnswerKeyFromPractice(questions).practice;
-  const safeTutor = Array.isArray(tutor) && tutor.length > 0 ? tutor : fallbackTutor;
-  const safeAnswerKey = Array.isArray(answerKey) && answerKey.length > 0 ? answerKey : fallbackAnswerKey;
+  const safeTutor = Array.isArray(tutor) && tutor.length === questions.length ? tutor : fallbackTutor;
+  const safeAnswerKey = Array.isArray(answerKey) && answerKey.length === questions.length ? answerKey : fallbackAnswerKey;
   return { tutor: safeTutor, answerKey: safeAnswerKey };
 }
 
@@ -5231,32 +5232,43 @@ serve(async (req) => {
       const answerPractice = answerKey.practice;
       const answerCross = answerKey.cross;
 
-      if (!tutorPractice.length || tutorPractice.length !== practiceQuestions.length) {
-        throw new Error("MISSING_TUTOR_PRACTICE");
-      }
+      const safeTutorPractice = tutorPractice.length === practiceQuestions.length
+        ? tutorPractice
+        : buildTutorFromPractice(practiceQuestions).practice;
+      const safeAnswerPractice = answerPractice.length === practiceQuestions.length
+        ? answerPractice
+        : buildAnswerKeyFromPractice(practiceQuestions).practice;
+      const safeTutorCross = tutorCross.length === crossQuestions.length
+        ? tutorCross
+        : buildTutorFromPractice(crossQuestions).practice.map((entry, index) => ({
+          ...entry,
+          question_id: ensureQuestionId(crossQuestions[index], index, "cross"),
+        }));
+      const safeAnswerCross = answerCross.length === crossQuestions.length
+        ? answerCross
+        : buildAnswerKeyFromPractice(crossQuestions).practice.map((entry, index) => ({
+          ...entry,
+          question_id: ensureQuestionId(crossQuestions[index], index, "cross"),
+        }));
 
-      if (!tutorCross.length) console.warn("⚠️ Missing tutor cross — using fallback");
-      if (!answerCross.length) console.warn("⚠️ Missing answer cross — using fallback");
-      const crossSupport = ensureNonEmptySupport(
-        crossQuestions,
-        tutorCross,
-        answerCross,
-        "cross",
-      );
+      if (safeTutorPractice !== tutorPractice) console.warn("⚠️ Incomplete tutor practice — rebuilding from practice questions");
+      if (safeAnswerPractice !== answerPractice) console.warn("⚠️ Incomplete answer practice — rebuilding from practice questions");
+      if (safeTutorCross !== tutorCross) console.warn("⚠️ Incomplete tutor cross — rebuilding from cross questions");
+      if (safeAnswerCross !== answerCross) console.warn("⚠️ Incomplete answer cross — rebuilding from cross questions");
       const practiceSupport = ensureNonEmptySupport(
         practiceQuestions,
-        tutorPractice,
-        answerPractice,
+        safeTutorPractice,
+        safeAnswerPractice,
         "practice",
       );
       const contract = enforceResponseContract({
         tutor: {
           practice: practiceSupport.tutor,
-          cross: crossSupport.tutor,
+          cross: safeTutorCross,
         },
         answerKey: {
           practice: practiceSupport.answerKey,
-          cross: crossSupport.answerKey,
+          cross: safeAnswerCross,
         },
       });
 
