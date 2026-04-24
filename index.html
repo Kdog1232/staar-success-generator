@@ -3024,103 +3024,77 @@
 
         console.log("✅ DATA RECEIVED:", data);
 
-        ensureWorksheetShell();
-
         const normalizedCore = normalizeWorkerPayload({
           ...data
         });
 
-        currentData = normalizeWorkerPayload({
+        const core = {
           ...normalizedCore,
           passage: normalizedCore?.passage || data?.passage || "",
           practice: normalizedCore?.practice || data?.practice || { questions: [] },
-          cross: normalizedCore?.cross || data?.cross || { passage: "", questions: [] },
-          tutor: { practice: [], cross: [] },
-          answerKey: { practice: [], cross: [] }
+          cross: normalizedCore?.cross || data?.cross || { passage: "", questions: [] }
+        };
+
+        let enrichment = null;
+        try {
+          enrichment = await fetchSupportContent({
+            token,
+            subject,
+            grade,
+            skill,
+            level,
+            passage: core.passage,
+            practiceQuestions: core?.practice?.questions,
+            cross: core.cross
+          });
+        } catch (supportErr) {
+          console.warn("⚠️ Support failed, using fallback enrichment:", supportErr);
+        }
+
+        if (currentRequestId !== requestId) return;
+
+        const safeEnrichment = enrichment && Object.keys(enrichment).length
+          ? enrichment
+          : {
+            tutor: { practice: [], cross: [] },
+            answerKey: { practice: [], cross: [] }
+          };
+
+        const finalData = normalizeWorkerPayload({
+          ...core,
+          tutor: safeEnrichment?.tutor || { practice: [], cross: [] },
+          answerKey: safeEnrichment?.answerKey || { practice: [], cross: [] }
         });
 
-        practiceDataState = currentData?.practice || { questions: [] };
-        generatedPassage = currentData?.passage || "";
-        crossDataState = currentData?.cross || { passage: "", questions: [] };
+        currentData = finalData;
+        practiceDataState = finalData.practice;
+        crossDataState = finalData.cross;
+        tutorDataState = finalData.tutor;
+        answerKeyDataState = finalData.answerKey;
+        generatedPassage = finalData.passage;
+
+        ensureWorksheetShell();
 
         renderPracticeSection(practiceDataState, generatedPassage);
+
+        const crossSection = document.getElementById("cross-section");
+        if (crossSection) {
+          crossSection.innerHTML = renderCross(crossDataState);
+        }
+
+        const tutorSection = document.getElementById("tutor-section");
+        if (tutorSection) {
+          tutorSection.innerHTML = renderTutor(tutorDataState?.practice || []);
+        }
+
+        const answerSection = document.getElementById("answer-section");
+        if (answerSection) {
+          answerSection.innerHTML = renderAnswerKey(answerKeyDataState?.practice || []);
+        }
+
         setMode("practice");
         const toggle = document.getElementById("view-toggle");
         if (toggle) toggle.style.display = "flex";
-
-        const crossSection = document.getElementById("cross-section");
-        const tutorSection = document.getElementById("tutor-section");
-        if (crossSection) {
-          crossSection.innerHTML = "<div>⏳ Loading cross...</div>";
-        }
-        if (tutorSection && !tutorDataState?.practice?.length) {
-          tutorSection.innerHTML = "<div>⏳ Loading tutor...</div>";
-        }
-
-        (async () => {
-          const lockedCore = normalizeWorkerPayload(currentData || {});
-          let safeCross = lockedCore?.cross || { passage: "", questions: [] };
-
-          try {
-            if (currentRequestId !== requestId) return;
-            crossDataState = safeCross;
-            currentData.cross = crossDataState;
-            console.log("🔒 USING LOCKED CORE CROSS:", crossDataState);
-
-            if (crossSection) {
-              crossSection.innerHTML = renderCross(crossDataState);
-            }
-
-            console.log("CROSS READY:", crossDataState);
-          } catch (crossErr) {
-            console.warn("❌ CROSS PREP FAILED:", crossErr);
-            if (currentRequestId !== requestId) return;
-
-            crossDataState = safeCross;
-            currentData.cross = crossDataState;
-
-            if (crossSection) {
-              crossSection.innerHTML = `<div class="muted-note">Cross unavailable</div>`;
-            }
-
-          }
-          try {
-            const support = await fetchSupportContent({
-              token,
-              subject,
-              grade,
-              skill,
-              level,
-              passage: String(currentData?.passage || ""),
-              practiceQuestions: Array.isArray(currentData?.practice?.questions) ? currentData.practice.questions : [],
-              cross: safeCross
-            });
-            if (!support || currentRequestId !== requestId) return;
-
-            console.log("🧠 SUPPORT READY");
-            const normalizedSupport = normalizeWorkerPayload({
-              tutor: support?.tutor,
-              answerKey: support?.answerKey
-            });
-            tutorDataState = normalizedSupport.tutor;
-            answerKeyDataState = normalizedSupport.answerKey;
-            currentData.tutor = tutorDataState;
-            currentData.answerKey = answerKeyDataState;
-
-            const tutorTarget = Array.isArray(tutorDataState?.practice) ? tutorDataState.practice : [];
-            const answerTarget = Array.isArray(answerKeyDataState?.practice) ? answerKeyDataState.practice : [];
-
-            if (tutorSection) {
-              tutorSection.innerHTML = renderTutor(tutorTarget, "tutor");
-            }
-            const answerSection = document.getElementById("answer-section");
-            if (answerSection) {
-              answerSection.innerHTML = renderAnswerKey(answerTarget, "answer");
-            }
-          } catch (supportErr) {
-            console.warn("⚠️ Support failed:", supportErr);
-          }
-        })();
 
         console.log("🎯 RENDER COMPLETE");
       } catch (err) {
