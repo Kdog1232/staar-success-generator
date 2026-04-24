@@ -1711,10 +1711,11 @@ function buildCoreEnrichmentPrompt(params: {
   }));
   const compactCross = params.crossQuestions.map((q) => ({
     question: q.question,
-    choices: q.choices,
     correct_answer: q.correct_answer,
   }));
-  const crossPassage = String(params.crossPassage || "").trim();
+  const crossPassage = String(params.crossPassage || "")
+    .slice(0, 800)
+    .trim();
 
   return `
 You are generating structured tutoring support for STAAR practice.
@@ -1771,81 +1772,17 @@ ${crossPassage}
 Cross Questions:
 ${JSON.stringify(compactCross)}
 
+RULES
 --------------------------------------------------
-TUTOR + ANSWER KEY INTELLIGENCE RULES
---------------------------------------------------
-
-You are a high-quality STAAR tutor. Your goal is to teach thinking, not just give answers.
-
-GENERAL RULES (ALL SUBJECTS)
-- Every explanation must be specific to the question (no generic advice)
-- Avoid repeating the same phrases across questions
-- Each response must feel like a real teacher guiding a student step-by-step
-- Vary language naturally across questions
-- ALWAYS return ALL fields
-- NEVER return {}
-- NEVER omit tutor.cross or answerKey.cross
-- If any section is incomplete, still return your best attempt for all sections.
-- If unsure, generate best possible answer
-- Each array MUST match question count
+- Return valid JSON only
+- Do not return {}
+- Always return your best attempt for every section, even if some content is incomplete
+- Ensure tutor.practice length matches Practice Questions length
+- Ensure tutor.cross length matches Cross Questions length
+- Ensure answerKey.practice length matches Practice Questions length
+- Ensure answerKey.cross length matches Cross Questions length
+- Keep explanations concise, specific, and useful
 - questionIndex must align to input order (0-based)
-
-SUBJECT-SPECIFIC TUTOR BEHAVIOR
-MATH:
-- Explain exact steps using numbers from the problem
-- Clearly state the order of operations (first, next, last)
-- Reference actual values from the question
-- Show how to break the problem into parts
-- Avoid vague language; be precise
-
-SCIENCE:
-- Focus on cause-and-effect relationships
-- Explain what happens when a variable changes
-- Use reasoning patterns like: when ___ increases, ___ happens
-- Explain what this leads to and why
-- Emphasize reasoning and prediction
-
-SOCIAL STUDIES:
-- Focus on decisions, actions, and consequences
-- Explain why people or groups made choices
-- Connect actions to outcomes
-- Use historical or civic reasoning
-
-READING:
-- Refer to specific moments, ideas, or patterns in the passage
-- Focus on inference, structure, and author’s purpose
-- Help the student connect multiple ideas
-
-HINT RULES
-- Give a starting point, not the answer
-- Point the student toward the first step of thinking
-- Keep hints specific to the question
-
-STEP-BY-STEP RULES
-- Break the thinking into clear steps
-- Each step should move the student closer to the answer
-- Do not skip reasoning steps
-
-"WHY" (CORRECT ANSWER EXPLANATION)
-- Explain why the correct answer works
-- Reference the actual situation (numbers, events, or ideas)
-- Make the reasoning clear and logical
-
-"MISTAKE" (WRONG THINKING)
-- Describe a realistic wrong approach
-- Do not restate the correct steps
-- Focus on common student errors (wrong operation, skipped step, misunderstood cause/effect, misread situation)
-
-PARENT TIP RULES
-- Keep it simple and actionable
-- Adapt to subject:
-  - Math: Have your child explain each step and check their calculations.
-  - Reading: Ask your child what part of the passage most supports their answer.
-  - Science: Ask what changed and what effect it caused.
-  - Social Studies: Ask why the decision led to that outcome.
-
-FINAL GOAL
-- Every response should feel like a real tutor helping a student think step-by-step, not a generic AI explanation.
 
 --------------------------------------------------
 RETURN JSON ONLY
