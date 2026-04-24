@@ -2199,9 +2199,9 @@
       return validCount >= Math.ceil(questions.length * 0.6);
     }
 
-    async function fetchPracticeEnrichment({ token, subject, grade, skill, level, passage, questions }) {
+    async function fetchPracticeCore({ token, subject, grade, skill, level }) {
       const response = await fetch(
-        "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker/enrich",
+        "https://qadfehickkkvirtcnska.supabase.co/functions/v1/generate-practice",
         {
           method: "POST",
           headers: {
@@ -2213,24 +2213,21 @@
             subject,
             grade,
             skill,
-            level,
-            passage,
-            practice: Array.isArray(questions) ? questions : [],
-            questions
+            level
           })
         }
       );
 
       if (!response.ok) {
-        throw new Error(`ENRICH_STATUS_${response.status}`);
+        throw new Error(`PRACTICE_STATUS_${response.status}`);
       }
 
       return response.json();
     }
 
-    async function fetchSupportContent({ token, subject, grade, skill, level, passage, practiceQuestions, cross }) {
+    async function fetchEnrichment({ token, subject, grade, skill, level, passage, practiceQuestions }) {
       const response = await fetch(
-        "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker/enrich",
+        "https://qadfehickkkvirtcnska.supabase.co/functions/v1/generate-enrichment",
         {
           method: "POST",
           headers: {
@@ -2244,23 +2241,16 @@
             skill,
             level,
             passage,
-            practiceQuestions,
-            cross,
-            crossPassage: cross?.passage || "",
-            crossQuestions: Array.isArray(cross?.questions) ? cross.questions : []
+            practice: Array.isArray(practiceQuestions) ? practiceQuestions : []
           })
         }
       );
 
       if (!response.ok) {
-        throw new Error(`SUPPORT_STATUS_${response.status}`);
+        throw new Error(`ENRICHMENT_STATUS_${response.status}`);
       }
 
-      const payload = await response.json();
-      return {
-        tutor: payload?.tutor || { practice: [], cross: [] },
-        answerKey: payload?.answerKey || { practice: [], cross: [] }
-      };
+      return response.json();
     }
 
     function getTodayKey() {
@@ -3017,61 +3007,52 @@
 
         console.log("📡 SENDING REQUEST");
 
-        const res = await fetch(
-          "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-              apikey: SUPABASE_ANON_KEY
-            },
-            body: JSON.stringify({
-              grade,
-              subject,
-              skill,
-              level,
-              mode: "core"
-            })
-          }
-        );
+        const coreResponse = await fetchPracticeCore({
+          token,
+          subject,
+          grade,
+          skill,
+          level
+        });
 
-        console.log("📥 RESPONSE STATUS:", res.status);
-
-        if (!res.ok) {
-          throw new Error("API_ERROR_" + res.status);
-        }
-
-        const data = await res.json();
-
-        console.log("✅ DATA RECEIVED:", data);
+        console.log("✅ CORE DATA RECEIVED:", coreResponse);
 
         const normalizedCore = normalizeWorkerPayload({
-          ...data
+          ...coreResponse,
+          passage: coreResponse?.practice?.passage || coreResponse?.passage || "",
+          cross: { passage: "", questions: [] },
+          tutor: { practice: [], cross: [] },
+          answerKey: { practice: [], cross: [] }
         });
 
         const core = {
           ...normalizedCore,
-          passage: normalizedCore?.passage || data?.passage || "",
-          practice: normalizedCore?.practice || data?.practice || { questions: [] },
-          cross: normalizedCore?.cross || data?.cross || { passage: "", questions: [] }
+          passage: normalizedCore?.passage || coreResponse?.practice?.passage || coreResponse?.passage || "",
+          practice: normalizedCore?.practice || coreResponse?.practice || { questions: [] },
+          cross: { passage: "", questions: [] }
         };
         coreData = core;
         practiceDataState = coreData.practice;
-        crossDataState = coreData.cross;
+        crossDataState = { passage: "", questions: [] };
         tutorDataState = null;
         answerKeyDataState = null;
         generatedPassage = coreData.passage;
 
         ensureWorksheetShell();
-
         renderPracticeSection(practiceDataState, generatedPassage);
 
-        console.log("FRONTEND CORE DATA:", coreData);
         const crossSection = document.getElementById("cross-section");
         if (crossSection) {
-          crossSection.innerHTML = renderCross(coreData?.cross || { passage: "", questions: [] });
           crossSection.style.display = "block";
+          crossSection.innerHTML = `
+            <div class="mode-label">Cross-Curricular Mode</div>
+            <p class="muted-note">⏳ Cross-curricular questions are generating…</p>
+          `;
+        }
+
+        const modeStatus = document.getElementById("mode-status");
+        if (modeStatus) {
+          modeStatus.textContent = "Mode: Practice Mode ON • Enrichment loading";
         }
 
         setMode("practice");
@@ -3080,44 +3061,60 @@
 
         if (!coreData) return;
 
-        let enrichment = null;
-        try {
-          enrichment = await fetchSupportContent({
-            token,
-            subject,
-            grade,
-            skill,
-            level,
-            passage: coreData.passage,
-            practiceQuestions: coreData?.practice?.questions,
-            cross: coreData.cross
+        void fetchEnrichment({
+          token,
+          subject,
+          grade,
+          skill,
+          level,
+          passage: coreData.passage,
+          practiceQuestions: coreData?.practice?.questions
+        })
+          .then((enrichment) => {
+            if (currentRequestId !== requestId || !coreData) return;
+
+            const normalizedEnrichment = normalizeWorkerPayload({
+              ...coreData,
+              cross: enrichment?.cross || { passage: "", questions: [] },
+              tutor: enrichment?.tutor || { practice: [], cross: [] },
+              answerKey: enrichment?.answerKey || { practice: [], cross: [] }
+            }, { fallbackPassage: coreData.passage });
+
+            coreData = {
+              ...coreData,
+              cross: normalizedEnrichment.cross
+            };
+            crossDataState = normalizedEnrichment.cross;
+
+            supportData = {
+              tutor: normalizedEnrichment?.tutor || { practice: [], cross: [] },
+              answerKey: normalizedEnrichment?.answerKey || { practice: [], cross: [] }
+            };
+
+            tutorDataState = supportData.tutor;
+            answerKeyDataState = supportData.answerKey;
+
+            const readyCrossSection = document.getElementById("cross-section");
+            if (readyCrossSection) {
+              readyCrossSection.innerHTML = renderCross(coreData?.cross || { passage: "", questions: [] });
+            }
+
+            renderTutorSection(supportData.tutor || { practice: [], cross: [] });
+            renderAnswerSection(supportData.answerKey || { practice: [], cross: [] });
+
+            const completedModeStatus = document.getElementById("mode-status");
+            if (completedModeStatus) {
+              completedModeStatus.textContent = "Mode: Practice Mode ON • Cross/Tutor ready";
+            }
+
+            renderActivePanels();
+            console.log("🎯 ENRICHMENT RENDER COMPLETE");
+          })
+          .catch((supportErr) => {
+            console.warn("⚠️ Enrichment failed:", supportErr);
           });
-        } catch (supportErr) {
-          console.warn("⚠️ Support failed, using fallback enrichment:", supportErr);
-        }
 
-        if (currentRequestId !== requestId) return;
-        if (!coreData) return;
-
-        supportData = enrichment && Object.keys(enrichment).length
-          ? {
-            tutor: enrichment?.tutor || { practice: [], cross: [] },
-            answerKey: enrichment?.answerKey || { practice: [], cross: [] }
-          }
-          : {
-            tutor: { practice: [], cross: [] },
-            answerKey: { practice: [], cross: [] }
-          };
-
-        tutorDataState = supportData.tutor;
-        answerKeyDataState = supportData.answerKey;
-
-        if (supportData) {
-          renderTutorSection(supportData.tutor || { practice: [], cross: [] });
-          renderAnswerSection(supportData.answerKey || { practice: [], cross: [] });
-        }
-
-        console.log("🎯 RENDER COMPLETE");
+        console.log("🎯 CORE RENDER COMPLETE");
       } catch (err) {
         console.error("💥 GENERATE FAILED:", err);
 
