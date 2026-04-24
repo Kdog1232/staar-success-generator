@@ -2194,41 +2194,6 @@
       return response.json();
     }
 
-    async function fetchCrossContent({ token, subject, grade, skill, level }) {
-      const response = await fetch(
-        "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-            apikey: SUPABASE_ANON_KEY
-          },
-          body: JSON.stringify({
-            subject,
-            grade,
-            skill,
-            level,
-            mode: "cross"
-          })
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`CROSS_STATUS_${response.status}`);
-      }
-
-      const payload = await response.json();
-      const scopedCross = payload?.cross && typeof payload.cross === "object"
-        ? payload.cross
-        : payload;
-
-      return {
-        passage: typeof scopedCross?.passage === "string" ? scopedCross.passage : "",
-        questions: Array.isArray(scopedCross?.questions) ? scopedCross.questions : []
-      };
-    }
-
     async function fetchSupportContent({ token, subject, grade, skill, level, passage, practiceQuestions, cross }) {
       const response = await fetch(
         "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker/enrich",
@@ -3061,31 +3026,27 @@
 
         ensureWorksheetShell();
 
-        practiceDataState = data?.practice || { questions: [] };
-        generatedPassage = data?.passage || "";
+        const normalizedCore = normalizeWorkerPayload({
+          ...data
+        });
+
+        currentData = normalizeWorkerPayload({
+          ...normalizedCore,
+          passage: normalizedCore?.passage || data?.passage || "",
+          practice: normalizedCore?.practice || data?.practice || { questions: [] },
+          cross: normalizedCore?.cross || data?.cross || { passage: "", questions: [] },
+          tutor: { practice: [], cross: [] },
+          answerKey: { practice: [], cross: [] }
+        });
+
+        practiceDataState = currentData?.practice || { questions: [] };
+        generatedPassage = currentData?.passage || "";
+        crossDataState = currentData?.cross || { passage: "", questions: [] };
+
         renderPracticeSection(practiceDataState, generatedPassage);
         setMode("practice");
         const toggle = document.getElementById("view-toggle");
         if (toggle) toggle.style.display = "flex";
-
-        const normalizedCore = normalizeWorkerPayload({
-          ...data,
-          practice: practiceDataState,
-          passage: generatedPassage
-        });
-        currentData = {
-          ...normalizedCore,
-          practice: {
-            questions: ensureQuestionIds(
-              Array.isArray(practiceDataState?.questions) ? practiceDataState.questions : [],
-              "practice"
-            )
-          },
-          passage: generatedPassage,
-          cross: { passage: "", questions: [] },
-          tutor: { practice: [], cross: [] },
-          answerKey: { practice: [], cross: [] }
-        };
 
         const crossSection = document.getElementById("cross-section");
         const tutorSection = document.getElementById("tutor-section");
@@ -3097,55 +3058,14 @@
         }
 
         (async () => {
-          let safeCross = { passage: "", questions: [] };
+          const lockedCore = normalizeWorkerPayload(currentData || {});
+          let safeCross = lockedCore?.cross || { passage: "", questions: [] };
 
           try {
-            const cross = await fetchCrossContent({
-              token,
-              subject,
-              grade,
-              skill,
-              level
-            });
-
             if (currentRequestId !== requestId) return;
-
-            console.log("RAW CROSS RESPONSE:", cross);
-            console.log("🌎 CROSS READY");
-
-            const normalizedCross = normalizeWorkerPayload(
-              { cross },
-              { fallbackPassage: currentData?.passage || "" }
-            );
-            const rawQuestions = ensureQuestionIds(
-              Array.isArray(cross?.questions) ? cross.questions : [],
-              "cross"
-            );
-            const normalizedQuestions = ensureQuestionIds(
-              normalizedCross?.cross?.questions || [],
-              "cross"
-            );
-
-            if (rawQuestions.length && !normalizedQuestions.length) {
-              console.warn("⚠️ normalizeWorkerPayload dropped cross questions");
-            }
-
-            console.log("NORMALIZED CROSS:", normalizedCross);
-            console.log("CROSS QUESTION COUNTS:", {
-              raw: rawQuestions.length,
-              normalized: normalizedQuestions.length
-            });
-
-            safeCross = {
-              passage: cross?.passage || normalizedCross?.cross?.passage || "",
-              questions: rawQuestions.length ? rawQuestions : normalizedQuestions
-            };
-
             crossDataState = safeCross;
             currentData.cross = crossDataState;
-
-            console.log("FINAL CROSS STATE:", crossDataState);
-            console.log("CROSS BEFORE RENDER:", crossDataState);
+            console.log("🔒 USING LOCKED CORE CROSS:", crossDataState);
 
             if (crossSection) {
               crossSection.innerHTML = renderCross(crossDataState);
@@ -3153,7 +3073,7 @@
 
             console.log("CROSS READY:", crossDataState);
           } catch (crossErr) {
-            console.warn("❌ CROSS FAILED:", crossErr);
+            console.warn("❌ CROSS PREP FAILED:", crossErr);
             if (currentRequestId !== requestId) return;
 
             crossDataState = safeCross;
