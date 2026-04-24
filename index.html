@@ -2096,14 +2096,47 @@
       return renderQuestions(practiceData?.questions || [], { mode: "practice" });
     }
 
-    function renderCross(crossData) {
-      if (!crossData || !Array.isArray(crossData.questions) || crossData.questions.length === 0) {
-        console.warn("⚠️ No cross data — skipping render");
-        return `<p class="muted-note">Cross-curricular questions not available yet.</p>`;
+    function renderCross(cross) {
+      if (!cross) {
+        return `<div class="muted-note">Cross unavailable</div>`;
       }
-      const questions = crossData.questions;
-      console.log("🔥 CROSS QUESTIONS RECEIVED:", questions);
-      return renderQuestions(questions, { mode: "Cross-Curricular" });
+
+      const passage = cleanText(cross?.passage || "");
+      const questions = Array.isArray(cross?.questions) ? cross.questions : [];
+
+      return `
+        <section class="worksheet-section">
+          <h3>🌎 Cross-Curricular Mode</h3>
+          ${passage ? `
+            <div class="passage-block">
+              <h4>📖 Passage</h4>
+              <p>${passage}</p>
+            </div>
+          ` : ""}
+          <div class="question-group">
+            ${questions.length
+              ? questions
+                .map((q, i) => {
+                  const questionText = cleanText(q?.question || "Missing question");
+                  const choices = Array.isArray(q?.choices) ? q.choices : [];
+
+                  return `
+                    <div class="question-block">
+                      <p><strong>${i + 1}. ${questionText}</strong></p>
+                      ${choices.length
+                        ? choices.map((choice, idx) => `
+                            <div class="choice">
+                              ${String.fromCharCode(65 + idx)}. ${cleanText(choice)}
+                            </div>
+                          `).join("")
+                        : `<div class="muted-note">No choices provided.</div>`}
+                    </div>
+                  `;
+                }).join("")
+              : `<div class="muted-note">⚠️ No questions returned</div>`}
+          </div>
+        </section>
+      `;
     }
 
     function resolveModeContent(data, mode) {
@@ -2402,30 +2435,6 @@
       }
     }
 
-    function renderCrossSection(crossData, crossText) {
-      const crossSection = document.getElementById("cross-section");
-      if (!crossSection) return;
-
-      if (!crossData || !Array.isArray(crossData.questions)) {
-        crossSection.innerHTML = `<div class="muted-note">Cross unavailable</div>`;
-        return;
-      }
-
-      const crossQuestions = crossData.questions;
-
-      crossSection.innerHTML = `
-        <div class="worksheet-section">
-          <h3>🌎 Cross-Curricular</h3>
-          ${renderPassage(crossText || crossData.passage || "")}
-          ${crossQuestions.length
-            ? renderCross({ ...crossData, questions: crossQuestions })
-            : `<div>⚠️ No questions returned</div>`}
-        </div>
-      `;
-      crossSection.style.display = "block";
-      console.log("🌎 CROSS RENDERED");
-    }
-
     function renderTutorSection(tutorData, mode = currentMode) {
       const tutorSection = document.getElementById("tutor-block") || document.getElementById("tutor-section");
       if (!tutorSection) return;
@@ -2682,7 +2691,11 @@
       clearRenderedSections();
       renderPracticeSection(data.practice, data.passage);
       if (data?.cross?.questions?.length) {
-        renderCrossSection(data.cross, data.cross.passage);
+        const crossSection = document.getElementById("cross-section");
+        if (crossSection) {
+          crossSection.innerHTML = renderCross(data.cross);
+          crossSection.style.display = "block";
+        }
       } else {
         document.getElementById("cross-section").innerHTML = `
           <div class="mode-label">Cross-Curricular Mode</div>
@@ -3077,9 +3090,11 @@
 
         renderPracticeSection(practiceDataState, generatedPassage);
 
+        console.log("CROSS RENDER DATA:", crossDataState);
         const crossSection = document.getElementById("cross-section");
         if (crossSection) {
           crossSection.innerHTML = renderCross(crossDataState);
+          crossSection.style.display = "block";
         }
 
         const tutorSection = document.getElementById("tutor-section");
