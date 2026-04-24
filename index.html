@@ -2435,18 +2435,14 @@
       }
     }
 
-    function renderTutorSection(tutorData, mode = currentMode) {
+    function renderTutorSection(tutorData) {
       const tutorSection = document.getElementById("tutor-block") || document.getElementById("tutor-section");
       if (!tutorSection) return;
-      const passage = mode === "cross" ? (currentData?.cross?.passage || "") : (currentData?.passage || "");
-      const enrichedTutor = tutorData;
-      console.log("🔥 TUTOR MODE USING:", mode);
-      console.log("🔥 PASSAGE USED:", passage);
-      console.log("🔥 TUTOR DATA:", enrichedTutor);
       const practiceTutor = Array.isArray(tutorData?.practice) ? tutorData.practice : [];
       const crossTutor = Array.isArray(tutorData?.cross) ? tutorData.cross : [];
-      const practiceTutorMarkup = renderTutor(practiceTutor, "Tutor");
-      const crossTutorMarkup = renderTutor(crossTutor, "Tutor");
+      const practiceTutorMarkup = renderTutor(practiceTutor, "tutor") || `<p class="muted-note">No practice tutor support available.</p>`;
+      const crossTutorMarkup = renderTutor(crossTutor, "tutor") || `<p class="muted-note">No cross-curricular tutor support available.</p>`;
+      console.log("🔥 TUTOR DATA:", { practice: practiceTutor.length, cross: crossTutor.length });
       tutorSection.innerHTML = `
         <section class="worksheet-section">
           <h3>🧠 Tutor Support</h3>
@@ -2464,13 +2460,14 @@
       `;
     }
 
-    function renderAnswerSection(answerKeyData, mode = currentMode) {
+    function renderAnswerSection(answerKeyData) {
       const answerSection = document.getElementById("answer-block") || document.getElementById("answer-section");
       if (!answerSection) return;
       const practiceAnswers = Array.isArray(answerKeyData?.practice) ? answerKeyData.practice : [];
       const crossAnswers = Array.isArray(answerKeyData?.cross) ? answerKeyData.cross : [];
-      const practiceAnswerMarkup = renderAnswerKey(practiceAnswers, "Answer Key");
-      const crossAnswerMarkup = renderAnswerKey(crossAnswers, "Answer Key");
+      const practiceAnswerMarkup = renderAnswerKey(practiceAnswers, "answer key") || `<p class="muted-note">No practice answers available.</p>`;
+      const crossAnswerMarkup = renderAnswerKey(crossAnswers, "answer key") || `<p class="muted-note">No cross-curricular answers available.</p>`;
+      console.log("🔥 ANSWER DATA:", { practice: practiceAnswers.length, cross: crossAnswers.length });
       answerSection.innerHTML = `
         <section class="worksheet-section">
           <h3>✅ Answer Key</h3>
@@ -2731,10 +2728,10 @@
       console.log("🔥 TUTOR LENGTH:", tutorData?.[mode]?.length || 0);
       console.log("🔥 ANSWER LENGTH:", answerData?.[mode]?.length || 0);
       if (Array.isArray(tutorData?.practice) || Array.isArray(tutorData?.cross)) {
-        renderTutorSection(tutorData, mode);
+        renderTutorSection(tutorData);
       }
       if (Array.isArray(answerData?.practice) || Array.isArray(answerData?.cross)) {
-        renderAnswerSection(answerData, mode);
+        renderAnswerSection(answerData);
       }
     }
 
@@ -3090,22 +3087,15 @@
 
         renderPracticeSection(practiceDataState, generatedPassage);
 
-        console.log("CROSS RENDER DATA:", crossDataState);
+        console.log("FRONTEND FINAL DATA:", currentData);
         const crossSection = document.getElementById("cross-section");
         if (crossSection) {
-          crossSection.innerHTML = renderCross(crossDataState);
+          crossSection.innerHTML = renderCross(currentData?.cross || { passage: "", questions: [] });
           crossSection.style.display = "block";
         }
 
-        const tutorSection = document.getElementById("tutor-section");
-        if (tutorSection) {
-          tutorSection.innerHTML = renderTutor(tutorDataState?.practice || []);
-        }
-
-        const answerSection = document.getElementById("answer-section");
-        if (answerSection) {
-          answerSection.innerHTML = renderAnswerKey(answerKeyDataState?.practice || []);
-        }
+        renderTutorSection(currentData?.tutor || { practice: [], cross: [] });
+        renderAnswerSection(currentData?.answerKey || { practice: [], cross: [] });
 
         setMode("practice");
         const toggle = document.getElementById("view-toggle");
