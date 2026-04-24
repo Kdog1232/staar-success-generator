@@ -1414,7 +1414,8 @@
     let crossContent = "";
     let structuredQuestions = [];
     let generatedPassage = "";
-    let currentData = null;
+    let coreData = null;
+    let supportData = null;
     let practiceDataState = null;
     let crossDataState = null;
     let tutorDataState = null;
@@ -2714,16 +2715,26 @@
     }
 
     function renderActivePanels() {
-      if (!currentData) return;
+      if (!coreData) return;
       try {
-        validateSupportIntegrity(currentData);
-        validateAlignment(currentData);
+        if (supportData) {
+          validateSupportIntegrity({
+            ...coreData,
+            tutor: supportData?.tutor || { practice: [], cross: [] },
+            answerKey: supportData?.answerKey || { practice: [], cross: [] }
+          });
+          validateAlignment({
+            ...coreData,
+            tutor: supportData?.tutor || { practice: [], cross: [] },
+            answerKey: supportData?.answerKey || { practice: [], cross: [] }
+          });
+        }
       } catch (supportError) {
         console.warn("⚠️ Support panels not ready yet:", supportError?.message || supportError);
       }
       const mode = getActiveMode();
-      const tutorData = currentData?.tutor || { practice: [], cross: [] };
-      const answerData = currentData?.answerKey || { practice: [], cross: [] };
+      const tutorData = supportData?.tutor || { practice: [], cross: [] };
+      const answerData = supportData?.answerKey || { practice: [], cross: [] };
       console.log("🔥 MODE:", mode);
       console.log("🔥 TUTOR LENGTH:", tutorData?.[mode]?.length || 0);
       console.log("🔥 ANSWER LENGTH:", answerData?.[mode]?.length || 0);
@@ -2776,7 +2787,7 @@
         label.textContent = labels[mode] || "";
       }
 
-      if (currentData) {
+      if (coreData) {
         renderActivePanels();
       }
     }
@@ -2955,7 +2966,8 @@
       crossDataState = null;
       tutorDataState = null;
       answerKeyDataState = null;
-      currentData = null;
+      coreData = null;
+      supportData = null;
     }
 
     async function generate() {
@@ -3044,6 +3056,29 @@
           practice: normalizedCore?.practice || data?.practice || { questions: [] },
           cross: normalizedCore?.cross || data?.cross || { passage: "", questions: [] }
         };
+        coreData = core;
+        practiceDataState = coreData.practice;
+        crossDataState = coreData.cross;
+        tutorDataState = null;
+        answerKeyDataState = null;
+        generatedPassage = coreData.passage;
+
+        ensureWorksheetShell();
+
+        renderPracticeSection(practiceDataState, generatedPassage);
+
+        console.log("FRONTEND CORE DATA:", coreData);
+        const crossSection = document.getElementById("cross-section");
+        if (crossSection) {
+          crossSection.innerHTML = renderCross(coreData?.cross || { passage: "", questions: [] });
+          crossSection.style.display = "block";
+        }
+
+        setMode("practice");
+        const toggle = document.getElementById("view-toggle");
+        if (toggle) toggle.style.display = "flex";
+
+        if (!coreData) return;
 
         let enrichment = null;
         try {
@@ -3053,53 +3088,34 @@
             grade,
             skill,
             level,
-            passage: core.passage,
-            practiceQuestions: core?.practice?.questions,
-            cross: core.cross
+            passage: coreData.passage,
+            practiceQuestions: coreData?.practice?.questions,
+            cross: coreData.cross
           });
         } catch (supportErr) {
           console.warn("⚠️ Support failed, using fallback enrichment:", supportErr);
         }
 
         if (currentRequestId !== requestId) return;
+        if (!coreData) return;
 
-        const safeEnrichment = enrichment && Object.keys(enrichment).length
-          ? enrichment
+        supportData = enrichment && Object.keys(enrichment).length
+          ? {
+            tutor: enrichment?.tutor || { practice: [], cross: [] },
+            answerKey: enrichment?.answerKey || { practice: [], cross: [] }
+          }
           : {
             tutor: { practice: [], cross: [] },
             answerKey: { practice: [], cross: [] }
           };
 
-        const finalData = normalizeWorkerPayload({
-          ...core,
-          tutor: safeEnrichment?.tutor || { practice: [], cross: [] },
-          answerKey: safeEnrichment?.answerKey || { practice: [], cross: [] }
-        });
+        tutorDataState = supportData.tutor;
+        answerKeyDataState = supportData.answerKey;
 
-        currentData = finalData;
-        practiceDataState = finalData.practice;
-        crossDataState = finalData.cross;
-        tutorDataState = finalData.tutor;
-        answerKeyDataState = finalData.answerKey;
-        generatedPassage = finalData.passage;
-
-        ensureWorksheetShell();
-
-        renderPracticeSection(practiceDataState, generatedPassage);
-
-        console.log("FRONTEND FINAL DATA:", currentData);
-        const crossSection = document.getElementById("cross-section");
-        if (crossSection) {
-          crossSection.innerHTML = renderCross(currentData?.cross || { passage: "", questions: [] });
-          crossSection.style.display = "block";
+        if (supportData) {
+          renderTutorSection(supportData.tutor || { practice: [], cross: [] });
+          renderAnswerSection(supportData.answerKey || { practice: [], cross: [] });
         }
-
-        renderTutorSection(currentData?.tutor || { practice: [], cross: [] });
-        renderAnswerSection(currentData?.answerKey || { practice: [], cross: [] });
-
-        setMode("practice");
-        const toggle = document.getElementById("view-toggle");
-        if (toggle) toggle.style.display = "flex";
 
         console.log("🎯 RENDER COMPLETE");
       } catch (err) {
