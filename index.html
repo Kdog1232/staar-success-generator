@@ -885,6 +885,44 @@
       color: #15803d;
     }
 
+    .fade-in {
+      opacity: 0;
+      transform: translateY(8px);
+      animation: fadeInUp 0.4s ease forwards;
+    }
+
+    @keyframes fadeInUp {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .section-fade {
+      animation: fadeIn 0.4s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .correct {
+      background: #e6f4ea;
+      border-left: 4px solid #34a853;
+      padding-left: 8px;
+    }
+
+    .pulse {
+      animation: pulse 0.6s ease;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+
     .helper-text {
       font-size: 13px;
       color: #6b7280;
@@ -1423,6 +1461,7 @@
     let currentRequestId = 0;
     let cachedSession = null;
     let cachedUser = null;
+    let thinkingIntervalId = null;
     let authReady = false;
     let authRevealRequested = false;
     let authMode = "signup";
@@ -2050,7 +2089,7 @@
         const commonMistake = cleanText(q.common_mistake || "Choosing an answer that sounds right but is not proven by the text.");
         const parentTip = cleanText(q.parent_tip || "Ask your child to point to one detail that proves the best answer.");
         return `
-          <div class="tutor-item card think-card">
+          <div class="tutor-item card think-card fade-in" style="animation-delay:${i * 0.1}s;">
             <p class="question-text">Question ${i + 1} Strategy</p>
             <p class="helper-text hint"><span class="label">Hint:</span> ${hint}</p>
             <details class="think-details">
@@ -2079,7 +2118,7 @@
         const safeCommonMistake = cleanText(entry?.common_mistake || "Choosing an answer that sounds right but is not supported by the passage.");
         const safeParentTip = cleanText(entry?.parent_tip || "Ask your child to point to one line in the passage that proves the correct answer.");
         return `
-          <div class="answer-card answer-block card">
+          <div class="answer-card answer-block card correct fade-in" style="animation-delay:${i * 0.05}s;">
             <div class="question-text correct-answer"><strong>${i + 1}. ${safeCorrect}</strong></div>
             <div class="explanation explanation-why"><span class="label">✔ Why:</span> ${safeExplanation}</div>
             <div class="common-mistake explanation-mistake">
@@ -2106,7 +2145,7 @@
       const questions = Array.isArray(cross?.questions) ? cross.questions : [];
 
       return `
-        <section class="worksheet-section">
+        <section class="worksheet-section section-fade">
           <h3>🌎 Cross-Curricular Mode</h3>
           ${passage ? `
             <div class="passage-block">
@@ -2269,6 +2308,12 @@
       return completedToday;
     }
 
+    function getDailyProgressCount() {
+      const todayKey = getTodayKey();
+      const progressState = JSON.parse(localStorage.getItem("staar-progress") || "{}");
+      return progressState.date === todayKey ? (progressState.count || 0) : 0;
+    }
+
     function buildTutorGuidance(questions, answerKey) {
       const cleanedQuestions = cleanText(questions);
       const cleanedAnswerKey = cleanText(answerKey);
@@ -2330,6 +2375,18 @@
       if (!outputContainer) return;
 
       outputContainer.innerHTML = `
+        <div id="progress-container" style="margin-bottom:16px;">
+          <div style="font-weight:600; margin-bottom:6px;">
+            📊 Daily Progress
+          </div>
+          <div style="background:#eee; border-radius:8px; overflow:hidden;">
+            <div id="progress-bar" style="height:10px; width:0%; background:#4caf50;"></div>
+          </div>
+          <div id="skill-stats" style="margin-top:12px; font-size:13px;"></div>
+          <div style="margin-top:6px; font-size:11px; color:#64748b;">
+            Progress is saved on this device.
+          </div>
+        </div>
         <div class="worksheet">
           <p id="mode-status">Mode: Practice Mode ON</p>
           <div id="practice-section"></div>
@@ -2337,7 +2394,182 @@
           <div id="tutor-section" style="display:none;"></div>
           <div id="answer-section" style="display:none;"></div>
         </div>
+        <div id="completion-feedback"></div>
+        <div id="next-step-container" style="margin-top:16px;">
+          <button onclick="generate()" style="
+            padding:12px;
+            background:#1e3a5f;
+            color:white;
+            border:none;
+            border-radius:8px;
+            font-weight:600;
+            width:100%;
+          ">
+            🔁 Practice Another Skill
+          </button>
+        </div>
       `;
+      updateProgressBar(getDailyProgressCount());
+      renderSkillStats();
+    }
+
+    function updateProgressBar(completed) {
+      const percent = Math.min((completed / 10) * 100, 100);
+      const progressBar = document.getElementById("progress-bar");
+      if (progressBar) {
+        progressBar.style.width = `${percent}%`;
+      }
+    }
+
+    function trackSkill(skillName) {
+      const safeSkill = cleanText(skillName || "");
+      if (!safeSkill) return;
+      const data = JSON.parse(localStorage.getItem("skillProgress") || "{}");
+      data[safeSkill] = (data[safeSkill] || 0) + 1;
+      localStorage.setItem("skillProgress", JSON.stringify(data));
+    }
+
+    function renderSkillStats() {
+      const data = JSON.parse(localStorage.getItem("skillProgress") || "{}");
+      const skillStats = document.getElementById("skill-stats");
+      if (!skillStats) return;
+      const entries = Object.entries(data);
+      if (!entries.length) {
+        skillStats.innerHTML = "📈 Skill Progress: No skills tracked yet.";
+        return;
+      }
+
+      skillStats.innerHTML = `📈 Skill Progress:<br>${entries
+        .map(([skillName, count]) => `${cleanText(skillName)}: ${count} ✔`)
+        .join("<br>")}`;
+    }
+
+    function renderCompletionFeedback(skillName) {
+      const safeSkill = cleanText(skillName || "this skill");
+      const suggestions = {
+        "Making Inferences": "Author's Purpose",
+        "Author's Purpose": "Theme",
+        Theme: "Text Structure"
+      };
+      const nextSkill = suggestions[safeSkill];
+      const feedback = document.getElementById("completion-feedback");
+      if (!feedback) return;
+
+      feedback.innerHTML = `
+        <div style="
+          margin-top:16px;
+          padding:12px;
+          background:#e8f5e9;
+          border-radius:8px;
+          font-weight:600;
+          text-align:center;
+        ">
+          🚀 You're building mastery in ${safeSkill}!
+        </div>
+        ${nextSkill ? `
+          <div style="margin-top:10px; font-size:13px;">
+            👉 Next recommended skill: <b>${nextSkill}</b>
+          </div>
+        ` : ""}
+      `;
+    }
+
+    function showEnrichmentLoadingState() {
+      const crossSection = document.getElementById("cross-section");
+      if (crossSection) {
+        crossSection.style.display = "block";
+        crossSection.innerHTML = `
+          <div class="mode-label">Cross-Curricular Mode</div>
+          <p class="muted-note">🌎 Cross-Curricular: Loading...</p>
+        `;
+      }
+
+      const tutorSection = document.getElementById("tutor-section");
+      if (tutorSection) {
+        tutorSection.innerHTML = `
+          <section class="worksheet-section">
+            <h3>🧠 Tutor Support</h3>
+            <p class="muted-note">👨‍🏫 Tutor Mode: Loading...</p>
+          </section>
+        `;
+      }
+
+      const answerSection = document.getElementById("answer-section");
+      if (answerSection) {
+        answerSection.innerHTML = `
+          <section class="worksheet-section">
+            <h3>✅ Answer Key</h3>
+            <p class="muted-note">🧠 Answer Key: Loading...</p>
+          </section>
+        `;
+      }
+    }
+
+    function patchEnrichmentUI(enrichmentPayload) {
+      if (!coreData) return;
+      const normalizedEnrichment = normalizeWorkerPayload({
+        ...coreData,
+        cross: enrichmentPayload?.cross || { passage: "", questions: [] },
+        tutor: enrichmentPayload?.tutor || { practice: [], cross: [] },
+        answerKey: enrichmentPayload?.answerKey || { practice: [], cross: [] }
+      }, { fallbackPassage: coreData.passage });
+
+      coreData = {
+        ...coreData,
+        cross: normalizedEnrichment.cross
+      };
+      crossDataState = normalizedEnrichment.cross;
+
+      supportData = {
+        tutor: normalizedEnrichment?.tutor || { practice: [], cross: [] },
+        answerKey: normalizedEnrichment?.answerKey || { practice: [], cross: [] }
+      };
+
+      tutorDataState = supportData.tutor;
+      answerKeyDataState = supportData.answerKey;
+
+      const readyCrossSection = document.getElementById("cross-section");
+      if (readyCrossSection) {
+        readyCrossSection.innerHTML = `
+          <div class="section-fade">
+            ${renderCross(coreData?.cross || { passage: "", questions: [] })}
+          </div>
+        `;
+      }
+
+      renderTutorSection(supportData.tutor || { practice: [], cross: [] });
+      renderAnswerSection(supportData.answerKey || { practice: [], cross: [] });
+      renderActivePanels();
+    }
+
+    function clearThinkingIndicator() {
+      if (thinkingIntervalId) {
+        clearInterval(thinkingIntervalId);
+        thinkingIntervalId = null;
+      }
+    }
+
+    function startThinkingIndicator(requestId) {
+      clearThinkingIndicator();
+      const messages = [
+        "Analyzing passage...",
+        "Building STAAR-style questions...",
+        "Applying TEKS rigor...",
+        "Preparing tutor explanations..."
+      ];
+      let messageIndex = 0;
+      const indicator = document.getElementById("mode-indicator");
+      if (!indicator) return;
+
+      indicator.textContent = messages[messageIndex];
+      thinkingIntervalId = setInterval(() => {
+        if (!isGenerating || currentRequestId !== requestId) {
+          clearThinkingIndicator();
+          return;
+        }
+        messageIndex += 1;
+        indicator.textContent = messages[messageIndex % messages.length];
+      }, 2000);
     }
 
     function toTabLabel(tab) {
@@ -2411,7 +2643,7 @@
 
         questionList.forEach((q, i) => {
           const choices = Array.isArray(q?.choices) ? q.choices : [];
-          html += `    <div class="question-block">       <p><strong>${i + 1}. ${q?.question || "Missing question"}</strong></p>       <ul>
+          html += `    <div class="question-block fade-in" style="animation-delay:${i * 0.05}s;">       <p><strong>${i + 1}. ${q?.question || "Missing question"}</strong></p>       <ul>
         ${choices.map(c => `<li>${c}</li>`).join("")}       </ul>     </div>
   `;
         });
@@ -2437,7 +2669,7 @@
       const crossTutorMarkup = renderTutor(crossTutor, "tutor") || `<p class="muted-note">No cross-curricular tutor support available.</p>`;
       console.log("🔥 TUTOR DATA:", { practice: practiceTutor.length, cross: crossTutor.length });
       tutorSection.innerHTML = `
-        <section class="worksheet-section">
+        <section class="worksheet-section section-fade">
           <h3>🧠 Tutor Support</h3>
           <div class="split-container">
             <div class="split-panel">
@@ -2973,6 +3205,7 @@
       currentRequestId = requestId;
       console.log("🚀 GENERATE STARTED");
       const btn = document.getElementById("generate-btn");
+      const output = document.getElementById("output");
 
       try {
         if (btn) {
@@ -2981,7 +3214,14 @@
         }
 
         resetGeneratedPanelsState();
-        showLoadingUI();
+        if (output) {
+          output.innerHTML = `
+            <div style="padding:20px; text-align:center;">
+              <h2>📄 Building your STAAR Practice...</h2>
+              <p style="opacity:0.7;">Generating passage and questions...</p>
+            </div>
+          `;
+        }
 
         console.log("🟡 STEP 1: SESSION CHECK");
 
@@ -3033,24 +3273,30 @@
 
         ensureWorksheetShell();
         renderPracticeSection(practiceDataState, generatedPassage);
-
-        const crossSection = document.getElementById("cross-section");
-        if (crossSection) {
-          crossSection.style.display = "block";
-          crossSection.innerHTML = `
-            <div class="mode-label">Cross-Curricular Mode</div>
-            <p class="muted-note">⏳ Cross-curricular questions are generating…</p>
-          `;
-        }
-
-        const modeStatus = document.getElementById("mode-status");
-        if (modeStatus) {
-          modeStatus.textContent = "Mode: Practice Mode ON • Enrichment loading";
-        }
+        showEnrichmentLoadingState();
+        const progressCount = incrementDailyProgress();
+        updateProgressBar(progressCount);
+        trackSkill(skill);
+        renderSkillStats();
 
         setMode("practice");
         const toggle = document.getElementById("view-toggle");
         if (toggle) toggle.style.display = "flex";
+
+        const modeStatus = document.getElementById("mode-status");
+        if (modeStatus) {
+          modeStatus.textContent = "Mode: Practice Mode ON • Loading Cross/Tutor...";
+        }
+        const modeIndicator = document.getElementById("mode-indicator");
+        if (modeIndicator) {
+          modeIndicator.textContent = "Mode: Practice Mode ON • Loading Cross/Tutor...";
+          modeIndicator.classList.remove("pulse");
+          startThinkingIndicator(requestId);
+          setTimeout(() => {
+            if (currentRequestId !== requestId || !isGenerating) return;
+            modeIndicator.textContent = "Mode: Practice Mode ON • Almost ready...";
+          }, 8000);
+        }
 
         if (!coreData) return;
 
@@ -3065,42 +3311,21 @@
         })
           .then((enrichment) => {
             if (currentRequestId !== requestId || !coreData) return;
-
-            const normalizedEnrichment = normalizeWorkerPayload({
-              ...coreData,
-              cross: enrichment?.cross || { passage: "", questions: [] },
-              tutor: enrichment?.tutor || { practice: [], cross: [] },
-              answerKey: enrichment?.answerKey || { practice: [], cross: [] }
-            }, { fallbackPassage: coreData.passage });
-
-            coreData = {
-              ...coreData,
-              cross: normalizedEnrichment.cross
-            };
-            crossDataState = normalizedEnrichment.cross;
-
-            supportData = {
-              tutor: normalizedEnrichment?.tutor || { practice: [], cross: [] },
-              answerKey: normalizedEnrichment?.answerKey || { practice: [], cross: [] }
-            };
-
-            tutorDataState = supportData.tutor;
-            answerKeyDataState = supportData.answerKey;
-
-            const readyCrossSection = document.getElementById("cross-section");
-            if (readyCrossSection) {
-              readyCrossSection.innerHTML = renderCross(coreData?.cross || { passage: "", questions: [] });
-            }
-
-            renderTutorSection(supportData.tutor || { practice: [], cross: [] });
-            renderAnswerSection(supportData.answerKey || { practice: [], cross: [] });
+            patchEnrichmentUI(enrichment);
 
             const completedModeStatus = document.getElementById("mode-status");
             if (completedModeStatus) {
               completedModeStatus.textContent = "Mode: Practice Mode ON • Cross/Tutor ready";
             }
-
-            renderActivePanels();
+            const completedModeIndicator = document.getElementById("mode-indicator");
+            if (completedModeIndicator) {
+              clearThinkingIndicator();
+              completedModeIndicator.textContent = "✅ Everything ready!";
+              completedModeIndicator.classList.remove("pulse");
+              void completedModeIndicator.offsetWidth;
+              completedModeIndicator.classList.add("pulse");
+            }
+            renderCompletionFeedback(skill);
             console.log("🎯 ENRICHMENT RENDER COMPLETE");
           })
           .catch((supportErr) => {
@@ -3121,6 +3346,7 @@
         }
       } finally {
         isGenerating = false;
+        clearThinkingIndicator();
 
         if (btn) {
           btn.disabled = false;
