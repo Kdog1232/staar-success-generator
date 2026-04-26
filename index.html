@@ -2201,7 +2201,7 @@
 
     async function fetchPracticeCore({ token, subject, grade, skill, level }) {
       const response = await fetch(
-        "https://qadfehickkkvirtcnska.supabase.co/functions/v1/generate-practice",
+        "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
         {
           method: "POST",
           headers: {
@@ -3017,17 +3017,8 @@
 
         console.log("✅ CORE DATA RECEIVED:", coreResponse);
 
-        const normalizedCore = normalizeWorkerPayload({
-          ...coreResponse,
-          passage: coreResponse?.passage || "",
-          cross: { passage: "", questions: [] },
-          tutor: { practice: [], cross: [] },
-          answerKey: { practice: [], cross: [] }
-        });
-
         const core = {
-          ...normalizedCore,
-          passage: normalizedCore?.passage || coreResponse?.passage || "",
+          passage: coreResponse?.passage || "",
           practice: coreResponse?.practice || { questions: coreResponse?.questions || [] },
           cross: { passage: "", questions: [] }
         };
