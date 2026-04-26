@@ -2210,6 +2210,7 @@
             apikey: SUPABASE_ANON_KEY
           },
           body: JSON.stringify({
+            mode: "core",
             subject,
             grade,
             skill,
@@ -2227,7 +2228,7 @@
 
     async function fetchEnrichment({ token, subject, grade, skill, level, passage, practiceQuestions }) {
       const response = await fetch(
-        "https://qadfehickkkvirtcnska.supabase.co/functions/v1/generate-enrichment",
+        "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
         {
           method: "POST",
           headers: {
@@ -2236,12 +2237,13 @@
             apikey: SUPABASE_ANON_KEY
           },
           body: JSON.stringify({
+            mode: "enrichment",
             subject,
             grade,
             skill,
             level,
             passage,
-            practice: Array.isArray(practiceQuestions) ? practiceQuestions : []
+            practiceQuestions: Array.isArray(practiceQuestions) ? practiceQuestions : []
           })
         }
       );
