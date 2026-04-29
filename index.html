@@ -2259,7 +2259,16 @@
       );
 
       if (!response.ok) {
-        throw new Error(`PRACTICE_STATUS_${response.status}`);
+        let errorMessage = `PRACTICE_STATUS_${response.status}`;
+        try {
+          const errorBody = await response.json();
+          if (typeof errorBody?.error === "string" && errorBody.error.trim()) {
+            errorMessage = errorBody.error.trim();
+          }
+        } catch {
+          // no-op: fallback to status error
+        }
+        throw new Error(errorMessage);
       }
 
       return response.json();
@@ -3332,11 +3341,35 @@
             console.warn("⚠️ Enrichment failed:", supportErr);
           });
 
+        if (cachedUser?.id) {
+          try {
+            await supabase.rpc("increment_generation", { uid: cachedUser.id });
+            await refreshUsageStatus(cachedUser.id);
+          } catch (err) {
+            console.error("⚠️ Failed to track generation:", err);
+          }
+        }
+
         console.log("🎯 CORE RENDER COMPLETE");
       } catch (err) {
         console.error("💥 GENERATE FAILED:", err);
 
         const outputDiv = document.getElementById("output");
+        const errorMessage = err?.message || "";
+        const freeLimitReached = errorMessage.toLowerCase().includes("free limit reached");
+
+        if (freeLimitReached) {
+          if (outputDiv) {
+            outputDiv.innerHTML = `
+              <div style="color:#ffb347;font-weight:700; text-align:center; padding:20px;">
+                Free limit reached. Upgrade to keep generating.
+              </div>
+            `;
+          }
+          window.open(GUMROAD_URL, "_blank", "noopener,noreferrer");
+          return;
+        }
+
         if (outputDiv) {
           outputDiv.innerHTML = `
             <div style="color:red;font-weight:600;">
