@@ -1095,6 +1095,10 @@
       color: #0f172a;
     }
 
+    .testimonial-header {
+      text-align: center;
+    }
+
     .testimonial-header h2 {
       font-size: 28px;
       margin-bottom: 8px;
@@ -1105,16 +1109,24 @@
       margin-bottom: 10px;
     }
 
-    .testimonial-rating {
-      font-size: 18px;
-      color: #fbbf24;
+    .rating-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 10px;
       margin-bottom: 30px;
     }
 
-    .testimonial-rating span {
-      color: #374151;
-      font-size: 14px;
-      margin-left: 6px;
+    .rating-row .stars {
+      display: flex;
+      margin-bottom: 0;
+    }
+
+    .rating-text {
+      font-size: 16px;
+      color: #334155;
+      white-space: nowrap;
     }
 
     .testimonial-grid {
@@ -1145,6 +1157,7 @@
       color: #fbbf24;
       margin-bottom: 8px;
       font-size: 18px;
+      line-height: 1;
     }
 
     .testimonial-card p {
@@ -1232,8 +1245,8 @@
     <header class="header section hero-text">
       <div class="header-inner">
         <div class="header-content">
-          <h1>10-Minute Daily Practice That Feels Like a Personal Tutor</h1>
-          <p>Build real understanding across reading, math, science, and social studies with instant practice and explanations.</p>
+          <h1>Build a Differentiated STAAR Lesson in Minutes</h1>
+          <p>Generate 2–3 targeted versions in under a minute for whole group, MTSS support, and advanced learners.</p>
         </div>
       </div>
     </header>
@@ -1244,7 +1257,7 @@
       </div>
       <div class="hero-cta-button">
         <button onclick="generate()" class="generate-btn">
-          Generate Practice Now
+          Create First Practice Set
         </button>
       </div>
     </section>
@@ -1324,7 +1337,15 @@
         </form>
       </div>
 
-      <button id="generate-btn" class="generate-btn" type="button" onclick="generate()">Generate STAAR Pack</button>
+      <button id="generate-btn" class="generate-btn" type="button" onclick="generate()">Create First STAAR Set</button>
+      <p id="differentiation-prompt" style="margin-top:10px; color:#334155; font-weight:600; white-space:pre-line;">
+        Most teachers generate 2–3 versions:
+        • On Level (whole group)
+        • Below Level (support)
+        • Advanced (challenge)
+
+        Create your second version now.
+      </p>
       <p id="auth-required-note" style="display:none; margin-top:10px; color:#7a2e00; font-weight:600;">
         Create a free account to generate your first practice set.
       </p>
@@ -1339,7 +1360,7 @@
         <button id="answer-tab" class="mode-btn" data-mode="answer" type="button">🧠 Answer Key</button>
       </div>
       <div id="mode-indicator"></div>
-      <div id="output">Your STAAR practice will appear here...</div>
+      <div id="output">Your differentiated STAAR set will appear here...</div>
     </section>
 
     <div class="print-row">
@@ -1354,8 +1375,9 @@
       <p class="testimonial-sub">
         Helping students build confidence and improve STAAR performance
       </p>
-      <div class="testimonial-rating">
-        ⭐⭐⭐⭐⭐ <span>4.9 average rating</span>
+      <div class="rating-row">
+        <div class="stars">⭐⭐⭐⭐⭐</div>
+        <span class="rating-text">4.9 average rating</span>
       </div>
     </div>
 
@@ -1472,7 +1494,7 @@
       currentController = null;
       if (generateBtn) {
         generateBtn.disabled = false;
-        generateBtn.textContent = "Generate STAAR Pack";
+        generateBtn.textContent = "Create First STAAR Set";
       }
       console.log("✅ Generate reset complete");
     }
@@ -1627,7 +1649,7 @@
       const emailLabel = document.getElementById("logged-in-email");
       const profilePlan = document.getElementById("profile-plan");
       const banner = document.getElementById("upgrade-banner");
-      outputDiv.innerText = "Your STAAR practice will appear here...";
+      outputDiv.innerText = "Your differentiated STAAR set will appear here...";
       viewToggle.style.display = "none";
       contentMode = "standard";
       resetGenerateState();
@@ -3203,6 +3225,24 @@
       supportData = null;
     }
 
+    function updateDifferentiationPrompt(currentLevel) {
+      const promptEl = document.getElementById("differentiation-prompt");
+      if (!promptEl) return;
+      const focusLine = currentLevel === "Below"
+        ? "You just built Below Level — next build On Level or Advanced."
+        : currentLevel === "Advanced"
+          ? "You just built Advanced — next build On Level or Below Level."
+          : "You just built On Level — next build Below Level or Advanced.";
+
+      promptEl.textContent = `Most teachers generate 2–3 versions:
+• On Level (whole group)
+• Below Level (support)
+• Advanced (challenge)
+
+${focusLine}
+Create your second version now.`;
+    }
+
     async function generate() {
       if (isGenerating) {
         console.warn("⚠️ BLOCKED — already running");
@@ -3226,8 +3266,8 @@
         if (output) {
           output.innerHTML = `
             <div style="padding:20px; text-align:center;">
-              <h2>📄 Building your STAAR Practice...</h2>
-              <p style="opacity:0.7;">Generating passage and questions...</p>
+            <h2>📄 Building your STAAR set...</h2>
+              <p style="opacity:0.7;">Building your first version...<br>Next: we’ll help you create versions for your other groups.</p>
             </div>
           `;
         }
@@ -3253,6 +3293,7 @@
         const subject = document.getElementById("subject")?.value;
         const skill = document.getElementById("skill")?.value;
         const level = document.getElementById("level")?.value;
+        updateDifferentiationPrompt(level);
 
         console.log("📦 PAYLOAD:", { grade, subject, skill, level });
 
@@ -3383,7 +3424,7 @@
 
         if (btn) {
           btn.disabled = false;
-          btn.textContent = "Generate STAAR Pack";
+          btn.textContent = "Create another differentiated set";
         }
 
         console.log("🔓 GENERATE RESET COMPLETE");
