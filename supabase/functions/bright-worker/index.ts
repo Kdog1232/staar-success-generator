@@ -5079,6 +5079,21 @@ serve(async (req) => {
       );
     }
 
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    const supabaseAdmin = serviceRoleKey
+      ? createClient(Deno.env.get("SUPABASE_URL")!, serviceRoleKey)
+      : null;
+    let generationTracked = false;
+    const trackGeneration = async () => {
+      if (generationTracked || !supabaseAdmin) return;
+      const { error } = await supabaseAdmin.rpc("increment_generations", { user_id: user.id });
+      if (error) {
+        console.error("Failed to increment generations:", error);
+        return;
+      }
+      generationTracked = true;
+    };
+
     let body: Record<string, unknown>;
     try {
       body = await req.json();
@@ -5321,6 +5336,7 @@ serve(async (req) => {
       }
       crossQuestions = crossQuestions.slice(0, 5);
 
+      await trackGeneration();
       return jsonResponse({
         teks: teksCode,
         skill,
@@ -5462,6 +5478,7 @@ serve(async (req) => {
             : "";
           returnType = "PRACTICE_ONLY";
           logReturnMetrics();
+          await trackGeneration();
           return jsonResponse({
             practice: {
               passage: finalPracticePassage,
@@ -5790,6 +5807,7 @@ serve(async (req) => {
         };
         returnType = "PRIMARY";
         logReturnMetrics();
+        await trackGeneration();
         return returnEnrichment(bestAttempt);
       } catch (err) {
         console.error("BACKEND ERROR:", err);
