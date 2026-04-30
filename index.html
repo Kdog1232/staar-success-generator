@@ -511,6 +511,25 @@
       transform: scale(0.98);
     }
 
+    .usage-hint {
+      margin-bottom: 10px;
+    }
+
+    .success-hint {
+      margin-top: 10px;
+      color: #166534;
+      font-weight: 600;
+    }
+
+    .next-step {
+      margin-top: 12px;
+    }
+
+    .generate-btn.secondary {
+      background: #e2e8f0;
+      color: #1e293b;
+    }
+
     .hero {
       text-align: center;
       margin-bottom: 32px;
@@ -1109,16 +1128,31 @@
       margin-bottom: 10px;
     }
 
-    .rating-row {
+    .testimonial-rating {
       display: flex;
-      align-items: center;
       justify-content: center;
-      gap: 12px;
+      width: 100%;
       margin-top: 10px;
       margin-bottom: 30px;
+      text-align: center;
     }
 
-    .rating-row .stars {
+    .rating-center {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      text-align: center;
+    }
+
+    .rating-center * {
+      vertical-align: middle;
+    }
+
+    .rating-center .stars {
+      color: #fbbf24;
+      font-size: 20px;
+      line-height: 1;
       display: flex;
       margin-bottom: 0;
     }
@@ -1257,7 +1291,7 @@
       </div>
       <div class="hero-cta-button">
         <button onclick="generate()" class="generate-btn">
-          Create First Practice Set
+          Create First STAAR Set
         </button>
       </div>
     </section>
@@ -1337,8 +1371,7 @@
         </form>
       </div>
 
-      <button id="generate-btn" class="generate-btn" type="button" onclick="generate()">Create First STAAR Set</button>
-      <p id="differentiation-prompt" style="margin-top:10px; color:#334155; font-weight:600; white-space:pre-line;">
+      <p id="differentiation-prompt" class="usage-hint" style="margin-top:0; color:#334155; font-weight:600; white-space:pre-line;">
         Most teachers generate 2–3 versions:
         • On Level (whole group)
         • Below Level (support)
@@ -1346,6 +1379,8 @@
 
         Create your second version now.
       </p>
+      <button id="generate-btn" class="generate-btn" type="button" onclick="generate()">Create First STAAR Set</button>
+      <p id="generation-success-hint" class="success-hint" style="display:none;">✅ First version created — now build your support or advanced group</p>
       <p id="auth-required-note" style="display:none; margin-top:10px; color:#7a2e00; font-weight:600;">
         Create a free account to generate your first practice set.
       </p>
@@ -1375,9 +1410,11 @@
       <p class="testimonial-sub">
         Helping students build confidence and improve STAAR performance
       </p>
-      <div class="rating-row">
-        <div class="stars">⭐⭐⭐⭐⭐</div>
-        <span class="rating-text">4.9 average rating</span>
+      <div class="testimonial-rating">
+        <div class="rating-center">
+          <span class="stars">★★★★★</span>
+          <span class="rating-text">4.9 average rating</span>
+        </div>
       </div>
     </div>
 
@@ -1474,6 +1511,7 @@
     let crossContent = "";
     let structuredQuestions = [];
     let generatedPassage = "";
+    let hasShownSuccessHint = false;
     let coreData = null;
     let supportData = null;
     let practiceDataState = null;
@@ -2426,11 +2464,9 @@
           <div id="answer-section" style="display:none;"></div>
         </div>
         <div id="completion-feedback"></div>
-        <div id="next-step-container" style="margin-top:16px;">
-          <button onclick="generate()" style="
+        <div id="next-step-container" class="next-step" style="margin-top:16px;">
+          <button onclick="generate()" class="generate-btn secondary" style="
             padding:12px;
-            background:#1e3a5f;
-            color:white;
             border:none;
             border-radius:8px;
             font-weight:600;
@@ -3329,6 +3365,12 @@ Create your second version now.`;
         trackSkill(skill);
         renderSkillStats();
 
+        if (!hasShownSuccessHint) {
+          const successHint = document.getElementById("generation-success-hint");
+          if (successHint) successHint.style.display = "block";
+          hasShownSuccessHint = true;
+        }
+
         setMode("practice");
         const toggle = document.getElementById("view-toggle");
         if (toggle) toggle.style.display = "flex";
@@ -3383,12 +3425,9 @@ Create your second version now.`;
           });
 
         if (cachedUser?.id) {
-          try {
-            await supabase.rpc("increment_generation", { uid: cachedUser.id });
+          setTimeout(async () => {
             await refreshUsageStatus(cachedUser.id);
-          } catch (err) {
-            console.error("⚠️ Failed to track generation:", err);
-          }
+          }, 500);
         }
 
         console.log("🎯 CORE RENDER COMPLETE");
