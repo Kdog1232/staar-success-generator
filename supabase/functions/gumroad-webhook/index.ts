@@ -14,7 +14,16 @@ serve(async (req) => {
 
   try {
     console.log("[gumroad-webhook] Incoming webhook event");
-    const body = await req.json();
+    const contentType = req.headers.get("content-type") || "";
+    let body: any = {};
+
+    if (contentType.includes("application/json")) {
+      body = await req.json();
+    } else {
+      const formData = await req.formData();
+      body = Object.fromEntries(formData.entries());
+    }
+
     console.log("[gumroad-webhook] Payload received");
 
     const supabaseAdmin = createClient(
@@ -60,10 +69,18 @@ serve(async (req) => {
       });
     }
 
-    if (expectedProductId && productId !== expectedProductId) {
-      console.log("[gumroad-webhook] Validation result: product mismatch (ignored safely)");
-      return new Response(JSON.stringify({ success: true, message: "Ignored: product mismatch" }), {
-        status: 200,
+    if (!expectedProductId) {
+      console.log("[gumroad-webhook] Validation result: missing GUMROAD_PRODUCT_ID env");
+      return new Response(JSON.stringify({ error: "Server misconfigured" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (productId !== expectedProductId) {
+      console.log("[gumroad-webhook] Validation result: invalid product (ignored)");
+      return new Response(JSON.stringify({ error: "Invalid product" }), {
+        status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -71,7 +88,7 @@ serve(async (req) => {
     console.log("[gumroad-webhook] Validation result: accepted");
 
     // Normalize email to prevent casing/format matching issues.
-    const email = (body?.email || body?.purchase?.email || "").toLowerCase().trim();
+    const email = String(body?.email || body?.purchase?.email || "").toLowerCase().trim();
     console.log("[gumroad-webhook] Extracted email:", email);
 
     if (!email) {
@@ -81,6 +98,12 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    console.log("💰 PURCHASE EVENT:", {
+      email,
+      product: body?.product_name || body?.purchase?.product_name || "(unknown)",
+      price: body?.price || body?.purchase?.price || "(unknown)",
+    });
 
     // Lookup user profile by normalized email.
     const { data: profile, error: profileError } = await supabaseAdmin
@@ -107,6 +130,7 @@ serve(async (req) => {
     }
 
     if (!profile) {
+      console.log("⚠️ No matching user — possible email mismatch:", email);
       console.log("[gumroad-webhook] No profile returned; acking webhook for email:", email);
       return new Response(JSON.stringify({ success: true, message: "No matching user yet; webhook acknowledged." }), {
         status: 200,

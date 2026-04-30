@@ -511,6 +511,28 @@
       transform: scale(0.98);
     }
 
+
+    .how-to-use {
+      background: #f8fafc;
+      border: 1px solid #dbe4f0;
+      border-radius: 14px;
+      padding: 16px 18px;
+      margin: 0 0 16px;
+      color: #1e293b;
+    }
+
+    .how-to-use h3 {
+      margin: 0 0 8px;
+      color: #1e3a5f;
+      font-size: 1.05rem;
+    }
+
+    .level-hint {
+      font-size: 13px;
+      color: #64748b;
+      margin-top: 4px;
+    }
+
     .usage-hint {
       margin-bottom: 10px;
     }
@@ -1166,12 +1188,16 @@
     .testimonial-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      align-items: stretch;
       gap: 20px;
       max-width: 900px;
       margin: 0 auto;
     }
 
     .testimonial-card {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
       background: white;
       padding: 20px;
       border-radius: 14px;
@@ -1291,7 +1317,7 @@
       </div>
       <div class="hero-cta-button">
         <button onclick="generate()" class="generate-btn">
-          Create First STAAR Set
+          Generate Your Do Now (10 seconds)
         </button>
       </div>
     </section>
@@ -1305,6 +1331,72 @@
     </section>
 
     <div class="main-card section">
+    <div class="how-to-use">
+      <h3>How to Use This Tool (Important)</h3>
+      <p style="margin-bottom:10px;">
+        This tool is designed for <strong>differentiated instruction</strong>, meaning the rigor changes based on the level you select.
+      </p>
+
+      <ul style="padding-left:18px; line-height:1.6;">
+        <li><strong>Below Level</strong> → Designed for intervention, small group, and Tier 2/3 support</li>
+        <li><strong>On Level</strong> → Aligned to grade-level STAAR expectations (this is your standard classroom rigor)</li>
+        <li><strong>Advanced</strong> → Higher-level thinking, deeper reasoning, and challenge questions</li>
+      </ul>
+
+      <p style="margin-top:10px;">
+        💡 <strong>Best Practice:</strong> Most teachers generate 2–3 versions:
+        <br>• On Level (whole group)
+        <br>• Below Level (support)
+        <br>• Advanced (challenge)
+      </p>
+
+      <p style="margin-top:10px; font-weight:600; color:#1e3a5f;">
+        If you're checking rigor, make sure you're using <strong>On Level or Advanced</strong>.
+      </p>
+    </div>
+
+    <div class="how-to-use" style="margin-top:20px;">
+      <h3>How Teachers Are Using This (Real Workflow)</h3>
+
+      <p style="margin-bottom:12px;">
+        This tool is designed to plug directly into your daily instruction, not add more work.
+      </p>
+
+      <ul style="padding-left:18px; line-height:1.7;">
+        <li>
+          <strong>Do Now / Bell Ringer (5–10 min)</strong><br>
+          Generate an <strong>On Level</strong> set to start class with STAAR-aligned practice.
+        </li>
+
+        <li style="margin-top:10px;">
+          <strong>Small Group / MTSS</strong><br>
+          Use <strong>Below Level</strong> for intervention and targeted support.
+        </li>
+
+        <li style="margin-top:10px;">
+          <strong>Differentiation</strong><br>
+          Create <strong>2–3 versions</strong>:
+          <br>• Below (support)
+          <br>• On Level (core)
+          <br>• Advanced (challenge)
+        </li>
+
+        <li style="margin-top:10px;">
+          <strong>Accelerated Instruction / Tutoring</strong><br>
+          Use <strong>Tutor Mode + Answer Key</strong> to help students understand the “why.”
+        </li>
+
+        <li style="margin-top:10px;">
+          <strong>Cross-Curricular Practice</strong><br>
+          Use <strong>Cross Mode</strong> to connect reading skills with science and social studies.
+        </li>
+      </ul>
+
+      <p style="margin-top:14px; font-weight:600; color:#1e3a5f;">
+        💡 Most teachers generate a full lesson set in under 1 minute.
+      </p>
+    </div>
+
     <section class="generator-card section" aria-label="Worksheet generator settings">
       <div id="profile-section" class="profile-section">
         <div class="profile-meta">
@@ -1346,6 +1438,7 @@
             <option>On Level</option>
             <option>Advanced</option>
           </select>
+          <p class="level-hint">Below = intervention • On Level = grade-level rigor • Advanced = challenge</p>
         </div>
       </div>
 
@@ -1379,7 +1472,7 @@
 
         Create your second version now.
       </p>
-      <button id="generate-btn" class="generate-btn" type="button" onclick="generate()">Create First STAAR Set</button>
+      <button id="generate-btn" class="generate-btn" type="button" onclick="generate()">Generate Your Do Now (10 seconds)</button>
       <p id="generation-success-hint" class="success-hint" style="display:none;">✅ First version created — now build your support or advanced group</p>
       <p id="auth-required-note" style="display:none; margin-top:10px; color:#7a2e00; font-weight:600;">
         Create a free account to generate your first practice set.
@@ -1525,6 +1618,7 @@
     let authReady = false;
     let authRevealRequested = false;
     let authMode = "signup";
+    let currentProfile = null;
 
     function resetGenerateState() {
       const generateBtn = document.getElementById("generate-btn");
@@ -1532,7 +1626,7 @@
       currentController = null;
       if (generateBtn) {
         generateBtn.disabled = false;
-        generateBtn.textContent = "Create First STAAR Set";
+        generateBtn.textContent = "Generate Your Do Now (10 seconds)";
       }
       console.log("✅ Generate reset complete");
     }
@@ -1557,11 +1651,28 @@
       }, 4000);
     }
 
+    function showPaywall() {
+      const output = document.getElementById("output");
+      if (!output) return;
+
+      output.innerHTML = `
+        <div class="locked">
+          <strong>You’ve used your ${FREE_PLAN_LIMIT} free STAAR packs</strong>
+          Unlock unlimited access for $12.
+          <br><br>
+          <a href="${GUMROAD_URL}" class="unlock-btn" target="_blank" rel="noopener noreferrer">
+            Unlock Full Access
+          </a>
+        </div>
+      `;
+    }
+
     function handleProfileUpdate(profile, previousProfile = null) {
       const previousPlan = previousProfile?.plan ?? null;
       const nextPlan = profile?.plan ?? null;
       const isUpgrade = previousPlan !== "paid" && nextPlan === "paid";
 
+      currentProfile = profile || null;
       updateProfileSection({ email: profile?.email }, profile);
       renderUsageStatus(profile);
 
@@ -1699,6 +1810,7 @@
       emailLabel.textContent = "Logged in as: —";
       profilePlan.textContent = "Plan: Free";
       banner.style.display = "none";
+      currentProfile = null;
       setMode("practice");
     }
 
@@ -1714,6 +1826,10 @@
 
       const remaining = Math.max(0, FREE_PLAN_LIMIT - used);
       usageStatus.textContent = `Plan: Free (${used}/${FREE_PLAN_LIMIT} used, ${remaining} remaining)`;
+
+      if (used >= FREE_PLAN_LIMIT) {
+        showPaywall();
+      }
     }
 
     async function refreshUsageStatus(userId) {
@@ -1724,6 +1840,7 @@
         .single();
 
       if (profile) {
+        currentProfile = profile;
         updateProfileSection({ email: profile.email }, profile);
         renderUsageStatus(profile);
       }
@@ -3325,6 +3442,19 @@ Create your second version now.`;
         const token = cachedSession.access_token;
         console.log("🟢 TOKEN READY");
 
+        const { data: liveProfile } = await supabase
+          .from("profiles")
+          .select("plan, generations_used")
+          .eq("id", cachedUser.id)
+          .single();
+
+        const used = Number(liveProfile?.generations_used || 0);
+        const plan = liveProfile?.plan || "free";
+        if (plan === "free" && used >= FREE_PLAN_LIMIT) {
+          showPaywall();
+          return;
+        }
+
         const grade = document.getElementById("grade")?.value;
         const subject = document.getElementById("subject")?.value;
         const skill = document.getElementById("skill")?.value;
@@ -3344,6 +3474,14 @@ Create your second version now.`;
         });
 
         console.log("✅ CORE DATA RECEIVED:", coreResponse);
+
+        if (plan === "free") {
+          await supabase
+            .from("profiles")
+            .update({ generations_used: used + 1 })
+            .eq("id", cachedUser.id);
+          await refreshUsageStatus(cachedUser.id);
+        }
 
         const core = {
           passage: coreResponse?.passage || "",
