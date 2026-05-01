@@ -460,9 +460,7 @@ function buildAlignedExplanation(
       .reduce((sum, ch) => sum + ch.charCodeAt(0), 0),
   ) % passageStarters.length;
   const passageStarter = passageStarters[starterIndex];
-  const isReading = subject === "Reading";
-
-  const why = (usePassage && isReading
+  const why = (subject === "Reading"
     ? (() => {
       let boundedSnippet = snippet || "";
       if (!boundedSnippet || boundedSnippet.length < 15) {
@@ -475,14 +473,14 @@ function buildAlignedExplanation(
       return `${passageStarter} "${summarizeEvidenceIdea(evidence)}" supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}`;
     })()
     : subject === "Math"
-    ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because using the numbers and operation in the problem leads to that result. Check how the values in the question combine to produce the correct total.`
+    ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because you must use the numerical information provided in the passage and apply the correct operations step by step.`
     : subject === "Science"
     ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it correctly applies the scientific concept described in the question, especially how the system or process behaves.`
     : subject === "Social Studies"
     ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it accurately reflects the relationship between events, causes, and outcomes described in the question.`
     : `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`);
 
-  const mistake = (usePassage && isReading)
+  const mistake = (subject === "Reading")
     ? "A common mistake is choosing an option that sounds related but is not directly supported by the passage evidence."
     : subject === "Math"
     ? "A common mistake is using the wrong operation or skipping a step in the calculation."
@@ -492,7 +490,7 @@ function buildAlignedExplanation(
     ? "A common mistake is confusing events, timelines, or relationships."
     : "A common mistake is choosing an answer not supported by the passage.";
 
-  const tip = (usePassage && isReading)
+  const tip = (subject === "Reading")
     ? "Go back to the exact line that proves the answer before choosing."
     : subject === "Math"
     ? "Work through each step carefully and check your calculations."
@@ -525,22 +523,20 @@ function buildAnswerKeyExplanation(
     ? cleanSnippet
     : fallbackEvidenceSnippet(passage);
 
-  const isReading = subject === "Reading";
-
   return {
-    why: (usePassage && isReading)
+    why: (subject === "Reading")
       ? `The passage explains that "${evidence}", which supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`
       : subject === "Math"
-      ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because applying the correct operation to the values in the problem leads to that result.`
+      ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because you must use the numerical information provided in the passage and apply the correct operations step by step.`
       : subject === "Science"
       ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it correctly reflects the scientific concept or process described.`
       : subject === "Social Studies"
       ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it accurately represents the historical relationship or outcome described.`
       : `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
-    mistake: (usePassage && isReading)
+    mistake: (subject === "Reading")
       ? "This distractor may seem correct but is not supported by the passage."
       : "This distractor may seem correct but it does not match all required conditions in the question.",
-    tip: (usePassage && isReading)
+    tip: (subject === "Reading")
       ? "Check the exact detail that confirms the correct answer."
       : "Verify each condition and the operation or relationship before choosing.",
   };
@@ -980,6 +976,28 @@ function ensureUsableExplanation(
   return "Think about what the passage shows and which answer best matches the main idea or detail.";
 }
 
+function enforceSubjectExplanationLanguage(text: string, subject: string): string {
+  const normalizedSubject = String(subject || "").toLowerCase();
+  const isReading = normalizedSubject.includes("reading");
+  const cleaned = String(text || "").trim();
+  if (!cleaned) return cleaned;
+  if (isReading) return cleaned;
+
+  if (/\b(passage|main idea|text evidence)\b/i.test(cleaned)) {
+    if (normalizedSubject.includes("math")) {
+      return "The correct answer is supported by the math steps and operations used to solve the problem.";
+    }
+    if (normalizedSubject.includes("science")) {
+      return "The correct answer is supported by the scientific process and cause-and-effect relationship in the scenario.";
+    }
+    if (normalizedSubject.includes("social")) {
+      return "The correct answer is supported by the historical context, events, and cause-and-effect relationships.";
+    }
+  }
+
+  return cleaned;
+}
+
 function getLevelInstruction(level: Level): string {
   if (level === "Below") return "LOW: simple and direct";
   if (level === "Advanced") return "ADVANCED: deeper thinking";
@@ -1415,17 +1433,21 @@ Requirements:
 - Set "passage" to null.
 - Generate exactly 5 word problems in "questions".
 - Each question must be self-contained with its own context.
-- Problems should usually require more than one step to solve.
-- Whenever possible:
-  - combine operations (for example, multiply then subtract, or divide then add)
-  - include a second action after an initial calculation
-  - require students to decide what to do first before calculating
-- Avoid simple one-step problems unless needed for variety.
-- At least some problems should require multiple steps or decisions to reach the final answer.
-- Include a mix of:
-  - problems where a value is found first and then used in a second calculation
-  - problems involving comparison or remaining amounts
-  - problems that require interpreting the situation before solving
+- Keep wording clear and classroom-ready, but include realistic STAAR-level thinking.
+- Include a natural mix of straightforward access questions and multi-step questions.
+- At least 1-2 questions should feel like STAAR On Level / Meets (without making every item complex).
+- Some questions should require students to:
+  - decide which operation to use
+  - combine information from different parts of the problem
+  - interpret a result (such as remainders, comparison, or "how many more")
+- Avoid making every stem a direct total question like "What is the total?"
+- Include multiple multi-step opportunities across the set, but do not force every question to be multi-step.
+- Answer choice quality is critical:
+  - Keep exactly 4 choices (A-D) per question.
+  - At least 2 distractors should reflect realistic mistakes (wrong operation, missing a step, partial calculation, or misinterpreting a remainder).
+  - Other distractors should still be plausible and connected to the problem values.
+  - Avoid random or obviously unrelated numbers.
+- Do NOT include explanations, rationales, or worked steps in the output.
 ${levelThinkingGuidance}
 - Keep output concise.
 
@@ -1852,6 +1874,7 @@ function normalizeEnrichmentSupport(
   data: Record<string, unknown> | null,
   practiceQuestions: Question[],
   crossQuestions: Question[],
+  subject: CanonicalSubject = "Reading",
 ): {
   tutor: { practice: TutorExplanation[]; cross: TutorExplanation[] };
   answerKey: { practice: AnswerKeyEntry[]; cross: AnswerKeyEntry[] };
@@ -1874,7 +1897,20 @@ function normalizeEnrichmentSupport(
         return {
           question_id: ensureQuestionId(practiceQuestions[i], i, "practice"),
           question: String(practiceQuestions[i]?.question || "").trim(),
-          explanation: String(source.strategy || "").trim() || "Use evidence from the passage.",
+          explanation: (() => {
+            const base = String(source.strategy || "").trim();
+            if (base) return base;
+            if (subject === "Math") {
+              return "Work through the numbers step by step and check your operations.";
+            }
+            if (subject === "Science") {
+              return "Think about the scientific concept and how the process works.";
+            }
+            if (subject === "Social Studies") {
+              return "Consider the cause and effect or relationship between events.";
+            }
+            return "Use evidence from the passage.";
+          })(),
           common_mistake: "Choosing an answer without enough supporting evidence.",
           hint: String(source.hint || "").trim() || "Think about what the question is asking.",
           think: "",
@@ -1888,7 +1924,20 @@ function normalizeEnrichmentSupport(
         return {
           question_id: ensureQuestionId(crossQuestions[i], i, "cross"),
           question: String(crossQuestions[i]?.question || "").trim(),
-          explanation: String(source.strategy || "").trim() || "Focus on key details.",
+          explanation: (() => {
+            const base = String(source.strategy || "").trim();
+            if (base) return base;
+            if (subject === "Math") {
+              return "Work through the numbers step by step and check your operations.";
+            }
+            if (subject === "Science") {
+              return "Think about the scientific concept and how the process works.";
+            }
+            if (subject === "Social Studies") {
+              return "Consider the cause and effect or relationship between events.";
+            }
+            return "Focus on key details.";
+          })(),
           common_mistake: "Ignoring important evidence from the cross passage.",
           hint: String(source.hint || "").trim() || "Look back at the passage for clues.",
           think: "",
@@ -4291,6 +4340,9 @@ function sanitizeAnswerKey(
       String(fromAi?.correct_answer || normalizeAnswerKeyEntry(q.correct_answer) || ""),
     );
     const expectedId = ensureQuestionId(q, i, mode);
+    const normalizedChoices = normalizeChoices(q.choices);
+    const correctIndex = Math.max(0, LETTERS.indexOf(correct));
+    const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
     const evidence = mode === "cross"
       ? summarizeEvidenceIdea(selectEvidenceSnippet(q, crossPassage, usedEvidence) || fallbackEvidenceSnippet(crossPassage))
       : "";
@@ -4298,7 +4350,7 @@ function sanitizeAnswerKey(
     const conciseExisting = currentExplanation.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ").trim();
     const explanation = (!conciseExisting || genericCoachPattern.test(conciseExisting))
       ? (subject === "Math"
-        ? `Choice ${correct} is correct because the calculation using the given numbers leads to this result. A wrong answer may come from using the wrong operation or skipping a step.`
+        ? `The correct answer is ${correct}${correctChoice ? ` (${correctChoice})` : ""} because you must correctly combine the values from the problem and follow each step to reach the final result.`
         : subject === "Science"
         ? `Choice ${correct} is correct because it correctly explains the cause-and-effect relationship described. A wrong answer may confuse the variable or outcome.`
         : subject === "Social Studies"
@@ -4672,10 +4724,10 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
       return {
         question_id: ensureQuestionId(q, i, mode),
         question: String(q.question || "").trim(),
-        explanation: support.explanation,
-        common_mistake: support.commonMistake,
-        hint: support.hint,
-        think: support.think,
+        explanation: enforceSubjectExplanationLanguage(support.explanation, subject),
+        common_mistake: enforceSubjectExplanationLanguage(support.commonMistake, subject),
+        hint: enforceSubjectExplanationLanguage(support.hint, subject),
+        think: enforceSubjectExplanationLanguage(support.think, subject),
         step_by_step: support.stepByStep,
       };
     });
@@ -4689,8 +4741,8 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
       return {
         question_id: ensureQuestionId(q, i, mode),
         correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
-        explanation: support.explanation,
-        common_mistake: support.commonMistake,
+        explanation: enforceSubjectExplanationLanguage(support.explanation, subject),
+        common_mistake: enforceSubjectExplanationLanguage(support.commonMistake, subject),
         parent_tip: support.parentTip,
       };
     });
@@ -5216,6 +5268,7 @@ serve(async (req) => {
         enrichment && Object.keys(enrichment).length ? enrichment : null,
         practiceQuestions,
         crossQuestions,
+        enrichSubject,
       );
       const tutorPractice = tutor.practice;
       const tutorCross = tutor.cross;
@@ -5751,6 +5804,7 @@ serve(async (req) => {
           crossEnrichment || {},
           safePracticeQuestions,
           crossQuestions,
+          effectiveSubject,
         );
 
         tutorPractice = sanitizeTutorExplanations(
