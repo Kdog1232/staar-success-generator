@@ -11,9 +11,9 @@
       --card: #ffffff;
       --text: #1e293b;
       --muted: #5f6b7a;
-      --primary: #2563eb;
-      --accent: #16a34a;
-      --primary-hover: #1d4ed8;
+      --primary: #5b21b6;
+      --accent: #f97316;
+      --primary-hover: #4c1d95;
       --border: #dbe3ee;
       --shadow: 0 14px 36px rgba(16, 24, 40, 0.08);
       --radius: 16px;
@@ -234,7 +234,7 @@
       font-size: 1.1rem;
       font-weight: 600;
       border-radius: 12px;
-      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      background: linear-gradient(135deg, #6d28d9, #5b21b6);
       color: #fff;
       border: none;
       cursor: pointer;
@@ -398,7 +398,7 @@
       margin-top: 8px;
       background: none;
       border: none;
-      color: #2563eb;
+      color: #4b5563;
       font-weight: 700;
       cursor: pointer;
       text-decoration: underline;
@@ -497,7 +497,7 @@
     }
 
     .mode-btn.active {
-      background: linear-gradient(135deg, #4f46e5, #6366f1);
+      background: #6d28d9;
       color: white;
       border: none;
       box-shadow: 0 8px 18px rgba(79,70,229,0.28);
@@ -554,12 +554,12 @@
 
     .hero {
       text-align: center;
-      margin-bottom: 32px;
-      padding: 80px 20px 60px;
-      background: linear-gradient(135deg, #4f46e5, #6366f1);
-      color: white;
+      margin-bottom: 24px;
+      padding: 0;
+      background: transparent;
+      color: var(--text);
       border-radius: 16px;
-      box-shadow: 0 20px 40px rgba(79,70,229,0.25);
+      box-shadow: none;
     }
 
     .hero * {
@@ -581,16 +581,16 @@
     }
 
     .hero p {
-      color: rgba(255,255,255,0.9);
+      color: var(--muted);
       font-size: 20px;
-      font-weight: 500;
+      font-weight: 400;
       margin-bottom: 24px;
     }
 
     .hero-cta {
       max-width: 600px;
-      margin: 32px auto 0;
-      padding: 32px;
+      margin: 12px auto 0;
+      padding: 0;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -598,16 +598,7 @@
     }
 
     .hero-logo-wrapper {
-      background: white;
-      border-radius: 20px;
-      padding: 20px 30px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border: 3px solid rgba(255,255,255,0.6);
-      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-      max-width: 100%;
-      overflow: hidden;
+      display: none;
     }
 
     .hero-logo-wrapper img {
@@ -625,12 +616,12 @@
     }
 
     .hero-cta-button button {
-      font-size: 1.1rem;
+      font-size: 1rem;
       padding: 14px 26px;
       border-radius: 12px;
-      background: white;
-      color: #4338ca;
-      font-weight: 600;
+      background: #6d28d9;
+      color: #fff;
+      font-weight: 700;
       border: none;
       cursor: pointer;
       box-shadow: 0 8px 20px rgba(0,0,0,0.15);
@@ -785,7 +776,7 @@
     }
 
     .cross-section {
-      background: #f0f9ff;
+      background: #f9fafb;
       margin-top: 12px;
     }
 
@@ -795,7 +786,7 @@
     }
 
     .answer-section {
-      background: #f0fdf4;
+      background: #f9fafb;
       margin-top: 12px;
     }
 
@@ -909,7 +900,7 @@
       margin-top: 0;
       margin-bottom: 6px;
       line-height: 1.45;
-      color: #2563eb;
+      color: #4b5563;
     }
 
     .hint {
@@ -1049,7 +1040,7 @@
     }
 
     .cross-card {
-      background: #f0f9ff;
+      background: #f9fafb;
     }
 
     .think-card {
@@ -1061,7 +1052,7 @@
       margin-bottom: 16px;
       border-radius: 12px;
       border: 1px solid #bbf7d0;
-      background: #f0fdf4;
+      background: #f9fafb;
     }
 
     .answer-card .section {
@@ -1305,8 +1296,8 @@
     <header class="header section hero-text">
       <div class="header-inner">
         <div class="header-content">
-          <h1>Build a Differentiated STAAR Lesson in Minutes</h1>
-          <p>Generate 2–3 targeted versions in under a minute for whole group, MTSS support, and advanced learners.</p>
+          <h1>Generate STAAR-Aligned Practice in 10 Seconds</h1>
+          <p>Create Do Now, MTSS, and differentiated practice instantly.</p>
         </div>
       </div>
     </header>
@@ -1826,8 +1817,9 @@
         return;
       }
 
+      const boundedUsed = Math.min(used, FREE_PLAN_LIMIT);
       const remaining = Math.max(0, FREE_PLAN_LIMIT - used);
-      usageStatus.textContent = `Plan: Free (${used}/${FREE_PLAN_LIMIT} used, ${remaining} remaining)`;
+      usageStatus.textContent = `Plan: Free (${boundedUsed}/${FREE_PLAN_LIMIT} used, ${remaining} remaining)`;
 
       if (used >= FREE_PLAN_LIMIT) {
         showPaywall();
