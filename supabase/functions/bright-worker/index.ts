@@ -440,6 +440,7 @@ function buildAlignedExplanation(
   passage: string,
   usedEvidence: Set<string>,
   usePassage: boolean,
+  subject: CanonicalSubject = "Reading",
 ): { why: string; mistake: string; tip: string } {
   const normalizedChoices = normalizeChoices(question?.choices);
   const correctLetter = safeCorrectAnswer(question?.correct_answer);
@@ -459,7 +460,9 @@ function buildAlignedExplanation(
       .reduce((sum, ch) => sum + ch.charCodeAt(0), 0),
   ) % passageStarters.length;
   const passageStarter = passageStarters[starterIndex];
-  const why = (usePassage
+  const isReading = subject === "Reading";
+
+  const why = (usePassage && isReading
     ? (() => {
       let boundedSnippet = snippet || "";
       if (!boundedSnippet || boundedSnippet.length < 15) {
@@ -471,15 +474,33 @@ function buildAlignedExplanation(
         : fallbackEvidenceSnippet(passage);
       return `${passageStarter} "${summarizeEvidenceIdea(evidence)}" supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}`;
     })()
-    : `Focus on the moment when each condition in the problem is checked in order. That process supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`);
+    : subject === "Math"
+    ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because using the numbers and operation in the problem leads to that result. Check how the values in the question combine to produce the correct total.`
+    : subject === "Science"
+    ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it correctly applies the scientific concept described in the question, especially how the system or process behaves.`
+    : subject === "Social Studies"
+    ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it accurately reflects the relationship between events, causes, and outcomes described in the question.`
+    : `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`);
 
-  const mistake = usePassage
+  const mistake = (usePassage && isReading)
     ? "A common mistake is choosing an option that sounds related but is not directly supported by the passage evidence."
-    : "A common mistake is choosing an option that seems plausible without checking all constraints in the question.";
+    : subject === "Math"
+    ? "A common mistake is using the wrong operation or skipping a step in the calculation."
+    : subject === "Science"
+    ? "A common mistake is misunderstanding the scientific concept or confusing cause and effect."
+    : subject === "Social Studies"
+    ? "A common mistake is confusing events, timelines, or relationships."
+    : "A common mistake is choosing an answer not supported by the passage.";
 
-  const tip = usePassage
+  const tip = (usePassage && isReading)
     ? "Go back to the exact line that proves the answer before choosing."
-    : "Test each option against the full question, not just one keyword.";
+    : subject === "Math"
+    ? "Work through each step carefully and check your calculations."
+    : subject === "Science"
+    ? "Think about the concept and how the system or process works."
+    : subject === "Social Studies"
+    ? "Connect the event to its cause and outcome."
+    : "Go back to the text and find the exact supporting detail.";
 
   return { why, mistake, tip };
 }
@@ -489,6 +510,7 @@ function buildAnswerKeyExplanation(
   passage: string,
   usedEvidence: Set<string>,
   usePassage: boolean,
+  subject: CanonicalSubject = "Reading",
 ): { why: string; mistake: string; tip: string } {
   const normalizedChoices = normalizeChoices(question?.choices);
   const correctLetter = safeCorrectAnswer(question?.correct_answer);
@@ -503,12 +525,24 @@ function buildAnswerKeyExplanation(
     ? cleanSnippet
     : fallbackEvidenceSnippet(passage);
 
+  const isReading = subject === "Reading";
+
   return {
-    why: usePassage
+    why: (usePassage && isReading)
       ? `The passage explains that "${evidence}", which supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`
-      : `The explanation supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} based on the question requirements.`,
-    mistake: "This distractor may seem correct but is not supported by the passage.",
-    tip: "Check the exact detail that confirms the correct answer.",
+      : subject === "Math"
+      ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because applying the correct operation to the values in the problem leads to that result.`
+      : subject === "Science"
+      ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it correctly reflects the scientific concept or process described.`
+      : subject === "Social Studies"
+      ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it accurately represents the historical relationship or outcome described.`
+      : `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
+    mistake: (usePassage && isReading)
+      ? "This distractor may seem correct but is not supported by the passage."
+      : "This distractor may seem correct but it does not match all required conditions in the question.",
+    tip: (usePassage && isReading)
+      ? "Check the exact detail that confirms the correct answer."
+      : "Verify each condition and the operation or relationship before choosing.",
   };
 }
 
@@ -3960,7 +3994,7 @@ function buildCrossAnswerFallback(
   passage: string,
 ): Pick<AnswerKeyEntry, "explanation" | "common_mistake" | "parent_tip"> {
   void subject;
-  const aligned = buildAnswerKeyExplanation(question, passage, new Set<string>(), true);
+  const aligned = buildAnswerKeyExplanation(question, passage, new Set<string>(), true, subject);
   const distractorFeedback = buildDistractorFeedback(question);
   return {
     explanation: `${aligned.why} ${distractorFeedback}`.trim(),
@@ -3988,20 +4022,18 @@ function generateTutor(
 ): TutorExplanation[] {
   void subject;
   void level;
-  const shouldUsePassage = isPassageBased(mode, subject);
+  const shouldUsePassage = subject === "Reading" && isPassageBased(mode, subject);
   const scopedPassageText = shouldUsePassage ? passageText : "";
   const usedEvidence = new Set<string>();
   return questions.slice(0, 5).map((q, index) => {
     try {
       const { letter, choice } = getQuestionCorrectPair(q);
       const correctAnswer = letter ? `${letter}. ${choice}` : "";
-      const aligned = buildAlignedExplanation(q, scopedPassageText, usedEvidence, shouldUsePassage);
-      const baseExplanation = shouldUsePassage
-        ? aligned.why
-        : (String(q.explanation || "").trim() ||
-          (correctAnswer
-            ? `Start by following the question requirements one step at a time, then match your reasoning to evidence from the prompt. This confirms ${correctAnswer}.`
-            : "Start by following the question requirements one step at a time and matching each part to clear evidence."));
+      const aligned = buildAlignedExplanation(q, scopedPassageText, usedEvidence, shouldUsePassage, subject);
+      const baseExplanation = aligned.why ||
+        (correctAnswer
+          ? `The correct answer is ${correctAnswer}.`
+          : "The correct answer is supported by the question requirements.");
       const explanation = baseExplanation;
 
       return {
@@ -4041,7 +4073,7 @@ function generateAnswerKey(
   passageText = "",
 ): AnswerKeyEntry[] {
   void level;
-  const shouldUsePassage = isPassageBased(mode, subject);
+  const shouldUsePassage = subject === "Reading" && isPassageBased(mode, subject);
   const scopedPassageText = shouldUsePassage ? passageText : "";
   const usedEvidence = new Set<string>();
   return questions.slice(0, 5).map((q, index) => {
@@ -4053,16 +4085,22 @@ function generateAnswerKey(
       const distractor = normalizedChoices
         .map((choice, idx) => ({ letter: LETTERS[idx], choice: String(choice || "").trim() }))
         .find((entry) => entry.letter !== correctLetter && entry.choice);
-      const aligned = buildAnswerKeyExplanation(q, scopedPassageText, usedEvidence, shouldUsePassage);
+      const aligned = buildAnswerKeyExplanation(q, scopedPassageText, usedEvidence, shouldUsePassage, subject);
       const explanationLead = aligned.why || (shouldUsePassage
         ? `The passage supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`
         : `The question supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`);
       const explanation = distractor
         ? `${explanationLead} ${distractor.letter} (${distractor.choice}) sounds possible, but that choice is not what this specific detail actually supports.`
         : explanationLead;
-      const commonMistake = distractor
-        ? `${distractor.letter} can seem related, but it is not the best-supported interpretation of the passage evidence.`
-        : aligned.mistake;
+      const commonMistake = subject === "Math"
+        ? "This answer may seem correct, but it comes from using the wrong operation or miscalculating."
+        : subject === "Science"
+        ? "This answer may seem correct, but it reflects a misunderstanding of the scientific concept."
+        : subject === "Social Studies"
+        ? "This answer may seem correct, but it does not accurately match the event or relationship described."
+        : (distractor
+          ? `${distractor.letter} can seem related, but it is not the best-supported interpretation of the passage.`
+          : aligned.mistake);
 
       const parentTip = aligned.tip || variedParentTip(index);
       return {
