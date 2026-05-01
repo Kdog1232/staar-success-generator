@@ -1433,25 +1433,24 @@ Requirements:
 - Set "passage" to null.
 - Generate exactly 5 word problems in "questions".
 - Each question must be self-contained with its own context.
-- Keep wording clear and classroom-ready, but include realistic STAAR-level thinking.
-- Include more multi-step problems than simple one-step problems.
-- Questions should feel more challenging than typical classroom practice while still student-friendly.
-- At least 1-2 questions should feel like STAAR On Level / Meets (without making every item a trick).
+- Keep questions clear, classroom-ready, and appropriate for the selected level.
+- Most questions should involve thinking, not just direct calculation.
+- Include a natural mix of:
+  - straightforward questions
+  - multi-step questions
+  - questions where students must interpret the result
 - Some questions should require students to:
   - decide which operation to use
   - combine information from different parts of the problem
-  - interpret a result (such as remainders, comparison, or "how many more")
-- Include at least 2 questions where students must complete more than one step OR interpret what the computed result means in context.
-- Include at least 1 question with a stem style like:
-  - "Which statement is true?"
-  - or "Which explanation is correct?"
-- Avoid making every stem a direct total question like "What is the total?"
-- Include multiple multi-step opportunities across the set, but do not force every question to be multi-step.
+  - think about what the answer means (not just compute it)
+- It is okay if not every question is complex.
 - Answer choice quality is critical:
   - Keep exactly 4 choices (A-D) per question.
-  - At least 2 distractors should reflect realistic mistakes (wrong operation, missing a step, partial calculation, or misinterpreting a remainder).
+  - Some distractors should reflect common mistakes (wrong operation, missed step, partial work).
   - Other distractors should still be plausible and connected to the problem values.
-  - Avoid random or obviously unrelated numbers.
+  - Avoid obviously incorrect or unrelated answers.
+- Do NOT overcomplicate or create trick questions.
+- Maintain classroom usability.
 - Do NOT include explanations, rationales, or worked steps in the output.
 ${levelThinkingGuidance}
 - Keep output concise.
