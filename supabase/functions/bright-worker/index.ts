@@ -170,7 +170,7 @@ const QUALITY_ALIGNMENT_RULES = [
   "PASSAGE QUALITY:",
   "- Passage must be complete with clear, connected ideas and enough detail for all questions.",
   "- Do not leave unfinished sentences or incomplete paragraphs.",
-  "- If the passage is incomplete, regenerate the passage before writing questions.",
+  "- Ensure the passage is complete before writing questions.",
   "TUTOR QUALITY:",
   "- Tutor explanations must sound natural, conversational, and varied across questions.",
   "- Use a specific idea from the content/problem when explaining why an answer is correct.",
@@ -295,7 +295,7 @@ const TUTOR_STYLE_RULES = [
   "- Do not follow fixed starters such as \"Notice how...\", \"The key evidence is...\", or \"When you connect...\".",
   "- Write naturally like a teacher explaining to a student.",
   "FAILSAFE (CRITICAL):",
-  "- If an explanation repeats structure, reuses the same sentence, or uses generic phrasing, rewrite it completely.",
+  "- Keep explanation structure varied and avoid generic phrasing.",
   "STRUCTURE (FLEXIBLE):",
   "- Include hint, explanation, mistake, and tip",
   "- Do NOT enforce identical phrasing",
@@ -1388,7 +1388,7 @@ Requirements:
 
 Practice Mode rigor enforcement (CRITICAL):
 - Eliminate ALL simple recall questions.
-- If a question can be answered by copying one sentence from the passage, rewrite that question.
+- Avoid questions that can be answered by copying one sentence from the passage.
 - At least 3 of the 5 questions MUST be inference-based.
 - No more than 1 direct recall question is allowed.
 - Every question must require thinking beyond the text.
@@ -1397,7 +1397,7 @@ Practice Mode rigor enforcement (CRITICAL):
   - "What did ___ find?"
   - "Which season...?"
   - Any single stated-fact question.
-- Before finalizing, self-check: if more than 1 question is recall, rewrite until compliant.
+- Keep direct recall limited to at most 1 question.
 - Questions should not feel like a basic worksheet; they must require analysis and justification.
 
 Return JSON:
@@ -1485,10 +1485,10 @@ Requirements:
   - real-world application of concepts
 - Prefer "what happens if..." or "which result is most likely..." style prompts over term-definition prompts.
 - Include variables, observations, or simple experimental setups whenever possible.
-- If questions drift into pure vocabulary recall, revise them toward scenario-based reasoning.
+- Avoid pure vocabulary-recall questions; prefer scenario-based reasoning.
 ${scienceInvestigationFocus}
 ${levelThinkingGuidance}
-- If a question can be answered by memorizing one sentence, rewrite it to require thinking.
+- Avoid questions that can be answered by memorizing one sentence.
 - Keep output concise.
 
 Return JSON:
@@ -1519,7 +1519,7 @@ Requirements:
   - how events influenced people or society
 - Match reasoning depth to level (On-Level = direct relationships; Advanced = multi-step prediction/comparison/evaluation).
 ${levelThinkingGuidance}
-- If a question can be answered by memorizing one sentence, rewrite it to require thinking.
+- Avoid questions that can be answered by memorizing one sentence.
 - Keep output concise.
 
 Return JSON:
@@ -1661,7 +1661,7 @@ Requirements:
   - "it"
   - "this"
   - a trailing comma or other unfinished punctuation
-- If any sentence is incomplete or feels cut off, rewrite the entire passage before writing questions.
+- Ensure all passage sentences are complete and coherent before writing questions.
 
 Question design rules:
 - Generate exactly 5 multiple-choice questions.
