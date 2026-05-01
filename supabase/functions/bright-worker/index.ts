@@ -1434,15 +1434,16 @@ Requirements:
 - Generate exactly 5 word problems in "questions".
 - Each question must be self-contained with its own context.
 - Keep questions clear, classroom-ready, and appropriate for the selected level.
-- Most questions should involve thinking, not just direct calculation.
+- Most questions should require thinking, not just direct calculation.
 - Include a natural mix of:
   - straightforward questions
   - multi-step questions
   - questions where students must interpret the result
-- Some questions should require students to:
-  - decide which operation to use
-  - combine information from different parts of the problem
-  - think about what the answer means (not just compute it)
+- Students should often need to:
+  - decide what to do next
+  - combine information
+  - think about what the answer means
+- Include at least one question where students must explain or justify their answer.
 - It is okay if not every question is complex.
 - Answer choice quality is critical:
   - Keep exactly 4 choices (A-D) per question.
