@@ -1384,11 +1384,13 @@ Requirements:
 - Write one full passage (150-300 words) in "passage".
 - Then write exactly 5 comprehension questions in "questions".
 - Every question and choice must be answerable from the passage.
+- Use exactly 4 answer choices (A-D) for each question.
+- Only one correct answer per question.
 - Keep output concise.
 
 Practice Mode rigor enforcement (CRITICAL):
-- Eliminate ALL simple recall questions.
-- Avoid questions that can be answered by copying one sentence from the passage.
+- At least 3 questions should require inference.
+- Avoid questions that can be answered from a single sentence in the passage.
 - At least 3 of the 5 questions MUST be inference-based.
 - No more than 1 direct recall question is allowed.
 - Every question must require thinking beyond the text.
@@ -1432,6 +1434,8 @@ Requirements:
 - DO NOT generate a passage.
 - Set "passage" to null.
 - Generate exactly 5 word problems in "questions".
+- Use exactly 4 answer choices (A-D) for each question.
+- Only one correct answer per question.
 - Each question must be self-contained with its own context.
 - Keep questions clear, classroom-ready, and appropriate for the selected level.
 - Most questions should require thinking, not just direct calculation.
@@ -1443,6 +1447,7 @@ Requirements:
   - decide what to do next
   - combine information
   - think about what the answer means
+- Include at least 2 multi-step problems.
 - Include at least one question where students must explain or justify their answer.
 - It is okay if not every question is complex.
 - Answer choice quality is critical:
@@ -1476,6 +1481,8 @@ Generate concise STAAR-style Science practice content.
 Requirements:
 - Write one short informational excerpt (50-120 words) in "passage".
 - Then write exactly 5 questions in "questions" based on that excerpt.
+- Use exactly 4 answer choices (A-D) for each question.
+- Only one correct answer per question.
 - Do NOT generate definition-only or identification-only sets.
 - Allow at most 1 light recall question; at least 4 questions must require reasoning.
 - Prioritize:
@@ -1510,6 +1517,8 @@ Generate concise STAAR-style Social Studies practice content.
 Requirements:
 - Write one short historical or informational excerpt (50-120 words) in "passage".
 - Then write exactly 5 questions in "questions" based on that excerpt.
+- Use exactly 4 answer choices (A-D) for each question.
+- Only one correct answer per question.
 - Do NOT generate sets that only ask for names, dates, or numbers.
 - Allow at most 1 light recall question; at least 4 questions must require reasoning.
 - Prioritize:
