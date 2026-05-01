@@ -980,6 +980,28 @@ function ensureUsableExplanation(
   return "Think about what the passage shows and which answer best matches the main idea or detail.";
 }
 
+function enforceSubjectExplanationLanguage(text: string, subject: string): string {
+  const normalizedSubject = String(subject || "").toLowerCase();
+  const isReading = normalizedSubject.includes("reading");
+  const cleaned = String(text || "").trim();
+  if (!cleaned) return cleaned;
+  if (isReading) return cleaned;
+
+  if (/\b(passage|main idea|text evidence)\b/i.test(cleaned)) {
+    if (normalizedSubject.includes("math")) {
+      return "The correct answer is supported by the math steps and operations used to solve the problem.";
+    }
+    if (normalizedSubject.includes("science")) {
+      return "The correct answer is supported by the scientific process and cause-and-effect relationship in the scenario.";
+    }
+    if (normalizedSubject.includes("social")) {
+      return "The correct answer is supported by the historical context, events, and cause-and-effect relationships.";
+    }
+  }
+
+  return cleaned;
+}
+
 function getLevelInstruction(level: Level): string {
   if (level === "Below") return "LOW: simple and direct";
   if (level === "Advanced") return "ADVANCED: deeper thinking";
@@ -4672,10 +4694,10 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
       return {
         question_id: ensureQuestionId(q, i, mode),
         question: String(q.question || "").trim(),
-        explanation: support.explanation,
-        common_mistake: support.commonMistake,
-        hint: support.hint,
-        think: support.think,
+        explanation: enforceSubjectExplanationLanguage(support.explanation, subject),
+        common_mistake: enforceSubjectExplanationLanguage(support.commonMistake, subject),
+        hint: enforceSubjectExplanationLanguage(support.hint, subject),
+        think: enforceSubjectExplanationLanguage(support.think, subject),
         step_by_step: support.stepByStep,
       };
     });
@@ -4689,8 +4711,8 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
       return {
         question_id: ensureQuestionId(q, i, mode),
         correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
-        explanation: support.explanation,
-        common_mistake: support.commonMistake,
+        explanation: enforceSubjectExplanationLanguage(support.explanation, subject),
+        common_mistake: enforceSubjectExplanationLanguage(support.commonMistake, subject),
         parent_tip: support.parentTip,
       };
     });
