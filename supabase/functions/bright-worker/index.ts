@@ -1874,6 +1874,7 @@ function normalizeEnrichmentSupport(
   data: Record<string, unknown> | null,
   practiceQuestions: Question[],
   crossQuestions: Question[],
+  subject: CanonicalSubject = "Reading",
 ): {
   tutor: { practice: TutorExplanation[]; cross: TutorExplanation[] };
   answerKey: { practice: AnswerKeyEntry[]; cross: AnswerKeyEntry[] };
@@ -1896,7 +1897,20 @@ function normalizeEnrichmentSupport(
         return {
           question_id: ensureQuestionId(practiceQuestions[i], i, "practice"),
           question: String(practiceQuestions[i]?.question || "").trim(),
-          explanation: String(source.strategy || "").trim() || "Use evidence from the passage.",
+          explanation: (() => {
+            const base = String(source.strategy || "").trim();
+            if (base) return base;
+            if (subject === "Math") {
+              return "Work through the numbers step by step and check your operations.";
+            }
+            if (subject === "Science") {
+              return "Think about the scientific concept and how the process works.";
+            }
+            if (subject === "Social Studies") {
+              return "Consider the cause and effect or relationship between events.";
+            }
+            return "Use evidence from the passage.";
+          })(),
           common_mistake: "Choosing an answer without enough supporting evidence.",
           hint: String(source.hint || "").trim() || "Think about what the question is asking.",
           think: "",
@@ -1910,7 +1924,20 @@ function normalizeEnrichmentSupport(
         return {
           question_id: ensureQuestionId(crossQuestions[i], i, "cross"),
           question: String(crossQuestions[i]?.question || "").trim(),
-          explanation: String(source.strategy || "").trim() || "Focus on key details.",
+          explanation: (() => {
+            const base = String(source.strategy || "").trim();
+            if (base) return base;
+            if (subject === "Math") {
+              return "Work through the numbers step by step and check your operations.";
+            }
+            if (subject === "Science") {
+              return "Think about the scientific concept and how the process works.";
+            }
+            if (subject === "Social Studies") {
+              return "Consider the cause and effect or relationship between events.";
+            }
+            return "Focus on key details.";
+          })(),
           common_mistake: "Ignoring important evidence from the cross passage.",
           hint: String(source.hint || "").trim() || "Look back at the passage for clues.",
           think: "",
@@ -4313,6 +4340,9 @@ function sanitizeAnswerKey(
       String(fromAi?.correct_answer || normalizeAnswerKeyEntry(q.correct_answer) || ""),
     );
     const expectedId = ensureQuestionId(q, i, mode);
+    const normalizedChoices = normalizeChoices(q.choices);
+    const correctIndex = Math.max(0, LETTERS.indexOf(correct));
+    const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
     const evidence = mode === "cross"
       ? summarizeEvidenceIdea(selectEvidenceSnippet(q, crossPassage, usedEvidence) || fallbackEvidenceSnippet(crossPassage))
       : "";
@@ -4320,7 +4350,7 @@ function sanitizeAnswerKey(
     const conciseExisting = currentExplanation.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ").trim();
     const explanation = (!conciseExisting || genericCoachPattern.test(conciseExisting))
       ? (subject === "Math"
-        ? `Choice ${correct} is correct because the calculation using the given numbers leads to this result. A wrong answer may come from using the wrong operation or skipping a step.`
+        ? `The correct answer is ${correct}${correctChoice ? ` (${correctChoice})` : ""} because you must correctly combine the values from the problem and follow each step to reach the final result.`
         : subject === "Science"
         ? `Choice ${correct} is correct because it correctly explains the cause-and-effect relationship described. A wrong answer may confuse the variable or outcome.`
         : subject === "Social Studies"
@@ -5238,6 +5268,7 @@ serve(async (req) => {
         enrichment && Object.keys(enrichment).length ? enrichment : null,
         practiceQuestions,
         crossQuestions,
+        enrichSubject,
       );
       const tutorPractice = tutor.practice;
       const tutorCross = tutor.cross;
@@ -5773,6 +5804,7 @@ serve(async (req) => {
           crossEnrichment || {},
           safePracticeQuestions,
           crossQuestions,
+          effectiveSubject,
         );
 
         tutorPractice = sanitizeTutorExplanations(
