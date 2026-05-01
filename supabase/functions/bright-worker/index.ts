@@ -1433,17 +1433,21 @@ Requirements:
 - Set "passage" to null.
 - Generate exactly 5 word problems in "questions".
 - Each question must be self-contained with its own context.
-- Problems should usually require more than one step to solve.
-- Whenever possible:
-  - combine operations (for example, multiply then subtract, or divide then add)
-  - include a second action after an initial calculation
-  - require students to decide what to do first before calculating
-- Avoid simple one-step problems unless needed for variety.
-- At least some problems should require multiple steps or decisions to reach the final answer.
-- Include a mix of:
-  - problems where a value is found first and then used in a second calculation
-  - problems involving comparison or remaining amounts
-  - problems that require interpreting the situation before solving
+- Keep wording clear and classroom-ready, but include realistic STAAR-level thinking.
+- Include a natural mix of straightforward access questions and multi-step questions.
+- At least 1-2 questions should feel like STAAR On Level / Meets (without making every item complex).
+- Some questions should require students to:
+  - decide which operation to use
+  - combine information from different parts of the problem
+  - interpret a result (such as remainders, comparison, or "how many more")
+- Avoid making every stem a direct total question like "What is the total?"
+- Include multiple multi-step opportunities across the set, but do not force every question to be multi-step.
+- Answer choice quality is critical:
+  - Keep exactly 4 choices (A-D) per question.
+  - At least 2 distractors should reflect realistic mistakes (wrong operation, missing a step, partial calculation, or misinterpreting a remainder).
+  - Other distractors should still be plausible and connected to the problem values.
+  - Avoid random or obviously unrelated numbers.
+- Do NOT include explanations, rationales, or worked steps in the output.
 ${levelThinkingGuidance}
 - Keep output concise.
 
