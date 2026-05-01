@@ -460,9 +460,7 @@ function buildAlignedExplanation(
       .reduce((sum, ch) => sum + ch.charCodeAt(0), 0),
   ) % passageStarters.length;
   const passageStarter = passageStarters[starterIndex];
-  const isReading = subject === "Reading";
-
-  const why = (usePassage && isReading
+  const why = (subject === "Reading"
     ? (() => {
       let boundedSnippet = snippet || "";
       if (!boundedSnippet || boundedSnippet.length < 15) {
@@ -475,14 +473,14 @@ function buildAlignedExplanation(
       return `${passageStarter} "${summarizeEvidenceIdea(evidence)}" supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}`;
     })()
     : subject === "Math"
-    ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because using the numbers and operation in the problem leads to that result. Check how the values in the question combine to produce the correct total.`
+    ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because you must use the numerical information provided in the passage and apply the correct operations step by step.`
     : subject === "Science"
     ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it correctly applies the scientific concept described in the question, especially how the system or process behaves.`
     : subject === "Social Studies"
     ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it accurately reflects the relationship between events, causes, and outcomes described in the question.`
     : `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`);
 
-  const mistake = (usePassage && isReading)
+  const mistake = (subject === "Reading")
     ? "A common mistake is choosing an option that sounds related but is not directly supported by the passage evidence."
     : subject === "Math"
     ? "A common mistake is using the wrong operation or skipping a step in the calculation."
@@ -492,7 +490,7 @@ function buildAlignedExplanation(
     ? "A common mistake is confusing events, timelines, or relationships."
     : "A common mistake is choosing an answer not supported by the passage.";
 
-  const tip = (usePassage && isReading)
+  const tip = (subject === "Reading")
     ? "Go back to the exact line that proves the answer before choosing."
     : subject === "Math"
     ? "Work through each step carefully and check your calculations."
@@ -525,22 +523,20 @@ function buildAnswerKeyExplanation(
     ? cleanSnippet
     : fallbackEvidenceSnippet(passage);
 
-  const isReading = subject === "Reading";
-
   return {
-    why: (usePassage && isReading)
+    why: (subject === "Reading")
       ? `The passage explains that "${evidence}", which supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`
       : subject === "Math"
-      ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because applying the correct operation to the values in the problem leads to that result.`
+      ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because you must use the numerical information provided in the passage and apply the correct operations step by step.`
       : subject === "Science"
       ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it correctly reflects the scientific concept or process described.`
       : subject === "Social Studies"
       ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it accurately represents the historical relationship or outcome described.`
       : `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
-    mistake: (usePassage && isReading)
+    mistake: (subject === "Reading")
       ? "This distractor may seem correct but is not supported by the passage."
       : "This distractor may seem correct but it does not match all required conditions in the question.",
-    tip: (usePassage && isReading)
+    tip: (subject === "Reading")
       ? "Check the exact detail that confirms the correct answer."
       : "Verify each condition and the operation or relationship before choosing.",
   };
