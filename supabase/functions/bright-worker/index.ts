@@ -170,7 +170,7 @@ const QUALITY_ALIGNMENT_RULES = [
   "PASSAGE QUALITY:",
   "- Passage must be complete with clear, connected ideas and enough detail for all questions.",
   "- Do not leave unfinished sentences or incomplete paragraphs.",
-  "- If the passage is incomplete, regenerate the passage before writing questions.",
+  "- Ensure the passage is complete before writing questions.",
   "TUTOR QUALITY:",
   "- Tutor explanations must sound natural, conversational, and varied across questions.",
   "- Use a specific idea from the content/problem when explaining why an answer is correct.",
@@ -295,7 +295,7 @@ const TUTOR_STYLE_RULES = [
   "- Do not follow fixed starters such as \"Notice how...\", \"The key evidence is...\", or \"When you connect...\".",
   "- Write naturally like a teacher explaining to a student.",
   "FAILSAFE (CRITICAL):",
-  "- If an explanation repeats structure, reuses the same sentence, or uses generic phrasing, rewrite it completely.",
+  "- Keep explanation structure varied and avoid generic phrasing.",
   "STRUCTURE (FLEXIBLE):",
   "- Include hint, explanation, mistake, and tip",
   "- Do NOT enforce identical phrasing",
@@ -460,9 +460,7 @@ function buildAlignedExplanation(
       .reduce((sum, ch) => sum + ch.charCodeAt(0), 0),
   ) % passageStarters.length;
   const passageStarter = passageStarters[starterIndex];
-  const isReading = subject === "Reading";
-
-  const why = (usePassage && isReading
+  const why = (subject === "Reading"
     ? (() => {
       let boundedSnippet = snippet || "";
       if (!boundedSnippet || boundedSnippet.length < 15) {
@@ -475,14 +473,14 @@ function buildAlignedExplanation(
       return `${passageStarter} "${summarizeEvidenceIdea(evidence)}" supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}`;
     })()
     : subject === "Math"
-    ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because using the numbers and operation in the problem leads to that result. Check how the values in the question combine to produce the correct total.`
+    ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because you must use the numerical information provided in the passage and apply the correct operations step by step.`
     : subject === "Science"
     ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it correctly applies the scientific concept described in the question, especially how the system or process behaves.`
     : subject === "Social Studies"
     ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it accurately reflects the relationship between events, causes, and outcomes described in the question.`
     : `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`);
 
-  const mistake = (usePassage && isReading)
+  const mistake = (subject === "Reading")
     ? "A common mistake is choosing an option that sounds related but is not directly supported by the passage evidence."
     : subject === "Math"
     ? "A common mistake is using the wrong operation or skipping a step in the calculation."
@@ -492,7 +490,7 @@ function buildAlignedExplanation(
     ? "A common mistake is confusing events, timelines, or relationships."
     : "A common mistake is choosing an answer not supported by the passage.";
 
-  const tip = (usePassage && isReading)
+  const tip = (subject === "Reading")
     ? "Go back to the exact line that proves the answer before choosing."
     : subject === "Math"
     ? "Work through each step carefully and check your calculations."
@@ -525,22 +523,20 @@ function buildAnswerKeyExplanation(
     ? cleanSnippet
     : fallbackEvidenceSnippet(passage);
 
-  const isReading = subject === "Reading";
-
   return {
-    why: (usePassage && isReading)
+    why: (subject === "Reading")
       ? `The passage explains that "${evidence}", which supports ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`
       : subject === "Math"
-      ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because applying the correct operation to the values in the problem leads to that result.`
+      ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because you must use the numerical information provided in the passage and apply the correct operations step by step.`
       : subject === "Science"
       ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it correctly reflects the scientific concept or process described.`
       : subject === "Social Studies"
       ? `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""} because it accurately represents the historical relationship or outcome described.`
       : `The correct answer is ${correctLetter}${correctChoice ? ` (${correctChoice})` : ""}.`,
-    mistake: (usePassage && isReading)
+    mistake: (subject === "Reading")
       ? "This distractor may seem correct but is not supported by the passage."
       : "This distractor may seem correct but it does not match all required conditions in the question.",
-    tip: (usePassage && isReading)
+    tip: (subject === "Reading")
       ? "Check the exact detail that confirms the correct answer."
       : "Verify each condition and the operation or relationship before choosing.",
   };
@@ -980,10 +976,58 @@ function ensureUsableExplanation(
   return "Think about what the passage shows and which answer best matches the main idea or detail.";
 }
 
+function enforceSubjectExplanationLanguage(text: string, subject: string): string {
+  const normalizedSubject = String(subject || "").toLowerCase();
+  const isReading = normalizedSubject.includes("reading");
+  const cleaned = String(text || "").trim();
+  if (!cleaned) return cleaned;
+  if (isReading) return cleaned;
+
+  if (/\b(passage|main idea|text evidence)\b/i.test(cleaned)) {
+    if (normalizedSubject.includes("math")) {
+      return "The correct answer is supported by the math steps and operations used to solve the problem.";
+    }
+    if (normalizedSubject.includes("science")) {
+      return "The correct answer is supported by the scientific process and cause-and-effect relationship in the scenario.";
+    }
+    if (normalizedSubject.includes("social")) {
+      return "The correct answer is supported by the historical context, events, and cause-and-effect relationships.";
+    }
+  }
+
+  return cleaned;
+}
+
 function getLevelInstruction(level: Level): string {
   if (level === "Below") return "LOW: simple and direct";
   if (level === "Advanced") return "ADVANCED: deeper thinking";
   return "ON LEVEL: moderate reasoning";
+}
+
+function purposeGuidance(purpose: string): string {
+  const p = String(purpose || "").toLowerCase();
+  if (p.includes("do now")) {
+    return `
+Purpose guidance (Do Now):
+- Keep questions quick, focused, and warm-up style.
+- Keep cognitive load targeted to essential readiness for the skill.
+`;
+  }
+  if (p.includes("small group")) {
+    return `
+Purpose guidance (Small Group):
+- Prioritize targeted reteach with clear scaffolding.
+- Include support-oriented prompts that build confidence and accuracy.
+`;
+  }
+  if (p.includes("enrichment")) {
+    return `
+Purpose guidance (Enrichment):
+- Extend thinking through application, reasoning, or perspective.
+- Do NOT only make items harder; make them deeper.
+`;
+  }
+  return "";
 }
 
 
@@ -1321,16 +1365,27 @@ function generateQuestionsPrompt(params: {
   level: Level;
   passage: string | null;
   teksCode?: string;
+  purpose?: string;
 }): string {
-  const { grade, subject, skill, level, passage, teksCode = "Unknown" } = params;
+  const { grade, subject, skill, level, passage, teksCode = "Unknown", purpose = "" } = params;
   const normalizedSkill = String(skill || "").toLowerCase();
+  const purposeBlock = purposeGuidance(purpose);
   const levelThinkingGuidance = level === "Advanced"
     ? `
 Advanced questions should:
-- require deeper reasoning or multiple steps
+- feel more challenging than typical practice while remaining clear
+- most questions should require multi-step reasoning or interpretation
+- include at least 2 questions that require reasoning beyond calculation
+- avoid making the set feel like basic practice
 - involve applying ideas to new situations
 - include prediction, comparison, or evaluation
-- avoid simple recall or one-step answers
+- include more items where students decide what steps to take
+- include more items where students combine multiple pieces of information
+- include more items where students interpret what an answer means in context
+- include at least 1 question such as "Which statement is true?" or "Which explanation is correct?"
+- include at least 1 question where more than one choice seems reasonable and students must select the best answer
+- do not force every question to be complex
+- avoid simple recall or one-step answers when possible
 `
     : level === "Below"
     ? `
@@ -1366,11 +1421,15 @@ Requirements:
 - Write one full passage (150-300 words) in "passage".
 - Then write exactly 5 comprehension questions in "questions".
 - Every question and choice must be answerable from the passage.
+- Use exactly 4 answer choices (A-D) for each question.
+- Only one correct answer per question.
 - Keep output concise.
 
 Practice Mode rigor enforcement (CRITICAL):
-- Eliminate ALL simple recall questions.
-- If a question can be answered by copying one sentence from the passage, rewrite that question.
+- At least 3 questions should require inference.
+- Most questions should require students to connect multiple details.
+- Avoid questions that can be answered from a single sentence in the passage.
+- Avoid questions that can be answered from a single sentence when possible.
 - At least 3 of the 5 questions MUST be inference-based.
 - No more than 1 direct recall question is allowed.
 - Every question must require thinking beyond the text.
@@ -1379,7 +1438,7 @@ Practice Mode rigor enforcement (CRITICAL):
   - "What did ___ find?"
   - "Which season...?"
   - Any single stated-fact question.
-- Before finalizing, self-check: if more than 1 question is recall, rewrite until compliant.
+- Keep direct recall limited to at most 1 question.
 - Questions should not feel like a basic worksheet; they must require analysis and justification.
 
 Return JSON:
@@ -1414,19 +1473,35 @@ Requirements:
 - DO NOT generate a passage.
 - Set "passage" to null.
 - Generate exactly 5 word problems in "questions".
+- Use exactly 4 answer choices (A-D) for each question.
+- Only one correct answer per question.
 - Each question must be self-contained with its own context.
-- Problems should usually require more than one step to solve.
-- Whenever possible:
-  - combine operations (for example, multiply then subtract, or divide then add)
-  - include a second action after an initial calculation
-  - require students to decide what to do first before calculating
-- Avoid simple one-step problems unless needed for variety.
-- At least some problems should require multiple steps or decisions to reach the final answer.
-- Include a mix of:
-  - problems where a value is found first and then used in a second calculation
-  - problems involving comparison or remaining amounts
-  - problems that require interpreting the situation before solving
+- Keep questions clear, classroom-ready, and appropriate for the selected level.
+- Most questions should require thinking, not just direct calculation.
+- Include a natural mix of:
+  - straightforward questions
+  - multi-step questions
+  - questions where students must interpret the result
+- Most problems should require more than one step.
+- Include at least 2 problems that clearly require multiple steps.
+- Avoid making the entire set simple or single-step.
+- Include at least 1 problem that requires reasoning or decision-making, not just calculation.
+- Students should often need to:
+  - decide what to do next
+  - combine information
+  - think about what the answer means
+- Include at least one question where students must explain or justify their answer.
+- It is okay if not every question is complex.
+- Answer choice quality is critical:
+  - Keep exactly 4 choices (A-D) per question.
+  - Some distractors should reflect common mistakes (wrong operation, missed step, partial work).
+  - Other distractors should still be plausible and connected to the problem values.
+  - Avoid obviously incorrect or unrelated answers.
+- Do NOT overcomplicate or create trick questions.
+- Maintain classroom usability.
+- Do NOT include explanations, rationales, or worked steps in the output.
 ${levelThinkingGuidance}
+${purposeBlock}
 - Keep output concise.
 
 Return JSON:
@@ -1449,8 +1524,12 @@ Generate concise STAAR-style Science practice content.
 Requirements:
 - Write one short informational excerpt (50-120 words) in "passage".
 - Then write exactly 5 questions in "questions" based on that excerpt.
+- Use exactly 4 answer choices (A-D) for each question.
+- Only one correct answer per question.
 - Do NOT generate definition-only or identification-only sets.
 - Allow at most 1 light recall question; at least 4 questions must require reasoning.
+- Most questions should require thinking beyond direct recall.
+- Most questions should involve cause/effect, prediction, or application.
 - Prioritize:
   - cause → effect
   - conditions → outcome
@@ -1458,10 +1537,11 @@ Requirements:
   - real-world application of concepts
 - Prefer "what happens if..." or "which result is most likely..." style prompts over term-definition prompts.
 - Include variables, observations, or simple experimental setups whenever possible.
-- If questions drift into pure vocabulary recall, revise them toward scenario-based reasoning.
+- Avoid pure vocabulary-recall questions; prefer scenario-based reasoning.
 ${scienceInvestigationFocus}
 ${levelThinkingGuidance}
-- If a question can be answered by memorizing one sentence, rewrite it to require thinking.
+${purposeBlock}
+- Avoid questions that can be answered by memorizing one sentence.
 - Keep output concise.
 
 Return JSON:
@@ -1483,8 +1563,12 @@ Generate concise STAAR-style Social Studies practice content.
 Requirements:
 - Write one short historical or informational excerpt (50-120 words) in "passage".
 - Then write exactly 5 questions in "questions" based on that excerpt.
+- Use exactly 4 answer choices (A-D) for each question.
+- Only one correct answer per question.
 - Do NOT generate sets that only ask for names, dates, or numbers.
 - Allow at most 1 light recall question; at least 4 questions must require reasoning.
+- Most questions should require thinking beyond direct recall.
+- Most questions should involve cause/effect, prediction, or application.
 - Prioritize:
   - why events happened
   - effects of decisions
@@ -1492,7 +1576,8 @@ Requirements:
   - how events influenced people or society
 - Match reasoning depth to level (On-Level = direct relationships; Advanced = multi-step prediction/comparison/evaluation).
 ${levelThinkingGuidance}
-- If a question can be answered by memorizing one sentence, rewrite it to require thinking.
+${purposeBlock}
+- Avoid questions that can be answered by memorizing one sentence.
 - Keep output concise.
 
 Return JSON:
@@ -1522,9 +1607,11 @@ function generateCrossCurricularPrompt(params: {
   skill: string;
   level: Level;
   teksCode?: string;
+  purpose?: string;
 }): string {
-  const { grade, subject, skill, level, teksCode = "Unknown" } = params;
+  const { grade, subject, skill, level, teksCode = "Unknown", purpose = "" } = params;
   const topicRule = crossCurricularPassageTopicRule(subject);
+  const purposeBlock = purposeGuidance(purpose);
   const normalizedSkill = String(skill || "").toLowerCase();
   const crossLevelThinking = level === "Advanced"
     ? `
@@ -1617,24 +1704,14 @@ Inputs:
 - Skill: ${skill}
 - Level: ${level}
 - TEKS: ${teksCode}
+${purposeBlock}
 
 Requirements:
-- Passage should be 150–200 words. Do not exceed 220 words.
+- Passage must be 150–200 words.
 - Passage topic must be: ${topicRule}.
-- Passage must support reasoning questions with enough usable detail.
+- Passage must include clear details, relationships, or changes.
 - Include at least one clear cause/effect or comparison relationship.
-- Passage must include 5–7 full sentences.
-- Every sentence must express a complete idea.
-- NEVER output incomplete sentences.
-- Final sentence must clearly conclude the idea.
-- Do NOT leave unfinished comparisons or thoughts.
-- Do NOT end any sentence with:
-  - "and the"
-  - "which"
-  - "it"
-  - "this"
-  - a trailing comma or other unfinished punctuation
-- If any sentence is incomplete or feels cut off, rewrite the entire passage before writing questions.
+- Passage must support all questions.
 
 Question design rules:
 - Generate exactly 5 multiple-choice questions.
@@ -1644,7 +1721,7 @@ Question design rules:
 ${crossQuestionFocus}
 - Match the reasoning depth to the requested level:
 ${crossLevelThinking}
-- Each question MUST directly reference the passage.
+- Each question must directly reference the passage.
 - Do NOT generate generic or reusable questions.
 - Every question must include a specific idea, action, or detail from the passage.
 - Maintain similar rigor to Practice Mode question quality.
@@ -1656,32 +1733,16 @@ ${crossLevelThinking}
 
 RIGOR & LEVEL GUIDELINES:
 
-GENERAL:
-- Avoid direct retrieval questions (answers should not be found in a single sentence)
-- Prioritize inference, supporting details, and reasoning over simple recall
-
-- Questions should require the student to:
-  - connect multiple details
-  - interpret meaning
-  - explain relationships or changes
-
-LEVEL ADJUSTMENT:
-
 Below Level:
-- Keep language simple and direct
-- Still require thinking, but reduce complexity of reasoning steps
-- Focus on clear supporting details and basic inference
+- Use clear relationships and simple reasoning.
 
 On Level:
-- Use full grade-level expectations
-- Include a mix of supporting detail, inference, and structure questions
+- Include a mix of inference and subject reasoning.
+- Students should connect details from different parts of the passage.
 
 Advanced Level:
-- Emphasize deeper reasoning and interpretation
-- Include questions that require:
-  - connecting ideas across the passage
-  - analyzing meaning or impact
-  - selecting the BEST evidence rather than obvious details
+- Emphasize multi-step thinking, interpretation, or comparison.
+- Include at least 1 deeper reasoning question.
 
 IMPORTANT:
 - Keep all questions grounded in the passage
@@ -1752,51 +1813,31 @@ function buildCoreEnrichmentPrompt(params: {
     .trim();
 
   return `
-You are generating structured tutoring support for STAAR practice.
+You are generating tutoring support and answer explanations.
 
-Return JSON only. No markdown. No extra text.
+Return JSON only.
 
-OUTPUT FORMAT:
-{
-  "tutor": {
-    "practice": [
-      {
-        "questionIndex": number,
-        "hint": string,
-        "strategy": string,
-        "step_by_step": string
-      }
-    ],
-    "cross": [
-      {
-        "questionIndex": number,
-        "hint": string,
-        "strategy": string,
-        "step_by_step": string
-      }
-    ]
-  },
-  "answerKey": {
-    "practice": [
-      {
-        "questionIndex": number,
-        "correct_answer": string,
-        "explanation": string,
-        "why": string
-      }
-    ],
-    "cross": [
-      {
-        "questionIndex": number,
-        "correct_answer": string,
-        "explanation": string,
-        "why": string
-      }
-    ]
-  }
-}
+GOAL
+Provide clear, helpful explanations aligned to each question.
+
+TUTOR
+- Give a short hint.
+- Give a clear explanation of thinking.
+- Keep it simple and direct.
+- Match explanation to subject:
+  - Math → steps and operations
+  - Science → process and cause/effect
+  - Social Studies → events and impact
+  - Reading → evidence and meaning
+
+ANSWER KEY
+- State correct answer.
+- Give short explanation (1–2 sentences).
+- Explain one common mistake briefly.
 
 INPUT DATA:
+Subject: ${params.subject}
+
 Practice Questions:
 ${JSON.stringify(compactPractice)}
 
@@ -1806,21 +1847,17 @@ ${crossPassage}
 Cross Questions:
 ${JSON.stringify(compactCross)}
 
-RULES
---------------------------------------------------
-- Return valid JSON only
-- Do not return {}
-- Always return your best attempt for every section, even if some content is incomplete
-- Ensure tutor.practice length matches Practice Questions length
-- Ensure tutor.cross length matches Cross Questions length
-- Ensure answerKey.practice length matches Practice Questions length
-- Ensure answerKey.cross length matches Cross Questions length
-- Keep explanations concise, specific, and useful
-- questionIndex must align to input order (0-based)
-
---------------------------------------------------
-RETURN JSON ONLY
---------------------------------------------------
+OUTPUT
+{
+  "tutor": {
+    "practice": [...],
+    "cross": [...]
+  },
+  "answerKey": {
+    "practice": [...],
+    "cross": [...]
+  }
+}
 `;
 }
 
@@ -1852,6 +1889,7 @@ function normalizeEnrichmentSupport(
   data: Record<string, unknown> | null,
   practiceQuestions: Question[],
   crossQuestions: Question[],
+  subject: CanonicalSubject = "Reading",
 ): {
   tutor: { practice: TutorExplanation[]; cross: TutorExplanation[] };
   answerKey: { practice: AnswerKeyEntry[]; cross: AnswerKeyEntry[] };
@@ -1874,7 +1912,20 @@ function normalizeEnrichmentSupport(
         return {
           question_id: ensureQuestionId(practiceQuestions[i], i, "practice"),
           question: String(practiceQuestions[i]?.question || "").trim(),
-          explanation: String(source.strategy || "").trim() || "Use evidence from the passage.",
+          explanation: (() => {
+            const base = String(source.strategy || "").trim();
+            if (base) return base;
+            if (subject === "Math") {
+              return "Work through the numbers step by step and check your operations.";
+            }
+            if (subject === "Science") {
+              return "Think about the scientific concept and how the process works.";
+            }
+            if (subject === "Social Studies") {
+              return "Consider the cause and effect or relationship between events.";
+            }
+            return "Use evidence from the passage.";
+          })(),
           common_mistake: "Choosing an answer without enough supporting evidence.",
           hint: String(source.hint || "").trim() || "Think about what the question is asking.",
           think: "",
@@ -1888,7 +1939,20 @@ function normalizeEnrichmentSupport(
         return {
           question_id: ensureQuestionId(crossQuestions[i], i, "cross"),
           question: String(crossQuestions[i]?.question || "").trim(),
-          explanation: String(source.strategy || "").trim() || "Focus on key details.",
+          explanation: (() => {
+            const base = String(source.strategy || "").trim();
+            if (base) return base;
+            if (subject === "Math") {
+              return "Work through the numbers step by step and check your operations.";
+            }
+            if (subject === "Science") {
+              return "Think about the scientific concept and how the process works.";
+            }
+            if (subject === "Social Studies") {
+              return "Consider the cause and effect or relationship between events.";
+            }
+            return "Focus on key details.";
+          })(),
           common_mistake: "Ignoring important evidence from the cross passage.",
           hint: String(source.hint || "").trim() || "Look back at the passage for clues.",
           think: "",
@@ -4291,6 +4355,9 @@ function sanitizeAnswerKey(
       String(fromAi?.correct_answer || normalizeAnswerKeyEntry(q.correct_answer) || ""),
     );
     const expectedId = ensureQuestionId(q, i, mode);
+    const normalizedChoices = normalizeChoices(q.choices);
+    const correctIndex = Math.max(0, LETTERS.indexOf(correct));
+    const correctChoice = String(normalizedChoices[correctIndex] || "").trim();
     const evidence = mode === "cross"
       ? summarizeEvidenceIdea(selectEvidenceSnippet(q, crossPassage, usedEvidence) || fallbackEvidenceSnippet(crossPassage))
       : "";
@@ -4298,7 +4365,7 @@ function sanitizeAnswerKey(
     const conciseExisting = currentExplanation.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ").trim();
     const explanation = (!conciseExisting || genericCoachPattern.test(conciseExisting))
       ? (subject === "Math"
-        ? `Choice ${correct} is correct because the calculation using the given numbers leads to this result. A wrong answer may come from using the wrong operation or skipping a step.`
+        ? `The correct answer is ${correct}${correctChoice ? ` (${correctChoice})` : ""} because you must correctly combine the values from the problem and follow each step to reach the final result.`
         : subject === "Science"
         ? `Choice ${correct} is correct because it correctly explains the cause-and-effect relationship described. A wrong answer may confuse the variable or outcome.`
         : subject === "Social Studies"
@@ -4672,10 +4739,10 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
       return {
         question_id: ensureQuestionId(q, i, mode),
         question: String(q.question || "").trim(),
-        explanation: support.explanation,
-        common_mistake: support.commonMistake,
-        hint: support.hint,
-        think: support.think,
+        explanation: enforceSubjectExplanationLanguage(support.explanation, subject),
+        common_mistake: enforceSubjectExplanationLanguage(support.commonMistake, subject),
+        hint: enforceSubjectExplanationLanguage(support.hint, subject),
+        think: enforceSubjectExplanationLanguage(support.think, subject),
         step_by_step: support.stepByStep,
       };
     });
@@ -4689,8 +4756,8 @@ function enforceSingleSourceOfTruth(data: WorkerAttempt, subject: CanonicalSubje
       return {
         question_id: ensureQuestionId(q, i, mode),
         correct_answer: normalizeAnswerKeyEntry(q.correct_answer),
-        explanation: support.explanation,
-        common_mistake: support.commonMistake,
+        explanation: enforceSubjectExplanationLanguage(support.explanation, subject),
+        common_mistake: enforceSubjectExplanationLanguage(support.commonMistake, subject),
         parent_tip: support.parentTip,
       };
     });
@@ -4773,6 +4840,7 @@ serve(async (req) => {
   let effectiveSkill = READING_SKILL_DEFAULT;
   let teksCode = "Unknown";
   let contextType = "real-world application";
+  let purpose = "";
   const repairState = { used: false };
 
   const jsonResponse = (payload: Record<string, unknown>, status = 200) =>
@@ -5161,6 +5229,7 @@ serve(async (req) => {
       level: incomingLevel,
       mode: incomingMode,
       contextType: incomingContextType,
+      purpose: incomingPurpose,
     } = body;
     const requestPath = new URL(req.url).pathname;
 
@@ -5216,6 +5285,7 @@ serve(async (req) => {
         enrichment && Object.keys(enrichment).length ? enrichment : null,
         practiceQuestions,
         crossQuestions,
+        enrichSubject,
       );
       const tutorPractice = tutor.practice;
       const tutorCross = tutor.cross;
@@ -5292,6 +5362,7 @@ serve(async (req) => {
     teksCode = resolveTeks(subject, skill, grade);
     level = normalizeLevel(incomingLevel);
     contextType = String(incomingContextType || "real-world application").trim() || "real-world application";
+    purpose = String(incomingPurpose || "").trim();
     const normalizedMode = String(incomingMode || "").toLowerCase().trim();
     if (normalizedMode === "cross" || normalizedMode === "cross-curricular") {
       effectiveMode = "cross";
@@ -5327,6 +5398,7 @@ serve(async (req) => {
           skill: effectiveSkill,
           level,
           teksCode,
+          purpose,
         }),
       ) as Record<string, unknown> | null;
       const scopedCross = aiCross?.cross && typeof aiCross.cross === "object"
@@ -5466,6 +5538,7 @@ serve(async (req) => {
                 level,
                 teksCode,
                 passage: safePassage,
+                purpose,
               }) + `\nVariation ID: ${variationId}`,
             ) as Record<string, unknown> | null;
             const parsed: any = questionRes || {};
@@ -5576,6 +5649,7 @@ serve(async (req) => {
               skill: effectiveSkill,
               level,
               teksCode,
+              purpose,
             }) + `\nVariation ID: ${variationId}`,
           ) as Record<string, unknown> | null;
         }
@@ -5671,6 +5745,7 @@ serve(async (req) => {
               skill: effectiveSkill,
               level,
               teksCode,
+              purpose,
             }) + `\nVariation ID: ${variationId}-retry`,
           ) as Record<string, unknown> | null;
           const retryCross = getCrossPayloadFromResponse(retryCrossRes);
@@ -5751,6 +5826,7 @@ serve(async (req) => {
           crossEnrichment || {},
           safePracticeQuestions,
           crossQuestions,
+          effectiveSubject,
         );
 
         tutorPractice = sanitizeTutorExplanations(
