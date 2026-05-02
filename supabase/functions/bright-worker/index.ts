@@ -1346,7 +1346,9 @@ function generateQuestionsPrompt(params: {
     ? `
 Advanced questions should:
 - feel more challenging than typical practice while remaining clear
-- require deeper reasoning or multiple steps
+- most questions should require multi-step reasoning or interpretation
+- include at least 2 questions that require reasoning beyond calculation
+- avoid making the set feel like basic practice
 - involve applying ideas to new situations
 - include prediction, comparison, or evaluation
 - include more items where students decide what steps to take
@@ -1450,11 +1452,14 @@ Requirements:
   - straightforward questions
   - multi-step questions
   - questions where students must interpret the result
+- Most problems should require more than one step.
+- Include at least 2 problems that clearly require multiple steps.
+- Avoid making the entire set simple or single-step.
+- Include at least 1 problem that requires reasoning or decision-making, not just calculation.
 - Students should often need to:
   - decide what to do next
   - combine information
   - think about what the answer means
-- Include at least 2 multi-step problems.
 - Include at least one question where students must explain or justify their answer.
 - It is okay if not every question is complex.
 - Answer choice quality is critical:
