@@ -3414,7 +3414,7 @@ Create your second version now.`;
           output.innerHTML = `
             <div style="padding:20px; text-align:center;">
             <h2>📄 Building your STAAR set...</h2>
-              <p style="opacity:0.7;">Building your first version...<br>Next: we’ll help you create versions for your other groups.</p>
+              <p style="opacity:0.7;">Creating Practice first...</p>
             </div>
           `;
         }
@@ -3509,11 +3509,11 @@ Create your second version now.`;
 
         const modeStatus = document.getElementById("mode-status");
         if (modeStatus) {
-          modeStatus.textContent = "Mode: Practice Mode ON • Loading Cross/Tutor...";
+          modeStatus.textContent = "Mode: Practice ready • Loading Cross/Tutor...";
         }
         const modeIndicator = document.getElementById("mode-indicator");
         if (modeIndicator) {
-          modeIndicator.textContent = "Mode: Practice Mode ON • Loading Cross/Tutor...";
+          modeIndicator.textContent = "Mode: Practice ready • Loading Cross/Tutor...";
           modeIndicator.classList.remove("pulse");
           startThinkingIndicator(requestId);
           setTimeout(() => {
@@ -3590,11 +3590,10 @@ Create your second version now.`;
           `;
         }
       } finally {
-        isGenerating = false;
+        resetGenerateState();
         clearThinkingIndicator();
 
-        if (btn) {
-          btn.disabled = false;
+        if (btn && btn.textContent === "Generate Your Do Now (10 seconds)") {
           btn.textContent = "Create another differentiated set";
         }
 
