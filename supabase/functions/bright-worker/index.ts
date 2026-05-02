@@ -1345,10 +1345,17 @@ function generateQuestionsPrompt(params: {
   const levelThinkingGuidance = level === "Advanced"
     ? `
 Advanced questions should:
+- feel more challenging than typical practice while remaining clear
 - require deeper reasoning or multiple steps
 - involve applying ideas to new situations
 - include prediction, comparison, or evaluation
-- avoid simple recall or one-step answers
+- include more items where students decide what steps to take
+- include more items where students combine multiple pieces of information
+- include more items where students interpret what an answer means in context
+- include at least 1 question such as "Which statement is true?" or "Which explanation is correct?"
+- include at least 1 question where more than one choice seems reasonable and students must select the best answer
+- do not force every question to be complex
+- avoid simple recall or one-step answers when possible
 `
     : level === "Below"
     ? `
