@@ -1491,15 +1491,15 @@
         </div>
 
         <div class="field">
-          <label for="skill">What does your child need help with?</label>
+          <label for="skill">What skill do you want to target?</label>
           <select id="skill"></select>
         </div>
 
         <div class="field">
-          <label for="level">Level</label>
+          <label for="level">Adjust for your students</label>
           <select id="level">
             <option>Below</option>
-            <option>On Level</option>
+            <option selected>On Level</option>
             <option>Advanced</option>
           </select>
           <p class="level-hint">Below = intervention • On Level = grade-level rigor • Advanced = challenge</p>
@@ -2485,6 +2485,16 @@
 
     function setPurpose(purpose, event) {
       selectedPurpose = purpose;
+      const levelByPurpose = {
+        "Do Now": "On Level",
+        "Small Group": "Below",
+        Enrichment: "Advanced"
+      };
+      const levelSelect = document.getElementById("level");
+      const mappedLevel = levelByPurpose[purpose];
+      if (levelSelect && mappedLevel) {
+        levelSelect.value = mappedLevel;
+      }
 
       document.querySelectorAll(".purpose-btn").forEach((btn) => {
         btn.classList.remove("active");
@@ -2670,11 +2680,11 @@
           </button>
 
           <button type="button" onclick="setPurpose('Small Group'); generate()">
-            Create Small Group Set
+            Create Small Group for This Skill
           </button>
 
           <button type="button" onclick="setPurpose('Enrichment'); generate()">
-            Build Enrichment
+            Add Enrichment Challenge
           </button>
         </div>
       `;
