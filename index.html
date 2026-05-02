@@ -191,6 +191,40 @@
       gap: 8px;
     }
 
+    .purpose-selector {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .purpose-btn {
+      border: 1px solid #cfd8e3;
+      border-radius: 999px;
+      background: #fff;
+      color: #1e334a;
+      padding: 10px 14px;
+      font-size: 0.96rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      flex: 1 1 calc(33.33% - 8px);
+      min-width: 140px;
+    }
+
+    .purpose-btn:hover {
+      border-color: #9ab4db;
+      background: #f6f9ff;
+    }
+
+    .purpose-btn.active {
+      background: #ede9fe;
+      border-color: #8b5cf6;
+      color: #4c1d95;
+      box-shadow: 0 4px 14px rgba(109, 40, 217, 0.15);
+    }
+
     .subject-btn {
       border: 1px solid #cfd8e3;
       border-radius: 999px;
@@ -541,6 +575,36 @@
       margin-top: 10px;
       color: #166534;
       font-weight: 600;
+    }
+
+    .next-actions {
+      margin-top: 16px;
+      padding: 14px;
+      border: 1px solid #ddd6fe;
+      border-radius: 12px;
+      background: #faf5ff;
+    }
+
+    .next-actions h3 {
+      margin: 0 0 10px;
+      color: #4c1d95;
+      font-size: 1rem;
+    }
+
+    .next-actions button {
+      width: 100%;
+      border: 1px solid #d8ccff;
+      border-radius: 10px;
+      background: #fff;
+      color: #312e81;
+      padding: 10px 12px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      cursor: pointer;
+    }
+
+    .next-actions button:last-child {
+      margin-bottom: 0;
     }
 
     .next-step {
@@ -1296,8 +1360,8 @@
     <header class="header section hero-text">
       <div class="header-inner">
         <div class="header-content">
-          <h1>Generate STAAR-Aligned Practice in 10 Seconds</h1>
-          <p>Create Do Now, MTSS, and differentiated practice instantly.</p>
+          <h1>Your Do Now is done in 10 seconds.</h1>
+          <p>Generate small group and enrichment instantly.</p>
         </div>
       </div>
     </header>
@@ -1308,7 +1372,7 @@
       </div>
       <div class="hero-cta-button">
         <button onclick="generate()" class="generate-btn">
-          Generate Your Do Now (10 seconds)
+          Create My Do Now (10 seconds)
         </button>
       </div>
     </section>
@@ -1400,6 +1464,15 @@
       </div>
       <div class="form-grid">
         <div class="field">
+          <label>Purpose</label>
+          <div class="purpose-selector" role="radiogroup" aria-label="Purpose">
+            <button class="purpose-btn active" type="button" data-purpose="Do Now" onclick="setPurpose('Do Now', event)">Do Now</button>
+            <button class="purpose-btn" type="button" data-purpose="Small Group" onclick="setPurpose('Small Group', event)">Small Group</button>
+            <button class="purpose-btn" type="button" data-purpose="Enrichment" onclick="setPurpose('Enrichment', event)">Enrichment</button>
+          </div>
+        </div>
+
+        <div class="field">
           <label for="grade">Grade</label>
           <select id="grade">
             <option>3</option>
@@ -1463,7 +1536,7 @@
 
         Create your second version now.
       </p>
-      <button id="generate-btn" class="generate-btn" type="button" onclick="generate()">Generate Your Do Now (10 seconds)</button>
+      <button id="generate-btn" class="generate-btn" type="button" onclick="generate()">Create My Do Now (10 seconds)</button>
       <p id="generation-success-hint" class="success-hint" style="display:none;">✅ First version created — now build your support or advanced group</p>
       <p id="auth-required-note" style="display:none; margin-top:10px; color:#7a2e00; font-weight:600;">
         Create a free account to generate your first practice set.
@@ -1586,6 +1659,7 @@
     let bannerTimeoutId = null;
     let isRedirectingToLogin = false;
     let upgradeChecked = false;
+    let selectedPurpose = "Do Now";
     let isGenerating = false;
     let pendingRegenerate = false;
     let isStudentView = false;
@@ -1617,7 +1691,7 @@
       currentController = null;
       if (generateBtn) {
         generateBtn.disabled = false;
-        generateBtn.textContent = "Generate Your Do Now (10 seconds)";
+        generateBtn.textContent = "Create My Do Now (10 seconds)";
       }
       console.log("✅ Generate reset complete");
     }
@@ -2409,7 +2483,18 @@
       return validCount >= Math.ceil(questions.length * 0.6);
     }
 
-    async function fetchPracticeCore({ token, subject, grade, skill, level }) {
+    function setPurpose(purpose, event) {
+      selectedPurpose = purpose;
+
+      document.querySelectorAll(".purpose-btn").forEach((btn) => {
+        btn.classList.remove("active");
+      });
+
+      const targetButton = event?.target || document.querySelector(`.purpose-btn[data-purpose="${purpose}"]`);
+      targetButton?.classList.add("active");
+    }
+
+    async function fetchPracticeCore({ token, subject, grade, skill, level, purpose }) {
       const response = await fetch(
         "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
         {
@@ -2424,7 +2509,8 @@
             subject,
             grade,
             skill,
-            level
+            level,
+            purpose
           })
         }
       );
@@ -2445,7 +2531,7 @@
       return response.json();
     }
 
-    async function fetchEnrichment({ token, subject, grade, skill, level, passage, practiceQuestions }) {
+    async function fetchEnrichment({ token, subject, grade, skill, level, purpose, passage, practiceQuestions }) {
       const response = await fetch(
         "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
         {
@@ -2461,6 +2547,7 @@
             grade,
             skill,
             level,
+            purpose,
             passage,
             practiceQuestions: Array.isArray(practiceQuestions) ? practiceQuestions : []
           })
@@ -2575,15 +2662,19 @@
           <div id="answer-section" style="display:none;"></div>
         </div>
         <div id="completion-feedback"></div>
-        <div id="next-step-container" class="next-step" style="margin-top:16px;">
-          <button onclick="generate()" class="generate-btn secondary" style="
-            padding:12px;
-            border:none;
-            border-radius:8px;
-            font-weight:600;
-            width:100%;
-          ">
-            🔁 Practice Another Skill
+        <div class="next-actions">
+          <h3>Keep your lesson going</h3>
+
+          <button type="button" onclick="setPurpose('Do Now'); generate()">
+            Generate Tomorrow’s Do Now
+          </button>
+
+          <button type="button" onclick="setPurpose('Small Group'); generate()">
+            Create Small Group Set
+          </button>
+
+          <button type="button" onclick="setPurpose('Enrichment'); generate()">
+            Build Enrichment
           </button>
         </div>
       `;
@@ -3455,7 +3546,7 @@ Create your second version now.`;
         const level = document.getElementById("level")?.value;
         updateDifferentiationPrompt(level);
 
-        console.log("📦 PAYLOAD:", { grade, subject, skill, level });
+        console.log("📦 PAYLOAD:", { grade, subject, skill, level, purpose: selectedPurpose });
 
         console.log("📡 SENDING REQUEST");
 
@@ -3464,7 +3555,8 @@ Create your second version now.`;
           subject,
           grade,
           skill,
-          level
+          level,
+          purpose: selectedPurpose
         });
 
         console.log("✅ CORE DATA RECEIVED:", coreResponse);
@@ -3530,6 +3622,7 @@ Create your second version now.`;
           grade,
           skill,
           level,
+          purpose: selectedPurpose,
           passage: coreData.passage,
           practiceQuestions: coreData?.practice?.questions
         })
@@ -3593,7 +3686,7 @@ Create your second version now.`;
         resetGenerateState();
         clearThinkingIndicator();
 
-        if (btn && btn.textContent === "Generate Your Do Now (10 seconds)") {
+        if (btn && btn.textContent === "Create My Do Now (10 seconds)") {
           btn.textContent = "Create another differentiated set";
         }
 
@@ -3603,6 +3696,7 @@ Create your second version now.`;
 
     window.setMode = setMode;
     window.toggleView = toggleView;
+    window.setPurpose = setPurpose;
     window.generate = generate;
     window.signUp = signUp;
     window.signIn = signIn;
