@@ -2828,14 +2828,35 @@
       }
     }
 
-    function startThinkingIndicator(requestId) {
+    function startThinkingIndicator(requestId, subject) {
       clearThinkingIndicator();
-      const messages = [
-        "Analyzing passage...",
-        "Building STAAR-style questions...",
-        "Applying TEKS rigor...",
-        "Preparing tutor explanations..."
-      ];
+      const messageSets = {
+        Math: [
+          "Analyzing math skill focus...",
+          "Building STAAR-style math problems...",
+          "Checking grade-level math guardrails...",
+          "Preparing tutor explanations..."
+        ],
+        Reading: [
+          "Analyzing passage...",
+          "Building STAAR-style questions...",
+          "Applying TEKS rigor...",
+          "Preparing tutor explanations..."
+        ],
+        Science: [
+          "Analyzing science passage...",
+          "Building STAAR-style science questions...",
+          "Applying TEKS rigor...",
+          "Preparing tutor explanations..."
+        ],
+        "Social Studies": [
+          "Analyzing social studies passage...",
+          "Building STAAR-style social studies questions...",
+          "Applying TEKS rigor...",
+          "Preparing tutor explanations..."
+        ]
+      };
+      const messages = messageSets[subject] || messageSets.Reading;
       let messageIndex = 0;
       const indicator = document.getElementById("mode-indicator");
       if (!indicator) return;
@@ -3617,7 +3638,7 @@ Create your second version now.`;
         if (modeIndicator) {
           modeIndicator.textContent = "Mode: Practice ready • Loading Cross/Tutor...";
           modeIndicator.classList.remove("pulse");
-          startThinkingIndicator(requestId);
+          startThinkingIndicator(requestId, subject);
           setTimeout(() => {
             if (currentRequestId !== requestId || !isGenerating) return;
             modeIndicator.textContent = "Mode: Practice Mode ON • Almost ready...";

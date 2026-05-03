@@ -1473,6 +1473,15 @@ Requirements:
 - DO NOT generate a passage.
 - Set "passage" to null.
 - Generate exactly 5 word problems in "questions".
+- All problems must reflect the selected skill: ${skill}.
+- Avoid including problems that do not match the skill focus.
+
+Grade Guardrails:
+- Ensure all math concepts match typical grade-level standards.
+- Do not introduce concepts above grade level.
+- Grade 3: no percentages and no decimals beyond basic place value contexts.
+- Grade 4: limited decimals and basic fractions only.
+- Grade 5 and above: percentages and multi-step operations are allowed.
 - Use exactly 4 answer choices (A-D) for each question.
 - Only one correct answer per question.
 - Each question must be self-contained with its own context.
