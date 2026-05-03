@@ -174,6 +174,31 @@
       flex-wrap: wrap;
     }
 
+    .library-card {
+      background: #ffffff;
+      border: 1px solid #dbe3ee;
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .library-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .library-lesson {
+      border: 1px solid #dbe3ee;
+      border-radius: 12px;
+      padding: 12px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
     .generator-card {
       background: #f8fafc;
       border-radius: 14px;
@@ -1622,6 +1647,14 @@
       <p id="usage-status" style="margin-top:8px; color:#1e3a5f; font-weight:600;"></p>
     </section>
 
+    <section class="library-card section">
+      <h3 style="margin:0;">Lesson Library</h3>
+      <p style="margin-top:6px; color:#64748b;">Save lessons in the generator, then start live class from here.</p>
+      <div id="lesson-library-list" class="library-list">
+        <p style="margin:0; color:#64748b;">Log in and save a lesson to build your library.</p>
+      </div>
+    </section>
+
     <section class="worksheet-card section">
       <div class="view-toggle" id="view-toggle" style="display: none;">
         <button id="practice-tab" class="mode-btn active" data-mode="practice" type="button">👨‍🎓 Practice Mode</button>
@@ -1960,6 +1993,40 @@
       return code;
     }
 
+    async function loadLessonLibrary() {
+      const list = document.getElementById("lesson-library-list");
+      if (!list) return;
+      if (!cachedUser?.id) {
+        list.innerHTML = `<p style="margin:0; color:#64748b;">Log in and save a lesson to build your library.</p>`;
+        return;
+      }
+      const { data, error } = await supabase
+        .from("lessons")
+        .select("id,title,created_at")
+        .eq("user_id", cachedUser.id)
+        .order("created_at", { ascending: false })
+        .limit(12);
+      if (error) {
+        list.innerHTML = `<p style="margin:0; color:#b91c1c;">Could not load library.</p>`;
+        return;
+      }
+      if (!data?.length) {
+        list.innerHTML = `<p style="margin:0; color:#64748b;">No lessons saved yet.</p>`;
+        return;
+      }
+      list.innerHTML = data.map((lesson) => `
+        <div class="library-lesson">
+          <div>
+            <strong>${cleanText(lesson.title || "Untitled lesson")}</strong><br>
+            <span style="color:#64748b; font-size:12px;">Saved ${new Date(lesson.created_at).toLocaleDateString()}</span>
+            <br>
+            <span style="font-size:12px; color:#64748b;">Students join with code • Live results below</span>
+          </div>
+          <button class="generate-btn auth-secondary" type="button" data-start-live-id="${lesson.id}">Start Class</button>
+        </div>
+      `).join("");
+    }
+
     function parseCorrectAnswer(correctAnswer) {
       if (!correctAnswer) return "";
       if (typeof correctAnswer === "string") return correctAnswer.toUpperCase().trim();
@@ -2185,8 +2252,10 @@
         startProfileUpdatesSubscription(cachedUser.id);
         await checkAndUpgradeUser(cachedUser);
         await refreshUsageStatus(cachedUser.id);
+        await loadLessonLibrary();
       } else {
         setAppAuthenticatedState(false);
+        await loadLessonLibrary();
       }
 
       supabase.auth.onAuthStateChange(async (event, session) => {
@@ -2204,11 +2273,13 @@
           setAppAuthenticatedState(false);
           stopProfileUpdatesSubscription();
           resetProtectedUI();
+          await loadLessonLibrary();
           if (event === "SIGNED_OUT") {
             redirectToLogin();
           }
           return;
         }
+        await loadLessonLibrary();
         // Only update lightweight auth state here.
       });
     }
@@ -3946,31 +4017,13 @@ Create your second version now.`;
           const saved = await saveLesson({ practice: coreData.practice, cross: coreData.cross || { passage: "", questions: [] } });
           currentLessonId = saved.id;
           sessionStatus.textContent = "✅ Lesson saved.";
+          await loadLessonLibrary();
         } catch (error) {
           sessionStatus.textContent = `❌ ${error.message || "Could not save lesson."}`;
         }
       });
 
-      assignBtn?.addEventListener("click", async () => {
-        try {
-          if (!currentLessonId) {
-            if (!coreData?.practice?.questions?.length) throw new Error("Generate a lesson first");
-            const saved = await saveLesson({ practice: coreData.practice, cross: coreData.cross || { passage: "", questions: [] } });
-            currentLessonId = saved.id;
-          }
-          const code = await createSession(currentLessonId);
-          sessionStatus.innerHTML = `📡 Tell students: go to <strong>${window.location.origin}/student</strong><br>Enter code: <strong>${code}</strong>`;
-          const { data: session } = await supabase.from("sessions").select("id").eq("code", code).single();
-          if (session?.id) {
-            currentLiveSessionId = session.id;
-            currentLiveCode = code;
-            copyCodeBtn.disabled = false;
-            await subscribeToResponses(session.id);
-          }
-        } catch (error) {
-          sessionStatus.textContent = `❌ ${error.message || "Could not assign lesson."}`;
-        }
-      });
+      if (assignBtn) assignBtn.style.display = "none";
 
       const endBtn = document.getElementById("end-session-btn");
       endBtn?.addEventListener("click", async () => {
@@ -3997,8 +4050,30 @@ Create your second version now.`;
         sessionStatus.textContent = "✅ Class code copied.";
       });
 
+      document.getElementById("lesson-library-list")?.addEventListener("click", async (event) => {
+        const btnEl = event.target.closest("[data-start-live-id]");
+        if (!btnEl) return;
+        const lessonId = btnEl.getAttribute("data-start-live-id");
+        if (!lessonId) return;
+        try {
+          const code = await createSession(lessonId);
+          sessionStatus.innerHTML = `📡 <strong>Class is live</strong><br><br>1. Students go to: <strong>${window.location.origin}/student</strong><br>2. Enter code: <strong>${code}</strong><br><br>Watch results update below 👇`;
+          const { data: session } = await supabase.from("sessions").select("id").eq("code", code).single();
+          if (session?.id) {
+            currentLessonId = lessonId;
+            currentLiveSessionId = session.id;
+            currentLiveCode = code;
+            copyCodeBtn.disabled = false;
+            await subscribeToResponses(session.id);
+          }
+        } catch (error) {
+          sessionStatus.textContent = `❌ ${error.message || "Could not start live class."}`;
+        }
+      });
+
       console.log("✅ Button wired safely");
       applyAuthMode("signup");
+      await loadLessonLibrary();
     });
 
     window.addEventListener("error", (e) => {
