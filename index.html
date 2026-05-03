@@ -1725,7 +1725,7 @@
     const GUMROAD_URL = "https://garyverse68.gumroad.com/l/uvqtl";
     const FREE_PLAN_LIMIT = 5;
 
-    let supabase;
+    let supabase = null;
 
     const SUBJECT_SKILLS = {
       Reading: [
@@ -1764,6 +1764,7 @@
       "Social Studies": "🌎 Social Studies"
     };
     let currentMode = "practice"; // practice | cross | tutor | answer
+    let selectedSubject = null;
     let contentMode = "standard"; // standard | cross_curricular
     let profileUpdatesChannel = null;
     let profileUpdatesUserId = null;
@@ -1971,7 +1972,7 @@
 
     async function saveLesson(lessonData) {
       if (!cachedUser?.id) throw new Error("NO_USER");
-      const subject = document.getElementById("subject")?.value || "Reading";
+      const subject = selectedSubject || "Reading";
       const skill = document.getElementById("skill")?.value || "Skill";
       const { data, error } = await supabase
         .from("lessons")
@@ -2509,9 +2510,9 @@
         console.log(logLabel, q);
         const visualMarkup = renderVisual(q?.visual);
         const supportMarkup = renderQuestionSupport(q, crossCurricular ? "Cross-Curricular" : mode);
-        const selectedSubject = document.getElementById("subject")?.value || "Reading";
+        const activeSubject = selectedSubject || "Reading";
         const crossMarkup = crossCurricular
-          ? `<div class="mode-tag">🌍 Cross-Curricular (${cleanText(selectedSubject)})</div>`
+          ? `<div class="mode-tag">🌍 Cross-Curricular (${cleanText(activeSubject)})</div>`
           : "";
 
         if (q?.type === "scr") {
@@ -3143,21 +3144,21 @@
         }
 
         const questionList = Array.isArray(practice.questions) ? practice.questions : [];
-        const selectedSubject = document.getElementById("subject")?.value || "Reading";
+        const activeSubject = selectedSubject || "Reading";
         const showPassage =
-          selectedSubject === "Reading" ||
-          selectedSubject === "Science" ||
-          selectedSubject === "Social Studies";
+          activeSubject === "Reading" ||
+          activeSubject === "Science" ||
+          activeSubject === "Social Studies";
         const hasPassage = cleanText(passageText || "").length > 0;
         const passageLabel =
-          selectedSubject === "Reading"
+          activeSubject === "Reading"
             ? "📖 Passage"
-            : selectedSubject === "Science"
+            : activeSubject === "Science"
             ? "🧪 Short Text"
-            : selectedSubject === "Social Studies"
+            : activeSubject === "Social Studies"
             ? "🌎 Short Text"
             : "";
-        const questionLabel = selectedSubject === "Math" ? "🧮 Word Problems" : "❓ Questions";
+        const questionLabel = activeSubject === "Math" ? "🧮 Word Problems" : "❓ Questions";
         let html = `
           <div class="mode-label">Practice Mode</div>
           ${showPassage && hasPassage ? `
@@ -3554,7 +3555,7 @@
     }
 
     function setActiveSubject(subject) {
-      document.getElementById("subject").value = subject;
+      selectedSubject = subject;
       document.querySelectorAll(".subject-btn").forEach((button) => {
         const isActive = button.dataset.subject === subject;
         button.classList.toggle("active", isActive);
@@ -3565,6 +3566,11 @@
 
     function populateSubjectButtons() {
       const subjectSelector = document.getElementById("subject-selector");
+      if (!subjectSelector) {
+        console.error("❌ subject-selector not found");
+        return;
+      }
+      subjectSelector.innerHTML = "";
       Object.keys(SUBJECT_SKILLS).forEach((subject) => {
         const button = document.createElement("button");
         button.type = "button";
@@ -3576,11 +3582,14 @@
         button.addEventListener("click", () => setActiveSubject(subject));
         subjectSelector.appendChild(button);
       });
-      setActiveSubject("Reading");
     }
 
     function populateSkills(subject) {
       const skillSelect = document.getElementById("skill");
+      if (!skillSelect) {
+        console.error("❌ skill select not found");
+        return;
+      }
       skillSelect.innerHTML = "";
 
       (SUBJECT_SKILLS[subject] || []).forEach(({ skill }) => {
@@ -3805,7 +3814,7 @@ Create your second version now.`;
         }
 
         const grade = document.getElementById("grade")?.value;
-        const subject = document.getElementById("subject")?.value;
+        const subject = selectedSubject;
         const skill = document.getElementById("skill")?.value;
         const level = document.getElementById("level")?.value;
         updateDifferentiationPrompt(level);
@@ -3968,13 +3977,6 @@ Create your second version now.`;
     window.forgotPassword = forgotPassword;
     window.toggleAuthMode = toggleAuthMode;
 
-    document.querySelectorAll(".mode-btn").forEach((modeBtn) => {
-      modeBtn.addEventListener("click", () => {
-        const mode = modeBtn.dataset.mode;
-        setMode(mode);
-      });
-    });
-
     document.addEventListener("DOMContentLoaded", async () => {
       console.log("🚀 DOM READY");
 
@@ -3986,7 +3988,15 @@ Create your second version now.`;
       supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       window.supabaseClient = supabase;
 
+      document.querySelectorAll(".mode-btn").forEach((modeBtn) => {
+        modeBtn.addEventListener("click", () => {
+          const mode = modeBtn.dataset.mode;
+          setMode(mode);
+        });
+      });
+
       populateSubjectButtons();
+      setActiveSubject(selectedSubject || "Reading");
       setMode("practice");
       setAppAuthenticatedState(false);
       await initAuth();
@@ -4017,6 +4027,7 @@ Create your second version now.`;
         }
 
         if (!cachedUser) {
+          alert("Please log in first.");
           revealAuthSection("Create a free account to generate your first practice set.");
           return;
         }
