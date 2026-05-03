@@ -1725,7 +1725,7 @@
     const GUMROAD_URL = "https://garyverse68.gumroad.com/l/uvqtl";
     const FREE_PLAN_LIMIT = 5;
 
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    let supabase;
 
     const SUBJECT_SKILLS = {
       Reading: [
@@ -3975,7 +3975,22 @@ Create your second version now.`;
       });
     });
 
-    document.addEventListener("DOMContentLoaded", () => {
+    document.addEventListener("DOMContentLoaded", async () => {
+      console.log("🚀 DOM READY");
+
+      if (!window.supabase) {
+        console.error("❌ Supabase not loaded");
+        return;
+      }
+
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      window.supabaseClient = supabase;
+
+      populateSubjectButtons();
+      setMode("practice");
+      setAppAuthenticatedState(false);
+      await initAuth();
+
       document.querySelectorAll(".purpose-btn").forEach((purposeBtn) => {
         purposeBtn.addEventListener("click", (event) => {
           setPurpose(purposeBtn.dataset.purpose, event);
@@ -4086,6 +4101,7 @@ Create your second version now.`;
       console.log("✅ Button wired safely");
       applyAuthMode("signup");
       await loadLessonLibrary();
+      console.log("✅ App fully initialized");
     });
 
     window.addEventListener("error", (e) => {
@@ -4100,12 +4116,6 @@ Create your second version now.`;
       console.log("🖱 CLICK TARGET:", e.target);
     });
 
-    (async () => {
-      populateSubjectButtons();
-      setMode("practice");
-      setAppAuthenticatedState(false);
-      await initAuth();
-    })();
   </script>
 </body>
 </html>
