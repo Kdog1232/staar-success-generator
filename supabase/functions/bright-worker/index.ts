@@ -1484,13 +1484,17 @@ Requirements:
   - questions where students must interpret the result
 - Most problems should require more than one step.
 - Include at least 2 problems that clearly require multiple steps.
+- Include at least 2 problems where students must decide what to do first instead of being directly told.
+- Include at least 1 problem where students must work backward or determine missing information.
+- Include at least 1 problem where the final answer must be interpreted in context, not just calculated.
 - Avoid making the entire set simple or single-step.
 - Include at least 1 problem that requires reasoning or decision-making, not just calculation.
 - Students should often need to:
   - decide what to do next
   - combine information
   - think about what the answer means
-- Include at least one question where students must explain or justify their answer.
+- Include at least one question that requires reasoning or justification (e.g., choosing the best explanation or identifying correct reasoning).
+- Vary the structure of problems so not all follow the same pattern (avoid repetition in setup).
 - It is okay if not every question is complex.
 - Answer choice quality is critical:
   - Keep exactly 4 choices (A-D) per question.
