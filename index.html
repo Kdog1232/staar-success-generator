@@ -134,6 +134,46 @@
       font-size: 1.05rem;
     }
 
+    .live-platform-card {
+      background: linear-gradient(145deg, #eef2ff 0%, #ffffff 100%);
+      border: 1px solid #cdd8f6;
+      border-radius: 14px;
+      padding: 20px;
+      margin-top: 20px;
+    }
+
+    .live-platform-card h3 {
+      margin-top: 0;
+      margin-bottom: 10px;
+      color: #312e81;
+    }
+
+    .live-platform-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .live-platform-item {
+      background: #fff;
+      border: 1px solid #dbe3ee;
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+
+    .live-platform-item strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #1e1b4b;
+    }
+    .live-tools {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
     .generator-card {
       background: #f8fafc;
       border-radius: 14px;
@@ -1330,6 +1370,10 @@
       .split-container {
         grid-template-columns: 1fr;
       }
+
+      .live-platform-grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     @media print {
@@ -1452,6 +1496,32 @@
       </p>
     </div>
 
+    <div class="live-platform-card" aria-label="Live classroom platform roadmap">
+      <h3>Next Step: Live Classroom Mode</h3>
+      <p>
+        We’re building this into an <strong>AI lesson generator + live formative assessment + reteach guidance</strong>
+        workflow in one place, not just another quiz game.
+      </p>
+      <div class="live-platform-grid">
+        <div class="live-platform-item">
+          <strong>Teacher Library</strong>
+          Save, edit, duplicate, and tag AI-generated sets by grade, unit, and standard.
+        </div>
+        <div class="live-platform-item">
+          <strong>Class Code Sessions</strong>
+          Launch live sessions with a 6-digit code and allow no-account student joins.
+        </div>
+        <div class="live-platform-item">
+          <strong>Real-Time Dashboard</strong>
+          See missed-by-question, missed-by-standard, pacing, and student-level performance live.
+        </div>
+        <div class="live-platform-item">
+          <strong>Post-Session Reteach Reports</strong>
+          Export CSV/PDF and get small-group suggestions by standard mastery gaps.
+        </div>
+      </div>
+    </div>
+
     <section class="generator-card section" aria-label="Worksheet generator settings">
       <div id="profile-section" class="profile-section">
         <div class="profile-meta">
@@ -1537,6 +1607,14 @@
         Create your second version now.
       </p>
       <button id="generate-btn" class="generate-btn" type="button" onclick="generate()">Create My Do Now (10 seconds)</button>
+      <div class="live-tools">
+        <button id="save-lesson-btn" class="generate-btn auth-secondary" type="button">Save Lesson</button>
+        <button id="assign-class-btn" class="generate-btn auth-secondary" type="button">Assign to Class</button>
+        <button id="end-session-btn" class="generate-btn auth-secondary" type="button">End Session</button>
+        <button id="copy-student-link-btn" class="generate-btn auth-secondary" type="button">Copy Student Link</button>
+        <button id="copy-code-btn" class="generate-btn auth-secondary" type="button">Copy Code</button>
+      </div>
+      <p id="live-session-status" style="margin-top:8px; color:#1e3a5f; font-weight:600;"></p>
       <p id="generation-success-hint" class="success-hint" style="display:none;">✅ First version created — now build your support or advanced group</p>
       <p id="auth-required-note" style="display:none; margin-top:10px; color:#7a2e00; font-weight:600;">
         Create a free account to generate your first practice set.
@@ -1684,6 +1762,10 @@
     let authRevealRequested = false;
     let authMode = "signup";
     let currentProfile = null;
+    let liveResponsesChannel = null;
+    let currentLessonId = null;
+    let currentLiveSessionId = null;
+    let currentLiveCode = "";
 
     function resetGenerateState() {
       const generateBtn = document.getElementById("generate-btn");
@@ -1848,6 +1930,86 @@
       }
       authRequiredNote.style.display = "none";
       profileSection.style.display = isAuthenticated ? "flex" : "none";
+    }
+
+    function generateCode() {
+      return Math.floor(100000 + Math.random() * 900000).toString();
+    }
+
+    async function saveLesson(lessonData) {
+      if (!cachedUser?.id) throw new Error("NO_USER");
+      const subject = document.getElementById("subject")?.value || "Reading";
+      const skill = document.getElementById("skill")?.value || "Skill";
+      const { data, error } = await supabase
+        .from("lessons")
+        .insert({
+          user_id: cachedUser.id,
+          title: `${subject} - ${skill}`,
+          data: lessonData
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+      return data;
+    }
+
+    async function createSession(lessonId) {
+      const code = generateCode();
+      const { error } = await supabase.from("sessions").insert({ lesson_id: lessonId, code });
+      if (error) throw error;
+      return code;
+    }
+
+    function parseCorrectAnswer(correctAnswer) {
+      if (!correctAnswer) return "";
+      if (typeof correctAnswer === "string") return correctAnswer.toUpperCase().trim();
+      if (typeof correctAnswer === "object" && correctAnswer.partA) return String(correctAnswer.partA).toUpperCase().trim();
+      return "";
+    }
+
+    function updateDashboard() {
+      const status = document.getElementById("live-session-status");
+      if (!status || !currentLessonId) return;
+      const questions = coreData?.practice?.questions || [];
+      const stats = window.__liveResponses || [];
+      const total = stats.length;
+      const rows = questions.map((q, idx) => {
+        const key = String(idx);
+        const correct = parseCorrectAnswer(q.correct_answer);
+        const picks = stats.map((r) => String(r.answers?.[key] || "").toUpperCase()).filter(Boolean);
+        const correctCount = picks.filter((p) => p === correct).length;
+        const percent = total ? Math.round((correctCount / total) * 100) : 0;
+        const wrong = picks.filter((p) => p !== correct);
+        const mostWrong = wrong.sort((a, b) => wrong.filter((v) => v === a).length - wrong.filter((v) => v === b).length).pop() || "—";
+        const reteachLabel = percent < 60 ? "<br>⚠️ Reteach needed" : "";
+        return `<strong>${cleanText(q.question || `Q${idx + 1}`)}</strong><br>${percent}% correct (most wrong: ${mostWrong})${reteachLabel}`;
+      });
+      const studentBreakdown = stats.map((r) => `${cleanText(r.student_name)}: ${JSON.stringify(r.answers || {})}`);
+      status.innerHTML = `Live submissions: <strong>${total}</strong>${rows.length ? `<br><br>${rows.join("<br><br>")}` : ""}${studentBreakdown.length ? `<br><br><strong>Student breakdown</strong><br>${studentBreakdown.join("<br>")}` : ""}<br><br>💡 Use this to form your small groups tomorrow.`;
+    }
+
+    async function subscribeToResponses(sessionId) {
+      if (liveResponsesChannel) supabase.removeChannel(liveResponsesChannel);
+      window.__liveResponses = [];
+      const { data } = await supabase.from("responses").select("*").eq("session_id", sessionId);
+      window.__liveResponses = data || [];
+      updateDashboard();
+      liveResponsesChannel = supabase
+        .channel(`responses-${sessionId}`)
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "responses" }, (payload) => {
+          if (payload?.new?.session_id !== sessionId) return;
+          window.__liveResponses.push(payload.new);
+          updateDashboard();
+        })
+        .subscribe();
+    }
+
+    async function endSession(sessionId) {
+      const { error } = await supabase
+        .from("sessions")
+        .update({ is_active: false })
+        .eq("id", sessionId);
+      if (error) throw error;
     }
 
     function updateProfileSection(user, profile = null) {
@@ -3769,6 +3931,71 @@ Create your second version now.`;
 
         await generate();
       };
+
+      const saveBtn = document.getElementById("save-lesson-btn");
+      const assignBtn = document.getElementById("assign-class-btn");
+      const copyLinkBtn = document.getElementById("copy-student-link-btn");
+      const copyCodeBtn = document.getElementById("copy-code-btn");
+      const sessionStatus = document.getElementById("live-session-status");
+      copyCodeBtn.disabled = true;
+
+      saveBtn?.addEventListener("click", async () => {
+        try {
+          if (!cachedUser) throw new Error("Login required");
+          if (!coreData?.practice?.questions?.length) throw new Error("Generate a lesson first");
+          const saved = await saveLesson({ practice: coreData.practice, cross: coreData.cross || { passage: "", questions: [] } });
+          currentLessonId = saved.id;
+          sessionStatus.textContent = "✅ Lesson saved.";
+        } catch (error) {
+          sessionStatus.textContent = `❌ ${error.message || "Could not save lesson."}`;
+        }
+      });
+
+      assignBtn?.addEventListener("click", async () => {
+        try {
+          if (!currentLessonId) {
+            if (!coreData?.practice?.questions?.length) throw new Error("Generate a lesson first");
+            const saved = await saveLesson({ practice: coreData.practice, cross: coreData.cross || { passage: "", questions: [] } });
+            currentLessonId = saved.id;
+          }
+          const code = await createSession(currentLessonId);
+          sessionStatus.innerHTML = `📡 Tell students: go to <strong>${window.location.origin}/student</strong><br>Enter code: <strong>${code}</strong>`;
+          const { data: session } = await supabase.from("sessions").select("id").eq("code", code).single();
+          if (session?.id) {
+            currentLiveSessionId = session.id;
+            currentLiveCode = code;
+            copyCodeBtn.disabled = false;
+            await subscribeToResponses(session.id);
+          }
+        } catch (error) {
+          sessionStatus.textContent = `❌ ${error.message || "Could not assign lesson."}`;
+        }
+      });
+
+      const endBtn = document.getElementById("end-session-btn");
+      endBtn?.addEventListener("click", async () => {
+        try {
+          if (!currentLiveSessionId) throw new Error("No active live session.");
+          await endSession(currentLiveSessionId);
+          if (liveResponsesChannel) supabase.removeChannel(liveResponsesChannel);
+          sessionStatus.innerHTML = "🛑 Session ended. No more responses will be accepted.";
+          assignBtn.disabled = true;
+          copyCodeBtn.disabled = true;
+        } catch (error) {
+          sessionStatus.textContent = `❌ ${error.message || "Could not end session."}`;
+        }
+      });
+
+      copyLinkBtn?.addEventListener("click", async () => {
+        await navigator.clipboard.writeText(`${window.location.origin}/student`);
+        sessionStatus.textContent = "✅ Student link copied.";
+      });
+
+      copyCodeBtn?.addEventListener("click", async () => {
+        if (!currentLiveCode) return;
+        await navigator.clipboard.writeText(currentLiveCode);
+        sessionStatus.textContent = "✅ Class code copied.";
+      });
 
       console.log("✅ Button wired safely");
       applyAuthMode("signup");
