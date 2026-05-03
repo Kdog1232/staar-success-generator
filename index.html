@@ -1589,8 +1589,7 @@
 
         <div class="field">
           <label>Subject</label>
-          <div class="subject-selector" id="subject-selector" role="radiogroup" aria-label="Subject"></div>
-          <input type="hidden" id="subject" value="Reading" />
+          <div id="subject-selector" class="subject-selector"></div>
         </div>
 
         <div class="field">
@@ -1719,6 +1718,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
+    console.log("🚀 SCRIPT LOADED");
+    console.log("📚 defining functions...");
 
     const SUPABASE_URL = "https://qadfehickkkvirtcnska.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFhZGZlaGlja2trdmlydGNuc2thIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NTQ0NTcsImV4cCI6MjA5MTIzMDQ1N30.G9YhkEije7yI7rCC2nFfZ5j1btUUIci81VZhLQ48JJ4";
@@ -3976,9 +3977,12 @@ Create your second version now.`;
     window.logout = logout;
     window.forgotPassword = forgotPassword;
     window.toggleAuthMode = toggleAuthMode;
+    window.populateSubjectButtons = populateSubjectButtons;
+    window.populateSkills = populateSkills;
+    window.setActiveSubject = setActiveSubject;
 
     document.addEventListener("DOMContentLoaded", async () => {
-      console.log("🚀 DOM READY");
+      console.log("DOM READY");
 
       if (!window.supabase) {
         console.error("❌ Supabase not loaded");
@@ -3996,7 +4000,7 @@ Create your second version now.`;
       });
 
       populateSubjectButtons();
-      setActiveSubject(selectedSubject || "Reading");
+      setActiveSubject("Reading");
       setMode("practice");
       setAppAuthenticatedState(false);
       await initAuth();
