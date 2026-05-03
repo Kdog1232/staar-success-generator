@@ -1589,8 +1589,7 @@
 
         <div class="field">
           <label>Subject</label>
-          <div class="subject-selector" id="subject-selector" role="radiogroup" aria-label="Subject"></div>
-          <input type="hidden" id="subject" value="Reading" />
+          <div id="subject-selector" class="subject-selector"></div>
         </div>
 
         <div class="field">
@@ -3996,7 +3995,7 @@ Create your second version now.`;
       });
 
       populateSubjectButtons();
-      setActiveSubject(selectedSubject || "Reading");
+      setActiveSubject("Reading");
       setMode("practice");
       setAppAuthenticatedState(false);
       await initAuth();
