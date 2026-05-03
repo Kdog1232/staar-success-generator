@@ -1569,9 +1569,9 @@
         <div class="field">
           <label>Purpose</label>
           <div class="purpose-selector" role="radiogroup" aria-label="Purpose">
-            <button class="purpose-btn active" type="button" data-purpose="Do Now" onclick="setPurpose('Do Now', event)">Do Now</button>
-            <button class="purpose-btn" type="button" data-purpose="Small Group" onclick="setPurpose('Small Group', event)">Small Group</button>
-            <button class="purpose-btn" type="button" data-purpose="Enrichment" onclick="setPurpose('Enrichment', event)">Enrichment</button>
+            <button class="purpose-btn active" type="button" data-purpose="Do Now">Do Now</button>
+            <button class="purpose-btn" type="button" data-purpose="Small Group">Small Group</button>
+            <button class="purpose-btn" type="button" data-purpose="Enrichment">Enrichment</button>
           </div>
         </div>
 
@@ -3976,6 +3976,12 @@ Create your second version now.`;
     });
 
     document.addEventListener("DOMContentLoaded", () => {
+      document.querySelectorAll(".purpose-btn").forEach((purposeBtn) => {
+        purposeBtn.addEventListener("click", (event) => {
+          setPurpose(purposeBtn.dataset.purpose, event);
+        });
+      });
+
       const btn = document.getElementById("generate-btn");
 
       if (!btn) {
@@ -4094,10 +4100,12 @@ Create your second version now.`;
       console.log("🖱 CLICK TARGET:", e.target);
     });
 
-    populateSubjectButtons();
-    setMode("practice");
-    setAppAuthenticatedState(false);
-    await initAuth();
+    (async () => {
+      populateSubjectButtons();
+      setMode("practice");
+      setAppAuthenticatedState(false);
+      await initAuth();
+    })();
   </script>
 </body>
 </html>
