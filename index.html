@@ -3985,10 +3985,8 @@ Create your second version now.`;
       if (!window.supabase) {
         console.error("❌ Supabase not loaded");
       } else {
-        if (!supabase) {
-          supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-          window.__staarSupabaseClient = supabase;
-        }
+        supabase = window.__staarSupabaseClient ?? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        window.__staarSupabaseClient = supabase;
         window.supabaseClient = supabase;
       }
 
