@@ -1997,7 +1997,7 @@
       const code = generateCode();
       const { data: session, error } = await supabaseClient
         .from("sessions")
-        .insert({ lesson_id: lessonId, code, is_active: true, status: "lobby" })
+        .insert({ lesson_id: lessonId, code, is_active: false, status: "lobby" })
         .select("id, lesson_id, code, is_active, status")
         .single();
       if (error) {
@@ -2014,7 +2014,7 @@
       if (!list || !count || !startBtn) return;
       const participants = window.__liveParticipants || [];
       count.textContent = String(participants.length);
-      startBtn.disabled = participants.length < 1 || !currentLiveCode;
+      startBtn.disabled = !currentLiveCode;
       list.innerHTML = participants.length
         ? participants.map((p) => `<li>${cleanText(p.student_name || "Student")}</li>`).join("")
         : `<li style="color:#64748b;">No students yet…</li>`;
@@ -4153,9 +4153,11 @@ Create your second version now.`;
       startLiveBtn?.addEventListener("click", async () => {
         try {
           if (!currentLiveSessionId) throw new Error("No active live session.");
+          console.log("🚀 ACTIVATING SESSION");
           await startSession(currentLiveSessionId);
-          sessionStatus.innerHTML = "✅ Session started. Students are now in questions.";
+          sessionStatus.textContent = "🟢 Session is now LIVE";
           startLiveBtn.disabled = true;
+          console.log("✅ SESSION LIVE");
         } catch (error) {
           sessionStatus.textContent = `❌ ${error.message || "Could not start session."}`;
         }
@@ -4201,8 +4203,7 @@ Create your second version now.`;
           if (!session?.id) {
             throw new Error("SESSION CREATE FAILED");
           }
-          await startSession(session.id);
-          sessionStatus.innerHTML = `📡 <strong>Lobby open</strong><br>Students join at <strong>${window.location.origin}/student</strong>`;
+          sessionStatus.innerHTML = `📡 <strong>Lobby open</strong><br>Share code <strong>${session.code}</strong>. Click <strong>Start Lesson</strong> when ready.`;
           showTeacherLobby(session);
           currentLessonId = lessonId;
           currentLiveSessionId = session.id;
