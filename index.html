@@ -1647,6 +1647,13 @@
         <button id="copy-code-btn" class="generate-btn auth-secondary" type="button">Copy Code</button>
       </div>
       <p id="live-session-status" style="margin-top:8px; color:#1e3a5f; font-weight:600;"></p>
+      <div id="teacher-lobby" style="display:none; margin-top:12px; background:#fff; border:1px solid #dbe3ee; border-radius:12px; padding:16px; text-align:center;">
+        <div style="font-size:12px; color:#64748b; text-transform:uppercase; letter-spacing:.08em;">Class Code</div>
+        <div id="live-class-code" style="font-size:56px; font-weight:800; letter-spacing:.12em; line-height:1; margin:8px 0 14px;"></div>
+        <div style="font-weight:700; margin-bottom:6px;">Students Joining… (<span id="live-student-count">0</span>)</div>
+        <ul id="live-student-list" style="list-style:none; margin:0 auto 14px; padding:0; max-width:420px; text-align:left;"></ul>
+        <button id="start-live-session-btn" class="generate-btn" type="button" disabled>Start</button>
+      </div>
       <p id="generation-success-hint" class="success-hint" style="display:none;">✅ First version created — now build your support or advanced group</p>
       <p id="auth-required-note" style="display:none; margin-top:10px; color:#7a2e00; font-weight:600;">
         Create a free account to generate your first practice set.
@@ -1794,6 +1801,8 @@
     let authMode = "signup";
     let currentProfile = null;
     let liveResponsesChannel = null;
+    let liveParticipantsChannel = null;
+    window.__liveParticipants = [];
     let currentLessonId = null;
     let currentLiveSessionId = null;
     let currentLiveCode = "";
@@ -1988,14 +1997,64 @@
       const code = generateCode();
       const { data: session, error } = await supabaseClient
         .from("sessions")
-        .insert({ lesson_id: lessonId, code, is_active: true })
-        .select("id, code")
+        .insert({ lesson_id: lessonId, code, is_active: true, status: "lobby" })
+        .select("id, lesson_id, code, is_active, status")
         .single();
       if (error) {
         console.error("SESSION ERROR:", error);
         throw error;
       }
       return session;
+    }
+
+    function renderParticipantsLobby() {
+      const list = document.getElementById("live-student-list");
+      const count = document.getElementById("live-student-count");
+      const startBtn = document.getElementById("start-live-session-btn");
+      if (!list || !count || !startBtn) return;
+      const participants = window.__liveParticipants || [];
+      count.textContent = String(participants.length);
+      startBtn.disabled = participants.length < 1 || !currentLiveSessionId;
+      list.innerHTML = participants.length
+        ? participants.map((p) => `<li>${cleanText(p.student_name || "Student")}</li>`).join("")
+        : `<li style="color:#64748b;">No students yet…</li>`;
+    }
+
+    function showTeacherLobby(session) {
+      const lobby = document.getElementById("teacher-lobby");
+      const code = document.getElementById("live-class-code");
+      if (!lobby || !code) return;
+      lobby.style.display = "block";
+      code.textContent = session.code;
+      window.__liveParticipants = [];
+      renderParticipantsLobby();
+    }
+
+    async function subscribeToParticipants(sessionId) {
+      if (liveParticipantsChannel) supabaseClient.removeChannel(liveParticipantsChannel);
+      const { data } = await supabaseClient
+        .from("participants")
+        .select("id,session_id,student_name,joined_at")
+        .eq("session_id", sessionId)
+        .order("joined_at", { ascending: true });
+      window.__liveParticipants = data || [];
+      renderParticipantsLobby();
+      liveParticipantsChannel = supabaseClient
+        .channel(`participants-${sessionId}`)
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "participants" }, (payload) => {
+          if (payload?.new?.session_id !== sessionId) return;
+          window.__liveParticipants.push(payload.new);
+          renderParticipantsLobby();
+        })
+        .subscribe();
+    }
+
+    async function startSession(sessionId) {
+      const { error } = await supabaseClient
+        .from("sessions")
+        .update({ status: "live" })
+        .eq("id", sessionId);
+      if (error) throw error;
     }
 
     async function loadLessonLibrary() {
@@ -2079,7 +2138,7 @@
     async function endSession(sessionId) {
       const { error } = await supabaseClient
         .from("sessions")
-        .update({ is_active: false })
+        .update({ is_active: false, status: "ended" })
         .eq("id", sessionId);
       if (error) throw error;
     }
@@ -4080,11 +4139,25 @@ Create your second version now.`;
       if (assignBtn) assignBtn.style.display = "none";
 
       const endBtn = document.getElementById("end-session-btn");
+      const startLiveBtn = document.getElementById("start-live-session-btn");
+
+      startLiveBtn?.addEventListener("click", async () => {
+        try {
+          if (!currentLiveSessionId) throw new Error("No active live session.");
+          await startSession(currentLiveSessionId);
+          sessionStatus.innerHTML = "✅ Session started. Students are now in questions.";
+          startLiveBtn.disabled = true;
+        } catch (error) {
+          sessionStatus.textContent = `❌ ${error.message || "Could not start session."}`;
+        }
+      });
+
       endBtn?.addEventListener("click", async () => {
         try {
           if (!currentLiveSessionId) throw new Error("No active live session.");
           await endSession(currentLiveSessionId);
           if (liveResponsesChannel) supabaseClient.removeChannel(liveResponsesChannel);
+          if (liveParticipantsChannel) supabaseClient.removeChannel(liveParticipantsChannel);
           sessionStatus.innerHTML = "🛑 Session ended. No more responses will be accepted.";
           assignBtn.disabled = true;
           copyCodeBtn.disabled = true;
@@ -4116,7 +4189,8 @@ Create your second version now.`;
           console.log("🚀 START CLASS CLICKED");
           const session = await createSession(lessonId);
           console.log("✅ SESSION CREATED:", session);
-          sessionStatus.innerHTML = `📡 <strong>Class is live</strong><br><br>1. Students go to: <strong>${window.location.origin}/student</strong><br>2. Enter code: <strong>${session.code}</strong><br><br>Watch results update below 👇`;
+          sessionStatus.innerHTML = `📡 <strong>Lobby open</strong><br>Students join at <strong>${window.location.origin}/student</strong>`;
+          showTeacherLobby(session);
           if (!session?.id) {
             throw new Error("SESSION CREATE FAILED");
           }
@@ -4125,7 +4199,8 @@ Create your second version now.`;
           currentLiveCode = session.code;
           copyCodeBtn.disabled = false;
           console.log("➡️ ABOUT TO SUBSCRIBE", session.id);
-          await subscribeToResponses(session.id);
+          subscribeToParticipants(session.id);
+          subscribeToResponses(session.id);
         } catch (error) {
           sessionStatus.textContent = `❌ ${error.message || "Could not start live class."}`;
         } finally {
