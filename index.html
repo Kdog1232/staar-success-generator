@@ -4125,10 +4125,7 @@ Create your second version now.`;
           currentLiveCode = session.code;
           copyCodeBtn.disabled = false;
           console.log("➡️ ABOUT TO SUBSCRIBE", session.id);
-          subscribeToResponses(session.id).catch((subscribeError) => {
-            console.error("SUBSCRIBE ERROR:", subscribeError);
-            sessionStatus.innerHTML += "<br><br>⚠️ Live dashboard connection delayed. Student submissions may appear shortly.";
-          });
+          await subscribeToResponses(session.id);
         } catch (error) {
           sessionStatus.textContent = `❌ ${error.message || "Could not start live class."}`;
         } finally {
