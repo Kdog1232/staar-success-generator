@@ -2014,7 +2014,7 @@
       if (!list || !count || !startBtn) return;
       const participants = window.__liveParticipants || [];
       count.textContent = String(participants.length);
-      startBtn.disabled = participants.length < 1 || !currentLiveSessionId;
+      startBtn.disabled = participants.length < 1 || !currentLiveCode;
       list.innerHTML = participants.length
         ? participants.map((p) => `<li>${cleanText(p.student_name || "Student")}</li>`).join("")
         : `<li style="color:#64748b;">No students yet…</li>`;
@@ -2030,19 +2030,19 @@
       renderParticipantsLobby();
     }
 
-    async function subscribeToParticipants(sessionId) {
+    async function subscribeToParticipants(sessionCode) {
       if (liveParticipantsChannel) supabaseClient.removeChannel(liveParticipantsChannel);
       const { data } = await supabaseClient
         .from("participants")
-        .select("id,session_id,student_name,joined_at")
-        .eq("session_id", sessionId)
+        .select("id,session_code,student_name,joined_at")
+        .eq("session_code", sessionCode)
         .order("joined_at", { ascending: true });
       window.__liveParticipants = data || [];
       renderParticipantsLobby();
       liveParticipantsChannel = supabaseClient
-        .channel(`participants-${sessionId}`)
+        .channel(`participants-${sessionCode}`)
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "participants" }, (payload) => {
-          if (payload?.new?.session_id !== sessionId) return;
+          if (payload?.new?.session_code !== sessionCode) return;
           window.__liveParticipants.push(payload.new);
           renderParticipantsLobby();
         })
@@ -4198,8 +4198,8 @@ Create your second version now.`;
           currentLiveSessionId = session.id;
           currentLiveCode = session.code;
           copyCodeBtn.disabled = false;
-          console.log("➡️ ABOUT TO SUBSCRIBE", session.id);
-          subscribeToParticipants(session.id);
+          console.log("➡️ ABOUT TO SUBSCRIBE", session.code);
+          subscribeToParticipants(session.code);
           subscribeToResponses(session.id);
         } catch (error) {
           sessionStatus.textContent = `❌ ${error.message || "Could not start live class."}`;
