@@ -1718,6 +1718,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
+    (() => {
     console.log("🚀 SCRIPT LOADED");
     console.log("📚 defining functions...");
 
@@ -1727,7 +1728,7 @@
     const FREE_PLAN_LIMIT = 5;
 
     // Keep a single Supabase client declaration in this script scope.
-    let supabase = null;
+    let supabaseClient = null;
 
     const SUBJECT_SKILLS = {
       Reading: [
@@ -1862,7 +1863,7 @@
 
     function stopProfileUpdatesSubscription() {
       if (!profileUpdatesChannel) return;
-      supabase.removeChannel(profileUpdatesChannel);
+      supabaseClient.removeChannel(profileUpdatesChannel);
       profileUpdatesChannel = null;
       profileUpdatesUserId = null;
     }
@@ -1873,7 +1874,7 @@
       stopProfileUpdatesSubscription();
 
       profileUpdatesUserId = userId;
-      profileUpdatesChannel = supabase
+      profileUpdatesChannel = supabaseClient
         .channel("profile-updates")
         .on(
           "postgres_changes",
@@ -1970,7 +1971,7 @@
       if (!cachedUser?.id) throw new Error("NO_USER");
       const subject = selectedSubject || "Reading";
       const skill = document.getElementById("skill")?.value || "Skill";
-      const { data, error } = await supabase
+      const { data, error } = await supabaseClient
         .from("lessons")
         .insert({
           user_id: cachedUser.id,
@@ -1985,7 +1986,7 @@
 
     async function createSession(lessonId) {
       const code = generateCode();
-      const { error } = await supabase.from("sessions").insert({ lesson_id: lessonId, code });
+      const { error } = await supabaseClient.from("sessions").insert({ lesson_id: lessonId, code });
       if (error) throw error;
       return code;
     }
@@ -1997,7 +1998,7 @@
         list.innerHTML = `<p style="margin:0; color:#64748b;">Log in and save a lesson to build your library.</p>`;
         return;
       }
-      const { data, error } = await supabase
+      const { data, error } = await supabaseClient
         .from("lessons")
         .select("id,title,created_at")
         .eq("user_id", cachedUser.id)
@@ -2053,12 +2054,12 @@
     }
 
     async function subscribeToResponses(sessionId) {
-      if (liveResponsesChannel) supabase.removeChannel(liveResponsesChannel);
+      if (liveResponsesChannel) supabaseClient.removeChannel(liveResponsesChannel);
       window.__liveResponses = [];
-      const { data } = await supabase.from("responses").select("*").eq("session_id", sessionId);
+      const { data } = await supabaseClient.from("responses").select("*").eq("session_id", sessionId);
       window.__liveResponses = data || [];
       updateDashboard();
-      liveResponsesChannel = supabase
+      liveResponsesChannel = supabaseClient
         .channel(`responses-${sessionId}`)
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "responses" }, (payload) => {
           if (payload?.new?.session_id !== sessionId) return;
@@ -2069,7 +2070,7 @@
     }
 
     async function endSession(sessionId) {
-      const { error } = await supabase
+      const { error } = await supabaseClient
         .from("sessions")
         .update({ is_active: false })
         .eq("id", sessionId);
@@ -2127,7 +2128,7 @@
     }
 
     async function refreshUsageStatus(userId) {
-      const { data: profile } = await supabase
+      const { data: profile } = await supabaseClient
         .from("profiles")
         .select("plan, generations_used, email")
         .eq("id", userId)
@@ -2155,7 +2156,7 @@
 
       if (!paidEmails.includes(email)) return;
 
-      const { data: profile } = await supabase
+      const { data: profile } = await supabaseClient
         .from("profiles")
         .select("id, plan")
         .ilike("email", email)
@@ -2165,7 +2166,7 @@
 
       console.log("Upgrading user to paid:", email);
 
-      await supabase
+      await supabaseClient
         .from("profiles")
         .update({
           plan: "paid",
@@ -2212,8 +2213,8 @@
     }
 
     async function getSafeSession() {
-      await withTimeout(supabase.auth.getUser(), AUTH_TIMEOUT_MS);
-      const { data, error } = await withTimeout(supabase.auth.getSession(), AUTH_TIMEOUT_MS);
+      await withTimeout(supabaseClient.auth.getUser(), AUTH_TIMEOUT_MS);
+      const { data, error } = await withTimeout(supabaseClient.auth.getSession(), AUTH_TIMEOUT_MS);
       if (error || !data?.session) {
         throw new Error("NO_SESSION");
       }
@@ -2255,7 +2256,7 @@
         await loadLessonLibrary();
       }
 
-      supabase.auth.onAuthStateChange(async (event, session) => {
+      supabaseClient.auth.onAuthStateChange(async (event, session) => {
         console.log("🔄 Auth state changed");
         if (isGenerating) {
           return;
@@ -3614,7 +3615,7 @@
           return;
         }
 
-        const { data, error } = await supabase.auth.signUp({
+        const { data, error } = await supabaseClient.auth.signUp({
           email,
           password,
           options: {
@@ -3634,7 +3635,7 @@
           showAuthFeedback("Account created! You are now logged in.", "success");
           const user = await requireAuth({ showPrompt: false });
           if (user) {
-            await supabase.functions.invoke("bright-worker", {
+            await supabaseClient.functions.invoke("bright-worker", {
               body: { trigger: "login_check" }
             });
             await refreshUsageStatus(user.id);
@@ -3653,7 +3654,7 @@
         const email = document.getElementById("email").value.trim().toLowerCase();
         const password = document.getElementById("password").value;
 
-        const { data, error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabaseClient.auth.signInWithPassword({
           email,
           password
         });
@@ -3667,7 +3668,7 @@
           showAuthFeedback("Logged in successfully!", "success");
           const user = await requireAuth({ showPrompt: false });
           if (user) {
-            await supabase.functions.invoke("bright-worker", {
+            await supabaseClient.functions.invoke("bright-worker", {
               body: { trigger: "login_check" }
             });
             await refreshUsageStatus(user.id);
@@ -3686,7 +3687,7 @@
       showAuthFeedback("Logging you out…", "info");
 
       try {
-        const { error } = await supabase.auth.signOut();
+        const { error } = await supabaseClient.auth.signOut();
         if (error) {
           showAuthFeedback("Could not log out right now. Please try again.", "error");
           return;
@@ -3711,7 +3712,7 @@
       }
 
       try {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
           redirectTo: "https://staar-success-generator.vercel.app/reset-password"
         });
 
@@ -3786,7 +3787,7 @@ Create your second version now.`;
 
         if (!cachedSession) {
           console.warn("⏳ Fetching session...");
-          const { data } = await supabase.auth.getSession();
+          const { data } = await supabaseClient.auth.getSession();
 
           cachedSession = data?.session ?? null;
           cachedUser = cachedSession?.user ?? null;
@@ -3799,7 +3800,7 @@ Create your second version now.`;
         const token = cachedSession.access_token;
         console.log("🟢 TOKEN READY");
 
-        const { data: liveProfile } = await supabase
+        const { data: liveProfile } = await supabaseClient
           .from("profiles")
           .select("plan, generations_used")
           .eq("id", cachedUser.id)
@@ -3834,7 +3835,7 @@ Create your second version now.`;
         console.log("✅ CORE DATA RECEIVED:", coreResponse);
 
         if (plan === "free") {
-          await supabase
+          await supabaseClient
             .from("profiles")
             .update({ generations_used: used + 1 })
             .eq("id", cachedUser.id);
@@ -3985,9 +3986,9 @@ Create your second version now.`;
       if (!window.supabase) {
         console.error("❌ Supabase not loaded");
       } else {
-        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        window.__staarSupabaseClient = supabase;
-        window.supabaseClient = supabase;
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        window.__staarSupabaseClient = supabaseClient;
+        window.supabaseClient = supabaseClient;
       }
 
       document.querySelectorAll(".mode-btn").forEach((modeBtn) => {
@@ -4004,7 +4005,7 @@ Create your second version now.`;
       setMode("practice");
       setAppAuthenticatedState(false);
 
-      if (!supabase) {
+      if (!supabaseClient) {
         console.warn("⚠️ Skipping auth initialization because Supabase client is unavailable.");
       } else {
         await initAuth();
@@ -4029,13 +4030,13 @@ Create your second version now.`;
 
         console.log("🔥 CLICK CONFIRMED");
 
-        if (!supabase) {
+        if (!supabaseClient) {
           alert("Auth service is unavailable right now. Please refresh in a moment.");
           return;
         }
 
         if (!cachedUser) {
-          const { data } = await supabase.auth.getSession();
+          const { data } = await supabaseClient.auth.getSession();
           cachedSession = data?.session ?? null;
           cachedUser = cachedSession?.user ?? null;
         }
@@ -4076,7 +4077,7 @@ Create your second version now.`;
         try {
           if (!currentLiveSessionId) throw new Error("No active live session.");
           await endSession(currentLiveSessionId);
-          if (liveResponsesChannel) supabase.removeChannel(liveResponsesChannel);
+          if (liveResponsesChannel) supabaseClient.removeChannel(liveResponsesChannel);
           sessionStatus.innerHTML = "🛑 Session ended. No more responses will be accepted.";
           assignBtn.disabled = true;
           copyCodeBtn.disabled = true;
@@ -4107,7 +4108,7 @@ Create your second version now.`;
         try {
           const code = await createSession(lessonId);
           sessionStatus.innerHTML = `📡 <strong>Class is live</strong><br><br>1. Students go to: <strong>${window.location.origin}/student</strong><br>2. Enter code: <strong>${code}</strong><br><br>Watch results update below 👇`;
-          const { data: session } = await supabase.from("sessions").select("id").eq("code", code).single();
+          const { data: session } = await supabaseClient.from("sessions").select("id").eq("code", code).single();
           if (session?.id) {
             currentLessonId = lessonId;
             currentLiveSessionId = session.id;
@@ -4141,6 +4142,7 @@ Create your second version now.`;
       console.log("🖱 CLICK TARGET:", e.target);
     });
 
+    })();
   </script>
 </body>
 </html>
