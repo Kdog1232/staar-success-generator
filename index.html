@@ -4197,12 +4197,13 @@ Create your second version now.`;
         try {
           console.log("🚀 START CLASS CLICKED");
           const session = await createSession(lessonId);
-          console.log("✅ SESSION CREATED:", session);
-          sessionStatus.innerHTML = `📡 <strong>Lobby open</strong><br>Students join at <strong>${window.location.origin}/student</strong>`;
-          showTeacherLobby(session);
+          console.log("🧪 AFTER CREATE SESSION:", session);
           if (!session?.id) {
             throw new Error("SESSION CREATE FAILED");
           }
+          await startSession(session.id);
+          sessionStatus.innerHTML = `📡 <strong>Lobby open</strong><br>Students join at <strong>${window.location.origin}/student</strong>`;
+          showTeacherLobby(session);
           currentLessonId = lessonId;
           currentLiveSessionId = session.id;
           currentLiveCode = session.code;
