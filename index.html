@@ -2041,11 +2041,20 @@
       renderParticipantsLobby();
       liveParticipantsChannel = supabaseClient
         .channel(`participants-${sessionCode}`)
-        .on("postgres_changes", { event: "INSERT", schema: "public", table: "participants" }, (payload) => {
-          if (payload?.new?.session_code !== sessionCode) return;
-          window.__liveParticipants.push(payload.new);
-          renderParticipantsLobby();
-        })
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "participants",
+            filter: `session_code=eq.${sessionCode}`
+          },
+          (payload) => {
+            console.log("🔥 LIVE UPDATE:", payload);
+            window.__liveParticipants.push(payload.new);
+            renderParticipantsLobby();
+          }
+        )
         .subscribe();
     }
 
