@@ -1727,7 +1727,7 @@
     const FREE_PLAN_LIMIT = 5;
 
     // Keep a single Supabase client declaration in this script scope.
-    let supabase = null;
+    let supabase = window.__staarSupabaseClient ?? null;
 
     const SUBJECT_SKILLS = {
       Reading: [
@@ -1759,12 +1759,6 @@
       ]
     };
 
-    const subjectButtons = {
-      Reading: "📚 Reading",
-      Math: "➗ Math",
-      Science: "🔬 Science",
-      "Social Studies": "🌎 Social Studies"
-    };
     let currentMode = "practice"; // practice | cross | tutor | answer
     let selectedSubject = null;
     let contentMode = "standard"; // standard | cross_curricular
@@ -3991,7 +3985,10 @@ Create your second version now.`;
       if (!window.supabase) {
         console.error("❌ Supabase not loaded");
       } else {
-        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        if (!supabase) {
+          supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+          window.__staarSupabaseClient = supabase;
+        }
         window.supabaseClient = supabase;
       }
 
