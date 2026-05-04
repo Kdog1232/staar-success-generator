@@ -1,12 +1,8 @@
 {
-  "rewrites": [
-    {
-      "source": "/student",
-      "destination": "/student/index.html"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "^/student/?$", "dest": "/student/index.html" },
+    { "src": "^/reset-password/?$", "dest": "/reset-password/index.html" },
+    { "src": "^/$", "dest": "/index.html" }
   ]
 }
