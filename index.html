@@ -1986,9 +1986,16 @@
 
     async function createSession(lessonId) {
       const code = generateCode();
-      const { error } = await supabaseClient.from("sessions").insert({ lesson_id: lessonId, code });
-      if (error) throw error;
-      return code;
+      const { data: session, error } = await supabaseClient
+        .from("sessions")
+        .insert({ lesson_id: lessonId, code, is_active: true })
+        .select("id, code")
+        .single();
+      if (error) {
+        console.error("SESSION ERROR:", error);
+        throw error;
+      }
+      return session;
     }
 
     async function loadLessonLibrary() {
@@ -4106,16 +4113,19 @@ Create your second version now.`;
         btnEl.disabled = true;
         btnEl.textContent = "Starting...";
         try {
-          const code = await createSession(lessonId);
-          sessionStatus.innerHTML = `📡 <strong>Class is live</strong><br><br>1. Students go to: <strong>${window.location.origin}/student</strong><br>2. Enter code: <strong>${code}</strong><br><br>Watch results update below 👇`;
-          const { data: session } = await supabaseClient.from("sessions").select("id").eq("code", code).single();
-          if (session?.id) {
-            currentLessonId = lessonId;
-            currentLiveSessionId = session.id;
-            currentLiveCode = code;
-            copyCodeBtn.disabled = false;
-            await subscribeToResponses(session.id);
+          console.log("🚀 START CLASS CLICKED");
+          const session = await createSession(lessonId);
+          console.log("✅ SESSION CREATED:", session);
+          sessionStatus.innerHTML = `📡 <strong>Class is live</strong><br><br>1. Students go to: <strong>${window.location.origin}/student</strong><br>2. Enter code: <strong>${session.code}</strong><br><br>Watch results update below 👇`;
+          if (!session?.id) {
+            throw new Error("SESSION CREATE FAILED");
           }
+          currentLessonId = lessonId;
+          currentLiveSessionId = session.id;
+          currentLiveCode = session.code;
+          copyCodeBtn.disabled = false;
+          console.log("➡️ ABOUT TO SUBSCRIBE", session.id);
+          await subscribeToResponses(session.id);
         } catch (error) {
           sessionStatus.textContent = `❌ ${error.message || "Could not start live class."}`;
         } finally {
