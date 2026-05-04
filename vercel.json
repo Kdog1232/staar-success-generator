@@ -1,8 +1,8 @@
 {
   "routes": [
-    { "handle": "filesystem" },
     { "src": "^/student/?$", "dest": "/student/index.html" },
     { "src": "^/reset-password/?$", "dest": "/reset-password/index.html" },
+    { "handle": "filesystem" },
     { "src": "^/$", "dest": "/index.html" }
   ]
 }
