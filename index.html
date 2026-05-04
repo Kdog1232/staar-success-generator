@@ -1440,7 +1440,7 @@
         <img src="/logo.png" alt="Logo" />
       </div>
       <div class="hero-cta-button">
-        <button onclick="generate()" class="generate-btn">
+        <button class="generate-btn">
           Create My Do Now (10 seconds)
         </button>
       </div>
@@ -1638,7 +1638,7 @@
 
         Create your second version now.
       </p>
-      <button id="generate-btn" class="generate-btn" type="button" onclick="generate()">Create My Do Now (10 seconds)</button>
+      <button id="generate-btn" class="generate-btn" type="button">Create My Do Now (10 seconds)</button>
       <div class="live-tools">
         <button id="save-lesson-btn" class="generate-btn auth-secondary" type="button">Save Lesson</button>
         <button id="assign-class-btn" class="generate-btn auth-secondary" type="button">Assign to Class</button>
@@ -3567,20 +3567,23 @@
     }
 
     function populateSubjectButtons() {
+      console.log("📚 populateSubjectButtons running");
       const subjectSelector = document.getElementById("subject-selector");
       if (!subjectSelector) {
         console.error("❌ subject-selector not found");
         return;
       }
+      console.log("✅ subject selector found");
       subjectSelector.innerHTML = "";
       Object.keys(SUBJECT_SKILLS).forEach((subject) => {
+        console.log("👉 adding:", subject);
         const button = document.createElement("button");
         button.type = "button";
         button.className = "subject-btn";
         button.dataset.subject = subject;
         button.setAttribute("role", "radio");
         button.setAttribute("aria-checked", "false");
-        button.textContent = subjectButtons[subject] || subject;
+        button.textContent = subject;
         button.addEventListener("click", () => setActiveSubject(subject));
         subjectSelector.appendChild(button);
       });
@@ -3983,15 +3986,14 @@ Create your second version now.`;
     window.setActiveSubject = setActiveSubject;
 
     document.addEventListener("DOMContentLoaded", async () => {
-      console.log("DOM READY");
+      console.log("🚀 DOM READY");
 
       if (!window.supabase) {
         console.error("❌ Supabase not loaded");
-        return;
+      } else {
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        window.supabaseClient = supabase;
       }
-
-      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      window.supabaseClient = supabase;
 
       document.querySelectorAll(".mode-btn").forEach((modeBtn) => {
         modeBtn.addEventListener("click", () => {
@@ -4000,11 +4002,18 @@ Create your second version now.`;
         });
       });
 
+      console.log("👉 about to populate subjects");
       populateSubjectButtons();
+      console.log("👉 finished populating subjects");
       setActiveSubject("Reading");
       setMode("practice");
       setAppAuthenticatedState(false);
-      await initAuth();
+
+      if (!supabase) {
+        console.warn("⚠️ Skipping auth initialization because Supabase client is unavailable.");
+      } else {
+        await initAuth();
+      }
 
       document.querySelectorAll(".purpose-btn").forEach((purposeBtn) => {
         purposeBtn.addEventListener("click", (event) => {
@@ -4024,6 +4033,11 @@ Create your second version now.`;
         e.stopPropagation();
 
         console.log("🔥 CLICK CONFIRMED");
+
+        if (!supabase) {
+          alert("Auth service is unavailable right now. Please refresh in a moment.");
+          return;
+        }
 
         if (!cachedUser) {
           const { data } = await supabase.auth.getSession();
