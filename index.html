@@ -4120,11 +4120,10 @@ Create your second version now.`;
         return;
       }
 
-      btn.onclick = async (e) => {
+      const handleGenerateClick = async (e) => {
         e.preventDefault();
-        e.stopPropagation();
 
-        console.log("🔥 CLICK CONFIRMED");
+        console.log("🔥 CLICK CONFIRMED", { target: e.target, currentTarget: e.currentTarget });
 
         if (!supabaseClient) {
           alert("Auth service is unavailable right now. Please refresh in a moment.");
@@ -4145,6 +4144,8 @@ Create your second version now.`;
 
         await generate();
       };
+
+      btn.addEventListener("click", handleGenerateClick);
 
       const saveBtn = document.getElementById("save-lesson-btn");
       const assignBtn = document.getElementById("assign-class-btn");
@@ -4283,9 +4284,15 @@ Create your second version now.`;
       console.error("🌍 PROMISE ERROR:", e.reason);
     });
 
-    window.addEventListener("click", (e) => {
-      console.log("🖱 CLICK TARGET:", e.target);
-    });
+    document.addEventListener("click", (e) => {
+      const blocker = document.elementFromPoint(e.clientX, e.clientY);
+      console.log("🖱 CLICKED:", {
+        target: e.target,
+        blocker,
+        sameNode: blocker === e.target,
+        path: e.composedPath?.().slice(0, 6)
+      });
+    }, true);
 
     })();
   </script>
