@@ -2021,6 +2021,48 @@
         : `<li style="color:#64748b;">No students yet…</li>`;
     }
 
+    async function startLiveSession() {
+      const startLiveBtn = document.getElementById("start-live-session-btn");
+      if (!startLiveBtn) return;
+      console.log("🚀 START BUTTON CLICKED");
+      console.log("👉 START CLICK HANDLER RUNNING");
+
+      try {
+        if (!currentLiveSessionId) {
+          alert("No session ID found");
+          return;
+        }
+
+        await startSession(currentLiveSessionId);
+
+        console.log("✅ SESSION SET TO LIVE");
+        sessionStatus.textContent = "🟢 Session is now LIVE";
+        startLiveBtn.disabled = true;
+        const lockJoinBtn = document.getElementById("lock-join-btn");
+        if (lockJoinBtn) {
+          lockJoinBtn.disabled = false;
+          lockJoinBtn.textContent = "Lock Join";
+        }
+      } catch (error) {
+        sessionStatus.textContent = `❌ ${error.message || "Could not start session."}`;
+      }
+    }
+
+    async function lockJoin() {
+      const lockJoinBtn = document.getElementById("lock-join-btn");
+      try {
+        if (!currentLiveSessionId) throw new Error("No active live session.");
+        await lockSessionJoin(currentLiveSessionId);
+        if (lockJoinBtn) {
+          lockJoinBtn.disabled = true;
+          lockJoinBtn.textContent = "Join Locked";
+        }
+        sessionStatus.textContent = "🔒 Joining locked for this session.";
+      } catch (error) {
+        sessionStatus.textContent = `❌ ${error.message || "Could not lock joining."}`;
+      }
+    }
+
     function showTeacherLobby(session) {
       const lobby = document.getElementById("teacher-lobby");
       const code = document.getElementById("live-class-code");
@@ -2030,33 +2072,6 @@
       window.__liveParticipants = [];
       renderParticipantsLobby();
 
-      const startLiveBtn = document.getElementById("start-live-session-btn");
-      if (startLiveBtn) {
-        startLiveBtn.onclick = async () => {
-          console.log("🚀 START BUTTON CLICKED");
-          console.log("👉 START CLICK HANDLER RUNNING");
-
-          try {
-            if (!currentLiveSessionId) {
-              alert("No session ID found");
-              return;
-            }
-
-            await startSession(currentLiveSessionId);
-
-            console.log("✅ SESSION SET TO LIVE");
-            sessionStatus.textContent = "🟢 Session is now LIVE";
-            startLiveBtn.disabled = true;
-            const lockJoinBtn = document.getElementById("lock-join-btn");
-            if (lockJoinBtn) {
-              lockJoinBtn.disabled = false;
-              lockJoinBtn.textContent = "Lock Join";
-            }
-          } catch (error) {
-            sessionStatus.textContent = `❌ ${error.message || "Could not start session."}`;
-          }
-        };
-      }
     }
 
     async function subscribeToParticipants(sessionCode) {
@@ -4203,18 +4218,6 @@ Create your second version now.`;
 
 
 
-      lockJoinBtn?.addEventListener("click", async () => {
-        try {
-          if (!currentLiveSessionId) throw new Error("No active live session.");
-          await lockSessionJoin(currentLiveSessionId);
-          lockJoinBtn.disabled = true;
-          lockJoinBtn.textContent = "Join Locked";
-          sessionStatus.textContent = "🔒 Joining locked for this session.";
-        } catch (error) {
-          sessionStatus.textContent = `❌ ${error.message || "Could not lock joining."}`;
-        }
-      });
-
       endBtn?.addEventListener("click", async () => {
         try {
           if (!currentLiveSessionId) throw new Error("No active live session.");
@@ -4239,6 +4242,24 @@ Create your second version now.`;
         if (!currentLiveCode) return;
         await navigator.clipboard.writeText(currentLiveCode);
         sessionStatus.textContent = "✅ Class code copied.";
+      });
+
+      document.addEventListener("click", (e) => {
+        const target = e.target;
+        if (!(target instanceof Element)) return;
+
+        const startBtn = target.closest("#start-live-session-btn");
+        const lockBtn = target.closest("#lock-join-btn");
+
+        if (startBtn) {
+          console.log("🔥 START SESSION CLICKED");
+          startLiveSession();
+        }
+
+        if (lockBtn) {
+          console.log("🔒 LOCK JOIN CLICKED");
+          lockJoin();
+        }
       });
 
       document.getElementById("lesson-library-list")?.addEventListener("click", async (event) => {
