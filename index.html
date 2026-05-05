@@ -2060,11 +2060,23 @@
     }
 
     async function startSession(sessionId) {
-      const { error } = await supabaseClient
+      console.log("🚀 startSession CALLED", sessionId);
+
+      const { data, error } = await supabaseClient
         .from("sessions")
-        .update({ status: "live", is_active: true })
-        .eq("id", sessionId);
-      if (error) throw error;
+        .update({
+          status: "live",
+          is_active: true
+        })
+        .eq("id", sessionId)
+        .select();
+
+      console.log("🔥 UPDATE RESULT:", data, error);
+
+      if (error) {
+        alert(error.message);
+        throw error;
+      }
     }
 
     async function lockSessionJoin(sessionId) {
@@ -4161,14 +4173,21 @@ Create your second version now.`;
       const lockJoinBtn = document.getElementById("lock-join-btn");
 
       startLiveBtn?.addEventListener("click", async () => {
+        console.log("🚀 START BUTTON CLICKED");
+        console.log("👉 START CLICK HANDLER RUNNING");
+
         try {
-          if (!currentLiveSessionId) throw new Error("No active live session.");
-          console.log("🚀 ACTIVATING SESSION");
+          if (!currentLiveSessionId) {
+            alert("No session ID found");
+            return;
+          }
+
           await startSession(currentLiveSessionId);
+
+          console.log("✅ SESSION SET TO LIVE");
           sessionStatus.textContent = "🟢 Session is now LIVE";
           startLiveBtn.disabled = true;
           if (lockJoinBtn) { lockJoinBtn.disabled = false; lockJoinBtn.textContent = "Lock Join"; }
-          console.log("✅ SESSION LIVE");
         } catch (error) {
           sessionStatus.textContent = `❌ ${error.message || "Could not start session."}`;
         }
