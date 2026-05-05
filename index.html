@@ -2011,11 +2011,11 @@
     function renderParticipantsLobby() {
       const list = document.getElementById("live-student-list");
       const count = document.getElementById("live-student-count");
-      const startBtn = document.getElementById("start-live-session-btn");
-      if (!list || !count || !startBtn) return;
+      const startLiveBtn = document.getElementById("start-live-session-btn");
+      if (!list || !count || !startLiveBtn) return;
       const participants = window.__liveParticipants || [];
       count.textContent = String(participants.length);
-      startBtn.disabled = !currentLiveCode;
+      startLiveBtn.disabled = !currentLiveCode;
       list.innerHTML = participants.length
         ? participants.map((p) => `<li>${cleanText(p.student_name || "Student")}</li>`).join("")
         : `<li style="color:#64748b;">No students yet…</li>`;
