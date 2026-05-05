@@ -2029,6 +2029,34 @@
       code.textContent = session.code;
       window.__liveParticipants = [];
       renderParticipantsLobby();
+
+      const startLiveBtn = document.getElementById("start-live-session-btn");
+      if (startLiveBtn) {
+        startLiveBtn.onclick = async () => {
+          console.log("🚀 START BUTTON CLICKED");
+          console.log("👉 START CLICK HANDLER RUNNING");
+
+          try {
+            if (!currentLiveSessionId) {
+              alert("No session ID found");
+              return;
+            }
+
+            await startSession(currentLiveSessionId);
+
+            console.log("✅ SESSION SET TO LIVE");
+            sessionStatus.textContent = "🟢 Session is now LIVE";
+            startLiveBtn.disabled = true;
+            const lockJoinBtn = document.getElementById("lock-join-btn");
+            if (lockJoinBtn) {
+              lockJoinBtn.disabled = false;
+              lockJoinBtn.textContent = "Lock Join";
+            }
+          } catch (error) {
+            sessionStatus.textContent = `❌ ${error.message || "Could not start session."}`;
+          }
+        };
+      }
     }
 
     async function subscribeToParticipants(sessionCode) {
@@ -4172,30 +4200,6 @@ Create your second version now.`;
       const endBtn = document.getElementById("end-session-btn");
       const lockJoinBtn = document.getElementById("lock-join-btn");
       console.log("🧪 START BUTTON FOUND:", document.getElementById("start-live-session-btn"));
-
-      document.addEventListener("click", async (e) => {
-        const startLiveBtn = e.target.closest("#start-live-session-btn");
-        if (!startLiveBtn) return;
-
-        console.log("🚀 START BUTTON CLICKED");
-        console.log("👉 START CLICK HANDLER RUNNING");
-
-        try {
-          if (!currentLiveSessionId) {
-            alert("No session ID found");
-            return;
-          }
-
-          await startSession(currentLiveSessionId);
-
-          console.log("✅ SESSION SET TO LIVE");
-          sessionStatus.textContent = "🟢 Session is now LIVE";
-          startLiveBtn.disabled = true;
-          if (lockJoinBtn) { lockJoinBtn.disabled = false; lockJoinBtn.textContent = "Lock Join"; }
-        } catch (error) {
-          sessionStatus.textContent = `❌ ${error.message || "Could not start session."}`;
-        }
-      });
 
 
 
