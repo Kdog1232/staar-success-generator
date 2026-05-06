@@ -2126,7 +2126,8 @@
           is_active: true
         })
         .eq("id", sessionId)
-        .select();
+        .select("id, code, status, is_active, allow_join")
+        .maybeSingle();
 
       console.log("🔥 UPDATE RESULT:", data, error);
 
@@ -2134,6 +2135,12 @@
         alert(error.message);
         throw error;
       }
+
+      if (!data) {
+        throw new Error("No session row was updated.");
+      }
+
+      return data;
     }
 
     async function lockSessionJoin(sessionId) {
