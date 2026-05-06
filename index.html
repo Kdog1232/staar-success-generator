@@ -4141,6 +4141,7 @@ Create your second version now.`;
     window.setActiveSubject = setActiveSubject;
     window.startLiveSession = startLiveSession;
     window.lockJoin = lockJoin;
+    window.startSession = startSession;
 
     document.addEventListener("DOMContentLoaded", async () => {
       console.log("🚀 DOM READY");
@@ -4156,11 +4157,6 @@ Create your second version now.`;
       document.addEventListener("click", (e) => {
         const target = e.target;
         if (!(target instanceof Element)) return;
-
-        if (target.closest("#start-live-session-btn")) {
-          console.log("🔥 START SESSION CLICKED");
-          startLiveSession();
-        }
 
         if (target.closest("#lock-join-btn")) {
           lockJoin();
