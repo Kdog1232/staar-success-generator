@@ -2029,12 +2029,14 @@
       console.log("👉 START CLICK HANDLER RUNNING");
 
       try {
-        if (!currentLiveSessionId) {
-          alert("No session ID found");
+        const sessionId = window.currentLiveSessionId;
+        console.log("🚀 USING SESSION:", sessionId);
+        if (!sessionId) {
+          alert("No active session found.");
           return;
         }
 
-        await startSession(currentLiveSessionId);
+        await startSession(sessionId);
 
         console.log("✅ SESSION SET TO LIVE");
         sessionStatus.textContent = "🟢 Session is now LIVE";
@@ -2053,8 +2055,9 @@
       const sessionStatus = document.getElementById("live-session-status");
       const lockJoinBtn = document.getElementById("lock-join-btn");
       try {
-        if (!currentLiveSessionId) throw new Error("No active live session.");
-        await lockSessionJoin(currentLiveSessionId);
+        const sessionId = window.currentLiveSessionId;
+        if (!sessionId) throw new Error("No active live session.");
+        await lockSessionJoin(sessionId);
         if (lockJoinBtn) {
           lockJoinBtn.disabled = true;
           lockJoinBtn.textContent = "Join Locked";
@@ -4281,6 +4284,9 @@ Create your second version now.`;
           currentLessonId = lessonId;
           currentLiveSessionId = session.id;
           currentLiveCode = session.code;
+          window.currentLiveSessionId = session.id;
+          window.currentLiveCode = session.code;
+          console.log("✅ SESSION STORED:", session.id);
           showTeacherLobby(session);
           copyCodeBtn.disabled = false;
           if (lockJoinBtn) { lockJoinBtn.disabled = false; lockJoinBtn.textContent = "Lock Join"; }
