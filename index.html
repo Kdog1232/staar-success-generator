@@ -4130,6 +4130,20 @@ Create your second version now.`;
         window.supabaseClient = supabaseClient;
       }
 
+      document.addEventListener("click", (e) => {
+        const target = e.target;
+        if (!(target instanceof Element)) return;
+
+        if (target.closest("#start-live-session-btn")) {
+          console.log("🔥 START SESSION CLICKED");
+          startLiveSession();
+        }
+
+        if (target.closest("#lock-join-btn")) {
+          lockJoin();
+        }
+      });
+
       document.querySelectorAll(".mode-btn").forEach((modeBtn) => {
         modeBtn.addEventListener("click", () => {
           const mode = modeBtn.dataset.mode;
@@ -4244,24 +4258,6 @@ Create your second version now.`;
         sessionStatus.textContent = "✅ Class code copied.";
       });
 
-      document.addEventListener("click", (e) => {
-        const target = e.target;
-        if (!(target instanceof Element)) return;
-
-        const startBtn = target.closest("#start-live-session-btn");
-        const lockBtn = target.closest("#lock-join-btn");
-
-        if (startBtn) {
-          console.log("🔥 START SESSION CLICKED");
-          startLiveSession();
-        }
-
-        if (lockBtn) {
-          console.log("🔒 LOCK JOIN CLICKED");
-          lockJoin();
-        }
-      });
-
       document.getElementById("lesson-library-list")?.addEventListener("click", async (event) => {
         const btnEl = event.target.closest("[data-start-live-id]");
         if (!btnEl) return;
@@ -4278,10 +4274,10 @@ Create your second version now.`;
             throw new Error("SESSION CREATE FAILED");
           }
           sessionStatus.innerHTML = `📡 <strong>Lobby open</strong><br>Share code <strong>${session.code}</strong>. Click <strong>Start Lesson</strong> when ready.`;
-          showTeacherLobby(session);
           currentLessonId = lessonId;
           currentLiveSessionId = session.id;
           currentLiveCode = session.code;
+          showTeacherLobby(session);
           copyCodeBtn.disabled = false;
           if (lockJoinBtn) { lockJoinBtn.disabled = false; lockJoinBtn.textContent = "Lock Join"; }
           console.log("➡️ ABOUT TO SUBSCRIBE", session.code);
