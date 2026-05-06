@@ -2163,19 +2163,33 @@
     }
 
     async function startSession(sessionId) {
-      console.log("🚀 startSession CALLED", sessionId);
+      console.log("🚀 startSession REST fallback CALLED", sessionId);
 
-      const { error } = await supabaseClient
-        .from("sessions")
-        .update({
+      const url = `${SUPABASE_URL}/rest/v1/sessions?id=eq.${encodeURIComponent(sessionId)}`;
+
+      const response = await fetch(url, {
+        method: "PATCH",
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: cachedSession?.access_token
+            ? `Bearer ${cachedSession.access_token}`
+            : `Bearer ${SUPABASE_ANON_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal"
+        },
+        body: JSON.stringify({
           status: "live",
           is_active: true
         })
-        .eq("id", sessionId);
+      });
 
-      console.log("🔥 UPDATE ERROR:", error);
+      console.log("🔥 REST UPDATE STATUS:", response.status);
 
-      if (error) throw error;
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("❌ REST UPDATE ERROR:", text);
+        throw new Error(text || "Could not start session.");
+      }
 
       return {
         id: sessionId,
