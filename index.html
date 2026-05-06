@@ -2162,28 +2162,23 @@
     async function startSession(sessionId) {
       console.log("🚀 startSession CALLED", sessionId);
 
-      const { data, error } = await supabaseClient
+      const { error } = await supabaseClient
         .from("sessions")
         .update({
           status: "live",
           is_active: true
         })
-        .eq("id", sessionId)
-        .select("id, code, status, is_active, allow_join")
-        .maybeSingle();
+        .eq("id", sessionId);
 
-      console.log("🔥 UPDATE RESULT:", data, error);
+      console.log("🔥 UPDATE ERROR:", error);
 
-      if (error) {
-        alert(error.message);
-        throw error;
-      }
+      if (error) throw error;
 
-      if (!data) {
-        throw new Error("No session row was updated.");
-      }
-
-      return data;
+      return {
+        id: sessionId,
+        status: "live",
+        is_active: true
+      };
     }
 
     async function lockSessionJoin(sessionId) {
