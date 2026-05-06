@@ -4293,18 +4293,41 @@ Create your second version now.`;
       saveBtn?.addEventListener("click", async () => {
         try {
           if (!cachedUser) throw new Error("Login required");
-          if (!coreData?.practice?.questions?.length) throw new Error("Generate a lesson first");
+
+          const practiceQuestions =
+            coreData?.practice?.questions ||
+            practiceDataState?.questions ||
+            [];
+          const practicePassage =
+            coreData?.practice?.passage ||
+            coreData?.passage ||
+            practiceDataState?.passage ||
+            generatedPassage ||
+            "";
+          const crossData =
+            coreData?.cross ||
+            crossDataState ||
+            { passage: "", questions: [] };
+
+          if (!practiceQuestions.length && !crossData?.questions?.length) {
+            throw new Error("Generate a lesson first");
+          }
+
           const saved = await saveLesson({
             practice: {
-              passage: coreData.passage || coreData.practice?.passage || "",
-              questions: coreData.practice?.questions || []
+              passage: practicePassage,
+              questions: practiceQuestions
             },
-            cross: coreData.cross || { passage: "", questions: [] }
+            cross: {
+              passage: crossData?.passage || "",
+              questions: crossData?.questions || []
+            }
           });
           currentLessonId = saved.id;
           sessionStatus.textContent = "✅ Lesson saved.";
           await loadLessonLibrary();
         } catch (error) {
+          console.error("❌ SAVE LESSON ERROR:", error);
           sessionStatus.textContent = `❌ ${error.message || "Could not save lesson."}`;
         }
       });
