@@ -1652,8 +1652,8 @@
         <div id="live-class-code" style="font-size:56px; font-weight:800; letter-spacing:.12em; line-height:1; margin:8px 0 14px;"></div>
         <div style="font-weight:700; margin-bottom:6px;">Students Joining… (<span id="live-student-count">0</span>)</div>
         <ul id="live-student-list" style="list-style:none; margin:0 auto 14px; padding:0; max-width:420px; text-align:left;"></ul>
-        <button id="start-live-session-btn" class="generate-btn" type="button" onclick="startLiveSession()" disabled>Start Lesson</button>
-        <button id="lock-join-btn" class="generate-btn auth-secondary" type="button" onclick="lockJoin()" style="margin-left:8px;" disabled>Lock Join</button>
+        <button id="start-live-session-btn" class="generate-btn" type="button" disabled>Start Lesson</button>
+        <button id="lock-join-btn" class="generate-btn auth-secondary" type="button" style="margin-left:8px;" disabled>Lock Join</button>
       </div>
       <p id="generation-success-hint" class="success-hint" style="display:none;">✅ First version created — now build your support or advanced group</p>
       <p id="auth-required-note" style="display:none; margin-top:10px; color:#7a2e00; font-weight:600;">
@@ -2017,6 +2017,19 @@
       return session;
     }
 
+    function getCurrentLiveSessionId() {
+      return window.currentLiveSessionId || currentLiveSessionId || null;
+    }
+
+    function syncCurrentLiveSession(session) {
+      if (!session?.id) return;
+      currentLiveSessionId = session.id;
+      currentLiveCode = session.code || currentLiveCode;
+      window.currentLiveSessionId = session.id;
+      window.currentLiveCode = currentLiveCode;
+      window.currentLiveSessionStatus = session.status || window.currentLiveSessionStatus || "lobby";
+    }
+
     function renderParticipantsLobby() {
       const list = document.getElementById("live-student-list");
       const count = document.getElementById("live-student-count");
@@ -2024,40 +2037,70 @@
       if (!list || !count || !startLiveBtn) return;
       const participants = window.__liveParticipants || [];
       count.textContent = String(participants.length);
-      startLiveBtn.disabled = !currentLiveCode;
+      startLiveBtn.disabled = !getCurrentLiveSessionId() || window.__isStartingLiveSession === true || window.currentLiveSessionStatus === "live";
       list.innerHTML = participants.length
         ? participants.map((p) => `<li>${cleanText(p.student_name || "Student")}</li>`).join("")
         : `<li style="color:#64748b;">No students yet…</li>`;
     }
 
-    async function startLiveSession() {
+    async function startLiveSession(event) {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+
       const sessionStatus = document.getElementById("live-session-status");
       const startLiveBtn = document.getElementById("start-live-session-btn");
-      if (!startLiveBtn) return;
       console.log("🚀 START BUTTON CLICKED");
       console.log("👉 START CLICK HANDLER RUNNING");
 
+      if (window.__isStartingLiveSession === true) {
+        console.warn("⚠️ Start lesson already in progress.");
+        return;
+      }
+
       try {
-        const sessionId = window.currentLiveSessionId;
+        const sessionId = getCurrentLiveSessionId();
         console.log("🚀 USING SESSION:", sessionId);
         if (!sessionId) {
           alert("No active session found.");
           return;
         }
 
-        await startSession(sessionId);
+        window.__isStartingLiveSession = true;
+        if (startLiveBtn) {
+          startLiveBtn.disabled = true;
+          startLiveBtn.textContent = "Starting Lesson...";
+        }
+
+        const updatedSession = await startSession(sessionId);
+        syncCurrentLiveSession(updatedSession);
 
         console.log("✅ SESSION SET TO LIVE");
-        sessionStatus.textContent = "🟢 Session is now LIVE";
-        startLiveBtn.disabled = true;
+        if (sessionStatus) sessionStatus.textContent = "🟢 Session is now LIVE";
+        if (startLiveBtn) {
+          startLiveBtn.disabled = true;
+          startLiveBtn.textContent = "Lesson Started";
+        }
         const lockJoinBtn = document.getElementById("lock-join-btn");
         if (lockJoinBtn) {
           lockJoinBtn.disabled = false;
           lockJoinBtn.textContent = "Lock Join";
         }
       } catch (error) {
-        sessionStatus.textContent = `❌ ${error.message || "Could not start session."}`;
+        if (sessionStatus) sessionStatus.textContent = `❌ ${error.message || "Could not start session."}`;
+        if (startLiveBtn) {
+          startLiveBtn.disabled = false;
+          startLiveBtn.textContent = "Start Lesson";
+        }
+      } finally {
+        window.__isStartingLiveSession = false;
       }
+    }
+
+    function attachStartLiveSessionHandler() {
+      const startLiveBtn = document.getElementById("start-live-session-btn");
+      if (!startLiveBtn || startLiveBtn.dataset.startHandlerAttached === "true") return;
+      startLiveBtn.dataset.startHandlerAttached = "true";
+      startLiveBtn.addEventListener("click", startLiveSession);
     }
 
     async function lockJoin() {
@@ -4158,6 +4201,11 @@ Create your second version now.`;
         const target = e.target;
         if (!(target instanceof Element)) return;
 
+        if (target.closest("#start-live-session-btn")) {
+          startLiveSession(e);
+          return;
+        }
+
         if (target.closest("#lock-join-btn")) {
           lockJoin();
         }
@@ -4247,6 +4295,7 @@ Create your second version now.`;
 
       const endBtn = document.getElementById("end-session-btn");
       const lockJoinBtn = document.getElementById("lock-join-btn");
+      attachStartLiveSessionHandler();
       console.log("🧪 START BUTTON FOUND:", document.getElementById("start-live-session-btn"));
 
 
@@ -4294,10 +4343,7 @@ Create your second version now.`;
           }
           sessionStatus.innerHTML = `📡 <strong>Lobby open</strong><br>Share code <strong>${session.code}</strong>. Click <strong>Start Lesson</strong> when ready.`;
           currentLessonId = lessonId;
-          currentLiveSessionId = session.id;
-          currentLiveCode = session.code;
-          window.currentLiveSessionId = session.id;
-          window.currentLiveCode = session.code;
+          syncCurrentLiveSession(session);
           console.log("✅ SESSION STORED:", session.id);
           showTeacherLobby(session);
           copyCodeBtn.disabled = false;
