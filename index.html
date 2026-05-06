@@ -2001,13 +2001,12 @@
         .from("sessions")
         .insert({
           lesson_id: lessonId,
-          join_code: code,
           code: code,
           status: "lobby",
           is_active: false,
           allow_join: true
         })
-        .select("id, lesson_id, join_code, code, status, is_active, allow_join")
+        .select("id, lesson_id, code, status, is_active, allow_join")
         .single();
 
       if (error) {
@@ -2015,10 +2014,7 @@
         throw error;
       }
 
-      return {
-        ...session,
-        code: session.code || session.join_code
-      };
+      return session;
     }
 
     function renderParticipantsLobby() {
