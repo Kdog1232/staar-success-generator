@@ -1981,19 +1981,43 @@
     }
 
     async function saveLesson(lessonData) {
-      if (!cachedUser?.id) throw new Error("NO_USER");
+      const {
+        data: { user },
+        error: userError
+      } = await supabaseClient.auth.getUser();
+
+      if (userError || !user?.id) {
+        console.error("❌ USER ERROR:", userError);
+        throw new Error("Login required");
+      }
+
+      cachedUser = user;
+
       const subject = selectedSubject || "Reading";
       const skill = document.getElementById("skill")?.value || "Skill";
+
+      console.log("💾 SAVING LESSON:", {
+        user_id: user.id,
+        title: `${subject} - ${skill}`,
+        lessonData
+      });
+
       const { data, error } = await supabaseClient
         .from("lessons")
         .insert({
-          user_id: cachedUser.id,
+          user_id: user.id,
           title: `${subject} - ${skill}`,
           data: lessonData
         })
         .select("id")
         .single();
-      if (error) throw error;
+
+      if (error) {
+        console.error("❌ SAVE LESSON ERROR:", error);
+        throw error;
+      }
+
+      console.log("✅ LESSON SAVED:", data);
       return data;
     }
 
