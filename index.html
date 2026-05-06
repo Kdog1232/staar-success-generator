@@ -1996,16 +1996,30 @@
 
     async function createSession(lessonId) {
       const code = generateCode();
+
       const { data: session, error } = await supabaseClient
         .from("sessions")
-        .insert({ lesson_id: lessonId, code, is_active: false, status: "lobby", allow_join: true })
-        .select("id, lesson_id, code, is_active, status, allow_join")
+        .insert({
+          lesson_id: lessonId,
+          join_code: code,
+          code: code,
+          status: "lobby",
+          is_active: false,
+          allow_join: true,
+          is_locked: false
+        })
+        .select("id, lesson_id, join_code, code, status, is_active, allow_join, is_locked")
         .single();
+
       if (error) {
         console.error("SESSION ERROR:", error);
         throw error;
       }
-      return session;
+
+      return {
+        ...session,
+        code: session.code || session.join_code
+      };
     }
 
     function renderParticipantsLobby() {
