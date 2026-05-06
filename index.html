@@ -2005,10 +2005,9 @@
           code: code,
           status: "lobby",
           is_active: false,
-          allow_join: true,
-          is_locked: false
+          allow_join: true
         })
-        .select("id, lesson_id, join_code, code, status, is_active, allow_join, is_locked")
+        .select("id, lesson_id, join_code, code, status, is_active, allow_join")
         .single();
 
       if (error) {
