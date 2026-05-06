@@ -1961,7 +1961,10 @@
       const profileSection = document.getElementById("profile-section");
 
       if (authSection) {
-        authSection.style.display = isAuthenticated ? "none" : (authRevealRequested ? "block" : "none");
+        authSection.style.display = isAuthenticated ? "none" : "block";
+      }
+      if (!isAuthenticated) {
+        applyAuthMode("login");
       }
       if (authBox) {
         authBox.style.display = isAuthenticated ? "none" : "block";
