@@ -42,9 +42,333 @@
 
     .app-container {
       width: 100%;
-      max-width: 900px;
-      margin: 80px auto;
+      max-width: 1240px;
+      margin: 0 auto;
       padding: 24px;
+    }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 24px;
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+
+    .brand-block {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding-bottom: 16px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .brand-mark {
+      width: 42px;
+      height: 42px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 13px;
+      background: #ede9fe;
+      color: var(--primary);
+      font-size: 1.25rem;
+    }
+
+    .brand-block strong,
+    .brand-block span {
+      display: block;
+    }
+
+    .brand-block strong {
+      color: #0f172a;
+      font-size: 1rem;
+    }
+
+    .brand-block span {
+      color: #64748b;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+
+    .sidebar-nav {
+      display: grid;
+      gap: 8px;
+    }
+
+    .nav-link {
+      width: 100%;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      background: transparent;
+      color: #334155;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 800;
+      padding: 11px 12px;
+      text-align: left;
+      transition: all 0.18s ease;
+    }
+
+    .nav-link:hover,
+    .nav-link.active {
+      background: #ede9fe;
+      border-color: #ddd6fe;
+      color: #4c1d95;
+    }
+
+    .workspace-main {
+      min-width: 0;
+    }
+
+    .workspace-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: center;
+      background: linear-gradient(135deg, #4c1d95, #6d28d9);
+      color: white;
+      border-radius: 24px;
+      padding: 28px;
+      box-shadow: var(--shadow);
+      margin-bottom: 18px;
+    }
+
+    .workspace-header h1 {
+      margin: 0;
+      font-size: clamp(2rem, 4vw, 3rem);
+      letter-spacing: -0.04em;
+    }
+
+    .workspace-header p {
+      color: rgba(255, 255, 255, 0.82);
+      margin: 8px 0 0;
+      max-width: 720px;
+      font-weight: 600;
+    }
+
+    .eyebrow {
+      margin: 0 0 6px;
+      color: #7c3aed;
+      font-size: 0.78rem;
+      font-weight: 900;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+    }
+
+    .workspace-header .eyebrow {
+      color: #fed7aa;
+    }
+
+    .header-cta {
+      border: none;
+      border-radius: 14px;
+      background: #f97316;
+      color: white;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 900;
+      padding: 14px 18px;
+      white-space: nowrap;
+      box-shadow: 0 12px 26px rgba(0, 0, 0, 0.18);
+    }
+
+    .top-status-bar {
+      display: grid;
+      grid-template-columns: 1.4fr repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .status-pill {
+      background: rgba(255, 255, 255, 0.96);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+      padding: 12px 14px;
+    }
+
+    .status-pill span {
+      display: block;
+      color: #64748b;
+      font-size: 0.76rem;
+      font-weight: 900;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .status-pill strong {
+      display: block;
+      color: #0f172a;
+      font-size: 1rem;
+      margin-top: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .app-view {
+      display: none;
+    }
+
+    .app-view.active {
+      display: block;
+      animation: fadeIn 0.25s ease;
+    }
+
+    .dashboard-grid.app-view.active {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 300px;
+      gap: 20px;
+      align-items: start;
+    }
+
+    .dashboard-aside {
+      display: grid;
+      gap: 16px;
+    }
+
+    .quick-stats-card,
+    .workflow-card,
+    .live-classroom-card,
+    .settings-card,
+    .reports-grid article {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    .stats-grid div {
+      padding: 12px;
+      border-radius: 12px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+    }
+
+    .stats-grid strong,
+    .stats-grid span,
+    .live-empty-state strong,
+    .live-empty-state span,
+    .reports-grid strong,
+    .reports-grid span {
+      display: block;
+    }
+
+    .stats-grid strong {
+      color: #312e81;
+      font-size: 1.35rem;
+    }
+
+    .stats-grid span,
+    .reports-grid span,
+    .live-empty-state span {
+      color: #64748b;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    .action-stack {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .action-stack button {
+      border: 1px solid #ddd6fe;
+      border-radius: 12px;
+      background: #faf5ff;
+      color: #4c1d95;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 800;
+      padding: 10px 12px;
+      text-align: left;
+    }
+
+    .section-heading {
+      margin-bottom: 16px;
+    }
+
+    .section-heading h2 {
+      margin: 0;
+      font-size: clamp(1.7rem, 3vw, 2.25rem);
+      letter-spacing: -0.03em;
+    }
+
+    .section-heading p:not(.eyebrow) {
+      color: #64748b;
+      font-weight: 600;
+      margin: 6px 0 0;
+    }
+
+    .save-generated-btn {
+      margin-top: 10px;
+    }
+
+    .live-classroom-card {
+      min-height: 360px;
+    }
+
+    .live-empty-state {
+      display: grid;
+      gap: 4px;
+      padding: 14px;
+      border: 1px dashed #c4b5fd;
+      border-radius: 14px;
+      background: #faf5ff;
+      margin-bottom: 14px;
+    }
+
+    .reports-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .report-card {
+      min-height: 170px;
+    }
+
+    .report-card strong {
+      color: #312e81;
+      margin-bottom: 6px;
+    }
+
+    .report-card ul {
+      margin: 10px 0 0;
+      padding-left: 18px;
+      color: #334155;
+      font-weight: 600;
+    }
+
+    .report-empty {
+      color: #64748b;
+      font-weight: 600;
+      margin-top: 10px;
+    }
+
+    h2,
+    h3 {
+      font-weight: 600;
+      color: #0f172a;
     }
 
     p {
@@ -1262,142 +1586,31 @@
       100% { content: ""; }
     }
 
-    .testimonial-section {
-      padding: 60px 20px;
-      background: linear-gradient(to bottom, #f8fafc, #ffffff);
-      text-align: center;
-    }
-
-    h2,
-    h3 {
-      font-weight: 600;
-      color: #0f172a;
-    }
-
-    .testimonial-header {
-      text-align: center;
-    }
-
-    .testimonial-header h2 {
-      font-size: 28px;
-      margin-bottom: 8px;
-    }
-
-    .testimonial-sub {
-      color: #6b7280;
-      margin-bottom: 10px;
-    }
-
-    .testimonial-rating {
-      display: flex;
-      justify-content: center;
-      width: 100%;
-      margin-top: 10px;
-      margin-bottom: 30px;
-      text-align: center;
-    }
-
-    .rating-center {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      text-align: center;
-    }
-
-    .rating-center * {
-      vertical-align: middle;
-    }
-
-    .rating-center .stars {
-      color: #fbbf24;
-      font-size: 20px;
-      line-height: 1;
-      display: flex;
-      margin-bottom: 0;
-    }
-
-    .rating-text {
-      font-size: 16px;
-      color: #334155;
-      white-space: nowrap;
-    }
-
-    .testimonial-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      align-items: stretch;
-      gap: 20px;
-      max-width: 900px;
-      margin: 0 auto;
-    }
-
-    .testimonial-card {
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      background: white;
-      padding: 20px;
-      border-radius: 14px;
-      box-shadow: 0 6px 18px rgba(0,0,0,0.06);
-      text-align: left;
-      transition: transform 0.2s ease;
-      opacity: 0;
-      transform: translateY(10px);
-      animation: fadeInUp 0.6s ease forwards;
-    }
-
-    .testimonial-card:hover {
-      transform: translateY(-4px);
-    }
-
-    .stars {
-      color: #fbbf24;
-      margin-bottom: 8px;
-      font-size: 18px;
-      line-height: 1;
-    }
-
-    .testimonial-card p {
-      font-size: 15px;
-      line-height: 1.5;
-      margin-bottom: 10px;
-    }
-
-    .testimonial-card span {
-      font-size: 13px;
-      color: #6b7280;
-    }
-
-    .testimonial-trust {
-      margin-top: 30px;
-      font-size: 14px;
-      color: #9ca3af;
-    }
-
-    .testimonial-card:nth-child(2) {
-      animation-delay: 0.1s;
-    }
-
-    .testimonial-card:nth-child(3) {
-      animation-delay: 0.2s;
-    }
-
-    @keyframes fadeInUp {
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
     @media (max-width: 760px) {
       body {
         padding: 20px 12px 40px;
       }
 
+      .app-shell,
+      .top-status-bar,
+      .dashboard-grid.app-view.active,
+      .reports-grid,
       .form-grid,
       .value-list {
         grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: static;
+      }
+
+      .workspace-header {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .header-cta {
+        width: 100%;
       }
 
       .generator-card,
@@ -1421,8 +1634,11 @@
 
     @media print {
       .header,
+      .sidebar,
+      .workspace-header,
       .value-card,
       .generator-card,
+      .dashboard-aside,
       .print-row {
         display: none;
       }
@@ -1444,135 +1660,52 @@
   <div class="container app-container">
     <div class="outage-banner">We had a temporary outage last week — everything is now fully working. Thanks for your patience!</div>
     <div id="upgrade-banner" class="upgrade-banner">🎉 You now have unlimited access!</div>
-    <header class="header section hero-text">
-      <div class="header-inner">
-        <div class="header-content">
-          <h1>Run your class in minutes.</h1>
-          <p>Create lessons, launch live, and instantly see who needs help.</p>
+
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Teacher workspace navigation">
+        <div class="brand-block">
+          <span class="brand-mark">⭐</span>
+          <div>
+            <strong>STAAR Success</strong>
+            <span>Teacher workspace</span>
+          </div>
         </div>
-      </div>
-    </header>
+        <nav class="sidebar-nav">
+          <button class="nav-link active" type="button" data-view="dashboard">Dashboard</button>
+          <button class="nav-link" type="button" data-view="library">Lesson Library</button>
+          <button class="nav-link" type="button" data-view="live">Live Sessions</button>
+          <button class="nav-link" type="button" data-view="reports">Reports</button>
+          <button class="nav-link" type="button" data-view="settings">Settings</button>
+        </nav>
+      </aside>
 
-    <section class="hero hero-cta">
-      <div class="hero-logo-wrapper">
-        <img src="/logo.png" alt="Logo" />
-      </div>
-      <div class="hero-cta-button">
-        <button class="generate-btn">
-          Create My Do Now (10 seconds)
-        </button>
-      </div>
-    </section>
+      <main class="workspace-main">
+        <header class="workspace-header">
+          <div>
+            <p class="eyebrow">Daily teacher dashboard</p>
+            <h1>Run your class in minutes.</h1>
+            <p>Create lessons, manage your library, launch live sessions, and review next-step data without one long stacked page.</p>
+          </div>
+          <button class="header-cta" type="button" data-view="dashboard">Create My Do Now</button>
+        </header>
 
-    <section class="value-card section" aria-label="Key benefits">
-      <ul class="value-list">
-        <li><span>✅</span>Aligned to STAAR rigor</li>
-        <li><span>💪</span>Builds confidence before test day</li>
-        <li><span>⏱️</span>Takes less than 10 minutes</li>
-      </ul>
-    </section>
+        <section class="top-status-bar" aria-label="Account status">
+          <div class="status-pill"><span>Welcome back</span><strong id="status-welcome-name">Teacher</strong></div>
+          <div class="status-pill"><span>Lessons this week</span><strong id="status-week-lessons">0</strong></div>
+          <div class="status-pill"><span>Active live session</span><strong id="status-active-session">None</strong></div>
+          <div class="status-pill"><span>Plan</span><strong id="status-plan">Free</strong></div>
+        </section>
 
-    <div class="main-card section">
-    <div class="how-to-use">
-      <h3>How to Use This Tool (Important)</h3>
-      <p style="margin-bottom:10px;">
-        This tool is designed for <strong>differentiated instruction</strong>, meaning the rigor changes based on the level you select.
-      </p>
+        <section class="value-card section" aria-label="Key benefits">
+          <ul class="value-list">
+            <li><span>✅</span>Aligned to STAAR rigor</li>
+            <li><span>💪</span>Builds confidence before test day</li>
+            <li><span>⏱️</span>Takes less than 10 minutes</li>
+          </ul>
+        </section>
 
-      <ul style="padding-left:18px; line-height:1.6;">
-        <li><strong>Below Level</strong> → Designed for intervention, small group, and Tier 2/3 support</li>
-        <li><strong>On Level</strong> → Aligned to grade-level STAAR expectations (this is your standard classroom rigor)</li>
-        <li><strong>Advanced</strong> → Higher-level thinking, deeper reasoning, and challenge questions</li>
-      </ul>
-
-      <p style="margin-top:10px;">
-        💡 <strong>Best Practice:</strong> Most teachers generate 2–3 versions:
-        <br>• On Level (whole group)
-        <br>• Below Level (support)
-        <br>• Advanced (challenge)
-      </p>
-
-      <p style="margin-top:10px; font-weight:600; color:#1e3a5f;">
-        If you're checking rigor, make sure you're using <strong>On Level or Advanced</strong>.
-      </p>
-    </div>
-
-    <div class="how-to-use" style="margin-top:20px;">
-      <h3>How Teachers Are Using This (Real Workflow)</h3>
-
-      <p style="margin-bottom:12px;">
-        This tool is designed to plug directly into your daily instruction, not add more work.
-      </p>
-
-      <ul style="padding-left:18px; line-height:1.7;">
-        <li>
-          <strong>Do Now / Bell Ringer (5–10 min)</strong><br>
-          Generate an <strong>On Level</strong> set to start class with STAAR-aligned practice.
-        </li>
-
-        <li style="margin-top:10px;">
-          <strong>Small Group / MTSS</strong><br>
-          Use <strong>Below Level</strong> for intervention and targeted support.
-        </li>
-
-        <li style="margin-top:10px;">
-          <strong>Differentiation</strong><br>
-          Create <strong>2–3 versions</strong>:
-          <br>• Below (support)
-          <br>• On Level (core)
-          <br>• Advanced (challenge)
-        </li>
-
-        <li style="margin-top:10px;">
-          <strong>Accelerated Instruction / Tutoring</strong><br>
-          Use <strong>Tutor Mode + Answer Key</strong> to help students understand the “why.”
-        </li>
-
-        <li style="margin-top:10px;">
-          <strong>Cross-Curricular Practice</strong><br>
-          Use <strong>Cross Mode</strong> to connect reading skills with science and social studies.
-        </li>
-      </ul>
-
-      <p style="margin-top:14px; font-weight:600; color:#1e3a5f;">
-        💡 Most teachers generate a full lesson set in under 1 minute.
-      </p>
-    </div>
-
-    <div class="live-platform-card" aria-label="Live classroom platform roadmap">
-      <h3>Next Step: Live Classroom Mode</h3>
-      <p>
-        We’re building this into an <strong>AI lesson generator + live formative assessment + reteach guidance</strong>
-        workflow in one place, not just another quiz game.
-      </p>
-      <div class="live-platform-grid">
-        <div class="live-platform-item">
-          <strong>Teacher Library</strong>
-          Save, edit, duplicate, and tag AI-generated sets by grade, unit, and standard.
-        </div>
-        <div class="live-platform-item">
-          <strong>Class Code Sessions</strong>
-          Launch live sessions with a 6-digit code and allow no-account student joins.
-        </div>
-        <div class="live-platform-item">
-          <strong>Real-Time Dashboard</strong>
-          See missed-by-question, missed-by-standard, pacing, and student-level performance live.
-        </div>
-        <div class="live-platform-item">
-          <strong>Post-Session Reteach Reports</strong>
-          Export CSV/PDF and get small-group suggestions by standard mastery gaps.
-        </div>
-      </div>
-    </div>
-
-    <section class="library-card section">
-      <h3 style="margin:0;">Lesson Library</h3>
-      <p style="margin-top:6px; color:#64748b;">Save lessons in the generator, then start live class from here.</p>
-      <div id="lesson-library-list" class="library-list">
-        <p style="margin:0; color:#64748b;">Log in and save a lesson to build your library.</p>
-      </div>
-    </section>
-
+        <section class="dashboard-grid app-view active" data-view-panel="dashboard">
+          <div>
     <section class="generator-card section" aria-label="Worksheet generator settings">
       <div id="profile-section" class="profile-section">
         <div class="profile-meta">
@@ -1657,29 +1790,13 @@
         Create your second version now.
       </p>
       <button id="generate-btn" class="generate-btn" type="button">Create My Do Now (10 seconds)</button>
-      <div class="live-tools">
-        <button id="save-lesson-btn" class="generate-btn auth-secondary" type="button">Save Lesson</button>
-        <button id="assign-class-btn" class="generate-btn auth-secondary" type="button">Assign to Class</button>
-        <button id="end-session-btn" class="generate-btn auth-secondary" type="button">End Session</button>
-        <button id="copy-student-link-btn" class="generate-btn auth-secondary" type="button">Copy Student Link</button>
-        <button id="copy-code-btn" class="generate-btn auth-secondary" type="button">Copy Code</button>
-      </div>
-      <p id="live-session-status" style="margin-top:8px; color:#1e3a5f; font-weight:600;"></p>
-      <div id="teacher-lobby" style="display:none; margin-top:12px; background:#fff; border:1px solid #dbe3ee; border-radius:12px; padding:16px; text-align:center;">
-        <div style="font-size:12px; color:#64748b; text-transform:uppercase; letter-spacing:.08em;">Class Code</div>
-        <div id="live-class-code" style="font-size:56px; font-weight:800; letter-spacing:.12em; line-height:1; margin:8px 0 14px;"></div>
-        <div style="font-weight:700; margin-bottom:6px;">Students Joining… (<span id="live-student-count">0</span>)</div>
-        <ul id="live-student-list" style="list-style:none; margin:0 auto 14px; padding:0; max-width:420px; text-align:left;"></ul>
-        <button id="start-live-session-btn" class="generate-btn" type="button" disabled>Start Lesson</button>
-        <button id="lock-join-btn" class="generate-btn auth-secondary" type="button" style="margin-left:8px;" disabled>Lock Join</button>
-      </div>
+      <button id="save-lesson-btn" class="generate-btn auth-secondary save-generated-btn" type="button">Save Lesson to Library</button>
       <p id="generation-success-hint" class="success-hint" style="display:none;">✅ First version created — now build your support or advanced group</p>
       <p id="auth-required-note" style="display:none; margin-top:10px; color:#7a2e00; font-weight:600;">
         Create a free account to generate your first practice set.
       </p>
       <p id="usage-status" style="margin-top:8px; color:#1e3a5f; font-weight:600;"></p>
     </section>
-
     <section class="worksheet-card section">
       <div class="view-toggle" id="view-toggle" style="display: none;">
         <button id="practice-tab" class="mode-btn active" data-mode="practice" type="button">👨‍🎓 Practice Mode</button>
@@ -1694,53 +1811,113 @@
     <div class="print-row">
       <button class="print-btn" onclick="window.print()">Download / Print PDF</button>
     </div>
+
+          </div>
+          <aside class="dashboard-aside">
+            <section class="quick-stats-card">
+              <p class="eyebrow">Quick stats</p>
+              <div class="stats-grid">
+                <div><strong id="stat-recent-lessons">—</strong><span>Recent lessons</span></div>
+                <div><strong>Live</strong><span>Ready for class code</span></div>
+              </div>
+            </section>
+            <section class="workflow-card">
+              <p class="eyebrow">Shortcuts</p>
+              <div class="action-stack">
+                <button type="button" data-view="library">Open lesson library</button>
+                <button type="button" data-view="live">View live session</button>
+                <button type="button" data-view="reports">Check reports</button>
+              </div>
+            </section>
+          </aside>
+        </section>
+
+        <section class="app-view" data-view-panel="library">
+          <div class="section-heading">
+            <p class="eyebrow">Manage lessons</p>
+            <h2>Lesson Library</h2>
+            <p>Search, duplicate, delete, and launch saved STAAR sets like a teacher drive.</p>
+          </div>
+    <section class="library-card section">
+      <h3 style="margin:0;">Lesson Library</h3>
+      <p style="margin-top:6px; color:#64748b;">Save lessons in the generator, then start live class from here.</p>
+      <div id="lesson-library-list" class="library-list">
+        <p style="margin:0; color:#64748b;">Log in and save a lesson to build your library.</p>
+      </div>
+    </section>
+        </section>
+
+        <section class="app-view" data-view-panel="live">
+          <div class="section-heading">
+            <p class="eyebrow">Run live class</p>
+            <h2>Live Sessions</h2>
+            <p>Start class from a saved lesson, share the join code, monitor participants, and end sessions from one focused workspace.</p>
+          </div>
+          <section class="live-classroom-card">
+            <div class="live-empty-state">
+              <strong>Start with the Lesson Library</strong>
+              <span>Choose a saved lesson and click “Start Class” to open the lobby here.</span>
+            </div>
+      <div class="live-tools">
+        <button id="assign-class-btn" class="generate-btn auth-secondary" type="button">Assign to Class</button>
+        <button id="end-session-btn" class="generate-btn auth-secondary" type="button">End Session</button>
+        <button id="copy-student-link-btn" class="generate-btn auth-secondary" type="button">Copy Student Link</button>
+        <button id="copy-code-btn" class="generate-btn auth-secondary" type="button">Copy Code</button>
+      </div>
+      <p id="live-session-status" style="margin-top:8px; color:#1e3a5f; font-weight:600;"></p>
+      <div id="teacher-lobby" style="display:none; margin-top:12px; background:#fff; border:1px solid #dbe3ee; border-radius:12px; padding:16px; text-align:center;">
+        <div style="font-size:12px; color:#64748b; text-transform:uppercase; letter-spacing:.08em;">Class Code</div>
+        <div id="live-class-code" style="font-size:56px; font-weight:800; letter-spacing:.12em; line-height:1; margin:8px 0 14px;"></div>
+        <div style="font-weight:700; margin-bottom:6px;">Students Joining… (<span id="live-student-count">0</span>)</div>
+        <ul id="live-student-list" style="list-style:none; margin:0 auto 14px; padding:0; max-width:420px; text-align:left;"></ul>
+        <button id="start-live-session-btn" class="generate-btn" type="button" disabled>Start Lesson</button>
+        <button id="lock-join-btn" class="generate-btn auth-secondary" type="button" style="margin-left:8px;" disabled>Lock Join</button>
+      </div>
+
+          </section>
+        </section>
+
+        <section class="app-view" data-view-panel="reports">
+          <div class="section-heading">
+            <p class="eyebrow">Results & intervention</p>
+            <h2>Reports</h2>
+            <p>Live classroom results roll up here into reteach decisions.</p>
+          </div>
+          <div class="reports-grid">
+            <article class="report-card">
+              <strong>Missed Questions</strong>
+              <span>Questions with the lowest correct rate.</span>
+              <div id="report-missed-questions" class="report-empty">Start a live session to collect responses.</div>
+            </article>
+            <article class="report-card">
+              <strong>Weak TEKS</strong>
+              <span>Standards or skills that need reteach.</span>
+              <div id="report-weak-teks" class="report-empty">No weak TEKS yet.</div>
+            </article>
+            <article class="report-card">
+              <strong>Students below 60%</strong>
+              <span>Students who need immediate support.</span>
+              <div id="report-below-60" class="report-empty">No student data yet.</div>
+            </article>
+            <article class="report-card">
+              <strong>Suggested Small Groups</strong>
+              <span>Groups built from common misses.</span>
+              <div id="report-small-groups" class="report-empty">Small groups will appear after submissions.</div>
+            </article>
+          </div>
+        </section>
+
+        <section class="app-view" data-view-panel="settings">
+          <div class="section-heading">
+            <p class="eyebrow">Account</p>
+            <h2>Settings</h2>
+            <p>Profile, plan, classroom defaults, and export settings will live here.</p>
+          </div>
+          <div class="settings-card">Use the profile area on the Dashboard today; dedicated settings are prepared for the SaaS workflow.</div>
+        </section>
+      </main>
     </div>
   </div>
-
-  <section class="testimonial-section">
-    <div class="testimonial-header">
-      <h2>Trusted by Parents & Teachers</h2>
-      <p class="testimonial-sub">
-        Helping students build confidence and improve STAAR performance
-      </p>
-      <div class="testimonial-rating">
-        <div class="rating-center">
-          <span class="stars">★★★★★</span>
-          <span class="rating-text">4.9 average rating</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="testimonial-grid">
-      <div class="testimonial-card">
-        <div class="stars">★★★★★</div>
-        <p>
-          This feels like having a tutor at home. My child finally understands WHY answers are correct.
-        </p>
-        <span>— Parent, 5th Grade</span>
-      </div>
-
-      <div class="testimonial-card">
-        <div class="stars">★★★★★</div>
-        <p>
-          I use this for intervention groups. The explanations are clearer than most curriculum resources.
-        </p>
-        <span>— Teacher, 6th Grade</span>
-      </div>
-
-      <div class="testimonial-card">
-        <div class="stars">★★★★★</div>
-        <p>
-          My child went from guessing to actually explaining answers. That’s the difference.
-        </p>
-        <span>— Parent, 4th Grade</span>
-      </div>
-    </div>
-
-    <div class="testimonial-trust">
-      Trusted by 300+ parents and teachers
-    </div>
-  </section>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
@@ -2073,6 +2250,7 @@
       window.currentLiveSessionId = session.id;
       window.currentLiveCode = currentLiveCode;
       window.currentLiveSessionStatus = session.status || window.currentLiveSessionStatus || "lobby";
+      updateTopStatusBar();
     }
 
     function renderParticipantsLobby() {
@@ -2251,8 +2429,11 @@
     async function loadLessonLibrary() {
       const list = document.getElementById("lesson-library-list");
       if (!list) return;
+      const statRecentLessons = document.getElementById("stat-recent-lessons");
       if (!cachedUser?.id) {
         list.innerHTML = `<p style="margin:0; color:#64748b;">Log in and save a lesson to build your library.</p>`;
+        if (statRecentLessons) statRecentLessons.textContent = "0";
+        updateTopStatusBar({ lessonsThisWeek: 0 });
         return;
       }
       const { data, error } = await supabaseClient
@@ -2263,8 +2444,14 @@
         .limit(12);
       if (error) {
         list.innerHTML = `<p style="margin:0; color:#b91c1c;">Could not load library.</p>`;
+        if (statRecentLessons) statRecentLessons.textContent = "—";
+        updateTopStatusBar();
         return;
       }
+      if (statRecentLessons) statRecentLessons.textContent = String(data?.length || 0);
+      const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const lessonsThisWeek = (data || []).filter((lesson) => new Date(lesson.created_at).getTime() >= oneWeekAgo).length;
+      updateTopStatusBar({ lessonsThisWeek });
       if (!data?.length) {
         list.innerHTML = `<p style="margin:0; color:#64748b;">No lessons saved yet.</p>`;
         return;
@@ -2311,8 +2498,12 @@
         return;
       }
 
+      const statRecentLessons = document.getElementById("stat-recent-lessons");
       if (list && !list.querySelector(".library-lesson")) {
         list.innerHTML = `<p style="margin:0; color:#64748b;">No lessons saved yet.</p>`;
+        if (statRecentLessons) statRecentLessons.textContent = "0";
+      } else {
+        await loadLessonLibrary();
       }
     }
 
@@ -2321,6 +2512,120 @@
       if (typeof correctAnswer === "string") return correctAnswer.toUpperCase().trim();
       if (typeof correctAnswer === "object" && correctAnswer.partA) return String(correctAnswer.partA).toUpperCase().trim();
       return "";
+    }
+
+
+    function setWorkspaceView(view = "dashboard") {
+      const selectedView = document.querySelector(`[data-view-panel="${view}"]`) ? view : "dashboard";
+      document.querySelectorAll("[data-view-panel]").forEach((panel) => {
+        panel.classList.toggle("active", panel.dataset.viewPanel === selectedView);
+      });
+      document.querySelectorAll(".nav-link").forEach((link) => {
+        link.classList.toggle("active", link.dataset.view === selectedView);
+      });
+      if (window.location.hash !== `#${selectedView}`) {
+        window.history.replaceState(null, "", `#${selectedView}`);
+      }
+    }
+
+    function bindWorkspaceNavigation() {
+      document.querySelectorAll("[data-view]").forEach((trigger) => {
+        trigger.addEventListener("click", () => {
+          setWorkspaceView(trigger.dataset.view);
+          if (trigger.dataset.view === "dashboard") {
+            document.getElementById("generate-btn")?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        });
+      });
+      setWorkspaceView((window.location.hash || "#dashboard").replace("#", ""));
+      window.addEventListener("hashchange", () => {
+        setWorkspaceView((window.location.hash || "#dashboard").replace("#", ""));
+      });
+    }
+
+
+    function getTeacherDisplayName(user = cachedUser, profile = currentProfile) {
+      const email = profile?.email || user?.email || "";
+      const rawName = profile?.full_name || profile?.name || email.split("@")[0] || "Teacher";
+      return rawName
+        .split(/[._-]/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ") || "Teacher";
+    }
+
+    function updateTopStatusBar({ lessonsThisWeek = null } = {}) {
+      const welcomeName = document.getElementById("status-welcome-name");
+      const weekLessons = document.getElementById("status-week-lessons");
+      const activeSession = document.getElementById("status-active-session");
+      const plan = document.getElementById("status-plan");
+
+      if (welcomeName) welcomeName.textContent = getTeacherDisplayName();
+      if (weekLessons && lessonsThisWeek !== null) weekLessons.textContent = String(lessonsThisWeek);
+      if (activeSession) activeSession.textContent = currentLiveCode ? `Code ${currentLiveCode}` : "None";
+      if (plan) plan.textContent = currentProfile?.plan === "paid" ? "Paid" : "Free";
+    }
+
+    function renderList(targetId, items, emptyText) {
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      if (!items.length) {
+        target.className = "report-empty";
+        target.textContent = emptyText;
+        return;
+      }
+      target.className = "";
+      target.innerHTML = `<ul>${items.map((item) => `<li>${escapeHtml(cleanText(item))}</li>`).join("")}</ul>`;
+    }
+
+    function updateReportsSummary(questions = [], responses = []) {
+      const totalResponses = responses.length;
+      const questionSummaries = questions.map((q, idx) => {
+        const key = String(idx);
+        const correct = parseCorrectAnswer(q.correct_answer);
+        const picks = responses.map((r) => String(r.answers?.[key] || "").toUpperCase()).filter(Boolean);
+        const correctCount = picks.filter((pick) => pick === correct).length;
+        const percent = picks.length ? Math.round((correctCount / picks.length) * 100) : null;
+        const standard = q.teks || q.standard || q.skill || document.getElementById("skill")?.value || "Current skill";
+        return {
+          label: `Q${idx + 1}: ${cleanText(q.question || standard).slice(0, 90)}`,
+          standard,
+          percent,
+          attempts: picks.length
+        };
+      });
+
+      const missedQuestions = questionSummaries
+        .filter((item) => item.attempts > 0 && item.percent !== null)
+        .sort((a, b) => a.percent - b.percent)
+        .slice(0, 4)
+        .map((item) => `${item.label} — ${item.percent}% correct`);
+
+      const weakTeks = questionSummaries
+        .filter((item) => item.attempts > 0 && item.percent !== null && item.percent < 70)
+        .map((item) => `${item.standard} — ${item.percent}% correct`)
+        .slice(0, 4);
+
+      const below60 = responses.map((response) => {
+        const scoredAnswers = questions.map((question, idx) => {
+          const answer = String(response.answers?.[String(idx)] || "").toUpperCase();
+          if (!answer) return null;
+          return answer === parseCorrectAnswer(question.correct_answer);
+        }).filter((isCorrect) => isCorrect !== null);
+        if (!scoredAnswers.length) return null;
+        const correctCount = scoredAnswers.filter(Boolean).length;
+        const percent = Math.round((correctCount / scoredAnswers.length) * 100);
+        return { name: cleanText(response.student_name || "Student"), percent };
+      }).filter((student) => student && student.percent < 60);
+
+      const smallGroups = weakTeks.length
+        ? weakTeks.slice(0, 3).map((item, idx) => `Group ${idx + 1}: reteach ${item.split(" — ")[0]}`)
+        : [];
+
+      renderList("report-missed-questions", missedQuestions, totalResponses ? "No missed questions yet." : "Start a live session to collect responses.");
+      renderList("report-weak-teks", weakTeks, totalResponses ? "No weak TEKS yet." : "No weak TEKS yet.");
+      renderList("report-below-60", below60.map((student) => `${student.name} — ${student.percent}%`), totalResponses ? "No students below 60%." : "No student data yet.");
+      renderList("report-small-groups", smallGroups, totalResponses ? "No small groups needed yet." : "Small groups will appear after submissions.");
     }
 
     function updateDashboard() {
@@ -2341,7 +2646,8 @@
         return `<strong>${cleanText(q.question || `Q${idx + 1}`)}</strong><br>${percent}% correct (most wrong: ${mostWrong})${reteachLabel}`;
       });
       const studentBreakdown = stats.map((r) => `${cleanText(r.student_name)}: ${JSON.stringify(r.answers || {})}`);
-      status.innerHTML = `Live submissions: <strong>${total}</strong>${rows.length ? `<br><br>${rows.join("<br><br>")}` : ""}${studentBreakdown.length ? `<br><br><strong>Student breakdown</strong><br>${studentBreakdown.join("<br>")}` : ""}<br><br>💡 Use this to form your small groups tomorrow.`;
+      status.innerHTML = `Live submissions: <strong>${total}</strong>${rows.length ? `<br><br>${rows.join("<br><br>")}` : ""}${studentBreakdown.length ? `<br><br><strong>Student breakdown</strong><br>${studentBreakdown.join("<br>")}` : ""}`;
+      updateReportsSummary(questions, stats);
     }
 
     async function subscribeToResponses(sessionId) {
@@ -2374,6 +2680,7 @@
 
       emailLabel.textContent = `Logged in as: ${user?.email || "Unknown user"}`;
       profilePlan.textContent = profile?.plan === "paid" ? "Plan: Paid (Unlimited)" : "Plan: Free";
+      updateTopStatusBar();
     }
 
     function resetProtectedUI() {
@@ -2396,6 +2703,8 @@
       profilePlan.textContent = "Plan: Free";
       banner.style.display = "none";
       currentProfile = null;
+      updateTopStatusBar({ lessonsThisWeek: 0 });
+      updateReportsSummary([], []);
       setMode("practice");
     }
 
@@ -2406,12 +2715,14 @@
 
       if (plan === "paid") {
         usageStatus.textContent = "Plan: Paid (Unlimited generations)";
+        updateTopStatusBar();
         return;
       }
 
       const boundedUsed = Math.min(used, FREE_PLAN_LIMIT);
       const remaining = Math.max(0, FREE_PLAN_LIMIT - used);
       usageStatus.textContent = `Plan: Free (${boundedUsed}/${FREE_PLAN_LIMIT} used, ${remaining} remaining)`;
+      updateTopStatusBar();
 
       if (used >= FREE_PLAN_LIMIT) {
         showPaywall();
@@ -4285,6 +4596,9 @@ Create your second version now.`;
 
     document.addEventListener("DOMContentLoaded", async () => {
       console.log("🚀 DOM READY");
+      bindWorkspaceNavigation();
+      updateTopStatusBar({ lessonsThisWeek: 0 });
+      updateReportsSummary([], []);
 
       if (!window.supabase) {
         console.error("❌ Supabase not loaded");
@@ -4410,6 +4724,8 @@ Create your second version now.`;
           });
           currentLessonId = saved.id;
           sessionStatus.textContent = "✅ Lesson saved.";
+          const usageStatus = document.getElementById("usage-status");
+          if (usageStatus) usageStatus.textContent = "✅ Lesson saved to your library.";
           await loadLessonLibrary();
         } catch (error) {
           console.error("❌ SAVE LESSON ERROR:", error);
@@ -4433,6 +4749,9 @@ Create your second version now.`;
           if (liveResponsesChannel) supabaseClient.removeChannel(liveResponsesChannel);
           if (liveParticipantsChannel) supabaseClient.removeChannel(liveParticipantsChannel);
           sessionStatus.innerHTML = "🛑 Session ended. No more responses will be accepted.";
+          currentLiveCode = "";
+          currentLiveSessionId = null;
+          updateTopStatusBar();
           assignBtn.disabled = true;
           copyCodeBtn.disabled = true;
           if (lockJoinBtn) { lockJoinBtn.disabled = true; lockJoinBtn.textContent = "Lock Join"; }
@@ -4472,6 +4791,7 @@ Create your second version now.`;
         btnEl.textContent = "Starting...";
         try {
           console.log("🚀 START CLASS CLICKED");
+          setWorkspaceView("live");
           const session = await createSession(lessonId);
           console.log("🧪 AFTER CREATE SESSION:", session);
           if (!session?.id) {
