@@ -199,6 +199,24 @@
       gap: 10px;
     }
 
+    .library-lesson-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .library-delete-btn {
+      border-color: #fecaca;
+      color: #b91c1c;
+      background: #fff1f2;
+    }
+
+    .library-delete-btn:hover:not(:disabled) {
+      background: #ffe4e6;
+      border-color: #fca5a5;
+    }
+
     .generator-card {
       background: #f8fafc;
       border-radius: 14px;
@@ -2251,17 +2269,51 @@
         list.innerHTML = `<p style="margin:0; color:#64748b;">No lessons saved yet.</p>`;
         return;
       }
-      list.innerHTML = data.map((lesson) => `
-        <div class="library-lesson">
-          <div>
-            <strong>${cleanText(lesson.title || "Untitled lesson")}</strong><br>
-            <span style="color:#64748b; font-size:12px;">Saved ${new Date(lesson.created_at).toLocaleDateString()}</span>
-            <br>
-            <span style="font-size:12px; color:#64748b;">Students join with code • Live results below</span>
+      list.innerHTML = data.map((lesson) => {
+        const lessonId = escapeHtml(cleanText(lesson.id));
+        const lessonTitle = escapeHtml(cleanText(lesson.title || "Untitled lesson"));
+        return `
+          <div class="library-lesson" id="lesson-${lessonId}">
+            <div>
+              <strong>${lessonTitle}</strong><br>
+              <span style="color:#64748b; font-size:12px;">Saved ${new Date(lesson.created_at).toLocaleDateString()}</span>
+              <br>
+              <span style="font-size:12px; color:#64748b;">Students join with code • Live results below</span>
+            </div>
+            <div class="library-lesson-actions">
+              <button class="generate-btn auth-secondary" type="button" data-start-live-id="${lessonId}">Start Class</button>
+              <button class="generate-btn auth-secondary library-delete-btn" type="button" data-delete-lesson-id="${lessonId}" aria-label="Delete ${lessonTitle}">🗑 Delete</button>
+            </div>
           </div>
-          <button class="generate-btn auth-secondary" type="button" data-start-live-id="${lesson.id}">Start Class</button>
-        </div>
-      `).join("");
+        `;
+      }).join("");
+    }
+
+    async function deleteLesson(id) {
+      if (!id || !cachedUser?.id || !supabaseClient) return;
+      const confirmed = window.confirm("Delete this lesson?");
+      if (!confirmed) return;
+
+      const lessonCard = document.getElementById(`lesson-${id}`);
+      const list = document.getElementById("lesson-library-list");
+      lessonCard?.remove();
+
+      const { error } = await supabaseClient
+        .from("lessons")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", cachedUser.id);
+
+      if (error) {
+        alert("Failed to delete lesson");
+        console.error(error);
+        await loadLessonLibrary();
+        return;
+      }
+
+      if (list && !list.querySelector(".library-lesson")) {
+        list.innerHTML = `<p style="margin:0; color:#64748b;">No lessons saved yet.</p>`;
+      }
     }
 
     function parseCorrectAnswer(correctAnswer) {
@@ -2570,6 +2622,15 @@
         .replace(/\s+/g, " ")
         .replace(/\n+/g, " ")
         .trim();
+    }
+
+    function escapeHtml(text) {
+      return cleanText(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
     }
 
     function extractField(text, label) {
@@ -4392,7 +4453,17 @@ Create your second version now.`;
       });
 
       document.getElementById("lesson-library-list")?.addEventListener("click", async (event) => {
-        const btnEl = event.target.closest("[data-start-live-id]");
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        if (!target) return;
+
+        const deleteBtn = target.closest("[data-delete-lesson-id]");
+        if (deleteBtn) {
+          const lessonId = deleteBtn.getAttribute("data-delete-lesson-id");
+          if (lessonId) await deleteLesson(lessonId);
+          return;
+        }
+
+        const btnEl = target.closest("[data-start-live-id]");
         if (!btnEl) return;
         const lessonId = btnEl.getAttribute("data-start-live-id");
         if (!lessonId) return;
