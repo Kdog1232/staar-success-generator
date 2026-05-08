@@ -48,10 +48,107 @@
     }
 
     .app-shell {
-      display: grid;
+      display: none;
       grid-template-columns: 240px minmax(0, 1fr);
       gap: 22px;
       align-items: start;
+    }
+
+    .app-shell.authenticated {
+      display: grid;
+    }
+
+    .login-view {
+      display: none;
+      min-height: calc(100vh - 112px);
+      align-items: center;
+      justify-content: center;
+      padding: 24px 0;
+    }
+
+    .login-view.active {
+      display: flex;
+    }
+
+    .login-panel {
+      width: min(100%, 860px);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .login-card,
+    .login-proof-card {
+      background: rgba(255, 255, 255, 0.96);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 24px;
+    }
+
+    .login-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .login-brand strong,
+    .login-brand span {
+      display: block;
+    }
+
+    .login-brand strong {
+      color: #0f172a;
+      font-size: 1.1rem;
+    }
+
+    .login-brand span {
+      color: #64748b;
+      font-size: 0.84rem;
+      font-weight: 700;
+    }
+
+    .login-card h1 {
+      margin: 0;
+      color: #0f172a;
+      font-size: clamp(1.8rem, 4vw, 2.4rem);
+      letter-spacing: -0.04em;
+    }
+
+    .login-card p {
+      margin: 8px 0 18px;
+      color: #64748b;
+      font-weight: 650;
+    }
+
+    .login-proof-card {
+      background: linear-gradient(180deg, #faf5ff, #ffffff);
+    }
+
+    .login-proof-card h2 {
+      margin: 0 0 14px;
+      color: #312e81;
+      font-size: 1rem;
+      letter-spacing: -0.01em;
+    }
+
+    .login-proof-list {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .login-proof-list li {
+      display: flex;
+      gap: 9px;
+      align-items: center;
+      color: #334155;
+      font-weight: 800;
+      line-height: 1.35;
     }
 
     .sidebar {
@@ -240,6 +337,7 @@
 
     .quick-stats-card,
     .workflow-card,
+    .recent-activity-card,
     .live-classroom-card,
     .settings-card,
     .reports-grid article {
@@ -301,6 +399,54 @@
       font-weight: 800;
       padding: 10px 12px;
       text-align: left;
+    }
+
+    .recent-activity-list {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .recent-activity-list li {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 9px;
+      align-items: start;
+      padding: 10px 0;
+      border-bottom: 1px solid #eef2f7;
+      color: #334155;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    .recent-activity-list li:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .activity-dot {
+      width: 22px;
+      height: 22px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      background: #ede9fe;
+      color: #5b21b6;
+      font-size: 0.78rem;
+      font-weight: 900;
+    }
+
+    .activity-meta {
+      display: block;
+      color: #64748b;
+      font-size: 0.76rem;
+      font-weight: 800;
+      margin-top: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
 
     .section-heading {
@@ -543,8 +689,8 @@
 
     .generator-card {
       background: #f8fafc;
-      border-radius: 14px;
-      padding: 20px;
+      border-radius: var(--radius);
+      padding: 18px;
       margin-bottom: 20px;
       position: relative;
       z-index: 1;
@@ -553,21 +699,25 @@
     .form-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px;
-      margin-bottom: 18px;
+      gap: 12px;
+      margin-bottom: 14px;
+      align-items: start;
     }
 
     .field {
       display: flex;
       flex-direction: column;
-      gap: 7px;
+      gap: 6px;
+      min-width: 0;
     }
 
     .field label {
-      font-size: 0.92rem;
+      font-size: 0.82rem;
       color: #475569;
-      font-weight: 600;
-      margin-bottom: 6px;
+      font-weight: 900;
+      margin-bottom: 2px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
     }
 
     .field select,
@@ -578,8 +728,8 @@
       border-radius: 10px;
       background: #fff;
       color: var(--text);
-      padding: 12px;
-      font-size: 15px;
+      padding: 11px 12px;
+      font-size: 14px;
       outline: none;
       transition: border-color 0.2s ease, box-shadow 0.2s ease;
       font-family: inherit;
@@ -591,19 +741,16 @@
       box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
     }
 
-    .subject-selector {
-      grid-column: 1 / -1;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
+    .subject-selector,
+    .purpose-selector {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 7px;
     }
 
     .purpose-selector {
-      grid-column: 1 / -1;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 4px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin-bottom: 0;
     }
 
     .purpose-btn {
@@ -611,13 +758,13 @@
       border-radius: 999px;
       background: #fff;
       color: #1e334a;
-      padding: 10px 14px;
-      font-size: 0.96rem;
+      padding: 9px 10px;
+      font-size: 0.86rem;
       font-weight: 700;
       cursor: pointer;
       transition: all 0.2s ease;
-      flex: 1 1 calc(33.33% - 8px);
-      min-width: 140px;
+      width: 100%;
+      min-width: 0;
     }
 
     .purpose-btn:hover {
@@ -637,13 +784,13 @@
       border-radius: 999px;
       background: #fff;
       color: #1e334a;
-      padding: 9px 12px;
-      font-size: 0.96rem;
+      padding: 9px 10px;
+      font-size: 0.88rem;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s ease;
-      flex: 1 1 calc(50% - 8px);
-      min-width: 150px;
+      width: 100%;
+      min-width: 0;
     }
 
     .subject-btn:hover {
@@ -671,8 +818,8 @@
 
     .generate-btn {
       width: 100%;
-      padding: 16px;
-      font-size: 1.1rem;
+      padding: 14px;
+      font-size: 1rem;
       font-weight: 600;
       border-radius: 12px;
       background: linear-gradient(135deg, #6d28d9, #5b21b6);
@@ -1114,8 +1261,21 @@
 
     }
 
-    #generate-btn {
+    .generator-actions {
+      position: sticky;
+      bottom: 16px;
+      z-index: 20;
       margin-top: 12px;
+      padding: 10px;
+      border: 1px solid #dbe3ee;
+      border-radius: var(--radius);
+      background: rgba(248, 250, 252, 0.94);
+      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
+      backdrop-filter: blur(10px);
+    }
+
+    #generate-btn {
+      margin-top: 0;
       position: relative;
       z-index: 10;
       pointer-events: auto;
@@ -1591,7 +1751,8 @@
         padding: 20px 12px 40px;
       }
 
-      .app-shell,
+      .app-shell.authenticated,
+      .login-panel,
       .top-status-bar,
       .dashboard-grid.app-view.active,
       .reports-grid,
@@ -1619,8 +1780,13 @@
         padding: 16px;
       }
 
-      .subject-btn {
-        flex-basis: 100%;
+      .subject-selector,
+      .purpose-selector {
+        grid-template-columns: 1fr;
+      }
+
+      .generator-actions {
+        bottom: 10px;
       }
 
       .split-container {
@@ -1639,7 +1805,8 @@
       .value-card,
       .generator-card,
       .dashboard-aside,
-      .print-row {
+      .print-row,
+      .generator-actions {
         display: none;
       }
 
@@ -1658,10 +1825,59 @@
 </head>
 <body>
   <div class="container app-container">
-    <div class="outage-banner">We had a temporary outage last week — everything is now fully working. Thanks for your patience!</div>
+    <div id="outage-banner" class="outage-banner" style="display:none;">We had a temporary outage last week — everything is now fully working. Thanks for your patience!</div>
     <div id="upgrade-banner" class="upgrade-banner">🎉 You now have unlimited access!</div>
 
-    <div class="app-shell">
+    <section id="login-view" class="login-view active" aria-label="Sign in to STAAR Success">
+      <div class="login-panel">
+        <div class="login-card">
+          <div class="login-brand">
+            <span class="brand-mark">⭐</span>
+            <div>
+              <strong>STAAR Success</strong>
+              <span>Teacher workspace</span>
+            </div>
+          </div>
+          <h1>Welcome back.</h1>
+          <p>Log in to create STAAR-aligned lessons, launch live sessions, and review class data.</p>
+
+          <div id="auth-section">
+            <form id="auth-box" class="auth-box" onsubmit="event.preventDefault(); signIn();">
+              <input id="email" class="auth-input" type="email" autocomplete="email" placeholder="Email address" />
+              <input id="password" class="auth-input" type="password" autocomplete="current-password" placeholder="Password" />
+
+              <button id="login-btn" type="submit" class="generate-btn">
+                Log In
+              </button>
+
+              <button id="signup-btn" type="button" onclick="signUp()" class="generate-btn auth-secondary" style="margin-top:8px; display:none;">
+                Create Account
+              </button>
+
+              <button id="forgot-btn" type="button" onclick="forgotPassword()" class="forgot-btn">
+                Forgot Password?
+              </button>
+              <button id="auth-mode-toggle" type="button" class="forgot-btn" onclick="toggleAuthMode()">
+                Need an account? Sign up
+              </button>
+              <div id="auth-feedback" style="display:none; margin-top:8px; padding:10px; border-radius:10px; font-weight:600;"></div>
+            </form>
+          </div>
+        </div>
+
+        <aside class="login-proof-card" aria-label="Why teachers use STAAR Success">
+          <p class="eyebrow">Built for STAAR</p>
+          <h2>Fast access to your instructional workspace.</h2>
+          <ul class="login-proof-list">
+            <li><span>✅</span>Aligned to STAAR rigor</li>
+            <li><span>💪</span>Builds confidence before test day</li>
+            <li><span>⏱️</span>Takes less than 10 minutes</li>
+          </ul>
+        </aside>
+      </div>
+    </section>
+
+    <div id="app-shell" class="app-shell">
       <aside class="sidebar" aria-label="Teacher workspace navigation">
         <div class="brand-block">
           <span class="brand-mark">⭐</span>
@@ -1759,27 +1975,6 @@
         </div>
       </div>
 
-      <div id="auth-section" style="display: none;">
-        <button id="auth-mode-toggle" type="button" class="forgot-btn" onclick="toggleAuthMode()">
-          Already have an account? Log in
-        </button>
-        <form id="auth-box" class="auth-box" onsubmit="event.preventDefault(); signIn();">
-          <input id="email" class="auth-input" type="email" autocomplete="email" placeholder="Enter email" />
-          <input id="password" class="auth-input" type="password" autocomplete="current-password" placeholder="Enter password" />
-
-          <button id="signup-btn" type="button" onclick="signUp()" class="generate-btn" style="margin-bottom:6px;">
-            Sign Up
-          </button>
-
-          <button id="login-btn" type="submit" class="generate-btn auth-secondary">
-            Log In
-          </button>
-          <button id="forgot-btn" type="button" onclick="forgotPassword()" class="forgot-btn">
-            Forgot Password?
-          </button>
-          <div id="auth-feedback" style="display:none; margin-top:8px; padding:10px; border-radius:10px; font-weight:600;"></div>
-        </form>
-      </div>
 
       <p id="differentiation-prompt" class="usage-hint" style="margin-top:0; color:#334155; font-weight:600; white-space:pre-line;">
         Most teachers generate 2–3 versions:
@@ -1789,12 +1984,14 @@
 
         Create your second version now.
       </p>
-      <button id="generate-btn" class="generate-btn" type="button">Create My Do Now (10 seconds)</button>
-      <button id="save-lesson-btn" class="generate-btn auth-secondary save-generated-btn" type="button">Save Lesson to Library</button>
       <p id="generation-success-hint" class="success-hint" style="display:none;">✅ First version created — now build your support or advanced group</p>
       <p id="auth-required-note" style="display:none; margin-top:10px; color:#7a2e00; font-weight:600;">
         Create a free account to generate your first practice set.
       </p>
+      <div class="generator-actions" aria-label="Primary lesson actions">
+        <button id="generate-btn" class="generate-btn" type="button">Create My Do Now (10 seconds)</button>
+        <button id="save-lesson-btn" class="generate-btn auth-secondary save-generated-btn" type="button">Save Lesson to Library</button>
+      </div>
       <p id="usage-status" style="margin-top:8px; color:#1e3a5f; font-weight:600;"></p>
     </section>
     <section class="worksheet-card section">
@@ -1828,6 +2025,14 @@
                 <button type="button" data-view="live">View live session</button>
                 <button type="button" data-view="reports">Check reports</button>
               </div>
+            </section>
+            <section class="recent-activity-card" aria-label="Recent activity">
+              <p class="eyebrow">Recent activity</p>
+              <ul id="recent-activity-list" class="recent-activity-list">
+                <li><span class="activity-dot">•</span><span>Choose a skill to generate today’s Do Now<span class="activity-meta">Ready now</span></span></li>
+                <li><span class="activity-dot">•</span><span>Saved lessons will appear here for fast re-entry<span class="activity-meta">Library</span></span></li>
+                <li><span class="activity-dot">•</span><span>Live submissions will flag weak TEKS after class starts<span class="activity-meta">Reports</span></span></li>
+              </ul>
             </section>
           </aside>
         </section>
@@ -2002,6 +2207,88 @@
     let currentLessonId = null;
     let currentLiveSessionId = null;
     let currentLiveCode = "";
+    let recentLessonsCache = [];
+    let recentActivityLog = [];
+
+    function timeAgoLabel(dateValue) {
+      const time = new Date(dateValue).getTime();
+      if (!Number.isFinite(time)) return "Recent";
+      const diffMinutes = Math.max(0, Math.round((Date.now() - time) / 60000));
+      if (diffMinutes < 1) return "Just now";
+      if (diffMinutes < 60) return `${diffMinutes}m ago`;
+      const diffHours = Math.round(diffMinutes / 60);
+      if (diffHours < 24) return `${diffHours}h ago`;
+      const diffDays = Math.round(diffHours / 24);
+      return `${diffDays}d ago`;
+    }
+
+    function addRecentActivity(text, meta = "Just now", icon = "•") {
+      recentActivityLog = [
+        { text, meta, icon, createdAt: new Date().toISOString() },
+        ...recentActivityLog
+      ].slice(0, 6);
+      renderRecentActivity();
+    }
+
+    function renderRecentActivity() {
+      const list = document.getElementById("recent-activity-list");
+      if (!list) return;
+
+      const liveResponses = window.__liveResponses || [];
+      const liveParticipants = window.__liveParticipants || [];
+      const currentSkill = document.getElementById("skill")?.value || "current skill";
+      const items = [...recentActivityLog];
+
+      if (currentLiveCode) {
+        items.push({ text: `Started live session ${currentLiveCode}`, meta: "Live class", icon: "▶" });
+      }
+      if (liveResponses.length) {
+        items.push({ text: `${liveResponses.length} students submitted responses`, meta: "Responses", icon: "✓" });
+        const questions = coreData?.practice?.questions || practiceDataState?.questions || [];
+        const weakQuestion = questions.find((question, index) => {
+          const correct = parseCorrectAnswer(question.correct_answer);
+          if (!correct) return false;
+          const answers = liveResponses
+            .map((response) => String(response.answers?.[String(index)] || "").toUpperCase())
+            .filter(Boolean);
+          if (!answers.length) return false;
+          const correctCount = answers.filter((answer) => answer === correct).length;
+          return Math.round((correctCount / answers.length) * 100) < 70;
+        });
+        if (weakQuestion) {
+          items.push({
+            text: `Weak TEKS detected: ${weakQuestion.teks || weakQuestion.standard || currentSkill}`,
+            meta: "Needs reteach",
+            icon: "!"
+          });
+        }
+      } else if (liveParticipants.length) {
+        items.push({ text: `${liveParticipants.length} students joined the lobby`, meta: "Roster", icon: "+" });
+      }
+
+      recentLessonsCache.slice(0, 3).forEach((lesson) => {
+        items.push({
+          text: `Saved “${lesson.title || "Untitled lesson"}”`,
+          meta: timeAgoLabel(lesson.created_at),
+          icon: "↺"
+        });
+      });
+
+      if (!items.length) {
+        items.push(
+          { text: `Ready to generate ${selectedPurpose} for ${currentSkill}`, meta: "Next action", icon: "•" },
+          { text: "Open a saved lesson for quick re-entry", meta: "Library", icon: "↺" },
+          { text: "Weak TEKS will appear after live submissions", meta: "Reports", icon: "!" }
+        );
+      }
+
+      list.innerHTML = items.slice(0, 5).map((item) => `
+        <li>
+          <span class="activity-dot">${escapeHtml(cleanText(item.icon || "•"))}</span>
+          <span>${escapeHtml(cleanText(item.text))}<span class="activity-meta">${escapeHtml(cleanText(item.meta || "Recent"))}</span></span>
+        </li>
+      `).join("");
+    }
 
     function resetGenerateState() {
       const generateBtn = document.getElementById("generate-btn");
@@ -2138,14 +2425,16 @@
       applyAuthMode(authMode === "login" ? "signup" : "login");
     }
 
-    function revealAuthSection(message = "Create a free account to generate your STAAR pack.") {
+    function revealAuthSection(message = "Log in to continue.") {
       const authSection = document.getElementById("auth-section");
+      const loginView = document.getElementById("login-view");
       if (!authSection) return;
       authRevealRequested = true;
+      loginView?.classList.add("active");
       authSection.style.display = "block";
       applyAuthMode(authMode);
       showAuthFeedback(message, "info");
-      authSection.scrollIntoView({ behavior: "smooth" });
+      authSection.scrollIntoView({ behavior: "smooth", block: "center" });
     }
 
     function setAppAuthenticatedState(isAuthenticated) {
@@ -2154,7 +2443,15 @@
       const generateBtn = document.getElementById("generate-btn");
       const authRequiredNote = document.getElementById("auth-required-note");
       const profileSection = document.getElementById("profile-section");
+      const loginView = document.getElementById("login-view");
+      const appShell = document.getElementById("app-shell");
+      const outageBanner = document.getElementById("outage-banner");
 
+      loginView?.classList.toggle("active", !isAuthenticated);
+      appShell?.classList.toggle("authenticated", isAuthenticated);
+      if (outageBanner) {
+        outageBanner.style.display = isAuthenticated ? "block" : "none";
+      }
       if (authSection) {
         authSection.style.display = isAuthenticated ? "none" : "block";
       }
@@ -2167,8 +2464,8 @@
       if (generateBtn) {
         generateBtn.disabled = false;
       }
-      authRequiredNote.style.display = "none";
-      profileSection.style.display = isAuthenticated ? "flex" : "none";
+      if (authRequiredNote) authRequiredNote.style.display = "none";
+      if (profileSection) profileSection.style.display = isAuthenticated ? "flex" : "none";
     }
 
     function generateCode() {
@@ -2264,6 +2561,7 @@
       list.innerHTML = participants.length
         ? participants.map((p) => `<li>${cleanText(p.student_name || "Student")}</li>`).join("")
         : `<li style="color:#64748b;">No students yet…</li>`;
+      renderRecentActivity();
     }
 
     async function startLiveSession(event) {
@@ -2432,8 +2730,10 @@
       const statRecentLessons = document.getElementById("stat-recent-lessons");
       if (!cachedUser?.id) {
         list.innerHTML = `<p style="margin:0; color:#64748b;">Log in and save a lesson to build your library.</p>`;
+        recentLessonsCache = [];
         if (statRecentLessons) statRecentLessons.textContent = "0";
         updateTopStatusBar({ lessonsThisWeek: 0 });
+        renderRecentActivity();
         return;
       }
       const { data, error } = await supabaseClient
@@ -2444,10 +2744,14 @@
         .limit(12);
       if (error) {
         list.innerHTML = `<p style="margin:0; color:#b91c1c;">Could not load library.</p>`;
+        recentLessonsCache = [];
         if (statRecentLessons) statRecentLessons.textContent = "—";
         updateTopStatusBar();
+        renderRecentActivity();
         return;
       }
+      recentLessonsCache = data || [];
+      renderRecentActivity();
       if (statRecentLessons) statRecentLessons.textContent = String(data?.length || 0);
       const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
       const lessonsThisWeek = (data || []).filter((lesson) => new Date(lesson.created_at).getTime() >= oneWeekAgo).length;
@@ -2502,6 +2806,8 @@
       if (list && !list.querySelector(".library-lesson")) {
         list.innerHTML = `<p style="margin:0; color:#64748b;">No lessons saved yet.</p>`;
         if (statRecentLessons) statRecentLessons.textContent = "0";
+        recentLessonsCache = [];
+        renderRecentActivity();
       } else {
         await loadLessonLibrary();
       }
@@ -2648,6 +2954,7 @@
       const studentBreakdown = stats.map((r) => `${cleanText(r.student_name)}: ${JSON.stringify(r.answers || {})}`);
       status.innerHTML = `Live submissions: <strong>${total}</strong>${rows.length ? `<br><br>${rows.join("<br><br>")}` : ""}${studentBreakdown.length ? `<br><br><strong>Student breakdown</strong><br>${studentBreakdown.join("<br>")}` : ""}`;
       updateReportsSummary(questions, stats);
+      renderRecentActivity();
     }
 
     async function subscribeToResponses(sessionId) {
@@ -2705,6 +3012,7 @@
       currentProfile = null;
       updateTopStatusBar({ lessonsThisWeek: 0 });
       updateReportsSummary([], []);
+      renderRecentActivity();
       setMode("practice");
     }
 
@@ -3344,6 +3652,7 @@
 
       const targetButton = event?.target || document.querySelector(`.purpose-btn[data-purpose="${purpose}"]`);
       targetButton?.classList.add("active");
+      renderRecentActivity();
     }
 
     async function fetchPracticeCore({ token, subject, grade, skill, level, purpose }) {
@@ -4599,6 +4908,7 @@ Create your second version now.`;
       bindWorkspaceNavigation();
       updateTopStatusBar({ lessonsThisWeek: 0 });
       updateReportsSummary([], []);
+      renderRecentActivity();
 
       if (!window.supabase) {
         console.error("❌ Supabase not loaded");
@@ -4723,6 +5033,7 @@ Create your second version now.`;
             }
           });
           currentLessonId = saved.id;
+          addRecentActivity(`Saved “${selectedSubject || "Lesson"} - ${document.getElementById("skill")?.value || "Skill"}”`, "Library", "↺");
           sessionStatus.textContent = "✅ Lesson saved.";
           const usageStatus = document.getElementById("usage-status");
           if (usageStatus) usageStatus.textContent = "✅ Lesson saved to your library.";
@@ -4800,6 +5111,7 @@ Create your second version now.`;
           sessionStatus.innerHTML = `📡 <strong>Lobby open</strong><br>Share code <strong>${session.code}</strong>. Click <strong>Start Lesson</strong> when ready.`;
           currentLessonId = lessonId;
           syncCurrentLiveSession(session);
+          addRecentActivity(`Started live session ${session.code}`, "Live class", "▶");
           console.log("✅ SESSION STORED:", session.id);
           showTeacherLobby(session);
           copyCodeBtn.disabled = false;
