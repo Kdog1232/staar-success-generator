@@ -2832,6 +2832,7 @@
       if (window.location.hash !== `#${selectedView}`) {
         window.history.replaceState(null, "", `#${selectedView}`);
       }
+      bindGenerateButton();
     }
 
     function bindWorkspaceNavigation() {
@@ -3656,25 +3657,27 @@
     }
 
     async function fetchPracticeCore({ token, subject, grade, skill, level, purpose }) {
-      const response = await fetch(
-        "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-            apikey: SUPABASE_ANON_KEY
-          },
-          body: JSON.stringify({
-            mode: "core",
-            subject,
-            grade,
-            skill,
-            level,
-            purpose
-          })
-        }
-      );
+      const url = "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker";
+      const requestOptions = {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          apikey: SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({
+          mode: "core",
+          subject,
+          grade,
+          skill,
+          level,
+          purpose
+        })
+      };
+
+      console.log("📡 BEFORE FETCH", { mode: "core", url, subject, grade, skill, level, purpose });
+      console.log("fetch(...) bright-worker core", { url, method: requestOptions.method, body: JSON.parse(requestOptions.body) });
+      const response = await fetch(url, requestOptions);
 
       if (!response.ok) {
         let errorMessage = `PRACTICE_STATUS_${response.status}`;
@@ -3693,27 +3696,29 @@
     }
 
     async function fetchEnrichment({ token, subject, grade, skill, level, purpose, passage, practiceQuestions }) {
-      const response = await fetch(
-        "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-            apikey: SUPABASE_ANON_KEY
-          },
-          body: JSON.stringify({
-            mode: "enrichment",
-            subject,
-            grade,
-            skill,
-            level,
-            purpose,
-            passage,
-            practiceQuestions: Array.isArray(practiceQuestions) ? practiceQuestions : []
-          })
-        }
-      );
+      const url = "https://qadfehickkkvirtcnska.supabase.co/functions/v1/bright-worker";
+      const requestOptions = {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          apikey: SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({
+          mode: "enrichment",
+          subject,
+          grade,
+          skill,
+          level,
+          purpose,
+          passage,
+          practiceQuestions: Array.isArray(practiceQuestions) ? practiceQuestions : []
+        })
+      };
+
+      console.log("📡 BEFORE FETCH", { mode: "enrichment", url, subject, grade, skill, level, purpose });
+      console.log("fetch(...) bright-worker enrichment", { url, method: requestOptions.method, body: JSON.parse(requestOptions.body) });
+      const response = await fetch(url, requestOptions);
 
       if (!response.ok) {
         throw new Error(`ENRICHMENT_STATUS_${response.status}`);
@@ -4683,6 +4688,7 @@ Create your second version now.`;
       isGenerating = true;
       const requestId = Date.now();
       currentRequestId = requestId;
+      console.log("🚀 GENERATE START");
       console.log("🚀 GENERATE STARTED");
       const btn = document.getElementById("generate-btn");
       const output = document.getElementById("output");
@@ -4720,11 +4726,26 @@ Create your second version now.`;
         const token = cachedSession.access_token;
         console.log("🟢 TOKEN READY");
 
-        const { data: liveProfile } = await supabaseClient
-          .from("profiles")
-          .select("plan, generations_used")
-          .eq("id", cachedUser.id)
-          .single();
+        console.log("🚀 ABOUT TO FETCH PROFILE");
+        const profileResult = await withTimeout(
+          supabaseClient
+            .from("profiles")
+            .select("plan, generations_used")
+            .eq("id", cachedUser.id)
+            .single(),
+          AUTH_TIMEOUT_MS
+        );
+
+        if (profileResult?.error) {
+          console.error("💥 PROFILE FETCH FAILED", profileResult.error);
+          throw profileResult.error;
+        }
+
+        const liveProfile = profileResult?.data || {};
+        console.log("✅ PROFILE READY", {
+          plan: liveProfile?.plan || "free",
+          generations_used: Number(liveProfile?.generations_used || 0)
+        });
 
         const used = Number(liveProfile?.generations_used || 0);
         const plan = liveProfile?.plan || "free";
@@ -4742,6 +4763,7 @@ Create your second version now.`;
         console.log("📦 PAYLOAD:", { grade, subject, skill, level, purpose: selectedPurpose });
 
         console.log("📡 SENDING REQUEST");
+        console.log("🚀 ABOUT TO FETCH CORE");
 
         const coreResponse = await fetchPracticeCore({
           token,
@@ -4903,6 +4925,50 @@ Create your second version now.`;
     window.lockJoin = lockJoin;
     window.startSession = startSession;
 
+    async function handleGenerateClick(event) {
+      event?.preventDefault();
+
+      const trigger = event?.target instanceof Element
+        ? event.target.closest("#generate-btn")
+        : document.getElementById("generate-btn");
+      console.log("🔥 CLICK CONFIRMED", { target: event?.target, currentTarget: trigger });
+
+      if (!supabaseClient) {
+        alert("Auth service is unavailable right now. Please refresh in a moment.");
+        return;
+      }
+
+      if (!cachedUser) {
+        const { data } = await supabaseClient.auth.getSession();
+        cachedSession = data?.session ?? null;
+        cachedUser = cachedSession?.user ?? null;
+      }
+
+      if (!cachedUser) {
+        alert("Please log in first.");
+        revealAuthSection("Create a free account to generate your first practice set.");
+        return;
+      }
+
+      await generate();
+    }
+
+    function bindGenerateButton() {
+      const btn = document.getElementById("generate-btn");
+      if (!btn) {
+        console.error("❌ Generate button not found during bind");
+        return;
+      }
+
+      if (btn.dataset.startHandlerAttached === "true") {
+        return;
+      }
+
+      btn.addEventListener("click", handleGenerateClick);
+      btn.dataset.startHandlerAttached = "true";
+      console.log("✅ Generate button wired directly", btn);
+    }
+
     document.addEventListener("DOMContentLoaded", async () => {
       console.log("🚀 DOM READY");
       bindWorkspaceNavigation();
@@ -4962,35 +5028,9 @@ Create your second version now.`;
 
       if (!btn) {
         console.error("❌ Button not found");
-        return;
       }
 
-      const handleGenerateClick = async (e) => {
-        e.preventDefault();
-
-        console.log("🔥 CLICK CONFIRMED", { target: e.target, currentTarget: e.currentTarget });
-
-        if (!supabaseClient) {
-          alert("Auth service is unavailable right now. Please refresh in a moment.");
-          return;
-        }
-
-        if (!cachedUser) {
-          const { data } = await supabaseClient.auth.getSession();
-          cachedSession = data?.session ?? null;
-          cachedUser = cachedSession?.user ?? null;
-        }
-
-        if (!cachedUser) {
-          alert("Please log in first.");
-          revealAuthSection("Create a free account to generate your first practice set.");
-          return;
-        }
-
-        await generate();
-      };
-
-      btn.addEventListener("click", handleGenerateClick);
+      bindGenerateButton();
 
       const saveBtn = document.getElementById("save-lesson-btn");
       const assignBtn = document.getElementById("assign-class-btn");
