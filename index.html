@@ -483,6 +483,342 @@
       margin-bottom: 14px;
     }
 
+
+    .is-hidden {
+      display: none !important;
+    }
+
+    .live-classroom-card {
+      display: grid;
+      gap: 16px;
+      background: #f8fafc;
+    }
+
+    .live-session-shell {
+      display: grid;
+      gap: 14px;
+      text-align: left;
+    }
+
+    .live-hero-card,
+    .live-mini-card,
+    .participants-card,
+    .responses-card,
+    .live-action-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 18px;
+      box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
+      transition: all 0.18s ease;
+    }
+
+    .live-hero-card {
+      position: relative;
+      overflow: hidden;
+      padding: 22px 26px 24px;
+      text-align: center;
+      background:
+        radial-gradient(circle at 50% 18%, rgba(168, 85, 247, 0.2), transparent 34%),
+        linear-gradient(145deg, #ffffff 0%, #f5f3ff 48%, #eef2ff 100%);
+      border-color: #c4b5fd;
+      box-shadow: 0 20px 48px rgba(91, 33, 182, 0.16), 0 0 0 6px rgba(139, 92, 246, 0.06);
+    }
+
+    .live-hero-card::before {
+      content: "";
+      position: absolute;
+      inset: 12px;
+      border: 1px solid rgba(124, 58, 237, 0.13);
+      border-radius: 14px;
+      pointer-events: none;
+    }
+
+    .live-class-code-label {
+      color: #5b21b6;
+      font-size: 0.76rem;
+      font-weight: 950;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .live-class-code {
+      color: #1e1b4b;
+      font-size: clamp(4rem, 10vw, 6.7rem);
+      font-weight: 950;
+      letter-spacing: 0.13em;
+      line-height: 0.88;
+      margin: 6px 0 8px;
+      text-shadow: 0 10px 28px rgba(91, 33, 182, 0.16);
+    }
+
+    .live-class-helper {
+      color: #64748b;
+      font-weight: 750;
+      margin: 0 auto 12px;
+    }
+
+    .live-hero-actions,
+    .live-action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    .live-compact-btn {
+      border: 1px solid #d8b4fe;
+      border-radius: 999px;
+      background: #faf5ff;
+      color: #4c1d95;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 900;
+      padding: 9px 14px;
+      width: auto;
+      box-shadow: none;
+      transition: all 0.18s ease;
+    }
+
+    .live-compact-btn:hover:not(:disabled) {
+      background: #ede9fe;
+      transform: translateY(-1px);
+      box-shadow: 0 10px 18px rgba(91, 33, 182, 0.12);
+    }
+
+    .live-compact-btn.primary {
+      border-color: transparent;
+      background: linear-gradient(135deg, #6d28d9, #5b21b6);
+      color: #ffffff;
+    }
+
+    .live-compact-btn.danger {
+      border-color: #fecaca;
+      background: #fff1f2;
+      color: #b91c1c;
+    }
+
+    .live-compact-btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.58;
+    }
+
+    .live-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .live-mini-card {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      column-gap: 10px;
+      row-gap: 2px;
+      align-items: center;
+      padding: 16px;
+      background: linear-gradient(180deg, #ffffff, #f8fafc);
+    }
+
+    .live-hero-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 24px 56px rgba(91, 33, 182, 0.2), 0 0 0 7px rgba(139, 92, 246, 0.08);
+    }
+
+    .live-mini-card:hover,
+    .participants-card:hover,
+    .responses-card:hover,
+    .live-action-card:hover {
+      transform: translateY(-2px);
+      border-color: #c4b5fd;
+      box-shadow: 0 16px 34px rgba(91, 33, 182, 0.1);
+    }
+
+    .live-stat-icon {
+      grid-row: span 2;
+      width: 38px;
+      height: 38px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      background: #ede9fe;
+      font-size: 1.25rem;
+    }
+
+    .live-mini-label,
+    .live-card-heading div > span {
+      display: block;
+      color: #64748b;
+      font-size: 0.74rem;
+      font-weight: 950;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .live-mini-card strong {
+      display: block;
+      color: #0f172a;
+      font-size: 1.75rem;
+      line-height: 1;
+    }
+
+    .live-mini-card em {
+      display: block;
+      color: #475569;
+      font-size: 0.88rem;
+      font-style: normal;
+      font-weight: 850;
+    }
+
+    .live-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .live-indicator::before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: #22c55e;
+      box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.13);
+    }
+
+    .participants-card,
+    .responses-card,
+    .live-action-card {
+      padding: 18px;
+    }
+
+    .live-card-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .live-card-heading h3 {
+      margin: 2px 0 0;
+      font-size: 1.1rem;
+      letter-spacing: -0.01em;
+    }
+
+    .live-count-badge {
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #3730a3;
+      font-size: 0.8rem;
+      font-weight: 900;
+      padding: 5px 9px;
+      white-space: nowrap;
+    }
+
+    .live-student-list,
+    .live-response-list {
+      display: grid;
+      gap: 10px;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .live-student-list li,
+    .live-response-list li {
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      background: #fbfdff;
+      padding: 12px;
+      transition: all 0.18s ease;
+    }
+
+    .live-student-list li:hover,
+    .live-response-list li:hover {
+      background: #ffffff;
+      border-color: #c7d2fe;
+      box-shadow: 0 10px 20px rgba(79, 70, 229, 0.08);
+      transform: translateY(-1px);
+    }
+
+    .student-roster-row,
+    .response-summary-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .student-avatar {
+      width: 38px;
+      height: 38px;
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #ede9fe, #c7d2fe);
+      color: #4c1d95;
+      font-size: 0.78rem;
+      font-weight: 950;
+      letter-spacing: 0.03em;
+    }
+
+    .student-row-body,
+    .response-row-body {
+      min-width: 0;
+    }
+
+    .student-row-name,
+    .response-row-name {
+      color: #0f172a;
+      font-weight: 900;
+    }
+
+    .student-row-meta,
+    .response-row-meta {
+      color: #64748b;
+      font-size: 0.88rem;
+      font-weight: 750;
+      margin-top: 3px;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .mini-badge {
+      border-radius: 999px;
+      background: #f1f5f9;
+      color: #334155;
+      font-size: 0.78rem;
+      font-weight: 900;
+      padding: 4px 8px;
+    }
+
+    .mini-badge.success {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .mini-badge.warning {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .live-empty-copy {
+      color: #64748b;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .live-status-message {
+      margin: 0;
+      color: #1e3a5f;
+      font-weight: 800;
+    }
+
     .reports-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1793,7 +2129,8 @@
         grid-template-columns: 1fr;
       }
 
-      .live-platform-grid {
+      .live-platform-grid,
+      .live-stats-grid {
         grid-template-columns: 1fr;
       }
     }
@@ -2063,20 +2400,65 @@
               <strong>Start with the Lesson Library</strong>
               <span>Choose a saved lesson and click “Start Class” to open the lobby here.</span>
             </div>
-      <div class="live-tools">
+      <div class="live-tools is-hidden">
         <button id="assign-class-btn" class="generate-btn auth-secondary" type="button">Assign to Class</button>
-        <button id="end-session-btn" class="generate-btn auth-secondary" type="button">End Session</button>
-        <button id="copy-student-link-btn" class="generate-btn auth-secondary" type="button">Copy Student Link</button>
-        <button id="copy-code-btn" class="generate-btn auth-secondary" type="button">Copy Code</button>
       </div>
-      <p id="live-session-status" style="margin-top:8px; color:#1e3a5f; font-weight:600;"></p>
-      <div id="teacher-lobby" style="display:none; margin-top:12px; background:#fff; border:1px solid #dbe3ee; border-radius:12px; padding:16px; text-align:center;">
-        <div style="font-size:12px; color:#64748b; text-transform:uppercase; letter-spacing:.08em;">Class Code</div>
-        <div id="live-class-code" style="font-size:56px; font-weight:800; letter-spacing:.12em; line-height:1; margin:8px 0 14px;"></div>
-        <div style="font-weight:700; margin-bottom:6px;">Students Joining… (<span id="live-student-count">0</span>)</div>
-        <ul id="live-student-list" style="list-style:none; margin:0 auto 14px; padding:0; max-width:420px; text-align:left;"></ul>
-        <button id="start-live-session-btn" class="generate-btn" type="button" disabled>Start Lesson</button>
-        <button id="lock-join-btn" class="generate-btn auth-secondary" type="button" style="margin-left:8px;" disabled>Lock Join</button>
+      <p id="live-session-status" class="live-status-message"></p>
+      <div id="teacher-lobby" class="live-session-shell is-hidden">
+        <section class="live-hero-card" aria-label="Class code">
+          <div class="live-class-code-label">Class Code</div>
+          <div id="live-class-code" class="live-class-code"></div>
+          <p class="live-class-helper">Share this code with students to join the live lesson.</p>
+          <div class="live-hero-actions">
+            <button id="copy-code-btn" class="live-compact-btn primary" type="button" disabled>Copy Code</button>
+            <button id="copy-student-link-btn" class="live-compact-btn" type="button">Copy Student Link</button>
+          </div>
+        </section>
+
+        <section class="live-stats-grid" aria-label="Live session stats">
+          <div class="live-mini-card">
+            <span class="live-stat-icon" aria-hidden="true">👥</span>
+            <span class="live-mini-label">Students</span>
+            <strong><span id="live-student-count">0</span></strong>
+            <em>Connected</em>
+          </div>
+          <div class="live-mini-card">
+            <span class="live-stat-icon" aria-hidden="true">📊</span>
+            <span class="live-mini-label">Submitted</span>
+            <strong><span id="live-response-count">0</span></strong>
+            <em id="live-response-label">Responses</em>
+          </div>
+          <div class="live-mini-card">
+            <span class="live-stat-icon" aria-hidden="true">🟢</span>
+            <span class="live-mini-label">Status</span>
+            <strong id="live-session-state" class="live-indicator">Lobby</strong>
+            <em id="live-session-state-label">Open</em>
+          </div>
+        </section>
+
+        <section class="participants-card">
+          <div class="live-card-heading">
+            <div><span>Class roster</span><h3>Participants</h3></div>
+            <strong class="live-count-badge"><span id="live-participant-badge-count">0</span> connected</strong>
+          </div>
+          <ul id="live-student-list" class="live-student-list"></ul>
+        </section>
+
+        <section class="responses-card">
+          <div class="live-card-heading">
+            <div><span>Live responses</span><h3>Submissions</h3></div>
+            <strong class="live-count-badge">📊 <span id="live-submission-badge-count">0</span> submitted</strong>
+          </div>
+          <ul id="live-response-list" class="live-response-list"></ul>
+        </section>
+
+        <section class="live-action-card">
+          <div class="live-action-row">
+            <button id="start-live-session-btn" class="live-compact-btn primary" type="button" disabled>Go Live</button>
+            <button id="lock-join-btn" class="live-compact-btn" type="button" disabled>Lock Join</button>
+            <button id="end-session-btn" class="live-compact-btn danger" type="button">End Session</button>
+          </div>
+        </section>
       </div>
 
           </section>
@@ -2550,17 +2932,163 @@
       updateTopStatusBar();
     }
 
+
+    function getLiveQuestionSections() {
+      const practiceQuestions =
+        coreData?.practice?.questions ||
+        practiceDataState?.questions ||
+        [];
+      const crossQuestions =
+        coreData?.cross?.questions ||
+        crossDataState?.questions ||
+        [];
+      return {
+        practice: Array.isArray(practiceQuestions) ? practiceQuestions : [],
+        cross: Array.isArray(crossQuestions) ? crossQuestions : []
+      };
+    }
+
+    function getAnswerForKey(response, prefix, index) {
+      const answers = response?.answers || {};
+      return String(answers[`${prefix}${index}`] || answers[String(index)] || "").toUpperCase();
+    }
+
+    function scoreSection(response, questions, prefix) {
+      const scored = (Array.isArray(questions) ? questions : []).map((question, index) => {
+        const answer = getAnswerForKey(response, prefix, index);
+        const correct = parseCorrectAnswer(question?.correct_answer);
+        if (!answer || !correct) return null;
+        return answer === correct;
+      }).filter((result) => result !== null);
+
+      const correctCount = scored.filter(Boolean).length;
+      return {
+        total: scored.length,
+        correct: correctCount,
+        percent: scored.length ? Math.round((correctCount / scored.length) * 100) : null
+      };
+    }
+
+    function scoreLiveResponse(response) {
+      const sections = getLiveQuestionSections();
+      const practice = scoreSection(response, sections.practice, "p");
+      const cross = scoreSection(response, sections.cross, "c");
+      const total = practice.total + cross.total;
+      const correct = practice.correct + cross.correct;
+      const answers = response?.answers || {};
+      const practiceSubmitted = Object.keys(answers).filter((key) => key.startsWith("p")).length;
+      const crossSubmitted = Object.keys(answers).filter((key) => key.startsWith("c")).length;
+      const submitted = Object.keys(answers).length;
+      return {
+        practice,
+        cross,
+        total,
+        correct,
+        submitted,
+        practiceSubmitted,
+        crossSubmitted,
+        percent: total ? Math.round((correct / total) * 100) : null
+      };
+    }
+
+    function getStudentInitials(name = "Student") {
+      const parts = cleanText(name).split(/\s+/).filter(Boolean);
+      if (!parts.length) return "ST";
+      if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+      return `${parts[0][0] || ""}${parts[parts.length - 1][0] || ""}`.toUpperCase();
+    }
+
+    function formatResponseSummary(response) {
+      const score = scoreLiveResponse(response);
+      const rawName = cleanText(response?.student_name || "Student");
+      const name = escapeHtml(rawName);
+      const initials = escapeHtml(getStudentInitials(rawName));
+      const percentLabel = score.percent === null ? "Submitted" : `${score.percent}%`;
+      const correctLabel = score.total ? `${score.correct}/${score.total} Correct` : `${score.submitted || 0} Answers Submitted`;
+      const practiceBadge = score.practice.total
+        ? `<span class="mini-badge ${score.practice.percent >= 70 ? "success" : "warning"}">Practice: ${score.practice.correct}/${score.practice.total}</span>`
+        : (score.practiceSubmitted ? `<span class="mini-badge">Practice: ${score.practiceSubmitted} answers</span>` : "");
+      const crossBadge = score.cross.total
+        ? `<span class="mini-badge ${score.cross.percent >= 70 ? "success" : "warning"}">Cross: ${score.cross.correct}/${score.cross.total}</span>`
+        : (score.crossSubmitted ? `<span class="mini-badge">Cross: ${score.crossSubmitted} answers</span>` : "");
+      return `
+        <li>
+          <div class="response-summary-row">
+            <span class="student-avatar">${initials}</span>
+            <div class="response-row-body">
+              <div class="response-row-name">${name} — ${correctLabel}</div>
+              <div class="response-row-meta">Completed • ${percentLabel}</div>
+              <div class="badge-row">${practiceBadge}${crossBadge}</div>
+            </div>
+          </div>
+        </li>
+      `;
+    }
+
+    function updateLiveSessionStats() {
+      const participants = window.__liveParticipants || [];
+      const responses = window.__liveResponses || [];
+      const responseCount = document.getElementById("live-response-count");
+      const responseBadgeCount = document.getElementById("live-submission-badge-count");
+      const responseLabel = document.getElementById("live-response-label");
+      const participantBadgeCount = document.getElementById("live-participant-badge-count");
+      const state = document.getElementById("live-session-state");
+      const stateLabel = document.getElementById("live-session-state-label");
+      if (responseCount) responseCount.textContent = String(responses.length);
+      if (responseBadgeCount) responseBadgeCount.textContent = String(responses.length);
+      if (responseLabel) responseLabel.textContent = responses.length === 1 ? "Response" : "Responses";
+      if (participantBadgeCount) participantBadgeCount.textContent = String(participants.length);
+      const isLive = window.currentLiveSessionStatus === "live";
+      if (state) state.textContent = isLive ? "Live" : "Lobby";
+      if (stateLabel) stateLabel.textContent = isLive ? "Session Active" : "Open";
+    }
+
+    function renderLiveResponses() {
+      const list = document.getElementById("live-response-list");
+      if (!list) return;
+      const responses = window.__liveResponses || [];
+      list.innerHTML = responses.length
+        ? responses.map(formatResponseSummary).join("")
+        : `<li><p class="live-empty-copy">No submissions yet. Student results will appear here after they submit.</p></li>`;
+      updateLiveSessionStats();
+    }
+
     function renderParticipantsLobby() {
       const list = document.getElementById("live-student-list");
       const count = document.getElementById("live-student-count");
       const startLiveBtn = document.getElementById("start-live-session-btn");
       if (!list || !count || !startLiveBtn) return;
       const participants = window.__liveParticipants || [];
+      const responsesByName = new Map((window.__liveResponses || []).map((response) => [cleanText(response.student_name || "Student"), response]));
       count.textContent = String(participants.length);
       startLiveBtn.disabled = !getCurrentLiveSessionId() || window.__isStartingLiveSession === true || window.currentLiveSessionStatus === "live";
       list.innerHTML = participants.length
-        ? participants.map((p) => `<li>${cleanText(p.student_name || "Student")}</li>`).join("")
-        : `<li style="color:#64748b;">No students yet…</li>`;
+        ? participants.map((participant) => {
+            const name = cleanText(participant.student_name || "Student");
+            const response = responsesByName.get(name);
+            const score = response ? scoreLiveResponse(response) : null;
+            const meta = response
+              ? `Completed • ${score?.percent === null ? "Submitted" : `${score.percent}%`}`
+              : "Connected • Waiting for submission";
+            const scoreBadge = response && score?.total
+              ? `<span class="mini-badge success">${score.correct}/${score.total} correct</span>`
+              : (response ? `<span class="mini-badge success">Submitted</span>` : `<span class="mini-badge">Ready</span>`);
+            const initials = escapeHtml(getStudentInitials(name));
+            return `
+              <li>
+                <div class="student-roster-row">
+                  <span class="student-avatar">${initials}</span>
+                  <div class="student-row-body">
+                    <div class="student-row-name">${escapeHtml(name)}</div>
+                    <div class="student-row-meta">${escapeHtml(meta)}</div>
+                    <div class="badge-row">${scoreBadge}</div>
+                  </div>
+                </div>
+              </li>
+            `;
+          }).join("")
+        : `<li><p class="live-empty-copy">No students connected yet. Share the class code to build your roster.</p></li>`;
+      updateLiveSessionStats();
       renderRecentActivity();
     }
 
@@ -2574,7 +3102,7 @@
       console.log("👉 START CLICK HANDLER RUNNING");
 
       if (window.__isStartingLiveSession === true) {
-        console.warn("⚠️ Start lesson already in progress.");
+        console.warn("⚠️ Go live already in progress.");
         return;
       }
 
@@ -2589,28 +3117,29 @@
         window.__isStartingLiveSession = true;
         if (startLiveBtn) {
           startLiveBtn.disabled = true;
-          startLiveBtn.textContent = "Starting Lesson...";
+          startLiveBtn.textContent = "Going Live...";
         }
 
         const updatedSession = await startSession(sessionId);
         syncCurrentLiveSession(updatedSession);
 
         console.log("✅ SESSION SET TO LIVE");
-        if (sessionStatus) sessionStatus.textContent = "🟢 Session is now LIVE";
+        if (sessionStatus) sessionStatus.innerHTML = "🟢 <strong>Live Session Active</strong>";
         if (startLiveBtn) {
           startLiveBtn.disabled = true;
-          startLiveBtn.textContent = "Lesson Started";
+          startLiveBtn.textContent = "Live Session Active";
         }
         const lockJoinBtn = document.getElementById("lock-join-btn");
         if (lockJoinBtn) {
           lockJoinBtn.disabled = false;
           lockJoinBtn.textContent = "Lock Join";
         }
+        updateLiveSessionStats();
       } catch (error) {
         if (sessionStatus) sessionStatus.textContent = `❌ ${error.message || "Could not start session."}`;
         if (startLiveBtn) {
           startLiveBtn.disabled = false;
-          startLiveBtn.textContent = "Start Lesson";
+          startLiveBtn.textContent = "Go Live";
         }
       } finally {
         window.__isStartingLiveSession = false;
@@ -2645,10 +3174,14 @@
       const lobby = document.getElementById("teacher-lobby");
       const code = document.getElementById("live-class-code");
       if (!lobby || !code) return;
-      lobby.style.display = "block";
+      document.querySelector(".live-empty-state")?.classList.add("is-hidden");
+      lobby.classList.remove("is-hidden");
       code.textContent = session.code;
       window.__liveParticipants = [];
+      window.__liveResponses = window.__liveResponses || [];
       renderParticipantsLobby();
+      renderLiveResponses();
+      updateLiveSessionStats();
 
     }
 
@@ -2888,14 +3421,15 @@
     function updateReportsSummary(questions = [], responses = []) {
       const totalResponses = responses.length;
       const questionSummaries = questions.map((q, idx) => {
-        const key = String(idx);
+        const key = `${q.__answerPrefix || ""}${Number.isFinite(q.__displayIndex) ? q.__displayIndex - 1 : idx}`;
+        const fallbackKey = String(idx);
         const correct = parseCorrectAnswer(q.correct_answer);
-        const picks = responses.map((r) => String(r.answers?.[key] || "").toUpperCase()).filter(Boolean);
+        const picks = responses.map((r) => String(r.answers?.[key] || r.answers?.[fallbackKey] || "").toUpperCase()).filter(Boolean);
         const correctCount = picks.filter((pick) => pick === correct).length;
         const percent = picks.length ? Math.round((correctCount / picks.length) * 100) : null;
         const standard = q.teks || q.standard || q.skill || document.getElementById("skill")?.value || "Current skill";
         return {
-          label: `Q${idx + 1}: ${cleanText(q.question || standard).slice(0, 90)}`,
+          label: `${q.__sectionLabel || "Question"} ${q.__displayIndex || idx + 1}: ${cleanText(q.question || standard).slice(0, 90)}`,
           standard,
           percent,
           attempts: picks.length
@@ -2915,7 +3449,9 @@
 
       const below60 = responses.map((response) => {
         const scoredAnswers = questions.map((question, idx) => {
-          const answer = String(response.answers?.[String(idx)] || "").toUpperCase();
+          const key = `${question.__answerPrefix || ""}${Number.isFinite(question.__displayIndex) ? question.__displayIndex - 1 : idx}`;
+          const fallbackKey = String(idx);
+          const answer = String(response.answers?.[key] || response.answers?.[fallbackKey] || "").toUpperCase();
           if (!answer) return null;
           return answer === parseCorrectAnswer(question.correct_answer);
         }).filter((isCorrect) => isCorrect !== null);
@@ -2938,22 +3474,18 @@
     function updateDashboard() {
       const status = document.getElementById("live-session-status");
       if (!status || !currentLessonId) return;
-      const questions = coreData?.practice?.questions || [];
+      const sections = getLiveQuestionSections();
+      const questions = [
+        ...sections.practice.map((question, index) => ({ ...question, __answerPrefix: "p", __displayIndex: index + 1, __sectionLabel: "Practice" })),
+        ...sections.cross.map((question, index) => ({ ...question, __answerPrefix: "c", __displayIndex: index + 1, __sectionLabel: "Cross" }))
+      ];
       const stats = window.__liveResponses || [];
       const total = stats.length;
-      const rows = questions.map((q, idx) => {
-        const key = String(idx);
-        const correct = parseCorrectAnswer(q.correct_answer);
-        const picks = stats.map((r) => String(r.answers?.[key] || "").toUpperCase()).filter(Boolean);
-        const correctCount = picks.filter((p) => p === correct).length;
-        const percent = total ? Math.round((correctCount / total) * 100) : 0;
-        const wrong = picks.filter((p) => p !== correct);
-        const mostWrong = wrong.sort((a, b) => wrong.filter((v) => v === a).length - wrong.filter((v) => v === b).length).pop() || "—";
-        const reteachLabel = percent < 60 ? "<br>⚠️ Reteach needed" : "";
-        return `<strong>${cleanText(q.question || `Q${idx + 1}`)}</strong><br>${percent}% correct (most wrong: ${mostWrong})${reteachLabel}`;
-      });
-      const studentBreakdown = stats.map((r) => `${cleanText(r.student_name)}: ${JSON.stringify(r.answers || {})}`);
-      status.innerHTML = `Live submissions: <strong>${total}</strong>${rows.length ? `<br><br>${rows.join("<br><br>")}` : ""}${studentBreakdown.length ? `<br><br><strong>Student breakdown</strong><br>${studentBreakdown.join("<br>")}` : ""}`;
+      status.innerHTML = total
+        ? `📊 <strong>${total} Live ${total === 1 ? "Submission" : "Submissions"}</strong>`
+        : "Live responses will appear after students submit.";
+      renderLiveResponses();
+      renderParticipantsLobby();
       updateReportsSummary(questions, stats);
       renderRecentActivity();
     }
@@ -5148,7 +5680,7 @@ Create your second version now.`;
           if (!session?.id) {
             throw new Error("SESSION CREATE FAILED");
           }
-          sessionStatus.innerHTML = `📡 <strong>Lobby open</strong><br>Share code <strong>${session.code}</strong>. Click <strong>Start Lesson</strong> when ready.`;
+          sessionStatus.innerHTML = `📡 <strong>Lobby open</strong><br>Share code <strong>${session.code}</strong>. Click <strong>Go Live</strong> when ready.`;
           currentLessonId = lessonId;
           syncCurrentLiveSession(session);
           addRecentActivity(`Started live session ${session.code}`, "Live class", "▶");
