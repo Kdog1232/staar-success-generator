@@ -850,6 +850,88 @@
       margin-top: 10px;
     }
 
+    .report-detail-list,
+    .student-miss-list {
+      display: grid;
+      gap: 10px;
+      list-style: none;
+      margin: 12px 0 0;
+      padding: 0;
+    }
+
+    .report-detail-card,
+    .student-miss-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      background: #ffffff;
+      padding: 12px;
+      color: #334155;
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+
+    .report-detail-card strong,
+    .student-miss-card strong {
+      display: block;
+      color: #1e1b4b;
+      margin-bottom: 4px;
+    }
+
+    .report-detail-card span,
+    .student-miss-card span {
+      display: block;
+      color: #64748b;
+      margin-top: 3px;
+    }
+
+    .report-action-row {
+      display: flex;
+      justify-content: flex-start;
+      margin-top: 10px;
+    }
+
+    .student-review-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      z-index: 30;
+      width: min(440px, 100%);
+      height: 100vh;
+      overflow-y: auto;
+      padding: 24px;
+      border-left: 1px solid #e2e8f0;
+      background: #ffffff;
+      box-shadow: -24px 0 60px rgba(15, 23, 42, 0.18);
+      transform: translateX(0);
+      transition: transform 0.2s ease;
+    }
+
+    .student-review-drawer.is-hidden {
+      transform: translateX(105%);
+      pointer-events: none;
+    }
+
+    .student-review-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .student-review-header h3 {
+      margin: 0;
+      color: #1e1b4b;
+      font-size: 1.35rem;
+      font-weight: 950;
+    }
+
+    .student-review-meta {
+      color: #64748b;
+      font-weight: 800;
+      margin: 4px 0 0;
+    }
+
     h2,
     h3 {
       font-weight: 600;
@@ -3088,7 +3170,7 @@
             <div class="response-row-body">
               <div class="response-row-name">${name} — ${correctLabel}</div>
               <div class="response-row-meta">Completed • ${percentLabel}</div>
-              <div class="badge-row">${practiceBadge}${crossBadge}</div>
+              <div class="badge-row">${practiceBadge}${crossBadge}<button class="live-compact-btn" type="button" data-review-student="${name}">Review misses</button></div>
             </div>
           </div>
         </li>
@@ -3579,67 +3661,201 @@
       target.innerHTML = `<ul>${items.map((item) => `<li>${escapeHtml(cleanText(item))}</li>`).join("")}</ul>`;
     }
 
+    function renderReportCards(targetId, items, emptyText) {
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      if (!items.length) {
+        target.className = "report-empty";
+        target.textContent = emptyText;
+        return;
+      }
+      target.className = "";
+      target.innerHTML = `<ul class="report-detail-list">${items.join("")}</ul>`;
+    }
+
+    function getQuestionAnswerKey(question, idx) {
+      return `${question.__answerPrefix || ""}${Number.isFinite(question.__displayIndex) ? question.__displayIndex - 1 : idx}`;
+    }
+
+    function getQuestionSkillLabel(question = {}) {
+      const metadata = resolveQuestionMetadata(question, {
+        subject: coreData?.subject || selectedSubject || "Reading",
+        skill: coreData?.skill || document.getElementById("skill")?.value || "",
+        teks: coreData?.teks || ""
+      });
+      console.log("REPORT SKILL:", metadata.skill);
+      console.log("REPORT TEKS:", metadata.teks);
+      return metadata;
+    }
+
+    function getMostCommonWrongAnswer(picks = [], correct = "") {
+      const wrongPicks = picks.filter((pick) => pick.answer && pick.answer !== correct);
+      if (!wrongPicks.length) return null;
+      const counts = wrongPicks.reduce((map, pick) => {
+        map.set(pick.answer, (map.get(pick.answer) || 0) + 1);
+        return map;
+      }, new Map());
+      const [answer, count] = Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0] || ["", 0];
+      const percent = picks.length ? Math.round((count / picks.length) * 100) : 0;
+      return { answer, count, percent };
+    }
+
+    function buildReteachButton({ skill = "", subject = "", teks = "" } = {}) {
+      if (!skill) return "";
+      return `
+        <div class="report-action-row">
+          <button
+            class="live-compact-btn primary"
+            type="button"
+            data-generate-reteach-skill="${escapeHtml(skill)}"
+            data-generate-reteach-subject="${escapeHtml(subject || selectedSubject || "Reading")}"
+            data-generate-reteach-teks="${escapeHtml(teks || "")}"
+          >Generate Small Group Lesson</button>
+        </div>
+      `;
+    }
+
+    function getMissedQuestionDetails(response, questions = []) {
+      return questions.map((question, idx) => {
+        const key = getQuestionAnswerKey(question, idx);
+        const fallbackKey = String(idx);
+        const studentAnswer = String(response.answers?.[key] || response.answers?.[fallbackKey] || "").toUpperCase();
+        const correctAnswer = parseCorrectAnswer(question.correct_answer);
+        if (!studentAnswer || !correctAnswer || studentAnswer === correctAnswer) return null;
+        const metadata = getQuestionSkillLabel(question);
+        const missedQuestion = {
+          questionNumber: question.__questionNumber || question.__displayIndex || idx + 1,
+          sectionLabel: question.__sectionLabel || "Question",
+          questionText: cleanText(question.question || metadata.skill),
+          studentAnswer,
+          correctAnswer,
+          subject: metadata.subject,
+          skill: metadata.skill,
+          teks: metadata.teks,
+          standard: metadata.standard,
+          misconception: getQuestionMisconception(question)
+        };
+        console.log("MISSED QUESTION:", missedQuestion);
+        return missedQuestion;
+      }).filter(Boolean);
+    }
+
     function updateReportsSummary(questions = [], responses = []) {
       const totalResponses = responses.length;
       const questionSummaries = questions.map((q, idx) => {
-        const key = `${q.__answerPrefix || ""}${Number.isFinite(q.__displayIndex) ? q.__displayIndex - 1 : idx}`;
+        const key = getQuestionAnswerKey(q, idx);
         const fallbackKey = String(idx);
         const correct = parseCorrectAnswer(q.correct_answer);
-        const picks = responses.map((r) => String(r.answers?.[key] || r.answers?.[fallbackKey] || "").toUpperCase()).filter(Boolean);
-        const correctCount = picks.filter((pick) => pick === correct).length;
+        const picks = responses.map((r) => ({
+          name: cleanText(r.student_name || "Student"),
+          answer: String(r.answers?.[key] || r.answers?.[fallbackKey] || "").toUpperCase()
+        })).filter((pick) => pick.answer);
+        const correctCount = picks.filter((pick) => pick.answer === correct).length;
         const percent = picks.length ? Math.round((correctCount / picks.length) * 100) : null;
-        const standard = q.teks || q.standard || q.skill || document.getElementById("skill")?.value || "Current skill";
+        const metadata = getQuestionSkillLabel(q);
+        const mostCommonWrongAnswer = getMostCommonWrongAnswer(picks, correct);
         return {
-          label: `${q.__sectionLabel || "Question"} ${q.__displayIndex || idx + 1}: ${cleanText(q.question || standard).slice(0, 90)}`,
-          standard,
+          question: q,
+          questionNumber: q.__questionNumber || q.__displayIndex || idx + 1,
+          label: `Q${q.__questionNumber || q.__displayIndex || idx + 1} — ${metadata.skill}`,
+          questionText: cleanText(q.question || metadata.skill),
+          subject: metadata.subject,
+          skill: metadata.skill,
+          teks: metadata.teks,
+          standard: metadata.standard,
+          correct,
           percent,
-          attempts: picks.length
+          attempts: picks.length,
+          mostCommonWrongAnswer,
+          missed: picks.filter((pick) => pick.answer !== correct),
+          misconception: getQuestionMisconception(q)
         };
       });
 
       const missedQuestions = questionSummaries
-        .filter((item) => item.attempts > 0 && item.percent !== null)
+        .filter((item) => item.attempts > 0 && item.percent !== null && item.percent < 100)
         .sort((a, b) => a.percent - b.percent)
-        .slice(0, 4)
-        .map((item) => `${item.label} — ${item.percent}% correct`);
+        .slice(0, 6)
+        .map((item) => `
+          <li class="report-detail-card">
+            <strong>${escapeHtml(item.label)}</strong>
+            <span>${escapeHtml(item.percent)}% correct • Correct Answer: ${escapeHtml(item.correct || "—")}</span>
+            <span>${item.mostCommonWrongAnswer ? `Most Common Wrong Answer: ${escapeHtml(item.mostCommonWrongAnswer.answer)} (${escapeHtml(item.mostCommonWrongAnswer.percent)}% chose ${escapeHtml(item.mostCommonWrongAnswer.answer)})` : "Most Common Wrong Answer: —"}</span>
+            <span>TEKS: ${escapeHtml(item.teks || item.standard || "Aligned skill")}</span>
+            <span>Missed by: ${escapeHtml(item.missed.map((miss) => `${miss.name} selected ${miss.answer}`).join(", ") || "—")}</span>
+            <span>Misconception: ${escapeHtml(item.misconception)}</span>
+          </li>
+        `);
 
-      const weakTeks = questionSummaries
+      const weakSkillMap = new Map();
+      questionSummaries
         .filter((item) => item.attempts > 0 && item.percent !== null && item.percent < 70)
-        .map((item) => `${item.standard} — ${item.percent}% correct`)
-        .slice(0, 4);
+        .forEach((item) => {
+          const groupingKey = `${item.skill}||${item.teks || item.standard}`;
+          console.log("GROUPING KEY:", groupingKey);
+          const existing = weakSkillMap.get(groupingKey) || { ...item, count: 0, percents: [] };
+          existing.count += 1;
+          existing.percents.push(item.percent);
+          weakSkillMap.set(groupingKey, existing);
+        });
 
-      const below60 = responses.map((response) => {
-        const scoredAnswers = questions.map((question, idx) => {
-          const key = `${question.__answerPrefix || ""}${Number.isFinite(question.__displayIndex) ? question.__displayIndex - 1 : idx}`;
-          const fallbackKey = String(idx);
-          const answer = String(response.answers?.[key] || response.answers?.[fallbackKey] || "").toUpperCase();
-          if (!answer) return null;
-          return answer === parseCorrectAnswer(question.correct_answer);
-        }).filter((isCorrect) => isCorrect !== null);
-        if (!scoredAnswers.length) return null;
-        const correctCount = scoredAnswers.filter(Boolean).length;
-        const percent = Math.round((correctCount / scoredAnswers.length) * 100);
-        return { name: cleanText(response.student_name || "Student"), percent };
-      }).filter((student) => student && student.percent < 60);
+      const weakTeks = Array.from(weakSkillMap.values())
+        .sort((a, b) => Math.min(...a.percents) - Math.min(...b.percents))
+        .slice(0, 6)
+        .map((item) => `
+          <li class="report-detail-card">
+            <strong>${escapeHtml(item.skill)}${item.teks ? ` — ${escapeHtml(item.teks)}` : ""}</strong>
+            <span>${Math.round(item.percents.reduce((sum, value) => sum + value, 0) / item.percents.length)}% mastery across ${item.count} question${item.count === 1 ? "" : "s"}</span>
+            ${buildReteachButton({ skill: item.skill, subject: item.subject, teks: item.teks || item.standard })}
+          </li>
+        `);
 
-      const smallGroups = weakTeks.length
-        ? weakTeks.slice(0, 3).map((item, idx) => `Group ${idx + 1}: reteach ${item.split(" — ")[0]}`)
-        : [];
+      const studentSummaries = responses.map((response) => {
+        const missed = getMissedQuestionDetails(response, questions);
+        const answeredCount = questions.filter((question, idx) => {
+          const key = getQuestionAnswerKey(question, idx);
+          return String(response.answers?.[key] || response.answers?.[String(idx)] || "").trim();
+        }).length;
+        const correctCount = Math.max(0, answeredCount - missed.length);
+        const percent = answeredCount ? Math.round((correctCount / answeredCount) * 100) : null;
+        return { name: cleanText(response.student_name || "Student"), missed, answeredCount, correctCount, percent };
+      });
 
-      renderList("report-missed-questions", missedQuestions, totalResponses ? "No missed questions yet." : "Start a live session to collect responses.");
-      renderList("report-weak-teks", weakTeks, totalResponses ? "No weak TEKS yet." : "No weak TEKS yet.");
-      renderList("report-below-60", below60.map((student) => `${student.name} — ${student.percent}%`), totalResponses ? "No students below 60%." : "No student data yet.");
-      renderList("report-small-groups", smallGroups, totalResponses ? "No small groups needed yet." : "Small groups will appear after submissions.");
+      const below60 = studentSummaries.filter((student) => student.percent !== null && student.percent < 60);
+
+      const smallGroupMap = new Map();
+      studentSummaries.forEach((student) => {
+        student.missed.forEach((miss) => {
+          const groupingKey = `${miss.skill}||${miss.teks || miss.standard}`;
+          console.log("GROUPING KEY:", groupingKey);
+          const group = smallGroupMap.get(groupingKey) || { skill: miss.skill, subject: miss.subject || selectedSubject || "Reading", teks: miss.teks, students: new Set() };
+          group.students.add(student.name);
+          smallGroupMap.set(groupingKey, group);
+        });
+      });
+
+      const smallGroups = Array.from(smallGroupMap.values())
+        .filter((group) => group.students.size > 0)
+        .sort((a, b) => b.students.size - a.students.size)
+        .slice(0, 4)
+        .map((group) => `
+          <li class="report-detail-card">
+            <strong>${escapeHtml(group.skill)} Group${group.teks ? ` — ${escapeHtml(group.teks)}` : ""}</strong>
+            <span>${escapeHtml(Array.from(group.students).join(", "))}</span>
+            ${buildReteachButton({ skill: group.skill, subject: group.subject, teks: group.teks })}
+          </li>
+        `);
+
+      renderReportCards("report-missed-questions", missedQuestions, totalResponses ? "No missed questions yet." : "Start a live session to collect responses.");
+      renderReportCards("report-weak-teks", weakTeks, totalResponses ? "No weak TEKS yet." : "No weak TEKS yet.");
+      renderList("report-below-60", below60.map((student) => `${student.name} — ${student.percent}% (${student.correctCount}/${student.answeredCount})`), totalResponses ? "No students below 60%." : "No student data yet.");
+      renderReportCards("report-small-groups", smallGroups, totalResponses ? "No small groups needed yet." : "Small groups will appear after submissions.");
     }
 
     function updateDashboard() {
       const status = document.getElementById("live-session-status");
       if (!status || !currentLessonId) return;
-      const sections = getLiveQuestionSections();
-      const questions = [
-        ...sections.practice.map((question, index) => ({ ...question, __answerPrefix: "p", __displayIndex: index + 1, __sectionLabel: "Practice" })),
-        ...sections.cross.map((question, index) => ({ ...question, __answerPrefix: "c", __displayIndex: index + 1, __sectionLabel: "Cross" }))
-      ];
+      const questions = getAnnotatedLiveQuestions();
       const stats = window.__liveResponses || [];
       const total = stats.length;
       status.innerHTML = total
@@ -4991,21 +5207,75 @@
       return normalized.slice(0, 4);
     }
 
-    function normalizeQuestionForUI(question, index, type = "practice") {
+    function looksLikeTeks(value = "") {
+      return /^[A-Z0-9.]+\([A-Z0-9]+\)/i.test(cleanText(value)) || /§|TEKS/i.test(cleanText(value));
+    }
+
+    function getSelectedSkillMetadata(subject = selectedSubject, skill = document.getElementById("skill")?.value) {
+      const subjectSkills = SUBJECT_SKILLS[subject] || [];
+      const normalizedSkill = cleanText(skill);
+      return subjectSkills.find((item) => cleanText(item.skill).toLowerCase() === normalizedSkill.toLowerCase()) || subjectSkills[0] || null;
+    }
+
+    function resolveQuestionMetadata(question = {}, lessonMeta = {}) {
+      const subject = cleanText(question.subject || lessonMeta.subject || selectedSubject || "Reading");
+      const selectedSkill = cleanText(lessonMeta.skill || document.getElementById("skill")?.value || "");
+      const subjectSkillMeta = getSelectedSkillMetadata(subject, selectedSkill);
+      const rawStandard = cleanText(question.standard || lessonMeta.standard || "");
+      const rawTeks = cleanText(question.teks || lessonMeta.teks || (looksLikeTeks(rawStandard) ? rawStandard : ""));
+      const candidateSkill = cleanText(question.skill || question.category || (!looksLikeTeks(rawStandard) ? rawStandard : "") || lessonMeta.skill || subjectSkillMeta?.skill || "Current skill");
+      const subjectSkills = SUBJECT_SKILLS[subject] || [];
+      const exactSubjectSkill = subjectSkills.find((item) => cleanText(item.skill).toLowerCase() === candidateSkill.toLowerCase());
+      const otherSubjectSkill = Object.entries(SUBJECT_SKILLS)
+        .filter(([name]) => name !== subject)
+        .flatMap(([, skills]) => skills)
+        .find((item) => cleanText(item.skill).toLowerCase() === candidateSkill.toLowerCase());
+      const safeSkill = otherSubjectSkill ? cleanText(subjectSkillMeta?.skill || selectedSkill || "Current skill") : candidateSkill;
+      const skill = cleanText(exactSubjectSkill?.skill || safeSkill || "Current skill");
+      const teks = cleanText(rawTeks || exactSubjectSkill?.teks || (!otherSubjectSkill ? subjectSkillMeta?.teks : "") || "");
+      const standard = cleanText(teks || rawStandard || skill);
+      console.log("QUESTION METADATA:", { question, subject, skill, teks, standard });
+      return { subject, skill, teks, standard };
+    }
+
+    function getQuestionMisconception(question = {}) {
+      const supportCollections = [
+        ...(Array.isArray(supportData?.answerKey?.practice) ? supportData.answerKey.practice : []),
+        ...(Array.isArray(supportData?.answerKey?.cross) ? supportData.answerKey.cross : []),
+        ...(Array.isArray(supportData?.tutor?.practice) ? supportData.tutor.practice : []),
+        ...(Array.isArray(supportData?.tutor?.cross) ? supportData.tutor.cross : [])
+      ];
+      const supportMatch = supportCollections.find((item) => item?.question_id && item.question_id === question.question_id) || {};
+      return cleanText(
+        question.common_misconception ||
+        question.common_mistake ||
+        question.misconception ||
+        question.explanation_mistake ||
+        supportMatch.common_misconception ||
+        supportMatch.common_mistake ||
+        supportMatch.misconception ||
+        "Picking a plausible answer without matching it to the text evidence."
+      );
+    }
+
+    function normalizeQuestionForUI(question, index, type = "practice", lessonMeta = {}) {
       const modePrefix = type === "cross" ? "cross" : "practice";
       const safe = question && typeof question === "object" ? question : {};
+      const metadata = resolveQuestionMetadata(safe, lessonMeta);
       return {
         ...safe,
+        ...metadata,
         question_id: cleanText(safe?.question_id || `${modePrefix}_q${index + 1}`),
         question: cleanText(safe?.question || `Question ${index + 1}`),
         choices: normalizeChoicesForUI(safe?.choices),
-        correct_answer: normalizeCorrectAnswerValue(safe?.correct_answer)
+        correct_answer: normalizeCorrectAnswerValue(safe?.correct_answer),
+        common_misconception: getQuestionMisconception(safe)
       };
     }
 
-    function ensureQuestionIds(questions, type = "practice") {
+    function ensureQuestionIds(questions, type = "practice", lessonMeta = {}) {
       const source = Array.isArray(questions) ? questions : [];
-      return source.map((q, i) => normalizeQuestionForUI(q, i, type));
+      return source.map((q, i) => normalizeQuestionForUI(q, i, type, lessonMeta));
     }
 
     function normalizeWorkerPayload(raw = {}, { fallbackPassage = "" } = {}) {
@@ -5014,16 +5284,23 @@
       const explicitPracticeQuestions = Array.isArray(safe?.practice?.questions) ? safe.practice.questions : null;
       const practiceQuestions = explicitPracticeQuestions ?? legacyQuestions;
       const crossQuestions = Array.isArray(safe?.cross?.questions) ? safe.cross.questions : [];
+      const lessonMeta = {
+        subject: safe.subject || selectedSubject || "Reading",
+        skill: safe.skill || document.getElementById("skill")?.value || "",
+        teks: safe.teks || safe.standard || "",
+        standard: safe.standard || safe.teks || ""
+      };
 
       return {
         ...safe,
+        ...lessonMeta,
         passage: normalizePassageValue(safe?.passage) || normalizePassageValue(fallbackPassage),
         practice: {
-          questions: ensureQuestionIds(practiceQuestions, "practice")
+          questions: ensureQuestionIds(practiceQuestions, "practice", lessonMeta)
         },
         cross: {
           passage: normalizePassageValue(safe?.cross?.passage),
-          questions: ensureQuestionIds(crossQuestions, "cross")
+          questions: ensureQuestionIds(crossQuestions, "cross", lessonMeta)
         },
         tutor: {
           practice: Array.isArray(safe?.tutor?.practice) ? safe.tutor.practice : [],
@@ -5038,7 +5315,7 @@
 
     function alignById(questions, tutorArr, answerArr, type = "practice") {
       const modePrefix = type === "cross" ? "cross" : "practice";
-      const normalizedQuestions = ensureQuestionIds(questions, modePrefix);
+      const normalizedQuestions = ensureQuestionIds(questions, modePrefix, { subject: selectedSubject || coreData?.subject || "Reading", skill: coreData?.skill || document.getElementById("skill")?.value || "", teks: coreData?.teks || "" });
       const tutorMap = new Map((Array.isArray(tutorArr) ? tutorArr : []).map((t) => [t?.question_id, t]));
       const answerMap = new Map((Array.isArray(answerArr) ? answerArr : []).map((a) => [a?.question_id, a]));
 
@@ -5554,7 +5831,12 @@ Create your second version now.`;
           await refreshUsageStatus(cachedUser.id);
         }
 
+        const selectedSkillMeta = getSelectedSkillMetadata(subject, skill);
         const core = {
+          subject,
+          skill,
+          teks: coreResponse?.teks || coreResponse?.standard || selectedSkillMeta?.teks || "",
+          standard: coreResponse?.standard || coreResponse?.teks || selectedSkillMeta?.teks || "",
           passage: coreResponse?.passage || "",
           practice: coreResponse?.practice || { questions: coreResponse?.questions || [] },
           cross: { passage: "", questions: [] }
@@ -5695,6 +5977,97 @@ Create your second version now.`;
     window.lockJoin = lockJoin;
     window.startSession = startSession;
 
+    function getAnnotatedLiveQuestions() {
+      const sections = getLiveQuestionSections();
+      return [
+        ...sections.practice.map((question, index) => ({ ...question, __answerPrefix: "p", __displayIndex: index + 1, __questionNumber: index + 1, __sectionLabel: "Practice" })),
+        ...sections.cross.map((question, index) => ({ ...question, __answerPrefix: "c", __displayIndex: index + 1, __questionNumber: sections.practice.length + index + 1, __sectionLabel: "Cross" }))
+      ];
+    }
+
+    function closeStudentReviewPanel() {
+      document.getElementById("student-review-drawer")?.classList.add("is-hidden");
+    }
+
+    function openStudentReview(studentName = "") {
+      const drawer = document.getElementById("student-review-drawer");
+      if (!drawer) return;
+      const normalizedName = cleanText(studentName).toLowerCase();
+      const response = (window.__liveResponses || []).find((item) => cleanText(item.student_name || "Student").toLowerCase() === normalizedName);
+      if (!response) {
+        drawer.innerHTML = `
+          <div class="student-review-header">
+            <div><h3>Student Review</h3><p class="student-review-meta">No response found.</p></div>
+            <button class="live-compact-btn" type="button" data-close-student-review>Close</button>
+          </div>
+        `;
+        drawer.classList.remove("is-hidden");
+        return;
+      }
+
+      const questions = getAnnotatedLiveQuestions();
+      const score = scoreLiveResponse(response);
+      const missed = getMissedQuestionDetails(response, questions);
+      const missedMarkup = missed.length
+        ? `<ul class="student-miss-list">${missed.map((miss) => `
+            <li class="student-miss-card">
+              <strong>Q${escapeHtml(miss.questionNumber)} — ${escapeHtml(miss.skill)}</strong>
+              <span>${escapeHtml(miss.questionText)}</span>
+              <span>Student Answer: ${escapeHtml(miss.studentAnswer)}</span>
+              <span>Correct Answer: ${escapeHtml(miss.correctAnswer)}</span>
+              <span>TEKS: ${escapeHtml(miss.teks || miss.standard || "Aligned skill")}</span>
+              <span>Common misconception: ${escapeHtml(miss.misconception)}</span>
+            </li>
+          `).join("")}</ul>`
+        : `<p class="report-empty">No missed questions for this student.</p>`;
+
+      drawer.innerHTML = `
+        <div class="student-review-header">
+          <div>
+            <h3>${escapeHtml(cleanText(response.student_name || "Student"))}</h3>
+            <p class="student-review-meta">${score.percent === null ? "Submitted" : `${score.percent}%`} • ${score.correct}/${score.total || score.submitted || 0} correct</p>
+          </div>
+          <button class="live-compact-btn" type="button" data-close-student-review>Close</button>
+        </div>
+        ${missedMarkup}
+      `;
+      drawer.classList.remove("is-hidden");
+    }
+
+    function generateTargetedReteach(studentName = "") {
+      openStudentReview(studentName);
+      setWorkspaceView("reports");
+    }
+
+    function selectSkillForGeneration(subject = "Reading", skill = "") {
+      if (subject && SUBJECT_SKILLS[subject]) {
+        setActiveSubject(subject);
+      }
+      const skillSelect = document.getElementById("skill");
+      if (!skillSelect || !skill) return;
+      const existingOption = Array.from(skillSelect.options).find((option) => cleanText(option.value).toLowerCase() === cleanText(skill).toLowerCase());
+      if (!existingOption) {
+        const option = document.createElement("option");
+        option.value = skill;
+        option.textContent = skill;
+        skillSelect.appendChild(option);
+      }
+      skillSelect.value = skill;
+    }
+
+    async function generateSmallGroupLessonFromWeakSkill({ skill = "", subject = "Reading", teks = "" } = {}) {
+      const cleanSkill = cleanText(skill);
+      const cleanSubject = cleanText(subject || selectedSubject || "Reading");
+      if (!cleanSkill) return;
+      selectSkillForGeneration(cleanSubject, cleanSkill);
+      setPurpose("Small Group");
+      const levelSelect = document.getElementById("level");
+      if (levelSelect) levelSelect.value = "Below";
+      addRecentActivity(`Small group reteach queued: ${cleanSkill}${teks ? ` (${teks})` : ""}`, "Intervention", "↺");
+      setWorkspaceView("dashboard");
+      await handleGenerateClick();
+    }
+
     async function handleGenerateClick(event) {
       event?.preventDefault();
 
@@ -5785,6 +6158,16 @@ Create your second version now.`;
           return;
         }
 
+        const weakSkillReteachTarget = target.closest("[data-generate-reteach-skill]");
+        if (weakSkillReteachTarget) {
+          void generateSmallGroupLessonFromWeakSkill({
+            skill: weakSkillReteachTarget.getAttribute("data-generate-reteach-skill") || "",
+            subject: weakSkillReteachTarget.getAttribute("data-generate-reteach-subject") || selectedSubject || "Reading",
+            teks: weakSkillReteachTarget.getAttribute("data-generate-reteach-teks") || ""
+          });
+          return;
+        }
+
         const reteachTarget = target.closest("[data-generate-reteach-student]");
         if (reteachTarget) {
           generateTargetedReteach(reteachTarget.getAttribute("data-generate-reteach-student") || "");
@@ -5860,7 +6243,13 @@ Create your second version now.`;
             throw new Error("Generate a lesson first");
           }
 
+          const selectedSkill = document.getElementById("skill")?.value || coreData?.skill || "Skill";
+          const selectedSkillMeta = getSelectedSkillMetadata(selectedSubject || coreData?.subject || "Reading", selectedSkill);
           const saved = await saveLesson({
+            subject: selectedSubject || coreData?.subject || "Reading",
+            skill: selectedSkill,
+            teks: coreData?.teks || selectedSkillMeta?.teks || "",
+            standard: coreData?.standard || coreData?.teks || selectedSkillMeta?.teks || "",
             practice: {
               passage: practicePassage,
               questions: practiceQuestions

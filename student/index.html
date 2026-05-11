@@ -138,7 +138,8 @@
       text-align: left;
     }
 
-    .field label {
+    .field label,
+    .field > span {
       color: #4c1d95;
       font-size: 0.78rem;
       font-weight: 950;
@@ -146,7 +147,8 @@
       text-transform: uppercase;
     }
 
-    input[type="text"] {
+    input[type="text"],
+    textarea {
       width: 100%;
       min-height: 52px;
       border: 1px solid var(--border);
@@ -160,7 +162,14 @@
       transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
     }
 
-    input[type="text"]:focus {
+    textarea {
+      min-height: 132px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    input[type="text"]:focus,
+    textarea:focus {
       border-color: #7c5cff;
       box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.15);
       transform: translateY(-1px);
@@ -198,6 +207,94 @@
       color: #9a3412;
       background: var(--orange-soft);
       border: 1px solid var(--orange-border);
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(6px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+
+    .modal-overlay.is-open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .help-modal {
+      width: min(100%, 480px);
+      padding: 28px;
+      border-radius: 24px;
+      background: #ffffff;
+      box-shadow: 0 30px 60px rgba(15, 23, 42, 0.25);
+      transform: translateY(12px);
+      opacity: 0;
+      transition: transform 0.22s ease, opacity 0.22s ease;
+    }
+
+    .modal-overlay.is-open .help-modal {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .help-modal-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .help-modal-icon {
+      display: inline-grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      border-radius: 16px;
+      background: var(--orange-soft);
+      font-size: 1.35rem;
+      box-shadow: inset 0 0 0 1px var(--orange-border);
+    }
+
+    .help-modal h2 {
+      margin: 0;
+      color: #1f1744;
+      font-size: 1.55rem;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+    }
+
+    .help-modal-copy {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-weight: 750;
+      line-height: 1.5;
+    }
+
+    .privacy-note {
+      margin: 10px 0 0;
+      color: #4c1d95;
+      font-size: 0.92rem;
+      font-weight: 850;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .ghost-btn {
+      color: var(--muted);
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
     }
 
     .progress-wrap {
@@ -424,9 +521,14 @@
         width: 100%;
       }
 
-      .action-row {
+      .action-row,
+      .modal-actions {
         align-items: stretch;
         flex-direction: column;
+      }
+
+      .help-modal {
+        padding: 22px;
       }
 
       .passage-card,
@@ -475,6 +577,27 @@
       <button id="submit" class="primary-btn" type="button">Submit Answers</button>
     </div>
   </main>
+
+  <div id="raise-hand-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="raise-hand-title" aria-describedby="raise-hand-description" hidden>
+    <div class="help-modal">
+      <div class="help-modal-header">
+        <span class="help-modal-icon" aria-hidden="true">✋</span>
+        <div>
+          <h2 id="raise-hand-title">Need Help?</h2>
+          <p id="raise-hand-description" class="help-modal-copy">Tell your teacher what you're stuck on.</p>
+        </div>
+      </div>
+      <label class="field" for="help-message">
+        <span>Help request</span>
+        <textarea id="help-message" placeholder="Example: I'm confused about Question 4." maxlength="500"></textarea>
+      </label>
+      <p class="privacy-note">Your teacher will see this privately.</p>
+      <div class="modal-actions">
+        <button id="cancel-help-request" class="ghost-btn" type="button">Cancel</button>
+        <button id="send-help-request" class="primary-btn" type="button">Send Request</button>
+      </div>
+    </div>
+  </div>
 
   <script type="module">
 console.log("🔥 SCRIPT LOADED");
@@ -747,6 +870,68 @@ function renderQuestions(lesson) {
   return true;
 }
 
+
+function openRaiseHandModal() {
+  const modal = document.getElementById("raise-hand-modal");
+  const helpMessage = document.getElementById("help-message");
+  if (!modal || !helpMessage) return;
+  modal.hidden = false;
+  requestAnimationFrame(() => modal.classList.add("is-open"));
+  helpMessage.value = "";
+  helpMessage.focus();
+}
+
+function closeRaiseHandModal() {
+  const modal = document.getElementById("raise-hand-modal");
+  if (!modal) return;
+  modal.classList.remove("is-open");
+  window.setTimeout(() => {
+    if (!modal.classList.contains("is-open")) modal.hidden = true;
+  }, 220);
+}
+
+async function sendHelpRequest() {
+  const handBtn = document.getElementById("raise-hand");
+  const sendBtn = document.getElementById("send-help-request");
+  const helpMessage = document.getElementById("help-message");
+  if (!currentSession || handRaised || !handBtn || !sendBtn || !helpMessage) return;
+
+  const message = helpMessage.value.trim() || "Student raised their hand.";
+  handBtn.disabled = true;
+  sendBtn.disabled = true;
+  sendBtn.textContent = "Sending...";
+  handBtn.textContent = "Hand Raised";
+
+  try {
+    const { error } = await studentSupabase.from("help_requests").insert({
+      session_id: currentSession.id,
+      student_name: currentSession.student,
+      message
+    });
+    if (error) throw error;
+    handRaised = true;
+    closeRaiseHandModal();
+    setStatus("✋ Hand raised. Your teacher can see you need help.", "success");
+  } catch (e) {
+    console.error(e);
+    const duplicate = e?.code === "23505" || String(e?.message || "").toLowerCase().includes("duplicate");
+    if (duplicate) {
+      handRaised = true;
+      handBtn.disabled = true;
+      handBtn.textContent = "Hand Raised";
+      closeRaiseHandModal();
+      setStatus("✋ Your hand is already raised. Your teacher can see it.", "success");
+      return;
+    }
+    setStatus("Could not raise hand. Try again.", "error");
+    handBtn.disabled = false;
+    handBtn.textContent = "✋ Raise Hand";
+  } finally {
+    sendBtn.disabled = false;
+    sendBtn.textContent = "Send Request";
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const joinBtn = document.getElementById("join-btn");
   const questions = document.getElementById("questions");
@@ -801,36 +986,19 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  document.getElementById("raise-hand").onclick = async () => {
-    const handBtn = document.getElementById("raise-hand");
+  document.getElementById("raise-hand").onclick = () => {
     if (!currentSession || handRaised) return;
-    const message = prompt("What do you need help with? (Example: Question 4)", "Question ");
-    handBtn.disabled = true;
-    handBtn.textContent = "Hand Raised";
-    try {
-      const { error } = await studentSupabase.from("help_requests").insert({
-        session_id: currentSession.id,
-        student_name: currentSession.student,
-        message: message || "Student raised their hand."
-      });
-      if (error) throw error;
-      handRaised = true;
-      setStatus("✋ Hand raised. Your teacher can see you need help.", "success");
-    } catch (e) {
-      console.error(e);
-      const duplicate = e?.code === "23505" || String(e?.message || "").toLowerCase().includes("duplicate");
-      if (duplicate) {
-        handRaised = true;
-        handBtn.disabled = true;
-        handBtn.textContent = "Hand Raised";
-        setStatus("✋ Your hand is already raised. Your teacher can see it.", "success");
-        return;
-      }
-      setStatus("Could not raise hand. Try again.", "error");
-      handBtn.disabled = false;
-      handBtn.textContent = "✋ Raise Hand";
-    }
+    openRaiseHandModal();
   };
+
+  document.getElementById("cancel-help-request")?.addEventListener("click", closeRaiseHandModal);
+  document.getElementById("send-help-request")?.addEventListener("click", sendHelpRequest);
+  document.getElementById("raise-hand-modal")?.addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) closeRaiseHandModal();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeRaiseHandModal();
+  });
 
   document.getElementById("submit").onclick = async () => {
     const submitBtn = document.getElementById("submit");
