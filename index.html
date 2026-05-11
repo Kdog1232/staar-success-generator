@@ -819,289 +819,6 @@
       font-weight: 800;
     }
 
-    .live-help-alert {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 14px 16px;
-      border: 1px solid #fecaca;
-      border-radius: 18px;
-      background: linear-gradient(135deg, #fff7ed, #fff1f2);
-      color: #9f1239;
-      box-shadow: 0 14px 28px rgba(190, 18, 60, 0.08);
-      animation: helpPulse 1.6s ease-in-out infinite;
-    }
-
-    .live-help-alert strong,
-    .live-help-alert span {
-      display: block;
-    }
-
-    .help-alert-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-
-    .help-resolve-btn {
-      border: 1px solid #fecaca;
-      border-radius: 999px;
-      background: #ffffff;
-      color: #be123c;
-      cursor: pointer;
-      font: inherit;
-      font-size: 0.78rem;
-      font-weight: 950;
-      padding: 6px 9px;
-      transition: all 0.18s ease;
-    }
-
-    .help-resolve-btn:hover {
-      background: #fff1f2;
-      transform: translateY(-1px);
-    }
-
-    .live-help-alert strong {
-      font-size: 0.98rem;
-    }
-
-    .live-help-alert span {
-      color: #be123c;
-      font-weight: 750;
-      margin-top: 2px;
-    }
-
-    @keyframes helpPulse {
-      0%, 100% { box-shadow: 0 14px 28px rgba(190, 18, 60, 0.08); }
-      50% { box-shadow: 0 18px 36px rgba(190, 18, 60, 0.16); }
-    }
-
-    .response-review-btn {
-      width: 100%;
-      border: none;
-      background: transparent;
-      color: inherit;
-      cursor: pointer;
-      font: inherit;
-      padding: 0;
-      text-align: left;
-    }
-
-    .score-badge {
-      display: inline-flex;
-      align-items: center;
-      border-radius: 999px;
-      font-size: 0.76rem;
-      font-weight: 950;
-      padding: 4px 8px;
-      margin-left: 6px;
-      vertical-align: middle;
-    }
-
-    .score-badge.mastery {
-      background: #dcfce7;
-      color: #166534;
-    }
-
-    .score-badge.partial {
-      background: #fef3c7;
-      color: #92400e;
-    }
-
-    .score-badge.intervention {
-      background: #fee2e2;
-      color: #991b1b;
-    }
-
-    .student-roster-row.needs-help .student-avatar {
-      background: linear-gradient(135deg, #fee2e2, #fed7aa);
-      color: #b91c1c;
-    }
-
-    .student-roster-row.needs-help .student-row-name::after {
-      content: " ✋";
-    }
-
-    .student-review-drawer {
-      position: fixed;
-      top: 0;
-      right: 0;
-      z-index: 80;
-      width: min(430px, 94vw);
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      background: #ffffff;
-      border-left: 1px solid #e2e8f0;
-      box-shadow: -24px 0 60px rgba(15, 23, 42, 0.18);
-      animation: slideDrawerIn 0.2s ease;
-    }
-
-    @keyframes slideDrawerIn {
-      from { transform: translateX(28px); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-
-    .student-review-header {
-      padding: 20px;
-      border-bottom: 1px solid #e2e8f0;
-      background: linear-gradient(145deg, #f8fafc, #f5f3ff);
-    }
-
-    .student-review-eyebrow {
-      margin: 0;
-    }
-
-    .student-review-topline {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 14px;
-    }
-
-    .student-review-close {
-      border: 1px solid #cbd5e1;
-      border-radius: 999px;
-      background: #ffffff;
-      color: #334155;
-      cursor: pointer;
-      font: inherit;
-      font-weight: 950;
-      padding: 6px 10px;
-    }
-
-    .student-review-identity {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .student-review-identity h3 {
-      margin: 0;
-      font-size: 1.35rem;
-    }
-
-    .student-review-score {
-      color: #475569;
-      font-weight: 850;
-      margin-top: 2px;
-    }
-
-    .student-review-content {
-      display: grid;
-      gap: 16px;
-      overflow: auto;
-      padding: 18px 20px 24px;
-    }
-
-    .student-review-section {
-      border: 1px solid #e2e8f0;
-      border-radius: 16px;
-      background: #fbfdff;
-      padding: 14px;
-    }
-
-    .student-review-section h4 {
-      margin: 0 0 10px;
-      color: #0f172a;
-      font-size: 0.96rem;
-    }
-
-    .review-stat-row,
-    .question-review-row {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      border-top: 1px solid #e2e8f0;
-      padding-top: 10px;
-      margin-top: 10px;
-    }
-
-    .review-stat-row:first-of-type,
-    .question-review-row:first-of-type {
-      border-top: none;
-      padding-top: 0;
-      margin-top: 0;
-    }
-
-    .question-review-row {
-      align-items: flex-start;
-    }
-
-    .question-review-meta {
-      min-width: 0;
-    }
-
-    .question-review-meta strong,
-    .question-review-meta span {
-      display: block;
-    }
-
-    .question-review-meta span {
-      color: #64748b;
-      font-size: 0.84rem;
-      font-weight: 750;
-      margin-top: 2px;
-    }
-
-    .question-result {
-      border-radius: 999px;
-      flex: 0 0 auto;
-      font-weight: 950;
-      padding: 4px 8px;
-    }
-
-    .question-result.correct {
-      background: #dcfce7;
-      color: #166534;
-    }
-
-    .question-result.missed {
-      background: #fee2e2;
-      color: #991b1b;
-    }
-
-    .intervention-actions {
-      display: grid;
-      gap: 8px;
-    }
-
-    .intervention-actions button {
-      border: 1px solid #ddd6fe;
-      border-radius: 12px;
-      background: #faf5ff;
-      color: #4c1d95;
-      cursor: pointer;
-      font: inherit;
-      font-weight: 900;
-      padding: 10px 12px;
-      text-align: left;
-    }
-
-    .reteach-output {
-      margin-top: 10px;
-      border: 1px solid #c7d2fe;
-      border-radius: 14px;
-      background: #f8fafc;
-      color: #1e293b;
-      padding: 12px;
-    }
-
-    .reteach-output strong,
-    .reteach-output span {
-      display: block;
-    }
-
-    .reteach-output span {
-      color: #64748b;
-      font-weight: 750;
-      margin-top: 4px;
-    }
-
     .reports-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2719,17 +2436,6 @@
           </div>
         </section>
 
-        <section id="live-help-alert" class="live-help-alert is-hidden" aria-live="polite">
-          <div>
-            <strong>✋ Students need help</strong>
-            <span id="live-help-summary">No active help requests.</span>
-          </div>
-          <div class="help-alert-actions">
-            <strong class="live-count-badge"><span id="live-help-count">0</span> active</strong>
-            <button id="live-help-resolve-btn" class="help-resolve-btn" type="button">Mark Resolved</button>
-          </div>
-        </section>
-
         <section class="participants-card">
           <div class="live-card-heading">
             <div><span>Class roster</span><h3>Participants</h3></div>
@@ -3246,53 +2952,9 @@
       };
     }
 
-    function getLiveQuestionsWithMeta() {
-      const sections = getLiveQuestionSections();
-      return [
-        ...sections.practice.map((question, index) => ({
-          ...question,
-          __answerPrefix: "p",
-          __displayIndex: index + 1,
-          __sectionLabel: "Practice"
-        })),
-        ...sections.cross.map((question, index) => ({
-          ...question,
-          __answerPrefix: "c",
-          __displayIndex: index + 1,
-          __sectionLabel: "Cross"
-        }))
-      ];
-    }
-
-    async function loadLiveLessonData(lessonId) {
-      if (!lessonId || !supabaseClient) return;
-      const { data, error } = await supabaseClient
-        .from("lessons")
-        .select("data")
-        .eq("id", lessonId)
-        .maybeSingle();
-      if (error) {
-        console.warn("⚠️ Could not load live lesson data for scoring", error);
-        return;
-      }
-      let lessonData = data?.data;
-      if (typeof lessonData === "string") {
-        try {
-          lessonData = JSON.parse(lessonData);
-        } catch (parseError) {
-          console.warn("⚠️ Could not parse live lesson data", parseError);
-          return;
-        }
-      }
-      if (!lessonData || typeof lessonData !== "object") return;
-      coreData = lessonData;
-      practiceDataState = lessonData.practice || practiceDataState;
-      crossDataState = lessonData.cross || crossDataState;
-    }
-
-    function getAnswerForKey(response, prefix, index, fallbackIndex = index) {
+    function getAnswerForKey(response, prefix, index) {
       const answers = response?.answers || {};
-      return String(answers[`${prefix}${index}`] || answers[String(fallbackIndex)] || "").toUpperCase();
+      return String(answers[`${prefix}${index}`] || answers[String(index)] || "").toUpperCase();
     }
 
     function scoreSection(response, questions, prefix) {
@@ -3340,118 +3002,6 @@
       return `${parts[0][0] || ""}${parts[parts.length - 1][0] || ""}`.toUpperCase();
     }
 
-    function getScoreLevel(percent) {
-      if (percent === null || percent === undefined) return "partial";
-      if (percent >= 80) return "mastery";
-      if (percent >= 60) return "partial";
-      return "intervention";
-    }
-
-    function getScoreLabel(percent) {
-      const level = getScoreLevel(percent);
-      if (level === "mastery") return "🟢";
-      if (level === "partial") return "🟡";
-      return "🔴";
-    }
-
-    function getHelpRequestForStudent(studentName) {
-      const name = cleanText(studentName).toLowerCase();
-      return (window.__liveHelpRequests || []).find((request) =>
-        cleanText(request.student_name || "").toLowerCase() === name && request.resolved !== true
-      );
-    }
-
-    function buildQuestionBreakdown(response) {
-      const questions = getLiveQuestionsWithMeta();
-      return questions.map((question, idx) => {
-        const answerIndex = Number.isFinite(question.__displayIndex) ? question.__displayIndex - 1 : idx;
-        const studentAnswer = getAnswerForKey(response, question.__answerPrefix || "", answerIndex, idx);
-        const correctAnswer = parseCorrectAnswer(question.correct_answer);
-        const isCorrect = Boolean(studentAnswer && correctAnswer && studentAnswer === correctAnswer);
-        const standard = question.teks || question.standard || question.skill || document.getElementById("skill")?.value || "Current skill";
-        return {
-          label: `${question.__sectionLabel || "Question"} Q${question.__displayIndex || idx + 1}`,
-          studentAnswer: studentAnswer || "—",
-          correctAnswer: correctAnswer || "—",
-          isCorrect,
-          standard,
-          questionText: cleanText(question.question || standard)
-        };
-      });
-    }
-
-    function renderStudentReviewPanel(response) {
-      const drawer = document.getElementById("student-review-drawer");
-      if (!drawer || !response) return;
-      const rawName = cleanText(response.student_name || "Student");
-      const score = scoreLiveResponse(response);
-      const percentLabel = score.percent === null ? "Submitted" : `${score.percent}%`;
-      const scoreLevel = getScoreLevel(score.percent);
-      const initials = escapeHtml(getStudentInitials(rawName));
-      const breakdown = buildQuestionBreakdown(response);
-      const missed = breakdown.filter((item) => !item.isCorrect && item.studentAnswer !== "—");
-      const helpRequest = getHelpRequestForStudent(rawName);
-      drawer.innerHTML = `
-        <div class="student-review-header">
-          <div class="student-review-topline">
-            <p class="eyebrow student-review-eyebrow">Teacher intervention</p>
-            <button class="student-review-close" type="button" data-close-student-review>Close</button>
-          </div>
-          <div class="student-review-identity">
-            <span class="student-avatar">${initials}</span>
-            <div>
-              <h3>${escapeHtml(rawName)}</h3>
-              <div class="student-review-score">
-                ${score.total ? `${score.correct}/${score.total} Correct` : `${score.submitted || 0} Answers Submitted`}
-                <span class="score-badge ${scoreLevel}">${getScoreLabel(score.percent)} ${percentLabel}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="student-review-content">
-          ${helpRequest ? `<section class="student-review-section"><h4>✋ Needs Help</h4><p class="live-empty-copy">${escapeHtml(helpRequest.message || "Student raised their hand.")}</p><button class="help-resolve-btn" type="button" data-resolve-help-id="${escapeHtml(helpRequest.id || "")}">Mark Resolved</button></section>` : ""}
-          <section class="student-review-section">
-            <h4>Student Summary</h4>
-            <div class="review-stat-row"><strong>Practice</strong><span>${score.practice.total ? `${score.practice.correct}/${score.practice.total}` : "—"}</span></div>
-            <div class="review-stat-row"><strong>Cross</strong><span>${score.cross.total ? `${score.cross.correct}/${score.cross.total}` : "—"}</span></div>
-            <div class="review-stat-row"><strong>Instructional signal</strong><span>${score.percent !== null && score.percent < 60 ? "Needs reteach" : score.percent !== null && score.percent < 80 ? "Monitor / small group" : "On track"}</span></div>
-          </section>
-          <section class="student-review-section">
-            <h4>Question Breakdown</h4>
-            ${breakdown.length ? breakdown.map((item) => `
-              <div class="question-review-row">
-                <div class="question-review-meta">
-                  <strong>${escapeHtml(item.label)} ${item.isCorrect ? "✅" : "❌"}</strong>
-                  <span>Student: ${escapeHtml(item.studentAnswer)} • Correct: ${escapeHtml(item.correctAnswer)}</span>
-                  <span>TEKS: ${escapeHtml(item.standard)}</span>
-                </div>
-                <span class="question-result ${item.isCorrect ? "correct" : "missed"}">${item.isCorrect ? "Correct" : "Missed"}</span>
-              </div>
-            `).join("") : `<p class="live-empty-copy">Question-level scoring will appear after lesson data loads.</p>`}
-          </section>
-          <section class="student-review-section">
-            <h4>Intervention Actions</h4>
-            <div class="intervention-actions">
-              <button type="button">Create Small Group${missed.length ? ` (${missed.length} misses)` : ""}</button>
-              <button type="button" data-generate-reteach-student="${escapeHtml(rawName)}">Generate Reteach</button>
-              <button type="button">Message Student</button>
-              <div id="reteach-output" class="reteach-output is-hidden"></div>
-            </div>
-          </section>
-        </div>
-      `;
-      drawer.classList.remove("is-hidden");
-    }
-
-    function openStudentReview(studentName) {
-      const response = (window.__liveResponses || []).find((item) => cleanText(item.student_name || "Student") === cleanText(studentName));
-      if (response) renderStudentReviewPanel(response);
-    }
-
-    function closeStudentReviewPanel() {
-      document.getElementById("student-review-drawer")?.classList.add("is-hidden");
-    }
-
     function formatResponseSummary(response) {
       const score = scoreLiveResponse(response);
       const rawName = cleanText(response?.student_name || "Student");
@@ -3459,15 +3009,6 @@
       const initials = escapeHtml(getStudentInitials(rawName));
       const percentLabel = score.percent === null ? "Submitted" : `${score.percent}%`;
       const correctLabel = score.total ? `${score.correct}/${score.total} Correct` : `${score.submitted || 0} Answers Submitted`;
-      const scoreLevel = getScoreLevel(score.percent);
-      const missedStandards = buildQuestionBreakdown(response)
-        .filter((item) => !item.isCorrect && item.studentAnswer !== "—")
-        .map((item) => item.standard)
-        .filter((standard, index, all) => standard && all.indexOf(standard) === index)
-        .slice(0, 2);
-      const interventionHint = missedStandards.length
-        ? `Missed: ${missedStandards.join(", ")}`
-        : "Click to review misses, TEKS, and intervention actions";
       const practiceBadge = score.practice.total
         ? `<span class="mini-badge ${score.practice.percent >= 70 ? "success" : "warning"}">Practice: ${score.practice.correct}/${score.practice.total}</span>`
         : (score.practiceSubmitted ? `<span class="mini-badge">Practice: ${score.practiceSubmitted} answers</span>` : "");
@@ -3476,67 +3017,16 @@
         : (score.crossSubmitted ? `<span class="mini-badge">Cross: ${score.crossSubmitted} answers</span>` : "");
       return `
         <li>
-          <button class="response-review-btn" type="button" data-review-student="${name}">
-            <div class="response-summary-row">
-              <span class="student-avatar">${initials}</span>
-              <div class="response-row-body">
-                <div class="response-row-name">${name} — ${correctLabel}<span class="score-badge ${scoreLevel}">${getScoreLabel(score.percent)} ${percentLabel}</span></div>
-                <div class="response-row-meta">${escapeHtml(interventionHint)}</div>
-                <div class="badge-row">${practiceBadge}${crossBadge}</div>
-              </div>
+          <div class="response-summary-row">
+            <span class="student-avatar">${initials}</span>
+            <div class="response-row-body">
+              <div class="response-row-name">${name} — ${correctLabel}</div>
+              <div class="response-row-meta">Completed • ${percentLabel}</div>
+              <div class="badge-row">${practiceBadge}${crossBadge}</div>
             </div>
-          </button>
+          </div>
         </li>
       `;
-    }
-
-    async function resolveHelpRequest(helpRequestId) {
-      if (!helpRequestId || !supabaseClient) return;
-      const { error } = await supabaseClient
-        .from("help_requests")
-        .update({ resolved: true })
-        .eq("id", helpRequestId);
-      if (error) {
-        console.error("❌ Could not resolve help request", error);
-        alert(error.message || "Could not resolve help request.");
-        return;
-      }
-      window.__liveHelpRequests = (window.__liveHelpRequests || []).filter((request) => request.id !== helpRequestId);
-      renderHelpRequests();
-      renderParticipantsLobby();
-      const openName = document.querySelector("#student-review-drawer .student-review-identity h3")?.textContent || "";
-      if (openName) openStudentReview(openName);
-    }
-
-    function generateTargetedReteach(studentName) {
-      const response = (window.__liveResponses || []).find((item) => cleanText(item.student_name || "Student") === cleanText(studentName));
-      const output = document.getElementById("reteach-output");
-      if (!response || !output) return;
-      const missed = buildQuestionBreakdown(response).filter((item) => !item.isCorrect && item.studentAnswer !== "—");
-      const standards = missed.map((item) => item.standard).filter((standard, index, all) => standard && all.indexOf(standard) === index);
-      output.classList.remove("is-hidden");
-      output.innerHTML = missed.length
-        ? `<strong>Targeted reteach ready</strong><span>Focus only on: ${escapeHtml(standards.join(", ") || "missed questions")}.</span><span>Next: generate a mini reteach passage plus 3 practice questions for ${escapeHtml(cleanText(studentName))} from these misses.</span>`
-        : `<strong>No reteach needed yet</strong><span>This student has no scored misses in the current live data.</span>`;
-    }
-
-    function renderHelpRequests() {
-      const helpAlert = document.getElementById("live-help-alert");
-      const helpSummary = document.getElementById("live-help-summary");
-      const helpCount = document.getElementById("live-help-count");
-      const resolveBtn = document.getElementById("live-help-resolve-btn");
-      if (!helpAlert || !helpSummary || !helpCount) return;
-      const activeRequests = (window.__liveHelpRequests || []).filter((request) => request.resolved !== true);
-      helpCount.textContent = String(activeRequests.length);
-      if (resolveBtn) resolveBtn.dataset.resolveHelpId = activeRequests[0]?.id || "";
-      if (!activeRequests.length) {
-        helpAlert.classList.add("is-hidden");
-        helpSummary.textContent = "No active help requests.";
-        return;
-      }
-      helpAlert.classList.remove("is-hidden");
-      const names = activeRequests.slice(0, 3).map((request) => cleanText(request.student_name || "Student"));
-      helpSummary.textContent = `${names.join(", ")}${activeRequests.length > 3 ? ` +${activeRequests.length - 3} more` : ""} ${activeRequests.length === 1 ? "needs" : "need"} help now.`;
     }
 
     function updateLiveSessionStats() {
@@ -3552,7 +3042,6 @@
       if (responseBadgeCount) responseBadgeCount.textContent = String(responses.length);
       if (responseLabel) responseLabel.textContent = responses.length === 1 ? "Response" : "Responses";
       if (participantBadgeCount) participantBadgeCount.textContent = String(participants.length);
-      renderHelpRequests();
       const isLive = window.currentLiveSessionStatus === "live";
       if (state) state.textContent = isLive ? "Live" : "Lobby";
       if (stateLabel) stateLabel.textContent = isLive ? "Session Active" : "Open";
@@ -3585,23 +3074,18 @@
             const meta = response
               ? `Completed • ${score?.percent === null ? "Submitted" : `${score.percent}%`}`
               : "Connected • Waiting for submission";
-            const scoreLevel = score ? getScoreLevel(score.percent) : "partial";
             const scoreBadge = response && score?.total
-              ? `<span class="mini-badge ${scoreLevel === "intervention" ? "warning" : "success"}">${score.correct}/${score.total} correct</span>`
-              : (response ? `<span class="mini-badge success">Submitted</span>` : `<span class="mini-badge">In Progress</span>`);
-            const helpRequest = getHelpRequestForStudent(name);
-            const helpBadge = helpRequest ? `<span class="mini-badge warning">✋ Needs Help</span>` : "";
+              ? `<span class="mini-badge success">${score.correct}/${score.total} correct</span>`
+              : (response ? `<span class="mini-badge success">Submitted</span>` : `<span class="mini-badge">Ready</span>`);
             const initials = escapeHtml(getStudentInitials(name));
-            const rowClass = helpRequest ? "student-roster-row needs-help" : "student-roster-row";
-            const reviewAttr = response ? ` data-review-student="${escapeHtml(name)}"` : "";
             return `
-              <li${reviewAttr}>
-                <div class="${rowClass}">
+              <li>
+                <div class="student-roster-row">
                   <span class="student-avatar">${initials}</span>
                   <div class="student-row-body">
                     <div class="student-row-name">${escapeHtml(name)}</div>
                     <div class="student-row-meta">${escapeHtml(meta)}</div>
-                    <div class="badge-row">${scoreBadge}${helpBadge}</div>
+                    <div class="badge-row">${scoreBadge}</div>
                   </div>
                 </div>
               </li>
@@ -3699,8 +3183,6 @@
       code.textContent = session.code;
       window.__liveParticipants = [];
       window.__liveResponses = window.__liveResponses || [];
-      window.__liveHelpRequests = [];
-      renderHelpRequests();
       renderParticipantsLobby();
       renderLiveResponses();
       updateLiveSessionStats();
@@ -4033,7 +3515,11 @@
     function updateDashboard() {
       const status = document.getElementById("live-session-status");
       if (!status || !currentLessonId) return;
-      const questions = getLiveQuestionsWithMeta();
+      const sections = getLiveQuestionSections();
+      const questions = [
+        ...sections.practice.map((question, index) => ({ ...question, __answerPrefix: "p", __displayIndex: index + 1, __sectionLabel: "Practice" })),
+        ...sections.cross.map((question, index) => ({ ...question, __answerPrefix: "c", __displayIndex: index + 1, __sectionLabel: "Cross" }))
+      ];
       const stats = window.__liveResponses || [];
       const total = stats.length;
       status.innerHTML = total
