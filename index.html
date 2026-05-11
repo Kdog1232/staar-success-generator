@@ -2460,6 +2460,7 @@
           </div>
         </section>
       </div>
+      <aside id="student-review-drawer" class="student-review-drawer is-hidden" aria-label="Student review panel"></aside>
 
           </section>
         </section>
@@ -2585,7 +2586,10 @@
     let currentProfile = null;
     let liveResponsesChannel = null;
     let liveParticipantsChannel = null;
+    let liveHelpRequestsChannel = null;
     window.__liveParticipants = [];
+    window.__liveResponses = [];
+    window.__liveHelpRequests = [];
     let currentLessonId = null;
     let currentLiveSessionId = null;
     let currentLiveCode = "";
@@ -3207,6 +3211,43 @@
           (payload) => {
             console.log("🔥 LIVE UPDATE:", payload);
             window.__liveParticipants.push(payload.new);
+            renderParticipantsLobby();
+          }
+        )
+        .subscribe();
+    }
+
+    async function subscribeToHelpRequests(sessionId) {
+      if (liveHelpRequestsChannel) supabaseClient.removeChannel(liveHelpRequestsChannel);
+      window.__liveHelpRequests = [];
+      const { data, error } = await supabaseClient
+        .from("help_requests")
+        .select("id,session_id,student_name,message,resolved,created_at")
+        .eq("session_id", sessionId)
+        .eq("resolved", false)
+        .order("created_at", { ascending: true });
+      if (error) {
+        console.warn("⚠️ Could not load help requests", error);
+      }
+      window.__liveHelpRequests = data || [];
+      renderHelpRequests();
+      renderParticipantsLobby();
+      liveHelpRequestsChannel = supabaseClient
+        .channel(`help-requests-${sessionId}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "help_requests", filter: `session_id=eq.${sessionId}` },
+          (payload) => {
+            const next = payload.new;
+            const old = payload.old;
+            if (payload.eventType === "DELETE") {
+              window.__liveHelpRequests = (window.__liveHelpRequests || []).filter((request) => request.id !== old?.id);
+            } else if (next?.id) {
+              const existingIndex = (window.__liveHelpRequests || []).findIndex((request) => request.id === next.id);
+              if (existingIndex >= 0) window.__liveHelpRequests[existingIndex] = next;
+              else window.__liveHelpRequests.push(next);
+            }
+            renderHelpRequests();
             renderParticipantsLobby();
           }
         )
@@ -5525,6 +5566,29 @@ Create your second version now.`;
           return;
         }
 
+        const reviewTarget = target.closest("[data-review-student]");
+        if (reviewTarget) {
+          openStudentReview(reviewTarget.getAttribute("data-review-student") || "");
+          return;
+        }
+
+        if (target.closest("[data-close-student-review]")) {
+          closeStudentReviewPanel();
+          return;
+        }
+
+        const resolveTarget = target.closest("[data-resolve-help-id]");
+        if (resolveTarget) {
+          resolveHelpRequest(resolveTarget.getAttribute("data-resolve-help-id") || "");
+          return;
+        }
+
+        const reteachTarget = target.closest("[data-generate-reteach-student]");
+        if (reteachTarget) {
+          generateTargetedReteach(reteachTarget.getAttribute("data-generate-reteach-student") || "");
+          return;
+        }
+
         if (target.closest("#lock-join-btn")) {
           lockJoin();
         }
@@ -5631,6 +5695,7 @@ Create your second version now.`;
           await endSession(currentLiveSessionId);
           if (liveResponsesChannel) supabaseClient.removeChannel(liveResponsesChannel);
           if (liveParticipantsChannel) supabaseClient.removeChannel(liveParticipantsChannel);
+          if (liveHelpRequestsChannel) supabaseClient.removeChannel(liveHelpRequestsChannel);
           sessionStatus.innerHTML = "🛑 Session ended. No more responses will be accepted.";
           currentLiveCode = "";
           currentLiveSessionId = null;
@@ -5682,6 +5747,7 @@ Create your second version now.`;
           }
           sessionStatus.innerHTML = `📡 <strong>Lobby open</strong><br>Share code <strong>${session.code}</strong>. Click <strong>Go Live</strong> when ready.`;
           currentLessonId = lessonId;
+          await loadLiveLessonData(lessonId);
           syncCurrentLiveSession(session);
           addRecentActivity(`Started live session ${session.code}`, "Live class", "▶");
           console.log("✅ SESSION STORED:", session.id);
@@ -5691,6 +5757,7 @@ Create your second version now.`;
           console.log("➡️ ABOUT TO SUBSCRIBE", session.code);
           subscribeToParticipants(session.code);
           subscribeToResponses(session.id);
+          subscribeToHelpRequests(session.id);
         } catch (error) {
           sessionStatus.textContent = `❌ ${error.message || "Could not start live class."}`;
         } finally {
