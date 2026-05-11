@@ -2664,6 +2664,7 @@
     let generatedPassage = "";
     let hasShownSuccessHint = false;
     let coreData = null;
+    let currentGeneratedLesson = null;
     let supportData = null;
     let practiceDataState = null;
     let crossDataState = null;
@@ -2951,7 +2952,79 @@
       return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
+    function showSaveStatus(message, isError = false) {
+      const sessionStatus = document.getElementById("live-session-status");
+      const usageStatus = document.getElementById("usage-status");
+      if (sessionStatus) sessionStatus.textContent = message;
+      if (usageStatus) {
+        usageStatus.textContent = message;
+        usageStatus.style.color = isError ? "#b91c1c" : "#1e3a5f";
+      }
+    }
+
+    function buildCurrentGeneratedLessonSnapshot() {
+      const selectedSkill = document.getElementById("skill")?.value || coreData?.skill || currentGeneratedLesson?.skill || "Skill";
+      const selectedGrade = document.getElementById("grade")?.value || coreData?.grade || currentGeneratedLesson?.grade || "";
+      const selectedLevel = document.getElementById("level")?.value || coreData?.level || currentGeneratedLesson?.level || "";
+      const selectedSkillMeta = getSelectedSkillMetadata(selectedSubject || coreData?.subject || currentGeneratedLesson?.subject || "Reading", selectedSkill);
+      const sourceLesson = {
+        ...(currentGeneratedLesson && typeof currentGeneratedLesson === "object" ? currentGeneratedLesson : {}),
+        ...(coreData && typeof coreData === "object" ? coreData : {}),
+        title: currentGeneratedLesson?.title || `${selectedSubject || coreData?.subject || "Reading"} - ${selectedSkill}`,
+        subject: selectedSubject || coreData?.subject || currentGeneratedLesson?.subject || "Reading",
+        grade: selectedGrade,
+        level: selectedLevel,
+        purpose: selectedPurpose || coreData?.purpose || currentGeneratedLesson?.purpose || "",
+        skill: selectedSkill,
+        teks: coreData?.teks || currentGeneratedLesson?.teks || selectedSkillMeta?.teks || "",
+        standard: coreData?.standard || coreData?.teks || currentGeneratedLesson?.standard || currentGeneratedLesson?.teks || selectedSkillMeta?.teks || "",
+        passage: coreData?.passage || currentGeneratedLesson?.passage || generatedPassage || "",
+        practice: {
+          ...(currentGeneratedLesson?.practice || {}),
+          ...(coreData?.practice || {}),
+          passage: coreData?.practice?.passage || coreData?.passage || practiceDataState?.passage || currentGeneratedLesson?.practice?.passage || currentGeneratedLesson?.passage || generatedPassage || "",
+          questions: coreData?.practice?.questions || practiceDataState?.questions || currentGeneratedLesson?.practice?.questions || []
+        },
+        cross: {
+          ...(currentGeneratedLesson?.cross || {}),
+          ...(coreData?.cross || {}),
+          ...(crossDataState || {}),
+          passage: coreData?.cross?.passage || crossDataState?.passage || currentGeneratedLesson?.cross?.passage || "",
+          questions: coreData?.cross?.questions || crossDataState?.questions || currentGeneratedLesson?.cross?.questions || []
+        },
+        tutor: supportData?.tutor || tutorDataState || currentGeneratedLesson?.tutor || { practice: [], cross: [] },
+        answerKey: supportData?.answerKey || answerKeyDataState || currentGeneratedLesson?.answerKey || { practice: [], cross: [] }
+      };
+
+      const normalizedLesson = normalizeWorkerPayload(sourceLesson, { fallbackPassage: sourceLesson.passage || generatedPassage || "" });
+      validateAlignment(normalizedLesson);
+      return normalizedLesson;
+    }
+
+    function buildLessonSavePayload(normalizedLesson) {
+      const title = normalizedLesson.title || `${normalizedLesson.subject || "Reading"} - ${normalizedLesson.skill || "Skill"}`;
+      return {
+        ...normalizedLesson,
+        title,
+        subject: normalizedLesson.subject || "Reading",
+        grade: normalizedLesson.grade || document.getElementById("grade")?.value || "",
+        generatedAt: normalizedLesson.generatedAt || new Date().toISOString(),
+        metadata: {
+          ...(normalizedLesson.metadata || {}),
+          skill: normalizedLesson.skill || "",
+          teks: normalizedLesson.teks || "",
+          standard: normalizedLesson.standard || normalizedLesson.teks || "",
+          subject: normalizedLesson.subject || "Reading",
+          grade: normalizedLesson.grade || document.getElementById("grade")?.value || "",
+          level: normalizedLesson.level || document.getElementById("level")?.value || "",
+          purpose: normalizedLesson.purpose || selectedPurpose || ""
+        }
+      };
+    }
+
     async function saveLesson(lessonData) {
+      if (!supabaseClient) throw new Error("Supabase is not initialized.");
+
       const {
         data: { user },
         error: userError
@@ -2964,30 +3037,49 @@
 
       cachedUser = user;
 
-      const subject = selectedSubject || "Reading";
-      const skill = document.getElementById("skill")?.value || "Skill";
-
-      console.log("💾 SAVING LESSON:", {
+      const normalizedLesson = normalizeWorkerPayload(lessonData, { fallbackPassage: lessonData?.passage || lessonData?.practice?.passage || generatedPassage || "" });
+      validateAlignment(normalizedLesson);
+      const lessonPayload = buildLessonSavePayload(normalizedLesson);
+      const title = lessonPayload.title || `${lessonPayload.subject || "Reading"} - ${lessonPayload.skill || "Skill"}`;
+      const insertPayload = {
         user_id: user.id,
-        title: `${subject} - ${skill}`,
-        lessonData
-      });
+        title,
+        data: lessonPayload
+      };
 
-      const { data, error } = await supabaseClient
-        .from("lessons")
-        .insert({
-          user_id: user.id,
-          title: `${subject} - ${skill}`,
-          data: lessonData
-        })
-        .select("id")
-        .single();
+      console.log("NORMALIZED LESSON:", normalizedLesson);
+      console.log("💾 LESSON INSERT PAYLOAD:", insertPayload);
+
+      let query;
+      if (currentLessonId) {
+        query = supabaseClient
+          .from("lessons")
+          .update({ title, data: lessonPayload })
+          .eq("id", currentLessonId)
+          .eq("user_id", user.id)
+          .select("id,title,data")
+          .single();
+      } else {
+        query = supabaseClient
+          .from("lessons")
+          .insert(insertPayload)
+          .select("id,title,data")
+          .single();
+      }
+
+      const { data, error } = await query;
+      console.log("💾 SUPABASE SAVE RESPONSE:", { data, error });
 
       if (error) {
-        console.error("❌ SAVE LESSON ERROR:", error);
+        console.error("❌ SUPABASE SAVE ERROR:", error);
         throw error;
       }
 
+      if (!data?.id) {
+        throw new Error("Supabase did not return a saved lesson id.");
+      }
+
+      currentGeneratedLesson = lessonPayload;
       console.log("✅ LESSON SAVED:", data);
       return data;
     }
@@ -3080,6 +3172,7 @@
       currentLessonId = lesson.id || lessonId;
       generatedPassage = normalizedLesson.passage || fallbackPassage;
       coreData = normalizedLesson;
+      currentGeneratedLesson = normalizedLesson;
       practiceDataState = normalizedLesson.practice || { questions: [] };
       crossDataState = normalizedLesson.cross || { passage: "", questions: [] };
       supportData = {
@@ -3097,6 +3190,26 @@
         crossQuestions: crossDataState.questions.length
       });
 
+      return normalizedLesson;
+    }
+
+    async function openSavedLesson(lessonId) {
+      const normalizedLesson = await loadLiveLessonData(lessonId);
+      if (normalizedLesson?.subject) setActiveSubject(normalizedLesson.subject);
+      const gradeSelect = document.getElementById("grade");
+      if (gradeSelect && normalizedLesson?.grade) gradeSelect.value = normalizedLesson.grade;
+      const skillSelect = document.getElementById("skill");
+      if (skillSelect && normalizedLesson?.skill) skillSelect.value = normalizedLesson.skill;
+      const levelSelect = document.getElementById("level");
+      if (levelSelect && normalizedLesson?.level) levelSelect.value = normalizedLesson.level;
+      renderAll(normalizedLesson, {
+        progressCount: getDailyProgressCount(),
+        skill: normalizedLesson?.skill || "Skill",
+        level: normalizedLesson?.level || levelSelect?.value || "On Level",
+        currentModeValue: "practice"
+      });
+      setWorkspaceView("generator");
+      showSaveStatus("✅ Lesson loaded from your library.");
       return normalizedLesson;
     }
 
@@ -3519,6 +3632,7 @@
         .order("created_at", { ascending: false })
         .limit(12);
       if (error) {
+        console.error("❌ LOAD LESSON LIBRARY ERROR:", error);
         list.innerHTML = `<p style="margin:0; color:#b91c1c;">Could not load library.</p>`;
         recentLessonsCache = [];
         if (statRecentLessons) statRecentLessons.textContent = "—";
@@ -3548,6 +3662,7 @@
               <span style="font-size:12px; color:#64748b;">Students join with code • Live results below</span>
             </div>
             <div class="library-lesson-actions">
+              <button class="generate-btn auth-secondary" type="button" data-open-lesson-id="${lessonId}">Open Lesson</button>
               <button class="generate-btn auth-secondary" type="button" data-start-live-id="${lessonId}">Start Class</button>
               <button class="generate-btn auth-secondary library-delete-btn" type="button" data-delete-lesson-id="${lessonId}" aria-label="Delete ${lessonTitle}">🗑 Delete</button>
             </div>
@@ -4937,8 +5052,11 @@
 
       coreData = {
         ...coreData,
-        cross: normalizedEnrichment.cross
+        cross: normalizedEnrichment.cross,
+        tutor: normalizedEnrichment.tutor,
+        answerKey: normalizedEnrichment.answerKey
       };
+      currentGeneratedLesson = normalizedEnrichment;
       crossDataState = normalizedEnrichment.cross;
 
       supportData = {
@@ -5285,17 +5403,32 @@
       const practiceQuestions = explicitPracticeQuestions ?? legacyQuestions;
       const crossQuestions = Array.isArray(safe?.cross?.questions) ? safe.cross.questions : [];
       const lessonMeta = {
+        title: safe.title || "",
         subject: safe.subject || selectedSubject || "Reading",
+        grade: safe.grade || document.getElementById("grade")?.value || "",
+        level: safe.level || document.getElementById("level")?.value || "",
+        purpose: safe.purpose || selectedPurpose || "",
         skill: safe.skill || document.getElementById("skill")?.value || "",
-        teks: safe.teks || safe.standard || "",
-        standard: safe.standard || safe.teks || ""
+        teks: safe.teks || safe.standard || safe?.metadata?.teks || safe?.metadata?.standard || "",
+        standard: safe.standard || safe.teks || safe?.metadata?.standard || safe?.metadata?.teks || ""
       };
 
       return {
         ...safe,
         ...lessonMeta,
-        passage: normalizePassageValue(safe?.passage) || normalizePassageValue(fallbackPassage),
+        passage: normalizePassageValue(safe?.passage) || normalizePassageValue(safe?.practice?.passage) || normalizePassageValue(fallbackPassage),
+        metadata: {
+          ...(safe?.metadata && typeof safe.metadata === "object" ? safe.metadata : {}),
+          skill: lessonMeta.skill,
+          teks: lessonMeta.teks,
+          standard: lessonMeta.standard,
+          subject: lessonMeta.subject,
+          grade: lessonMeta.grade,
+          level: lessonMeta.level,
+          purpose: lessonMeta.purpose
+        },
         practice: {
+          passage: normalizePassageValue(safe?.practice?.passage) || normalizePassageValue(safe?.passage) || normalizePassageValue(fallbackPassage),
           questions: ensureQuestionIds(practiceQuestions, "practice", lessonMeta)
         },
         cross: {
@@ -5705,6 +5838,7 @@
       tutorDataState = null;
       answerKeyDataState = null;
       coreData = null;
+      currentGeneratedLesson = null;
       supportData = null;
     }
 
@@ -5747,6 +5881,7 @@ Create your second version now.`;
         }
 
         resetGeneratedPanelsState();
+        currentLessonId = null;
         if (output) {
           output.innerHTML = `
             <div style="padding:20px; text-align:center;">
@@ -5841,7 +5976,8 @@ Create your second version now.`;
           practice: coreResponse?.practice || { questions: coreResponse?.questions || [] },
           cross: { passage: "", questions: [] }
         };
-        coreData = core;
+        coreData = normalizeWorkerPayload(core, { fallbackPassage: core.passage });
+        currentGeneratedLesson = coreData;
         practiceDataState = coreData.practice;
         crossDataState = { passage: "", questions: [] };
         tutorDataState = null;
@@ -6221,53 +6357,36 @@ Create your second version now.`;
       copyCodeBtn.disabled = true;
 
       saveBtn?.addEventListener("click", async () => {
+        console.log("SAVE BUTTON CLICKED");
         try {
           if (!cachedUser) throw new Error("Login required");
 
-          const practiceQuestions =
-            coreData?.practice?.questions ||
-            practiceDataState?.questions ||
-            [];
-          const practicePassage =
-            coreData?.practice?.passage ||
-            coreData?.passage ||
-            practiceDataState?.passage ||
-            generatedPassage ||
-            "";
-          const crossData =
-            coreData?.cross ||
-            crossDataState ||
-            { passage: "", questions: [] };
+          console.log("CURRENT GENERATED LESSON:", currentGeneratedLesson);
+          const normalizedLesson = buildCurrentGeneratedLessonSnapshot();
+          console.log("NORMALIZED LESSON:", normalizedLesson);
 
-          if (!practiceQuestions.length && !crossData?.questions?.length) {
+          const practiceQuestions = normalizedLesson?.practice?.questions || [];
+          const crossQuestions = normalizedLesson?.cross?.questions || [];
+          if (!practiceQuestions.length && !crossQuestions.length) {
             throw new Error("Generate a lesson first");
           }
 
-          const selectedSkill = document.getElementById("skill")?.value || coreData?.skill || "Skill";
-          const selectedSkillMeta = getSelectedSkillMetadata(selectedSubject || coreData?.subject || "Reading", selectedSkill);
-          const saved = await saveLesson({
-            subject: selectedSubject || coreData?.subject || "Reading",
-            skill: selectedSkill,
-            teks: coreData?.teks || selectedSkillMeta?.teks || "",
-            standard: coreData?.standard || coreData?.teks || selectedSkillMeta?.teks || "",
-            practice: {
-              passage: practicePassage,
-              questions: practiceQuestions
-            },
-            cross: {
-              passage: crossData?.passage || "",
-              questions: crossData?.questions || []
-            }
-          });
+          saveBtn.disabled = true;
+          saveBtn.textContent = "Saving...";
+          showSaveStatus("Saving lesson to your library...");
+
+          const saved = await saveLesson(normalizedLesson);
           currentLessonId = saved.id;
-          addRecentActivity(`Saved “${selectedSubject || "Lesson"} - ${document.getElementById("skill")?.value || "Skill"}”`, "Library", "↺");
-          sessionStatus.textContent = "✅ Lesson saved.";
-          const usageStatus = document.getElementById("usage-status");
-          if (usageStatus) usageStatus.textContent = "✅ Lesson saved to your library.";
+          currentGeneratedLesson = saved.data || normalizedLesson;
+          addRecentActivity(`Saved “${saved.title || normalizedLesson.title || "Lesson"}”`, "Library", "↺");
+          showSaveStatus("✅ Lesson saved to your library.");
           await loadLessonLibrary();
         } catch (error) {
           console.error("❌ SAVE LESSON ERROR:", error);
-          sessionStatus.textContent = `❌ ${error.message || "Could not save lesson."}`;
+          showSaveStatus(`❌ ${error.message || "Could not save lesson."}`, true);
+        } finally {
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Save Lesson to Library";
         }
       });
 
@@ -6301,6 +6420,25 @@ Create your second version now.`;
         if (deleteBtn) {
           const lessonId = deleteBtn.getAttribute("data-delete-lesson-id");
           if (lessonId) await deleteLesson(lessonId);
+          return;
+        }
+
+        const openBtn = target.closest("[data-open-lesson-id]");
+        if (openBtn) {
+          const lessonId = openBtn.getAttribute("data-open-lesson-id");
+          if (!lessonId) return;
+          const originalLabel = openBtn.textContent;
+          openBtn.disabled = true;
+          openBtn.textContent = "Opening...";
+          try {
+            await openSavedLesson(lessonId);
+          } catch (error) {
+            console.error("❌ OPEN LESSON ERROR:", error);
+            showSaveStatus(`❌ ${error.message || "Could not open lesson."}`, true);
+          } finally {
+            openBtn.disabled = false;
+            openBtn.textContent = originalLabel;
+          }
           return;
         }
 
