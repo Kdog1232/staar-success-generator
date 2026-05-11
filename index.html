@@ -504,6 +504,7 @@
     .live-mini-card,
     .participants-card,
     .responses-card,
+    .help-requests-card,
     .live-action-card {
       background: #ffffff;
       border: 1px solid #e2e8f0;
@@ -626,6 +627,7 @@
     .live-mini-card:hover,
     .participants-card:hover,
     .responses-card:hover,
+    .help-requests-card:hover,
     .live-action-card:hover {
       transform: translateY(-2px);
       border-color: #c4b5fd;
@@ -686,6 +688,7 @@
 
     .participants-card,
     .responses-card,
+    .help-requests-card,
     .live-action-card {
       padding: 18px;
     }
@@ -2436,6 +2439,14 @@
           </div>
         </section>
 
+        <section class="help-requests-card">
+          <div class="live-card-heading">
+            <div><span>Student help</span><h3>Help Requests</h3></div>
+            <strong class="live-count-badge">✋ <span id="live-help-request-count">0</span> open</strong>
+          </div>
+          <ul id="live-help-request-list" class="live-student-list"></ul>
+        </section>
+
         <section class="participants-card">
           <div class="live-card-heading">
             <div><span>Class roster</span><h3>Participants</h3></div>
@@ -2456,7 +2467,7 @@
           <div class="live-action-row">
             <button id="start-live-session-btn" class="live-compact-btn primary" type="button" disabled>Go Live</button>
             <button id="lock-join-btn" class="live-compact-btn" type="button" disabled>Lock Join</button>
-            <button id="end-session-btn" class="live-compact-btn danger" type="button">End Session</button>
+            <button id="end-session-btn" data-end-session-btn class="live-compact-btn danger" type="button">End Session</button>
           </div>
         </section>
       </div>
@@ -3097,9 +3108,11 @@
       if (responseBadgeCount) responseBadgeCount.textContent = String(responses.length);
       if (responseLabel) responseLabel.textContent = responses.length === 1 ? "Response" : "Responses";
       if (participantBadgeCount) participantBadgeCount.textContent = String(participants.length);
-      const isLive = window.currentLiveSessionStatus === "live";
-      if (state) state.textContent = isLive ? "Live" : "Lobby";
-      if (stateLabel) stateLabel.textContent = isLive ? "Session Active" : "Open";
+      const sessionStatus = window.currentLiveSessionStatus;
+      const isLive = sessionStatus === "live";
+      const isEnded = sessionStatus === "ended";
+      if (state) state.textContent = isEnded ? "Ended" : (isLive ? "Live" : "Lobby");
+      if (stateLabel) stateLabel.textContent = isEnded ? "Closed" : (isLive ? "Session Active" : "Open");
     }
 
     function renderLiveResponses() {
@@ -3272,41 +3285,93 @@
         .subscribe();
     }
 
+    function renderHelpRequests() {
+      const list = document.getElementById("live-help-request-list");
+      const count = document.getElementById("live-help-request-count");
+      const requests = (window.__liveHelpRequests || []).filter((request) => request && request.resolved !== true);
+      console.log("LIVE HELP STATE:", requests);
+      if (count) count.textContent = String(requests.length);
+      if (!list) {
+        console.warn("⚠️ Help request list container not found.");
+        return;
+      }
+      list.innerHTML = requests.length
+        ? requests.map((request) => {
+            const id = escapeHtml(cleanText(request.id || ""));
+            const name = escapeHtml(cleanText(request.student_name || "Student"));
+            const message = escapeHtml(cleanText(request.message || "Student raised their hand."));
+            const createdAt = request.created_at ? new Date(request.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "Just now";
+            return `
+              <li>
+                <div class="student-roster-row">
+                  <span class="student-avatar">✋</span>
+                  <div class="student-row-body">
+                    <div class="student-row-name">${name}</div>
+                    <div class="student-row-meta">${message} • ${escapeHtml(createdAt)}</div>
+                    <div class="badge-row"><button class="live-compact-btn" type="button" data-resolve-help-id="${id}">Mark Resolved</button></div>
+                  </div>
+                </div>
+              </li>
+            `;
+          }).join("")
+        : `<li><p class="live-empty-copy">No help requests yet. Raised hands will appear here live.</p></li>`;
+    }
+
+    async function resolveHelpRequest(requestId) {
+      if (!requestId) return;
+      const sessionStatus = document.getElementById("live-session-status");
+      const { error } = await supabaseClient
+        .from("help_requests")
+        .update({ resolved: true })
+        .eq("id", requestId);
+      if (error) {
+        console.error("❌ RESOLVE HELP REQUEST ERROR:", error);
+        if (sessionStatus) sessionStatus.textContent = `❌ ${error.message || "Could not resolve help request."}`;
+        return;
+      }
+      window.__liveHelpRequests = (window.__liveHelpRequests || []).filter((request) => request.id !== requestId);
+      renderHelpRequests();
+    }
+
     async function subscribeToHelpRequests(sessionId) {
-      if (liveHelpRequestsChannel) supabaseClient.removeChannel(liveHelpRequestsChannel);
+      console.log("CURRENT SESSION ID:", sessionId);
+      if (liveHelpRequestsChannel) await supabaseClient.removeChannel(liveHelpRequestsChannel);
+      liveHelpRequestsChannel = null;
       window.__liveHelpRequests = [];
       const { data, error } = await supabaseClient
         .from("help_requests")
-        .select("id,session_id,student_name,message,resolved,created_at")
+        .select("*")
         .eq("session_id", sessionId)
         .eq("resolved", false)
         .order("created_at", { ascending: true });
+      console.log("INITIAL HELP REQUESTS:", data);
       if (error) {
         console.warn("⚠️ Could not load help requests", error);
       }
       window.__liveHelpRequests = data || [];
+      console.log("LIVE HELP STATE:", window.__liveHelpRequests);
       renderHelpRequests();
-      renderParticipantsLobby();
       liveHelpRequestsChannel = supabaseClient
-        .channel(`help-requests-${sessionId}`)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "help_requests", filter: `session_id=eq.${sessionId}` },
-          (payload) => {
-            const next = payload.new;
-            const old = payload.old;
-            if (payload.eventType === "DELETE") {
-              window.__liveHelpRequests = (window.__liveHelpRequests || []).filter((request) => request.id !== old?.id);
-            } else if (next?.id) {
-              const existingIndex = (window.__liveHelpRequests || []).findIndex((request) => request.id === next.id);
-              if (existingIndex >= 0) window.__liveHelpRequests[existingIndex] = next;
-              else window.__liveHelpRequests.push(next);
-            }
-            renderHelpRequests();
-            renderParticipantsLobby();
-          }
-        )
-        .subscribe();
+        .channel(`help-${sessionId}`)
+        .on("postgres_changes", {
+          event: "INSERT",
+          schema: "public",
+          table: "help_requests"
+        }, (payload) => {
+          console.log("HELP REQUEST PAYLOAD:", payload);
+
+          if (payload?.new?.session_id !== sessionId) return;
+
+          window.__liveHelpRequests = window.__liveHelpRequests || [];
+          const existingIndex = window.__liveHelpRequests.findIndex((request) => request.id === payload.new.id);
+          if (existingIndex >= 0) window.__liveHelpRequests[existingIndex] = payload.new;
+          else window.__liveHelpRequests.push(payload.new);
+          console.log("LIVE HELP STATE:", window.__liveHelpRequests);
+          renderHelpRequests();
+        })
+        .subscribe((status) => {
+          console.log("HELP REQUEST CHANNEL STATUS:", status);
+        });
     }
 
     async function startSession(sessionId) {
@@ -3605,9 +3670,86 @@
     async function endSession(sessionId) {
       const { error } = await supabaseClient
         .from("sessions")
-        .update({ is_active: false, status: "ended" })
+        .update({ is_active: false, status: "ended", allow_join: false })
         .eq("id", sessionId);
       if (error) throw error;
+    }
+
+    async function unsubscribeLiveSessionChannels() {
+      if (liveResponsesChannel) {
+        await supabaseClient.removeChannel(liveResponsesChannel);
+        liveResponsesChannel = null;
+      }
+      if (liveParticipantsChannel) {
+        await supabaseClient.removeChannel(liveParticipantsChannel);
+        liveParticipantsChannel = null;
+      }
+      if (liveHelpRequestsChannel) {
+        await supabaseClient.removeChannel(liveHelpRequestsChannel);
+        liveHelpRequestsChannel = null;
+      }
+    }
+
+    function resetLiveSessionState() {
+      currentLiveCode = "";
+      currentLiveSessionId = null;
+      window.currentLiveCode = "";
+      window.currentLiveSessionId = null;
+      window.currentLiveSessionStatus = "ended";
+      window.__liveParticipants = [];
+      window.__liveResponses = [];
+      window.__liveHelpRequests = [];
+    }
+
+    function renderEndedLiveSessionState() {
+      const sessionStatus = document.getElementById("live-session-status");
+      const code = document.getElementById("live-class-code");
+      const startLiveBtn = document.getElementById("start-live-session-btn");
+      const lockJoinBtn = document.getElementById("lock-join-btn");
+      const copyCodeBtn = document.getElementById("copy-code-btn");
+      const endBtn = document.querySelector("#end-session-btn, [data-end-session-btn]");
+      if (sessionStatus) sessionStatus.innerHTML = "🛑 <strong>Session ended.</strong> No more joins or responses will be accepted.";
+      if (code) code.textContent = "------";
+      if (startLiveBtn) {
+        startLiveBtn.disabled = true;
+        startLiveBtn.textContent = "Go Live";
+      }
+      if (lockJoinBtn) {
+        lockJoinBtn.disabled = true;
+        lockJoinBtn.textContent = "Lock Join";
+      }
+      if (copyCodeBtn) copyCodeBtn.disabled = true;
+      if (endBtn) endBtn.disabled = false;
+      renderParticipantsLobby();
+      renderLiveResponses();
+      if (typeof renderHelpRequests === "function") renderHelpRequests();
+      updateTopStatusBar();
+      renderRecentActivity();
+    }
+
+    async function handleEndSessionClick(event) {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      console.log("END SESSION CLICKED");
+      console.log("CURRENT SESSION:", currentLiveSessionId);
+      console.log("CURRENT SESSION WINDOW:", window.currentLiveSessionId);
+
+      const sessionStatus = document.getElementById("live-session-status");
+      const endBtn = document.querySelector("#end-session-btn, [data-end-session-btn]");
+      const sessionId = getCurrentLiveSessionId();
+
+      try {
+        if (!sessionId) throw new Error("No active live session.");
+        if (endBtn) endBtn.disabled = true;
+        await endSession(sessionId);
+        await unsubscribeLiveSessionChannels();
+        resetLiveSessionState();
+        renderEndedLiveSessionState();
+      } catch (error) {
+        console.error("❌ END SESSION ERROR:", error);
+        if (sessionStatus) sessionStatus.textContent = `❌ ${error.message || "Could not end session."}`;
+        if (endBtn) endBtn.disabled = false;
+      }
     }
 
     function updateProfileSection(user, profile = null) {
@@ -5621,6 +5763,11 @@ Create your second version now.`;
           return;
         }
 
+        if (target.closest("#end-session-btn, [data-end-session-btn]")) {
+          handleEndSessionClick(e);
+          return;
+        }
+
         const reviewTarget = target.closest("[data-review-student]");
         if (reviewTarget) {
           openStudentReview(reviewTarget.getAttribute("data-review-student") || "");
@@ -5744,24 +5891,7 @@ Create your second version now.`;
 
 
 
-      endBtn?.addEventListener("click", async () => {
-        try {
-          if (!currentLiveSessionId) throw new Error("No active live session.");
-          await endSession(currentLiveSessionId);
-          if (liveResponsesChannel) supabaseClient.removeChannel(liveResponsesChannel);
-          if (liveParticipantsChannel) supabaseClient.removeChannel(liveParticipantsChannel);
-          if (liveHelpRequestsChannel) supabaseClient.removeChannel(liveHelpRequestsChannel);
-          sessionStatus.innerHTML = "🛑 Session ended. No more responses will be accepted.";
-          currentLiveCode = "";
-          currentLiveSessionId = null;
-          updateTopStatusBar();
-          assignBtn.disabled = true;
-          copyCodeBtn.disabled = true;
-          if (lockJoinBtn) { lockJoinBtn.disabled = true; lockJoinBtn.textContent = "Lock Join"; }
-        } catch (error) {
-          sessionStatus.textContent = `❌ ${error.message || "Could not end session."}`;
-        }
-      });
+      endBtn?.addEventListener("click", handleEndSessionClick);
 
       copyLinkBtn?.addEventListener("click", async () => {
         await navigator.clipboard.writeText(`${window.location.origin}/student`);
@@ -5813,7 +5943,8 @@ Create your second version now.`;
           console.log("➡️ ABOUT TO SUBSCRIBE", session.code);
           subscribeToParticipants(session.code);
           subscribeToResponses(session.id);
-          subscribeToHelpRequests(session.id);
+          console.log("➡️ SUBSCRIBING TO HELP REQUESTS", session.id);
+          await subscribeToHelpRequests(session.id);
         } catch (error) {
           sessionStatus.textContent = `❌ ${error.message || "Could not start live class."}`;
         } finally {
