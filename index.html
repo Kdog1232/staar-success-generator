@@ -2952,6 +2952,61 @@
       };
     }
 
+    async function loadLiveLessonData(lessonId) {
+      if (!lessonId) throw new Error("Missing lesson id.");
+
+      let query = supabaseClient
+        .from("lessons")
+        .select("id,title,data")
+        .eq("id", lessonId);
+
+      if (cachedUser?.id) {
+        query = query.eq("user_id", cachedUser.id);
+      }
+
+      const { data: lesson, error } = await query.maybeSingle();
+
+      if (error) {
+        console.error("❌ LOAD LIVE LESSON ERROR:", error);
+        throw error;
+      }
+
+      const lessonData = lesson?.data;
+      if (!lessonData) {
+        throw new Error("Could not load lesson data.");
+      }
+
+      const fallbackPassage =
+        lessonData?.practice?.passage ||
+        lessonData?.passage ||
+        generatedPassage ||
+        "";
+      const normalizedLesson = normalizeWorkerPayload(lessonData, { fallbackPassage });
+      validateAlignment(normalizedLesson);
+
+      currentLessonId = lesson.id || lessonId;
+      generatedPassage = normalizedLesson.passage || fallbackPassage;
+      coreData = normalizedLesson;
+      practiceDataState = normalizedLesson.practice || { questions: [] };
+      crossDataState = normalizedLesson.cross || { passage: "", questions: [] };
+      supportData = {
+        tutor: normalizedLesson.tutor || { practice: [], cross: [] },
+        answerKey: normalizedLesson.answerKey || { practice: [], cross: [] }
+      };
+      tutorDataState = supportData.tutor;
+      answerKeyDataState = supportData.answerKey;
+
+      updateDashboard();
+      renderRecentActivity();
+      console.log("✅ LIVE LESSON DATA LOADED:", {
+        lessonId: currentLessonId,
+        practiceQuestions: practiceDataState.questions.length,
+        crossQuestions: crossDataState.questions.length
+      });
+
+      return normalizedLesson;
+    }
+
     function getAnswerForKey(response, prefix, index) {
       const answers = response?.answers || {};
       return String(answers[`${prefix}${index}`] || answers[String(index)] || "").toUpperCase();
@@ -5747,6 +5802,7 @@ Create your second version now.`;
           }
           sessionStatus.innerHTML = `📡 <strong>Lobby open</strong><br>Share code <strong>${session.code}</strong>. Click <strong>Go Live</strong> when ready.`;
           currentLessonId = lessonId;
+          console.log("loadLiveLessonData type:", typeof loadLiveLessonData);
           await loadLiveLessonData(lessonId);
           syncCurrentLiveSession(session);
           addRecentActivity(`Started live session ${session.code}`, "Live class", "▶");
