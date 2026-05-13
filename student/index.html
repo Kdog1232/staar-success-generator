@@ -957,6 +957,14 @@ function escapeHtml(value = "") {
     .replace(/'/g, "&#39;");
 }
 
+function sanitizeAnswerChoiceText(rawChoice) {
+  const rawText = String(typeof rawChoice === "string" ? rawChoice : rawChoice?.text || rawChoice?.choice || "").replace(/\s+/g, " ").trim();
+  const cleanChoice = rawText.replace(/^\s*(?:(?:\([A-D]\)|[A-D][\.\:\)]|(?:choice|option|answer)\s+[A-D][\.\:\)]?)\s*)+/i, "").trim();
+  console.log("RAW CHOICE:", rawText);
+  console.log("SANITIZED CHOICE:", cleanChoice);
+  return cleanChoice || rawText;
+}
+
 function setStatus(message, type = "default") {
   const status = document.getElementById("status");
   if (!status) return;
@@ -1447,7 +1455,7 @@ function speakText(text = "") {
 
 function questionSpeechText(question = {}) {
   const choices = Array.isArray(question.choices) ? question.choices : [];
-  return [question.question || "", ...choices.map((choice, idx) => `${String.fromCharCode(65 + idx)}. ${typeof choice === "string" ? choice : (choice?.text || "")}`)].join(" ");
+  return [question.question || "", ...choices.map((choice, idx) => `${String.fromCharCode(65 + idx)}. ${sanitizeAnswerChoiceText(choice)}`)].join(" ");
 }
 
 function applyAccommodationUpdate(row) {
@@ -1700,7 +1708,7 @@ function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex) {
           const choiceKey = `${questionKey}-${letter}`;
           const choiceText = typeof choice === "string" ? choice : (choice?.text || "");
           const translatedChoice = typeof choice === "string" ? "" : (choice?.spanish || choice?.text_es || "");
-          const displayChoice = getDisplayText(choiceText, translatedChoice);
+          const displayChoice = sanitizeAnswerChoiceText(getDisplayText(choiceText, translatedChoice));
           const eliminated = getEliminatedChoice(choiceKey);
           const storedHighlight = getLocalHighlight(choiceKey);
           const answerTools = currentAccommodations.eliminate_answers || currentAccommodations.highlighting_tools

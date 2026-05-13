@@ -3692,10 +3692,17 @@
     }
 
     async function saveActiveAccommodations() {
+      console.log("SAVE ACCOMMODATIONS CLICKED");
       const sessionId = getCurrentLiveSessionId();
-      if (!sessionId || !activeAccommodationStudent) return;
       const saveBtn = document.getElementById("save-accommodations-btn");
       const status = document.getElementById("accommodations-status");
+
+      if (!sessionId || !activeAccommodationStudent) {
+        console.warn("⚠️ Missing accommodations save context", { sessionId, activeAccommodationStudent });
+        if (status) status.textContent = "❌ Open a live session and choose a student before saving accommodations.";
+        return;
+      }
+
       const existing = getAccommodationForStudent(activeAccommodationStudent);
       const payload = { session_id: sessionId, student_name: activeAccommodationStudent };
       ACCOMMODATION_DEFINITIONS.forEach((item) => {
@@ -3707,24 +3714,56 @@
       document.querySelectorAll("[data-accommodation-select]").forEach((select) => {
         payload[select.getAttribute("data-accommodation-select")] = select.value;
       });
+      console.log("ACCOMMODATION PAYLOAD:", payload);
+
+      const abortController = typeof AbortController !== "undefined" ? new AbortController() : null;
+      const abortTimeoutId = abortController
+        ? window.setTimeout(() => abortController.abort(), ACCOMMODATIONS_SAVE_TIMEOUT_MS)
+        : null;
+
       if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Saving..."; }
+      if (status) status.textContent = "Saving accommodations...";
+
       try {
-        const { data, error } = await supabaseClient
+        if (!supabaseClient) throw new Error("Supabase is not initialized.");
+
+        const { data: authData, error: authError } = await withTimeout(supabaseClient.auth.getUser(), AUTH_TIMEOUT_MS);
+        console.log("ACCOMMODATIONS AUTH USER:", authData?.user || null);
+        if (authError) throw authError;
+        if (!authData?.user) throw new Error("Login required to save accommodations.");
+
+        let query = supabaseClient
           .from("student_accommodations")
           .upsert(payload, { onConflict: "session_id,student_name" })
-          .select("*")
-          .single();
+          .select();
+
+        if (abortController && typeof query.abortSignal === "function") {
+          query = query.abortSignal(abortController.signal);
+        }
+
+        const { data, error, status: responseStatus, statusText } = await withTimeout(query, ACCOMMODATIONS_SAVE_TIMEOUT_MS);
+        console.log("UPSERT RESPONSE:", data);
+        console.log("UPSERT ERROR:", error);
+        console.log("UPSERT STATUS:", { status: responseStatus, statusText });
+
         if (error) throw error;
-        upsertLocalAccommodation(data || payload);
+
+        const savedRow = Array.isArray(data) ? data[0] : data;
+        upsertLocalAccommodation(savedRow || payload);
         if (status) status.textContent = "✅ Accommodations saved and pushed live.";
         renderParticipantsLobby();
-        console.log("ACCOMMODATIONS UPDATED:", data || payload);
-        console.log("ACCOMMODATION UPDATE:", data || payload);
+        updateDashboard();
+        console.log("ACCOMMODATIONS UPDATED:", savedRow || payload);
+        console.log("ACCOMMODATION UPDATE:", savedRow || payload);
+        closeAccommodationsModal();
       } catch (error) {
         console.error("❌ ACCOMMODATIONS SAVE ERROR:", error);
+        console.log("UPSERT ERROR:", error);
         if (status) status.textContent = `❌ ${error.message || "Could not save accommodations."}`;
       } finally {
+        if (abortTimeoutId) window.clearTimeout(abortTimeoutId);
         if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "Save Accommodations"; }
+        console.log("SAVE COMPLETE");
       }
     }
 
@@ -4009,8 +4048,8 @@
                     <div class="help-response-form">
                       <textarea class="help-response-input" data-help-response-input="${id}" placeholder="Type a response for ${name}..." maxlength="700">${escapeHtml(cleanText(request.teacher_response || ""))}</textarea>
                       <div class="badge-row">
-                        <button class="live-compact-btn primary" type="button" data-send-help-response-id="${id}">Send Response</button>
-                        <button class="live-compact-btn" type="button" data-resolve-help-id="${id}">Mark Resolved</button>
+                        <button class="live-compact-btn primary" type="button" data-help-id="${id}" data-respond-help-id="${id}" data-send-help-response-id="${id}">Send Response</button>
+                        <button class="live-compact-btn" type="button" data-help-id="${id}" data-resolve-help-id="${id}">Mark Resolved</button>
                       </div>
                     </div>
                   </div>
@@ -4021,59 +4060,124 @@
         : `<li><p class="live-empty-copy">No help requests yet. Raised hands will appear here live.</p></li>`;
     }
 
-    async function resolveHelpRequest(requestId) {
+    async function resolveHelpRequest(requestId, trigger = null) {
       const helpId = cleanText(requestId);
-      if (!helpId) return;
       console.log("RESOLVE CLICKED:", helpId);
+      if (!helpId) return;
+      const sessionId = getCurrentLiveSessionId();
       const sessionStatus = document.getElementById("live-session-status");
-      const { data, error } = await supabaseClient
-        .from("help_requests")
-        .update({ resolved: true })
-        .eq("id", helpId)
-        .select("*");
-      console.log("RESOLVE RESPONSE:", data);
-      if (error) {
+      const button = trigger instanceof HTMLButtonElement ? trigger : document.querySelector(`[data-resolve-help-id="${CSS.escape(helpId)}"]`);
+      const originalText = button?.textContent || "Mark Resolved";
+
+      try {
+        if (!supabaseClient) throw new Error("Supabase is not initialized.");
+        if (!sessionId) throw new Error("No active live session found for this help request.");
+
+        if (button) { button.disabled = true; button.textContent = "Resolving..."; }
+        if (sessionStatus) sessionStatus.textContent = "Resolving help request...";
+
+        const { data: authData, error: authError } = await withTimeout(supabaseClient.auth.getUser(), AUTH_TIMEOUT_MS);
+        console.log("HELP AUTH USER:", authData?.user || null);
+        if (authError) throw authError;
+        if (!authData?.user) throw new Error("Login required to resolve help requests.");
+
+        const { data, error, status: responseStatus, statusText } = await withTimeout(
+          supabaseClient
+            .from("help_requests")
+            .update({ resolved: true })
+            .eq("id", helpId)
+            .eq("session_id", sessionId)
+            .select("*"),
+          HELP_ACTION_TIMEOUT_MS
+        );
+        console.log("RESOLVE RESULT:", data);
+        console.log("SUPABASE ERROR:", error);
+        console.log("HELP RESPONSE STATUS:", { status: responseStatus, statusText });
+        if (error) throw error;
+        if (!Array.isArray(data) || data.length === 0) throw new Error("No help request was updated. Check the help request id, session ownership, and RLS policy.");
+
+        const updatedRow = data[0];
+        window.__liveHelpRequests = (window.__liveHelpRequests || [])
+          .map((request) => request.id === helpId ? { ...request, ...updatedRow, resolved: true } : request)
+          .filter((request) => request && request.resolved !== true && request.id !== helpId);
+        console.log("UPDATED HELP STATE:", window.__liveHelpRequests);
+        renderHelpRequests();
+        updateDashboard();
+        if (sessionStatus) sessionStatus.textContent = "✅ Help request marked resolved.";
+      } catch (error) {
         console.error("❌ RESOLVE HELP REQUEST ERROR:", error);
+        console.log("SUPABASE ERROR:", error);
         if (sessionStatus) sessionStatus.textContent = `❌ ${error.message || "Could not resolve help request."}`;
-        return;
+      } finally {
+        if (button && document.body.contains(button)) {
+          button.disabled = false;
+          button.textContent = originalText;
+        }
       }
-      const updatedRow = Array.isArray(data) ? data[0] : data;
-      window.__liveHelpRequests = (window.__liveHelpRequests || [])
-        .map((request) => request.id === helpId ? { ...request, ...(updatedRow || {}), resolved: true } : request)
-        .filter((request) => request && request.resolved !== true && request.id !== helpId);
-      console.log("UPDATED HELP STATE:", window.__liveHelpRequests);
-      renderHelpRequests();
     }
 
-    async function sendHelpResponse(requestId) {
+    async function sendHelpResponse(requestId, trigger = null) {
       const helpId = cleanText(requestId);
+      console.log("SEND RESPONSE CLICKED");
+      console.log("HELP REQUEST ID:", helpId);
       if (!helpId) return;
+      const sessionId = getCurrentLiveSessionId();
       const input = document.querySelector(`[data-help-response-input="${CSS.escape(helpId)}"]`);
-      const teacherResponse = cleanText(input?.value || "");
+      const responseText = cleanText(input?.value || "");
       const sessionStatus = document.getElementById("live-session-status");
-      if (!teacherResponse) {
+      const button = trigger instanceof HTMLButtonElement ? trigger : document.querySelector(`[data-respond-help-id="${CSS.escape(helpId)}"], [data-send-help-response-id="${CSS.escape(helpId)}"]`);
+      const originalText = button?.textContent || "Send Response";
+      console.log("RESPONSE TEXT:", responseText);
+
+      if (!responseText) {
         if (sessionStatus) sessionStatus.textContent = "Type a response before sending.";
         input?.focus();
         return;
       }
-      console.log("HELP RESPONSE CLICKED:", helpId);
-      const { data, error } = await supabaseClient
-        .from("help_requests")
-        .update({ teacher_response: teacherResponse, responded_at: new Date().toISOString() })
-        .eq("id", helpId)
-        .select("*");
-      console.log("HELP RESPONSE UPDATE:", data);
-      if (error) {
-        console.error("❌ HELP RESPONSE ERROR:", error);
-        if (sessionStatus) sessionStatus.textContent = `❌ ${error.message || "Could not send help response."}`;
-        return;
-      }
-      const updatedRow = Array.isArray(data) ? data[0] : data;
-      if (updatedRow) {
+
+      try {
+        if (!supabaseClient) throw new Error("Supabase is not initialized.");
+        if (!sessionId) throw new Error("No active live session found for this help request.");
+
+        if (button) { button.disabled = true; button.textContent = "Sending..."; }
+        if (sessionStatus) sessionStatus.textContent = "Sending help response...";
+
+        const { data: authData, error: authError } = await withTimeout(supabaseClient.auth.getUser(), AUTH_TIMEOUT_MS);
+        console.log("HELP AUTH USER:", authData?.user || null);
+        if (authError) throw authError;
+        if (!authData?.user) throw new Error("Login required to respond to help requests.");
+
+        const { data, error, status: responseStatus, statusText } = await withTimeout(
+          supabaseClient
+            .from("help_requests")
+            .update({ teacher_response: responseText, responded_at: new Date().toISOString() })
+            .eq("id", helpId)
+            .eq("session_id", sessionId)
+            .select("*"),
+          HELP_ACTION_TIMEOUT_MS
+        );
+        console.log("SUPABASE RESPONSE:", data);
+        console.log("SUPABASE ERROR:", error);
+        console.log("HELP RESPONSE STATUS:", { status: responseStatus, statusText });
+        if (error) throw error;
+        if (!Array.isArray(data) || data.length === 0) throw new Error("No help request was updated. Check the help request id, session ownership, and RLS policy.");
+
+        const updatedRow = data[0];
         window.__liveHelpRequests = (window.__liveHelpRequests || []).map((request) => request.id === helpId ? updatedRow : request);
+        console.log("UPDATED HELP STATE:", window.__liveHelpRequests);
+        renderHelpRequests();
+        updateDashboard();
+        if (sessionStatus) sessionStatus.textContent = "✅ Response sent to student.";
+      } catch (error) {
+        console.error("❌ HELP RESPONSE ERROR:", error);
+        console.log("SUPABASE ERROR:", error);
+        if (sessionStatus) sessionStatus.textContent = `❌ ${error.message || "Could not send help response."}`;
+      } finally {
+        if (button && document.body.contains(button)) {
+          button.disabled = false;
+          button.textContent = originalText;
+        }
       }
-      console.log("UPDATED HELP STATE:", window.__liveHelpRequests);
-      renderHelpRequests();
     }
 
     async function subscribeToHelpRequests(sessionId) {
@@ -4378,11 +4482,11 @@
       if (rawChoice && typeof rawChoice === "object") {
         return {
           letter: String(rawChoice.letter || letter).toUpperCase(),
-          text: cleanText(rawChoice.text || rawChoice.choice || choiceText),
+          text: sanitizeAnswerChoiceText(rawChoice.text || rawChoice.choice || choiceText),
           misconception: cleanText(rawChoice.misconception || rawChoice.common_misconception || rawChoice.common_mistake || rawChoice.rationale || "")
         };
       }
-      return { letter: String(letter || "").toUpperCase(), text: cleanText(choiceText || rawChoice || ""), misconception: "" };
+      return { letter: String(letter || "").toUpperCase(), text: sanitizeAnswerChoiceText(choiceText || rawChoice || ""), misconception: "" };
     }
 
     function getChoiceMisconceptionMap(question = {}) {
@@ -4826,6 +4930,8 @@
     const API_FETCH_TIMEOUT_MS = 30000;
     const API_PARSE_TIMEOUT_MS = 10000;
     const RENDER_TIMEOUT_MS = 10000;
+    const ACCOMMODATIONS_SAVE_TIMEOUT_MS = 12000;
+    const HELP_ACTION_TIMEOUT_MS = 12000;
 
     function withTimeout(promise, ms = API_FETCH_TIMEOUT_MS) {
       return Promise.race([
@@ -4964,6 +5070,15 @@
         .replace(/'/g, "&#039;");
     }
 
+    function sanitizeAnswerChoiceText(rawChoice) {
+      const rawText = cleanText(typeof rawChoice === "string" ? rawChoice : rawChoice?.text || rawChoice?.choice || "");
+      const cleanChoice = rawText.replace(/^\s*(?:(?:\([A-D]\)|[A-D][\.\:\)]|(?:choice|option|answer)\s+[A-D][\.\:\)]?)\s*)+/i, "").trim();
+      console.log("RAW CHOICE:", rawText);
+      console.log("SANITIZED CHOICE:", cleanChoice);
+      return cleanChoice || rawText;
+    }
+
+
     function extractField(text, label) {
       const regex = new RegExp(label + ":(.*)", "i");
       const match = text.match(regex);
@@ -5024,8 +5139,7 @@
         const labels = ["A", "B", "C", "D"];
         return `<div class="choices">${(Array.isArray(choices) ? choices : []).map((choice, index) => {
           const label = labels[index] || String.fromCharCode(65 + index);
-          const safeChoice = typeof choice === "string" ? choice : choice?.text || "";
-          const clean = cleanText(safeChoice).replace(/^[A-D]\.\s*/i, "");
+          const clean = sanitizeAnswerChoiceText(choice);
           return `
       <div class="choice answer-choice">
         <span class="choice-label">${label}.</span>
@@ -5273,7 +5387,7 @@
                       ${choices.length
                         ? choices.map((choice, idx) => `
                             <div class="choice">
-                              ${String.fromCharCode(65 + idx)}. ${cleanText(choice)}
+                              ${String.fromCharCode(65 + idx)}. ${escapeHtml(sanitizeAnswerChoiceText(choice))}
                             </div>
                           `).join("")
                         : `<div class="muted-note">No choices provided.</div>`}
@@ -5814,7 +5928,7 @@
         questionList.forEach((q, i) => {
           const choices = Array.isArray(q?.choices) ? q.choices : [];
           html += `    <div class="question-block fade-in" style="animation-delay:${i * 0.05}s;">       <p><strong>${i + 1}. ${q?.question || "Missing question"}</strong></p>       <ul>
-        ${choices.map(c => `<li>${c}</li>`).join("")}       </ul>     </div>
+        ${choices.map((choice, idx) => `<li>${String.fromCharCode(65 + idx)}. ${escapeHtml(sanitizeAnswerChoiceText(choice))}</li>`).join("")}       </ul>     </div>
   `;
         });
 
@@ -6941,15 +7055,25 @@ Create your second version now.`;
           return;
         }
 
-        const responseTarget = target.closest("[data-send-help-response-id]");
+        const responseTarget = target.closest("[data-respond-help-id], [data-send-help-response-id]");
         if (responseTarget) {
-          sendHelpResponse(responseTarget.getAttribute("data-send-help-response-id") || "");
+          const action = "respond";
+          const helpId = responseTarget.getAttribute("data-respond-help-id") || responseTarget.getAttribute("data-send-help-response-id") || responseTarget.getAttribute("data-help-id") || "";
+          console.log("HELP BUTTON CLICKED");
+          console.log("ACTION TYPE:", action);
+          console.log("HELP REQUEST ID:", helpId);
+          void sendHelpResponse(helpId, responseTarget);
           return;
         }
 
         const resolveTarget = target.closest("[data-resolve-help-id]");
         if (resolveTarget) {
-          resolveHelpRequest(resolveTarget.getAttribute("data-resolve-help-id") || "");
+          const action = "resolve";
+          const helpId = resolveTarget.getAttribute("data-resolve-help-id") || resolveTarget.getAttribute("data-help-id") || "";
+          console.log("HELP BUTTON CLICKED");
+          console.log("ACTION TYPE:", action);
+          console.log("HELP REQUEST ID:", helpId);
+          void resolveHelpRequest(helpId, resolveTarget);
           return;
         }
 
