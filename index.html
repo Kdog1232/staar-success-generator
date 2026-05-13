@@ -465,15 +465,15 @@
       position: relative;
       max-width: 610px;
       margin-top: 34px;
-      min-height: 386px;
-      padding: 0 18px 96px;
+      min-height: 430px;
+      padding: 0 18px 136px;
     }
 
     .hero-dashboard-preview {
       position: relative;
       overflow: hidden;
-      min-height: 286px;
-      padding: 20px;
+      min-height: 306px;
+      padding: 24px;
       border: 1px solid rgba(255, 255, 255, 0.76);
       border-radius: 28px;
       background:
@@ -505,8 +505,8 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 14px;
-      margin-bottom: 18px;
+      gap: 16px;
+      margin-bottom: 20px;
     }
 
     .preview-window-dots {
@@ -547,13 +547,13 @@
     .preview-stat-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
-      margin-bottom: 14px;
+      gap: 16px;
+      margin-bottom: 16px;
     }
 
     .mini-stat {
-      min-height: 88px;
-      padding: 13px;
+      min-height: 96px;
+      padding: 16px;
       border: 1px solid rgba(255,255,255,0.09);
       border-radius: 16px;
       background: rgba(255,255,255,0.062);
@@ -562,17 +562,19 @@
 
     .mini-stat strong {
       display: block;
-      font-size: clamp(0.68rem, 1.55vw, 0.84rem);
-      line-height: 1.2;
-      letter-spacing: 0.02em;
-      overflow-wrap: anywhere;
+      font-size: clamp(0.64rem, 1.3vw, 0.78rem);
+      line-height: 1.18;
+      letter-spacing: 0.01em;
+      overflow-wrap: normal;
+      word-break: normal;
+      white-space: nowrap;
     }
 
     .mini-stat span {
       display: block;
-      margin-top: 8px;
+      margin-top: 9px;
       color: #cbd5e1;
-      font-size: 0.7rem;
+      font-size: 0.69rem;
       font-weight: 800;
       line-height: 1.35;
     }
@@ -580,14 +582,14 @@
     .preview-panel-row {
       display: grid;
       grid-template-columns: 1.12fr .88fr;
-      gap: 14px;
+      gap: 16px;
       align-items: stretch;
     }
 
     .preview-mastery-card,
     .preview-ai-card {
-      min-height: 118px;
-      padding: 15px;
+      min-height: 126px;
+      padding: 18px;
       border: 1px solid rgba(255,255,255,0.09);
       border-radius: 18px;
       background: rgba(255,255,255,0.07);
@@ -595,9 +597,9 @@
 
     .preview-mastery-card p,
     .preview-ai-card p {
-      margin: 0 0 12px;
+      margin: 0 0 14px;
       color: #e2e8f0;
-      font-size: 0.74rem;
+      font-size: 0.72rem;
       font-weight: 900;
       line-height: 1.35;
     }
@@ -630,12 +632,12 @@
     }
 
     .ai-pulse {
-      width: 34px;
-      height: 34px;
+      width: 32px;
+      height: 32px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 8px;
+      margin-bottom: 7px;
       border-radius: 12px;
       background: linear-gradient(135deg, #7c3aed, #0ea5e9);
       box-shadow: 0 0 0 10px rgba(14, 165, 233, 0.08);
@@ -645,15 +647,15 @@
     .preview-ai-card strong {
       display: block;
       color: #fff;
-      font-size: 0.92rem;
-      line-height: 1.25;
+      font-size: 0.86rem;
+      line-height: 1.24;
     }
 
     .preview-ai-card span {
       display: block;
-      margin-top: 7px;
+      margin-top: 8px;
       color: #cbd5e1;
-      font-size: 0.72rem;
+      font-size: 0.69rem;
       font-weight: 750;
       line-height: 1.4;
     }
@@ -670,19 +672,23 @@
 
     .floating-feature-grid .floating-feature-card {
       position: absolute;
-      width: min(44%, 218px);
-      min-height: 120px;
-      opacity: 0.93;
+      width: min(41%, 204px);
+      min-height: 112px;
+      opacity: 0.82;
+      border-color: rgba(255, 255, 255, 0.26);
+      background: linear-gradient(145deg, rgba(255,255,255,0.52), rgba(255,255,255,0.26));
+      box-shadow: 0 10px 22px rgba(49, 46, 129, 0.05);
+      backdrop-filter: blur(8px);
     }
 
     .floating-feature-grid .floating-feature-card:first-child {
-      left: 0;
-      bottom: 32px;
+      left: -4px;
+      bottom: 46px;
     }
 
     .floating-feature-grid .floating-feature-card:nth-child(2) {
-      right: 0;
-      bottom: 22px;
+      right: -4px;
+      bottom: 40px;
     }
 
     .supporting-feature-strip {
@@ -690,7 +696,7 @@
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 12px;
-      margin: clamp(44px, 6vw, 76px) auto 0;
+      margin: clamp(70px, 8vw, 108px) auto 0;
       padding: 0 4px;
     }
 
