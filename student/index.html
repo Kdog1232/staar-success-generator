@@ -566,6 +566,261 @@
         padding: 18px;
       }
     }
+
+    .accommodation-toolbar {
+      display: none;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      margin: 16px 0 6px;
+      padding: 14px;
+      border: 1px solid rgba(124, 92, 255, 0.18);
+      border-radius: 18px;
+      background: #f8f5ff;
+      color: #312e81;
+      font-weight: 900;
+    }
+
+    .accommodation-toolbar.is-visible { display: flex; }
+
+    .support-chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+
+    .support-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 9px;
+      border-radius: 999px;
+      background: #ede9fe;
+      color: #4c1d95;
+      font-size: 0.78rem;
+      font-weight: 950;
+    }
+
+    .language-toggle, .read-btn {
+      min-height: auto;
+      padding: 9px 12px;
+      border-radius: 999px;
+      color: #4c1d95;
+      background: #ffffff;
+      border: 1px solid #ddd6fe;
+      font-size: 0.86rem;
+    }
+
+    .read-btn {
+      margin: 0 0 12px;
+      color: #166534;
+      border-color: rgba(22, 163, 74, 0.22);
+      background: #f0fdf4;
+    }
+
+    .question-read-btn { margin: 0 0 12px; }
+
+    .vocab-highlight {
+      display: inline;
+      border-radius: 6px;
+      padding: 0 3px;
+      background: #fef3c7;
+      color: #7c2d12;
+      font-weight: 950;
+      cursor: help;
+    }
+
+    .support-hint, .simplified-support {
+      margin: 10px 0 14px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      font-size: 0.95rem;
+      line-height: 1.45;
+      font-weight: 800;
+    }
+
+    .support-hint {
+      color: #1e3a8a;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+    }
+
+    .simplified-support {
+      color: #3b0764;
+      background: #faf5ff;
+      border: 1px solid #e9d5ff;
+    }
+
+    .extended-time-note {
+      width: 100%;
+      color: #9a3412;
+      font-size: 0.88rem;
+    }
+
+
+    .student-shell.dyslexia-font,
+    .student-shell.dyslexia-font * {
+      font-family: Lexend, "Atkinson Hyperlegible", "Comic Sans MS", Verdana, sans-serif;
+      letter-spacing: 0.01em;
+    }
+
+    .student-shell.font-small { font-size: 0.92rem; }
+    .student-shell.font-large { font-size: 1.08rem; }
+    .student-shell.font-extra_large { font-size: 1.18rem; }
+
+    .student-shell.overlay-cream { background: #fff7ed; }
+    .student-shell.overlay-soft_blue { background: #eff6ff; }
+    .student-shell.overlay-soft_gray { background: #f1f5f9; }
+    .student-shell.overlay-dark { background: #111827; color: #f8fafc; }
+    .student-shell.overlay-dark .passage-card,
+    .student-shell.overlay-dark .question-card,
+    .student-shell.overlay-dark .answer-choice {
+      background: #1f2937;
+      color: #f8fafc;
+      border-color: #475569;
+    }
+
+    .student-shell.calm-mode {
+      box-shadow: 0 10px 28px rgba(45, 34, 89, 0.08);
+      background: rgba(255,255,255,0.98);
+    }
+
+    .student-shell.calm-mode *,
+    .student-shell.reduced-distraction * {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+
+    .student-shell.calm-mode .question-card,
+    .student-shell.calm-mode .passage-card {
+      box-shadow: none;
+      padding: 26px;
+    }
+
+    .student-shell.reduced-distraction .hero,
+    .student-shell.reduced-distraction .live-badge {
+      display: none;
+    }
+
+    .workspace-controls,
+    .line-reader-controls,
+    .highlight-tools {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .workspace-control-select,
+    .tool-btn,
+    .eliminate-btn,
+    .chunk-continue-btn {
+      min-height: auto;
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px solid #ddd6fe;
+      background: #ffffff;
+      color: #4c1d95;
+      font-size: 0.82rem;
+      font-weight: 950;
+    }
+
+    .line-reader-controls {
+      width: 100%;
+      padding-top: 8px;
+      border-top: 1px solid #ddd6fe;
+    }
+
+    .line-reader-strip {
+      padding: 10px 12px;
+      border-radius: 14px;
+      color: #1e1b4b;
+      background: rgba(254, 243, 199, 0.88);
+      border: 1px solid #fde68a;
+      font-weight: 900;
+    }
+
+    .chunk-card {
+      display: grid;
+      gap: 10px;
+      margin: 10px 0;
+      padding: 16px;
+      border: 1px solid rgba(124, 92, 255, 0.16);
+      border-radius: 18px;
+      background: #fdfcff;
+    }
+
+    .chunk-card.is-hidden { display: none; }
+
+    .chunk-label {
+      color: #4c1d95;
+      font-size: 0.78rem;
+      font-weight: 950;
+      text-transform: uppercase;
+    }
+
+    .highlight-yellow { background: #fef3c7 !important; }
+    .highlight-blue { background: #dbeafe !important; }
+    .highlight-pink { background: #fce7f3 !important; }
+
+    .answer-choice.is-eliminated {
+      opacity: 0.42;
+      text-decoration: line-through;
+    }
+
+    .answer-choice-tools {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-left: auto;
+      flex-wrap: wrap;
+    }
+
+    .glossary-panel,
+    .annotation-card,
+    .guided-prompt {
+      margin: 10px 0 14px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      font-size: 0.94rem;
+      line-height: 1.45;
+      font-weight: 800;
+    }
+
+    .glossary-panel {
+      color: #064e3b;
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+    }
+
+    .glossary-panel dl { margin: 0; display: grid; gap: 8px; }
+    .glossary-panel dt { font-weight: 950; }
+    .glossary-panel dd { margin: 2px 0 0; color: #166534; }
+
+    .annotation-card {
+      display: grid;
+      gap: 8px;
+      color: #713f12;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+    }
+
+    .annotation-card textarea {
+      min-height: 74px;
+      resize: vertical;
+      border-color: #fde68a;
+      background: #ffffff;
+    }
+
+    .guided-prompt {
+      color: #1d4ed8;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+    }
+
+    @media (max-width: 640px) {
+      .student-shell { width: min(100% - 16px, 900px); padding: 20px; margin: 18px auto; }
+      .answer-choice { flex-wrap: wrap; }
+      .answer-choice-tools { width: 100%; margin-left: 0; }
+    }
+
   </style>
 </head>
 <body>
@@ -595,6 +850,8 @@
     <div id="status" role="status" aria-live="polite"></div>
     <section id="teacher-response-card" class="teacher-response-card" aria-live="polite"></section>
     <div id="waiting" class="waiting-card">✨ You’re in! Waiting for your teacher to start the lesson...</div>
+
+    <section id="accommodation-toolbar" class="accommodation-toolbar" aria-live="polite"></section>
 
     <section id="progress-wrap" class="progress-wrap" aria-label="Lesson progress">
       <div class="progress-meta"><span id="progress-label">Question 0 of 0</span><span id="progress-percent">0%</span></div>
@@ -656,10 +913,40 @@ let hasSubmitted = false;
 let sessionStatusChannel = null;
 let sessionStatusInterval = null;
 let helpRequestsChannel = null;
+let accommodationsChannel = null;
 let lessonStarted = false;
 let handRaised = false;
 let currentHelpRequest = null;
 let totalQuestionCount = 0;
+let currentLessonData = null;
+let currentAccommodations = {
+  text_to_speech: false,
+  spanish_translation: false,
+  content_supports: false,
+  simplified_supports: false,
+  extended_time: false,
+  read_aloud: false,
+  highlighted_vocabulary: false,
+  line_reader: false,
+  chunked_reading: false,
+  dyslexia_font: false,
+  font_size: "normal",
+  highlighting_tools: false,
+  eliminate_answers: false,
+  vocabulary_glossary: false,
+  bilingual_vocabulary: false,
+  annotation_tools: false,
+  calm_testing_mode: false,
+  question_rephrase: false,
+  guided_reading_prompts: false,
+  color_overlay: "default",
+  reduced_distraction: false
+};
+let highlightColor = "yellow";
+let lineReaderIndex = 0;
+let visibleChunkCount = 1;
+let localWorkspacePrefs = {};
+let spanishMode = false;
 
 function escapeHtml(value = "") {
   return String(value)
@@ -757,6 +1044,455 @@ async function subscribeToHelpResponses() {
     });
 }
 
+
+const SUPPORT_LABELS = {
+  text_to_speech: "Text-to-Speech",
+  spanish_translation: "Spanish",
+  content_supports: "Content Supports",
+  simplified_supports: "Simplified Supports",
+  extended_time: "Extended Time",
+  read_aloud: "Read Aloud",
+  highlighted_vocabulary: "Highlighted Vocabulary",
+  line_reader: "Line Reader",
+  chunked_reading: "Chunked Reading",
+  dyslexia_font: "Dyslexia Font",
+  highlighting_tools: "Highlighting Tool",
+  eliminate_answers: "Eliminate Choices",
+  vocabulary_glossary: "Vocabulary Glossary",
+  bilingual_vocabulary: "Bilingual Vocabulary",
+  annotation_tools: "Annotation Tool",
+  calm_testing_mode: "Calm Mode",
+  question_rephrase: "Question Rephrase",
+  guided_reading_prompts: "Guided Prompts",
+  reduced_distraction: "Reduced Distraction"
+};
+
+const FONT_SIZE_OPTIONS = ["small", "normal", "large", "extra_large"];
+const COLOR_OVERLAY_OPTIONS = ["default", "cream", "soft_blue", "soft_gray", "dark"];
+const BILINGUAL_VOCABULARY = {
+  theme: "tema",
+  migrate: "migrar",
+  evidence: "evidencia",
+  infer: "inferir",
+  summarize: "resumir",
+  compare: "comparar",
+  contrast: "contrastar",
+  analyze: "analizar",
+  estimate: "estimar",
+  habitat: "hábitat",
+  conserve: "conservar",
+  author: "autor",
+  paragraph: "párrafo"
+};
+
+const VOCAB_SUPPORTS = {
+  theme: "the message or lesson an author wants readers to understand",
+  author: "the person who wrote the text",
+  paragraph: "a group of sentences about one idea",
+  migrate: "move from one region to another, often seasonally",
+  evidence: "details that support an answer",
+  infer: "use clues and what you know to figure something out",
+  summarize: "tell the most important ideas in a shorter way",
+  compare: "tell how things are alike",
+  contrast: "tell how things are different",
+  analyze: "look closely at parts to understand the whole",
+  estimate: "find a reasonable answer close to the exact amount",
+  habitat: "the place where a plant or animal lives",
+  conserve: "protect or avoid wasting a resource"
+};
+
+const SPANISH_GLOSSARY = {
+  "Practice Passage": "Lectura de práctica",
+  "Cross-Curricular Passage": "Lectura interdisciplinaria",
+  "Practice Questions": "Preguntas de práctica",
+  "Cross-Curricular Questions": "Preguntas interdisciplinarias",
+  "Question": "Pregunta",
+  "Read Passage": "Leer lectura",
+  "Read Question": "Leer pregunta",
+  "Which": "Cuál",
+  "What": "Qué",
+  "Why": "Por qué",
+  "How": "Cómo",
+  "best": "mejor",
+  "main idea": "idea principal",
+  "evidence": "evidencia",
+  "passage": "lectura",
+  "answer": "respuesta",
+  "shows": "muestra",
+  "means": "significa",
+  "because": "porque"
+};
+
+function normalizeStudentName(name = "") {
+  return String(name || "").trim().toLowerCase();
+}
+
+
+function getSessionStorageKey(suffix = "state") {
+  return currentSession ? `staar-${currentSession.id}-${normalizeStudentName(currentSession.student)}-${suffix}` : `staar-local-${suffix}`;
+}
+
+function loadLocalWorkspaceState() {
+  try {
+    localWorkspacePrefs = JSON.parse(localStorage.getItem(getSessionStorageKey("workspace")) || "{}");
+  } catch {
+    localWorkspacePrefs = {};
+  }
+  highlightColor = localWorkspacePrefs.highlightColor || "yellow";
+  lineReaderIndex = Number(localWorkspacePrefs.lineReaderIndex || 0);
+  visibleChunkCount = Number(localWorkspacePrefs.visibleChunkCount || 1);
+}
+
+function saveLocalWorkspaceState() {
+  try {
+    localStorage.setItem(getSessionStorageKey("workspace"), JSON.stringify({
+      ...localWorkspacePrefs,
+      highlightColor,
+      lineReaderIndex,
+      visibleChunkCount,
+      fontSizeOverride: currentAccommodations.font_size,
+      colorOverlayOverride: currentAccommodations.color_overlay
+    }));
+  } catch (error) {
+    console.warn("Could not save local accommodation state", error);
+  }
+}
+
+function getAnnotation(key = "") {
+  try {
+    return localStorage.getItem(getSessionStorageKey(`note-${key}`)) || "";
+  } catch {
+    return "";
+  }
+}
+
+function saveAnnotation(key = "", value = "") {
+  try {
+    localStorage.setItem(getSessionStorageKey(`note-${key}`), value);
+    console.log("ANNOTATION SAVED");
+  } catch (error) {
+    console.warn("Could not save annotation", error);
+  }
+}
+
+function getLocalHighlight(key = "") {
+  try {
+    return localStorage.getItem(getSessionStorageKey(`highlight-${key}`)) || "";
+  } catch {
+    return "";
+  }
+}
+
+function saveLocalHighlight(key = "", color = "") {
+  try {
+    if (color) localStorage.setItem(getSessionStorageKey(`highlight-${key}`), color);
+    else localStorage.removeItem(getSessionStorageKey(`highlight-${key}`));
+  } catch (error) {
+    console.warn("Could not save highlight", error);
+  }
+}
+
+function getEliminatedChoice(key = "") {
+  try {
+    return localStorage.getItem(getSessionStorageKey(`eliminate-${key}`)) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function saveEliminatedChoice(key = "", eliminated = false) {
+  try {
+    localStorage.setItem(getSessionStorageKey(`eliminate-${key}`), eliminated ? "true" : "false");
+  } catch (error) {
+    console.warn("Could not save eliminated choice", error);
+  }
+}
+
+function applyWorkspaceClasses() {
+  const shell = document.querySelector(".student-shell");
+  if (!shell) return;
+  shell.classList.toggle("dyslexia-font", currentAccommodations.dyslexia_font === true);
+  shell.classList.toggle("calm-mode", currentAccommodations.calm_testing_mode === true);
+  shell.classList.toggle("reduced-distraction", currentAccommodations.reduced_distraction === true);
+  FONT_SIZE_OPTIONS.forEach((size) => shell.classList.toggle(`font-${size}`, currentAccommodations.font_size === size));
+  COLOR_OVERLAY_OPTIONS.forEach((overlay) => shell.classList.toggle(`overlay-${overlay}`, currentAccommodations.color_overlay === overlay));
+  if (currentAccommodations.line_reader) console.log("LINE READER ENABLED");
+  if (currentAccommodations.chunked_reading) console.log("CHUNKED MODE ENABLED");
+  if (currentAccommodations.dyslexia_font) console.log("DYSLEXIA FONT ENABLED");
+}
+
+
+function getCheckedAnswers() {
+  const answers = {};
+  document.querySelectorAll('#questions input[type="radio"]:checked').forEach((input) => {
+    answers[input.name] = input.value;
+  });
+  return answers;
+}
+
+function restoreCheckedAnswers(answers = {}) {
+  Object.entries(answers).forEach(([name, value]) => {
+    const input = document.querySelector(`#questions input[name="${CSS.escape(name)}"][value="${CSS.escape(value)}"]`);
+    if (input) input.checked = true;
+  });
+}
+
+function getAccommodationLabels() {
+  const labels = Object.entries(SUPPORT_LABELS).filter(([key]) => currentAccommodations?.[key]).map(([, label]) => label);
+  if (currentAccommodations.font_size && currentAccommodations.font_size !== "normal") labels.push(`Font: ${currentAccommodations.font_size.replace("_", " ")}`);
+  if (currentAccommodations.color_overlay && currentAccommodations.color_overlay !== "default") labels.push(`Overlay: ${currentAccommodations.color_overlay.replace("_", " ")}`);
+  return labels;
+}
+
+function renderAccommodationToolbar() {
+  const toolbar = document.getElementById("accommodation-toolbar");
+  if (!toolbar) return;
+  applyWorkspaceClasses();
+  const labels = getAccommodationLabels();
+  if (!labels.length) {
+    toolbar.classList.remove("is-visible");
+    toolbar.innerHTML = "";
+    return;
+  }
+  toolbar.classList.add("is-visible");
+  const languageButton = currentAccommodations.spanish_translation
+    ? `<button class="language-toggle" type="button" id="toggle-spanish-mode">${spanishMode ? "Spanish" : "English"} | ${spanishMode ? "English" : "Spanish"}</button>`
+    : "";
+  const fontControl = `<label class="workspace-controls">Font <select class="workspace-control-select" id="student-font-size-control">
+    ${FONT_SIZE_OPTIONS.map((size) => `<option value="${size}" ${currentAccommodations.font_size === size ? "selected" : ""}>${size === "extra_large" ? "Extra Large" : size[0].toUpperCase() + size.slice(1)}</option>`).join("")}
+  </select></label>`;
+  const overlayControl = `<label class="workspace-controls">Overlay <select class="workspace-control-select" id="student-overlay-control">
+    ${COLOR_OVERLAY_OPTIONS.map((overlay) => `<option value="${overlay}" ${currentAccommodations.color_overlay === overlay ? "selected" : ""}>${overlay === "default" ? "Default" : overlay.replace("_", " ")}</option>`).join("")}
+  </select></label>`;
+  const highlightTools = currentAccommodations.highlighting_tools
+    ? `<div class="highlight-tools" aria-label="Highlight colors">
+        <span>Highlight</span>
+        ${["yellow", "blue", "pink"].map((color) => `<button class="tool-btn highlight-${color}" type="button" data-highlight-color="${color}" aria-pressed="${highlightColor === color}">${color}</button>`).join("")}
+      </div>`
+    : "";
+  const lineReader = currentAccommodations.line_reader
+    ? `<div class="line-reader-controls"><button class="tool-btn" type="button" data-line-reader-move="up">↑ Focus line</button><span id="line-reader-strip" class="line-reader-strip">Focus strip ready</span><button class="tool-btn" type="button" data-line-reader-move="down">↓ Focus line</button></div>`
+    : "";
+  const extended = currentAccommodations.extended_time ? `<span class="extended-time-note">⏱ Extended time is active. Future timers will honor this support.</span>` : "";
+  toolbar.innerHTML = `
+    <div class="support-chip-row">${labels.map((label) => `<span class="support-chip">${escapeHtml(label)}</span>`).join("")}</div>
+    ${languageButton}
+    ${fontControl}
+    ${overlayControl}
+    ${highlightTools}
+    ${lineReader}
+    ${extended}
+  `;
+}
+
+function translateText(text = "") {
+  let output = String(text || "");
+  Object.entries(SPANISH_GLOSSARY).forEach(([english, spanish]) => {
+    output = output.replace(new RegExp(`\\b${escapeRegExp(english)}\\b`, "gi"), spanish);
+  });
+  return output === text ? `ES: ${text}` : output;
+}
+
+function getDisplayText(source = "", translated = "") {
+  if (!spanishMode) return String(source || "");
+  if (translated) return String(translated);
+  return translateText(source || "");
+}
+
+function highlightVocabularyHtml(text = "") {
+  const escaped = escapeHtml(text);
+  if (!currentAccommodations.content_supports && !currentAccommodations.highlighted_vocabulary) return escaped;
+  return Object.entries(VOCAB_SUPPORTS).reduce((html, [term, definition]) => {
+    return html.replace(new RegExp(`\\b(${escapeRegExp(term)})\\b`, "gi"), `<span class="vocab-highlight" tabindex="0" title="${escapeHtml(definition)}">$1</span>`);
+  }, escaped);
+}
+
+function simplifyQuestionText(text = "") {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (!clean) return "Read the question carefully. Choose the best answer.";
+  const chunks = clean.split(/(?<=[?.!])\s+/).filter(Boolean);
+  if (chunks.length > 1) return chunks.map((chunk, idx) => `${idx + 1}. ${chunk}`).join(" ");
+  return `First, reread the key details. Then answer: ${clean}`;
+}
+
+function getSupportHint(question = {}) {
+  const text = String(question.question || "").toLowerCase();
+  if (text.includes("evidence")) return "Look back at the passage and choose the detail that proves the answer.";
+  if (text.includes("main idea")) return "Ask: What is the passage mostly teaching or explaining?";
+  if (text.includes("infer")) return "Use clues from the text plus what you already know.";
+  if (text.includes("why")) return "Find the cause or reason in the passage before choosing.";
+  return "Underline the important words in the question, then eliminate choices that do not match the passage.";
+}
+
+
+function rephraseQuestionText(text = "") {
+  return String(text || "")
+    .replace(/What inference can be made/gi, "What can the reader figure out")
+    .replace(/Which evidence best supports/gi, "Which detail best proves")
+    .replace(/What is the most likely reason/gi, "Why did this most likely happen")
+    .replace(/Which statement best summarizes/gi, "Which sentence tells the most important ideas from");
+}
+
+function getGuidedPrompt(text = "", index = 0) {
+  const lower = String(text || "").toLowerCase();
+  if (lower.includes("paragraph")) return "💡 What changed in this paragraph?";
+  if (lower.includes("author")) return "💡 What is the author mainly describing here?";
+  if (lower.includes("theme") || lower.includes("main idea")) return "💡 What big idea keeps showing up?";
+  return index % 2 === 0 ? "💡 What is this part mostly about?" : "💡 Which detail helps you decide?";
+}
+
+function glossaryTermsForText(text = "") {
+  const lower = String(text || "").toLowerCase();
+  return Object.keys(VOCAB_SUPPORTS).filter((term) => new RegExp(`\\b${escapeRegExp(term)}\\b`, "i").test(lower));
+}
+
+function renderGlossaryPanel(text = "") {
+  if (!currentAccommodations.vocabulary_glossary && !currentAccommodations.bilingual_vocabulary) return "";
+  const terms = glossaryTermsForText(text);
+  if (!terms.length) return "";
+  return `
+    <aside class="glossary-panel">
+      <strong>Vocabulary support</strong>
+      <dl>
+        ${terms.map((term) => `
+          <div>
+            <dt>${escapeHtml(term)}${currentAccommodations.bilingual_vocabulary && BILINGUAL_VOCABULARY[term] ? ` → ${escapeHtml(BILINGUAL_VOCABULARY[term])}` : ""}</dt>
+            <dd>${escapeHtml(VOCAB_SUPPORTS[term])}</dd>
+          </div>
+        `).join("")}
+      </dl>
+    </aside>
+  `;
+}
+
+function renderAnnotationCard(key = "", label = "Note") {
+  if (!currentAccommodations.annotation_tools) return "";
+  return `
+    <label class="annotation-card">
+      <strong>📝 ${escapeHtml(label)}</strong>
+      <textarea data-annotation-key="${escapeHtml(key)}" placeholder="Add a note for yourself...">${escapeHtml(getAnnotation(key))}</textarea>
+    </label>
+  `;
+}
+
+function splitPassageChunks(text = "") {
+  const paragraphs = String(text || "").split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
+  if (paragraphs.length > 1) return paragraphs;
+  const sentences = String(text || "").match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
+  const chunks = [];
+  for (let i = 0; i < sentences.length; i += 3) chunks.push(sentences.slice(i, i + 3).join(" ").trim());
+  return chunks.filter(Boolean);
+}
+
+function renderChunkedPassage(displayPassage = "", passageKey = "passage") {
+  const chunks = splitPassageChunks(displayPassage);
+  if (!currentAccommodations.chunked_reading || chunks.length <= 1) {
+    return `<div class="passage-copy">${highlightVocabularyHtml(displayPassage)}</div>`;
+  }
+  return `<div class="passage-copy chunked-passage" data-passage-key="${escapeHtml(passageKey)}">
+    ${chunks.map((chunk, index) => `
+      <section class="chunk-card ${index >= visibleChunkCount ? "is-hidden" : ""}" data-chunk-index="${index}">
+        <span class="chunk-label">Paragraph ${index + 1} of ${chunks.length}</span>
+        <div>${highlightVocabularyHtml(chunk)}</div>
+        ${currentAccommodations.guided_reading_prompts ? `<div class="guided-prompt">${escapeHtml(getGuidedPrompt(chunk, index))}</div>` : ""}
+        ${index < chunks.length - 1 && index === visibleChunkCount - 1 ? `<button class="chunk-continue-btn" type="button" data-reveal-next-chunk>Continue</button>` : ""}
+      </section>
+    `).join("")}
+  </div>`;
+}
+
+function updateLineReaderStrip(direction = "down") {
+  const lines = Array.from(document.querySelectorAll(".passage-copy .chunk-card div, .passage-copy"));
+  const strip = document.getElementById("line-reader-strip");
+  if (!strip || !lines.length) return;
+  const delta = direction === "up" ? -1 : (direction === "down" ? 1 : 0);
+  lineReaderIndex = Math.max(0, Math.min(lines.length - 1, lineReaderIndex + delta));
+  const active = lines[lineReaderIndex];
+  lines.forEach((line, idx) => { line.style.opacity = idx === lineReaderIndex ? "1" : "0.38"; });
+  strip.textContent = active.textContent.trim().slice(0, 120) || "Focus strip ready";
+  active.scrollIntoView({ behavior: "smooth", block: "center" });
+  saveLocalWorkspaceState();
+}
+
+function cycleHighlightForElement(element, key) {
+  if (!element || !currentAccommodations.highlighting_tools) return;
+  const current = getLocalHighlight(key);
+  const next = current === highlightColor ? "" : highlightColor;
+  ["yellow", "blue", "pink"].forEach((color) => element.classList.remove(`highlight-${color}`));
+  if (next) element.classList.add(`highlight-${next}`);
+  saveLocalHighlight(key, next);
+}
+
+function applyStoredHighlight(element, key) {
+  const color = getLocalHighlight(key);
+  if (color) element.classList.add(`highlight-${color}`);
+}
+
+
+function stopSpeech() {
+  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+}
+
+function speakText(text = "") {
+  if (!("speechSynthesis" in window)) {
+    setStatus("Text-to-speech is not available in this browser.", "error");
+    return;
+  }
+  stopSpeech();
+  const utterance = new SpeechSynthesisUtterance(String(text || ""));
+  utterance.lang = spanishMode ? "es-US" : "en-US";
+  window.speechSynthesis.speak(utterance);
+  console.log("TEXT TO SPEECH STARTED");
+}
+
+function questionSpeechText(question = {}) {
+  const choices = Array.isArray(question.choices) ? question.choices : [];
+  return [question.question || "", ...choices.map((choice, idx) => `${String.fromCharCode(65 + idx)}. ${typeof choice === "string" ? choice : (choice?.text || "")}`)].join(" ");
+}
+
+function applyAccommodationUpdate(row) {
+  if (!row || !currentSession) return;
+  if (row.session_id !== currentSession.id) return;
+  if (normalizeStudentName(row.student_name) !== normalizeStudentName(currentSession.student)) return;
+  currentAccommodations = { ...currentAccommodations, ...row };
+  if (!currentAccommodations.font_size) currentAccommodations.font_size = "normal";
+  if (!currentAccommodations.color_overlay) currentAccommodations.color_overlay = "default";
+  if (localWorkspacePrefs.fontSizeOverride) currentAccommodations.font_size = localWorkspacePrefs.fontSizeOverride;
+  if (localWorkspacePrefs.colorOverlayOverride) currentAccommodations.color_overlay = localWorkspacePrefs.colorOverlayOverride;
+  if (!currentAccommodations.spanish_translation) spanishMode = false;
+  console.log("STUDENT ACCOMMODATIONS:", currentAccommodations);
+  renderAccommodationToolbar();
+  if (lessonStarted && currentLessonData) {
+    const checked = getCheckedAnswers();
+    renderQuestions(currentLessonData);
+    restoreCheckedAnswers(checked);
+    updateProgress();
+  }
+}
+
+async function subscribeToStudentAccommodations() {
+  if (!currentSession) return;
+  if (accommodationsChannel) await studentSupabase.removeChannel(accommodationsChannel);
+  const { data, error } = await studentSupabase
+    .from("student_accommodations")
+    .select("*")
+    .eq("session_id", currentSession.id)
+    .eq("student_name", currentSession.student)
+    .maybeSingle();
+  if (error) console.warn("⚠️ Could not load accommodations", error);
+  if (data) applyAccommodationUpdate(data);
+  else renderAccommodationToolbar();
+  accommodationsChannel = studentSupabase
+    .channel(`student-accommodations-${currentSession.id}-${currentSession.student}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "student_accommodations", filter: `session_id=eq.${currentSession.id}` }, (payload) => {
+      console.log("ACCOMMODATIONS UPDATED:", payload);
+      console.log("ACCOMMODATION UPDATE:", payload);
+      const row = payload?.new || payload?.old;
+      if (row) applyAccommodationUpdate(row);
+    })
+    .subscribe();
+}
+
 function showLessonActions(show = true) {
   const actions = document.getElementById("lesson-actions");
   if (actions) actions.style.display = show ? "flex" : "none";
@@ -850,6 +1586,7 @@ async function startStudentLesson() {
     setStatus("No questions available.", "error");
     return;
   }
+  await subscribeToStudentAccommodations();
   if (renderQuestions(lessonData) !== false) {
     setStatus("🟢 Class is live. Answer each question, then submit when you’re ready.");
   }
@@ -906,30 +1643,77 @@ function getQuestionSection(data, sectionName) {
   return { passage: section?.passage || "", questions: Array.isArray(section?.questions) ? section.questions : [] };
 }
 
-function renderPassage(title, passage) {
-  if (!passage) return "";
+function renderPassage(title, passage, translatedPassage = "") {
+  const displayTitle = getDisplayText(title, SPANISH_GLOSSARY[title] || "");
+  const displayPassage = getDisplayText(passage, translatedPassage);
+  if (!displayPassage) return "";
+  const passageKey = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const readButton = currentAccommodations.text_to_speech
+    ? `<button class="read-btn" type="button" data-read-text="${escapeHtml(displayPassage)}">🔊 ${escapeHtml(getDisplayText("Read Passage", "Leer lectura"))}</button>`
+    : "";
+  const highlightButton = currentAccommodations.highlighting_tools
+    ? `<button class="tool-btn" type="button" data-highlight-target="${escapeHtml(passageKey)}">Highlight passage</button>`
+    : "";
   return `
-    <article class="passage-card">
-      <h2>${escapeHtml(title)}</h2>
-      <div class="passage-copy">${escapeHtml(passage)}</div>
+    <article class="passage-card" data-highlightable="${escapeHtml(passageKey)}">
+      <h2>${escapeHtml(displayTitle)}</h2>
+      <div class="workspace-controls">${readButton}${highlightButton}</div>
+      ${renderGlossaryPanel(displayPassage)}
+      ${renderChunkedPassage(displayPassage, passageKey)}
+      ${renderAnnotationCard(`${passageKey}-note`, `${displayTitle} note`)}
     </article>
   `;
 }
 
 function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex) {
   const choices = Array.isArray(question.choices) ? question.choices : [];
+  const questionKey = `${sectionPrefix}${localIndex}`;
+  const questionText = getDisplayText(question.question || "", question.spanish_question || question.question_es || "");
+  const readButton = currentAccommodations.read_aloud || currentAccommodations.text_to_speech
+    ? `<button class="read-btn question-read-btn" type="button" data-read-text="${escapeHtml(questionSpeechText(question))}">🔊 ${escapeHtml(getDisplayText("Read Question", "Leer pregunta"))}</button>`
+    : "";
+  const simplified = currentAccommodations.simplified_supports || currentAccommodations.question_rephrase
+    ? `<div class="simplified-support"><strong>${currentAccommodations.question_rephrase ? "Rephrase" : "Simplified"}:</strong> ${escapeHtml(currentAccommodations.question_rephrase ? rephraseQuestionText(questionText) : simplifyQuestionText(questionText))}</div>`
+    : "";
+  const hint = currentAccommodations.content_supports
+    ? `<div class="support-hint"><strong>Hint:</strong> ${escapeHtml(getSupportHint(question))}</div>`
+    : "";
+  const guided = currentAccommodations.guided_reading_prompts
+    ? `<div class="guided-prompt">${escapeHtml(getGuidedPrompt(questionText, displayIndex))}</div>`
+    : "";
+  const highlightButton = currentAccommodations.highlighting_tools
+    ? `<button class="tool-btn" type="button" data-highlight-target="${escapeHtml(questionKey)}">Highlight question</button>`
+    : "";
   return `
-    <article class="question-card" style="animation-delay:${Math.min(displayIndex * 0.02, 0.22)}s">
-      <span class="question-label">Question ${displayIndex}</span>
-      <p>${escapeHtml(question.question || "")}</p>
+    <article class="question-card" data-highlightable="${escapeHtml(questionKey)}" style="animation-delay:${Math.min(displayIndex * 0.02, 0.22)}s">
+      <span class="question-label">${escapeHtml(getDisplayText("Question", "Pregunta"))} ${displayIndex}</span>
+      <div class="workspace-controls">${readButton}${highlightButton}</div>
+      <p>${highlightVocabularyHtml(questionText)}</p>
+      ${renderGlossaryPanel(questionText)}
+      ${simplified}
+      ${guided}
+      ${hint}
+      ${renderAnnotationCard(`${questionKey}-note`, `Question ${displayIndex} note`)}
       <div class="answer-list">
         ${choices.map((choice, idx) => {
           const letter = String.fromCharCode(65 + idx);
+          const choiceKey = `${questionKey}-${letter}`;
           const choiceText = typeof choice === "string" ? choice : (choice?.text || "");
+          const translatedChoice = typeof choice === "string" ? "" : (choice?.spanish || choice?.text_es || "");
+          const displayChoice = getDisplayText(choiceText, translatedChoice);
+          const eliminated = getEliminatedChoice(choiceKey);
+          const storedHighlight = getLocalHighlight(choiceKey);
+          const answerTools = currentAccommodations.eliminate_answers || currentAccommodations.highlighting_tools
+            ? `<span class="answer-choice-tools">
+                ${currentAccommodations.eliminate_answers ? `<button class="eliminate-btn" type="button" data-eliminate-choice="${escapeHtml(choiceKey)}">${eliminated ? "Restore" : "❌ Eliminate"}</button>` : ""}
+                ${currentAccommodations.highlighting_tools ? `<button class="tool-btn" type="button" data-highlight-choice="${escapeHtml(choiceKey)}">Highlight</button>` : ""}
+              </span>`
+            : "";
           return `
-            <label class="answer-choice">
+            <label class="answer-choice ${eliminated ? "is-eliminated" : ""} ${storedHighlight ? `highlight-${storedHighlight}` : ""}" data-choice-key="${escapeHtml(choiceKey)}">
               <input type="radio" name="${sectionPrefix}${localIndex}" value="${letter}">
-              <span><strong>${letter}.</strong> ${escapeHtml(choiceText)}</span>
+              <span><strong>${letter}.</strong> ${highlightVocabularyHtml(displayChoice)}</span>
+              ${answerTools}
             </label>
           `;
         }).join("")}
@@ -943,6 +1727,7 @@ function renderQuestions(lesson) {
   const submitBtn = document.getElementById("submit");
   const waiting = document.getElementById("waiting");
   const data = extractLessonData(lesson);
+  currentLessonData = data;
   const practiceSection = getQuestionSection(data, "practice");
   const crossSection = getQuestionSection(data, "cross");
   const practice = practiceSection.questions;
@@ -960,13 +1745,13 @@ function renderQuestions(lesson) {
   }
   qf.innerHTML = `
     <section class="lesson-section">
-      ${renderPassage("Practice Passage", practicePassage)}
-      ${practice.length ? `<h2 class="section-title">Practice Questions</h2>` : ""}
+      ${renderPassage("Practice Passage", practicePassage, practiceSection.spanish_passage || practiceSection.passage_es || data?.spanish_passage || data?.passage_es || "")}
+      ${practice.length ? `<h2 class="section-title">${escapeHtml(getDisplayText("Practice Questions", "Preguntas de práctica"))}</h2>` : ""}
       ${practice.map((question, index) => renderQuestionCard(question, "p", index + 1, index)).join("")}
     </section>
     <section class="lesson-section">
-      ${renderPassage("Cross-Curricular Passage", crossPassage)}
-      ${cross.length ? `<h2 class="section-title">Cross-Curricular Questions</h2>` : ""}
+      ${renderPassage("Cross-Curricular Passage", crossPassage, crossSection.spanish_passage || crossSection.passage_es || "")}
+      ${cross.length ? `<h2 class="section-title">${escapeHtml(getDisplayText("Cross-Curricular Questions", "Preguntas interdisciplinarias"))}</h2>` : ""}
       ${cross.map((question, index) => renderQuestionCard(question, "c", practice.length + index + 1, index)).join("")}
     </section>
   `;
@@ -974,6 +1759,9 @@ function renderQuestions(lesson) {
   showLessonActions(true);
   submitBtn.disabled = false;
   updateSessionLabel(`Code ${currentSession?.code || ""}`.trim());
+  renderAccommodationToolbar();
+  document.querySelectorAll("[data-highlightable]").forEach((element) => applyStoredHighlight(element, element.getAttribute("data-highlightable") || ""));
+  if (currentAccommodations.line_reader) updateLineReaderStrip("stay");
   updateProgress();
   return true;
 }
@@ -1075,11 +1863,13 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const session = await joinSession(code, student);
       currentSession = { id: session.id, lesson_id: session.lesson_id, code: session.code, student };
+      loadLocalWorkspaceState();
       updateSessionLabel(`Code ${session.code}`);
       document.getElementById("join-panel")?.setAttribute("hidden", "");
       lessonStarted = false;
       subscribeToSessionStatus(session.code);
       subscribeToHelpResponses();
+      subscribeToStudentAccommodations();
       if (session.status === "lobby") {
         waiting.style.display = "block";
         setStatus("✅ Joined! Your teacher will start soon.", "success");
@@ -1111,6 +1901,87 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeRaiseHandModal();
   });
+
+  document.addEventListener("click", (event) => {
+    const readBtn = event.target.closest?.("[data-read-text]");
+    if (readBtn) {
+      speakText(readBtn.getAttribute("data-read-text") || "");
+      return;
+    }
+    const highlightColorBtn = event.target.closest?.("[data-highlight-color]");
+    if (highlightColorBtn) {
+      highlightColor = highlightColorBtn.getAttribute("data-highlight-color") || "yellow";
+      saveLocalWorkspaceState();
+      renderAccommodationToolbar();
+      return;
+    }
+    const highlightTarget = event.target.closest?.("[data-highlight-target]");
+    if (highlightTarget) {
+      const key = highlightTarget.getAttribute("data-highlight-target") || "";
+      cycleHighlightForElement(document.querySelector(`[data-highlightable="${CSS.escape(key)}"]`), key);
+      return;
+    }
+    const highlightChoice = event.target.closest?.("[data-highlight-choice]");
+    if (highlightChoice) {
+      event.preventDefault();
+      const key = highlightChoice.getAttribute("data-highlight-choice") || "";
+      cycleHighlightForElement(document.querySelector(`[data-choice-key="${CSS.escape(key)}"]`), key);
+      return;
+    }
+    const eliminateBtn = event.target.closest?.("[data-eliminate-choice]");
+    if (eliminateBtn) {
+      event.preventDefault();
+      const key = eliminateBtn.getAttribute("data-eliminate-choice") || "";
+      const label = document.querySelector(`[data-choice-key="${CSS.escape(key)}"]`);
+      const next = !getEliminatedChoice(key);
+      saveEliminatedChoice(key, next);
+      label?.classList.toggle("is-eliminated", next);
+      eliminateBtn.textContent = next ? "Restore" : "❌ Eliminate";
+      return;
+    }
+    if (event.target.closest?.("[data-reveal-next-chunk]")) {
+      visibleChunkCount += 1;
+      saveLocalWorkspaceState();
+      const checked = getCheckedAnswers();
+      if (currentLessonData) renderQuestions(currentLessonData);
+      restoreCheckedAnswers(checked);
+      return;
+    }
+    const lineMove = event.target.closest?.("[data-line-reader-move]");
+    if (lineMove) {
+      updateLineReaderStrip(lineMove.getAttribute("data-line-reader-move") || "down");
+      return;
+    }
+    if (event.target.closest?.("#toggle-spanish-mode")) {
+      spanishMode = !spanishMode;
+      if (spanishMode) console.log("SPANISH MODE ENABLED");
+      const checked = getCheckedAnswers();
+      if (currentLessonData) renderQuestions(currentLessonData);
+      restoreCheckedAnswers(checked);
+      updateProgress();
+    }
+  });
+
+  document.addEventListener("change", (event) => {
+    if (event.target?.id === "student-font-size-control") {
+      currentAccommodations.font_size = event.target.value;
+      saveLocalWorkspaceState();
+      renderAccommodationToolbar();
+      return;
+    }
+    if (event.target?.id === "student-overlay-control") {
+      currentAccommodations.color_overlay = event.target.value;
+      saveLocalWorkspaceState();
+      renderAccommodationToolbar();
+    }
+  });
+
+  document.addEventListener("input", (event) => {
+    const note = event.target.closest?.("[data-annotation-key]");
+    if (note) saveAnnotation(note.getAttribute("data-annotation-key") || "", note.value || "");
+  });
+
+  window.addEventListener("beforeunload", stopSpeech);
 
   document.getElementById("submit").onclick = async () => {
     const submitBtn = document.getElementById("submit");

@@ -2278,6 +2278,228 @@
         padding: 0;
       }
     }
+
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(8px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+
+    .modal-overlay.is-open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-overlay[hidden] {
+      display: none;
+    }
+
+    .accommodation-modal-card {
+      width: min(100%, 680px);
+      max-height: min(88vh, 900px);
+      overflow-y: auto;
+      padding: 24px;
+      border: 1px solid rgba(124, 58, 237, 0.16);
+      border-radius: 26px;
+      background: linear-gradient(180deg, #ffffff 0%, #faf5ff 100%);
+      box-shadow: 0 30px 80px rgba(15, 23, 42, 0.28);
+    }
+
+    .accommodation-modal-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .accommodation-modal-head h2 {
+      margin: 0;
+      color: #1e1b4b;
+      font-size: 1.45rem;
+      letter-spacing: -0.03em;
+    }
+
+    .accommodation-modal-head p {
+      margin: 5px 0 0;
+      color: #64748b;
+      font-weight: 750;
+    }
+
+    .accommodation-grid {
+      display: grid;
+      gap: 12px;
+      margin: 18px 0;
+    }
+
+    .accommodation-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px;
+      border: 1px solid #e2e8f0;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.82);
+      cursor: pointer;
+    }
+
+    .accommodation-toggle span:first-child {
+      display: grid;
+      gap: 2px;
+      color: #172033;
+      font-weight: 950;
+    }
+
+    .accommodation-toggle small {
+      color: #64748b;
+      font-weight: 750;
+    }
+
+    .accommodation-toggle input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .toggle-pill {
+      width: 52px;
+      height: 30px;
+      position: relative;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: #cbd5e1;
+      transition: background 0.18s ease;
+    }
+
+    .toggle-pill::after {
+      content: "";
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      background: #ffffff;
+      box-shadow: 0 4px 10px rgba(15, 23, 42, 0.18);
+      transition: transform 0.18s ease;
+    }
+
+    .accommodation-toggle input:checked + .toggle-pill {
+      background: linear-gradient(135deg, #8b5cf6, #5b21b6);
+    }
+
+    .accommodation-toggle input:checked + .toggle-pill::after {
+      transform: translateX(22px);
+    }
+
+    .accommodation-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .accommodation-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 8px;
+      border-radius: 999px;
+      color: #4c1d95;
+      background: #ede9fe;
+      font-size: 0.72rem;
+      font-weight: 950;
+    }
+
+
+    .accommodation-panel-tools {
+      display: grid;
+      gap: 12px;
+      margin: 14px 0;
+    }
+
+    .accommodation-search-wrap {
+      display: grid;
+      gap: 6px;
+      color: #4c1d95;
+      font-size: 0.76rem;
+      font-weight: 950;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .accommodation-search-wrap input,
+    .accommodation-select {
+      min-height: 42px;
+      border: 1px solid #dbe3ee;
+      border-radius: 13px;
+      padding: 10px 12px;
+      color: #172033;
+      background: #ffffff;
+      font: inherit;
+      font-weight: 750;
+    }
+
+    .accommodation-presets {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .accommodation-group {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid rgba(124, 58, 237, 0.12);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.58);
+    }
+
+    .accommodation-group-title {
+      margin: 0;
+      color: #312e81;
+      font-size: 0.82rem;
+      font-weight: 950;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .accommodation-select-row {
+      display: grid;
+      gap: 8px;
+      padding: 14px;
+      border: 1px solid #e2e8f0;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.82);
+    }
+
+    .accommodation-select-row strong {
+      color: #172033;
+      font-weight: 950;
+    }
+
+    .accommodation-select-row small {
+      color: #64748b;
+      font-weight: 750;
+    }
+
+    .accommodation-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
   </style>
 </head>
 <body>
@@ -2589,6 +2811,35 @@
         </section>
       </div>
       <aside id="student-review-drawer" class="student-review-drawer is-hidden" aria-label="Student review panel"></aside>
+      <div id="accommodations-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="accommodations-title" hidden>
+        <div class="accommodation-modal-card">
+          <div class="accommodation-modal-head">
+            <div>
+              <h2 id="accommodations-title">Student Accommodations</h2>
+              <p id="accommodations-subtitle">Apply live supports for this student.</p>
+            </div>
+            <button class="live-compact-btn" type="button" data-close-accommodations>Close</button>
+          </div>
+          <div class="accommodation-panel-tools">
+            <label class="accommodation-search-wrap" for="accommodation-search">
+              <span>Search supports</span>
+              <input id="accommodation-search" type="search" placeholder="Search accommodations...">
+            </label>
+            <div class="accommodation-presets" aria-label="Quick accommodation presets">
+              <button class="live-compact-btn" type="button" data-accommodation-preset="dyslexia">Dyslexia Supports</button>
+              <button class="live-compact-btn" type="button" data-accommodation-preset="eb">EB Supports</button>
+              <button class="live-compact-btn" type="button" data-accommodation-preset="intervention">Intervention Supports</button>
+              <button class="live-compact-btn" type="button" data-accommodation-preset="minimal">Minimal Supports</button>
+            </div>
+          </div>
+          <div id="accommodations-form" class="accommodation-grid"></div>
+          <p id="accommodations-status" class="live-status-message"></p>
+          <div class="accommodation-actions">
+            <button class="live-compact-btn" type="button" data-close-accommodations>Cancel</button>
+            <button id="save-accommodations-btn" class="live-compact-btn primary" type="button">Save Accommodations</button>
+          </div>
+        </div>
+      </div>
 
           </section>
         </section>
@@ -2716,9 +2967,12 @@
     let liveResponsesChannel = null;
     let liveParticipantsChannel = null;
     let liveHelpRequestsChannel = null;
+    let liveAccommodationsChannel = null;
+    let activeAccommodationStudent = "";
     window.__liveParticipants = [];
     window.__liveResponses = [];
     window.__liveHelpRequests = [];
+    window.__liveAccommodations = [];
     let currentLessonId = null;
     let currentLiveSessionId = null;
     let currentLiveCode = "";
@@ -3298,6 +3552,218 @@
       return `${parts[0][0] || ""}${parts[parts.length - 1][0] || ""}`.toUpperCase();
     }
 
+    const ACCOMMODATION_DEFINITIONS = [
+      { key: "text_to_speech", label: "Text-to-Speech", group: "Audio & language", description: "Student can read passages, questions, and answer choices aloud." },
+      { key: "spanish_translation", label: "Spanish Translation", group: "Audio & language", description: "Student can switch lesson text between English and Spanish overlays." },
+      { key: "bilingual_vocabulary", label: "Bilingual Vocabulary", group: "Audio & language", description: "Shows Spanish vocabulary support without translating the full assessment." },
+      { key: "content_supports", label: "Content Supports", group: "Instructional supports", description: "Adds vocabulary highlights and contextual question hints." },
+      { key: "simplified_supports", label: "Simplified Supports", group: "Instructional supports", description: "Shows chunked, clearer wording without changing rigor or answers." },
+      { key: "question_rephrase", label: "Question Rephrase Supports", group: "Instructional supports", description: "Adds a STAAR-style rephrase beneath questions." },
+      { key: "guided_reading_prompts", label: "Guided Reading Prompts", group: "Instructional supports", description: "Adds light comprehension prompts that do not reveal answers." },
+      { key: "vocabulary_glossary", label: "Vocabulary Glossary", group: "Instructional supports", description: "Makes difficult words interactive with student-friendly definitions." },
+      { key: "read_aloud", label: "Read Aloud", group: "Audio & language", description: "Adds a read-question button to each question." },
+      { key: "extended_time", label: "Extended Time", group: "Timing & focus", description: "Flags this student for additional time when timers are enabled." },
+      { key: "highlighted_vocabulary", label: "Highlighted Vocabulary", group: "Instructional supports", description: "Highlights important academic vocabulary in the passage." },
+      { key: "line_reader", label: "Line Reader / Focus Mode", group: "Reading access", description: "Adds a movable reading strip and dims surrounding text." },
+      { key: "chunked_reading", label: "Chunked Passage Mode", group: "Reading access", description: "Breaks passages into manageable chunks with checkpoints." },
+      { key: "dyslexia_font", label: "Dyslexia-Friendly Font", group: "Reading access", description: "Uses a Lexend/OpenDyslexic-style font in the student workspace." },
+      { key: "highlighting_tools", label: "Highlighting Tool", group: "Student tools", description: "Lets students highlight passages and choices locally." },
+      { key: "eliminate_answers", label: "Eliminate Answer Choices", group: "Student tools", description: "Adds recoverable eliminate controls to each answer choice." },
+      { key: "annotation_tools", label: "Annotation Tool", group: "Student tools", description: "Lets students save lightweight sticky notes during the session." },
+      { key: "calm_testing_mode", label: "Calm Testing Mode", group: "Testing environment", description: "Softens colors, spacing, and motion for lower stimulation." },
+      { key: "reduced_distraction", label: "Reduced Distraction Mode", group: "Testing environment", description: "Hides nonessential visual elements while preserving live tools." },
+      { key: "font_size", label: "Font Size", group: "Reading access", type: "select", defaultValue: "normal", options: [
+        { value: "small", label: "Small" },
+        { value: "normal", label: "Normal" },
+        { value: "large", label: "Large" },
+        { value: "extra_large", label: "Extra Large" }
+      ], description: "Sets the starting student font size; students can adjust during the session." },
+      { key: "color_overlay", label: "Color Overlay / Reading Background", group: "Testing environment", type: "select", defaultValue: "default", options: [
+        { value: "default", label: "Default" },
+        { value: "cream", label: "Cream" },
+        { value: "soft_blue", label: "Soft Blue" },
+        { value: "soft_gray", label: "Soft Gray" },
+        { value: "dark", label: "Dark Mode" }
+      ], description: "Applies a reading background only inside the student workspace." }
+    ];
+
+    const ACCOMMODATION_PRESETS = {
+      dyslexia: { dyslexia_font: true, line_reader: true, chunked_reading: true, font_size: "large", color_overlay: "cream", highlighting_tools: true, vocabulary_glossary: true, reduced_distraction: true },
+      eb: { spanish_translation: true, bilingual_vocabulary: true, vocabulary_glossary: true, read_aloud: true, content_supports: true, guided_reading_prompts: true, color_overlay: "soft_blue" },
+      intervention: { chunked_reading: true, guided_reading_prompts: true, question_rephrase: true, content_supports: true, highlighting_tools: true, annotation_tools: true, eliminate_answers: true },
+      minimal: { font_size: "normal", color_overlay: "default" }
+    };
+
+    function blankAccommodations(sessionId = getCurrentLiveSessionId(), studentName = "") {
+      return ACCOMMODATION_DEFINITIONS.reduce((row, item) => {
+        row[item.key] = item.type === "select" ? item.defaultValue : false;
+        return row;
+      }, { session_id: sessionId, student_name: studentName });
+    }
+
+    function getAccommodationForStudent(studentName = "") {
+      const normalized = cleanText(studentName).toLowerCase();
+      return (window.__liveAccommodations || []).find((row) =>
+        cleanText(row.student_name || "").toLowerCase() === normalized
+      ) || blankAccommodations(getCurrentLiveSessionId(), studentName);
+    }
+
+    function getEnabledAccommodationLabels(row = {}) {
+      return ACCOMMODATION_DEFINITIONS.filter((item) => {
+        if (item.type === "select") return row?.[item.key] && row[item.key] !== item.defaultValue;
+        return row?.[item.key];
+      }).map((item) => {
+        if (item.type !== "select") return item.label;
+        const selected = item.options.find((option) => option.value === row[item.key]);
+        return `${item.label}: ${selected?.label || row[item.key]}`;
+      });
+    }
+
+    function renderAccommodationChips(studentName = "") {
+      const labels = getEnabledAccommodationLabels(getAccommodationForStudent(studentName));
+      return labels.length
+        ? `<div class="accommodation-summary">${labels.map((label) => `<span class="accommodation-chip">${escapeHtml(label)}</span>`).join("")}</div>`
+        : `<div class="accommodation-summary"><span class="mini-badge">No accommodations</span></div>`;
+    }
+
+    function renderAccommodationField(item, row) {
+      if (item.type === "select") {
+        return `
+          <label class="accommodation-select-row" data-accommodation-item="${escapeHtml(`${item.label} ${item.description}`)}">
+            <strong>${escapeHtml(item.label)}</strong>
+            <small>${escapeHtml(item.description)}</small>
+            <select class="accommodation-select" data-accommodation-select="${escapeHtml(item.key)}">
+              ${item.options.map((option) => `<option value="${escapeHtml(option.value)}" ${String(row?.[item.key] || item.defaultValue) === option.value ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+            </select>
+          </label>
+        `;
+      }
+      return `
+        <label class="accommodation-toggle" data-accommodation-item="${escapeHtml(`${item.label} ${item.description}`)}">
+          <span>${escapeHtml(item.label)}<small>${escapeHtml(item.description)}</small></span>
+          <input type="checkbox" data-accommodation-key="${escapeHtml(item.key)}" ${row?.[item.key] ? "checked" : ""}>
+          <span class="toggle-pill" aria-hidden="true"></span>
+        </label>
+      `;
+    }
+
+    function renderAccommodationForm(row, query = "") {
+      const form = document.getElementById("accommodations-form");
+      if (!form) return;
+      const normalizedQuery = cleanText(query).toLowerCase();
+      const visibleItems = ACCOMMODATION_DEFINITIONS.filter((item) => !normalizedQuery || `${item.label} ${item.description} ${item.group}`.toLowerCase().includes(normalizedQuery));
+      const groups = Array.from(new Set(visibleItems.map((item) => item.group)));
+      form.innerHTML = groups.length ? groups.map((group) => {
+        const items = visibleItems.filter((item) => item.group === group);
+        return `
+          <section class="accommodation-group">
+            <h3 class="accommodation-group-title">${escapeHtml(group)}</h3>
+            ${items.map((item) => renderAccommodationField(item, row)).join("")}
+          </section>
+        `;
+      }).join("") : `<p class="live-empty-copy">No supports match that search.</p>`;
+    }
+
+    function openAccommodationsModal(studentName = "") {
+      activeAccommodationStudent = cleanText(studentName || "Student");
+      const modal = document.getElementById("accommodations-modal");
+      const title = document.getElementById("accommodations-title");
+      const subtitle = document.getElementById("accommodations-subtitle");
+      const status = document.getElementById("accommodations-status");
+      const search = document.getElementById("accommodation-search");
+      if (!modal) return;
+      const row = getAccommodationForStudent(activeAccommodationStudent);
+      if (title) title.textContent = `${activeAccommodationStudent} — Accommodations`;
+      if (subtitle) subtitle.textContent = "Toggle supports before or during the live session. Students update without refreshing.";
+      if (status) status.textContent = "";
+      if (search) search.value = "";
+      renderAccommodationForm(row);
+      modal.hidden = false;
+      requestAnimationFrame(() => modal.classList.add("is-open"));
+    }
+
+    function closeAccommodationsModal() {
+      const modal = document.getElementById("accommodations-modal");
+      if (!modal) return;
+      modal.classList.remove("is-open");
+      window.setTimeout(() => {
+        if (!modal.classList.contains("is-open")) modal.hidden = true;
+      }, 200);
+    }
+
+    async function saveActiveAccommodations() {
+      const sessionId = getCurrentLiveSessionId();
+      if (!sessionId || !activeAccommodationStudent) return;
+      const saveBtn = document.getElementById("save-accommodations-btn");
+      const status = document.getElementById("accommodations-status");
+      const existing = getAccommodationForStudent(activeAccommodationStudent);
+      const payload = { session_id: sessionId, student_name: activeAccommodationStudent };
+      ACCOMMODATION_DEFINITIONS.forEach((item) => {
+        payload[item.key] = existing?.[item.key] ?? (item.type === "select" ? item.defaultValue : false);
+      });
+      document.querySelectorAll("[data-accommodation-key]").forEach((input) => {
+        payload[input.getAttribute("data-accommodation-key")] = input.checked === true;
+      });
+      document.querySelectorAll("[data-accommodation-select]").forEach((select) => {
+        payload[select.getAttribute("data-accommodation-select")] = select.value;
+      });
+      if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Saving..."; }
+      try {
+        const { data, error } = await supabaseClient
+          .from("student_accommodations")
+          .upsert(payload, { onConflict: "session_id,student_name" })
+          .select("*")
+          .single();
+        if (error) throw error;
+        upsertLocalAccommodation(data || payload);
+        if (status) status.textContent = "✅ Accommodations saved and pushed live.";
+        renderParticipantsLobby();
+        console.log("ACCOMMODATIONS UPDATED:", data || payload);
+        console.log("ACCOMMODATION UPDATE:", data || payload);
+      } catch (error) {
+        console.error("❌ ACCOMMODATIONS SAVE ERROR:", error);
+        if (status) status.textContent = `❌ ${error.message || "Could not save accommodations."}`;
+      } finally {
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "Save Accommodations"; }
+      }
+    }
+
+    function upsertLocalAccommodation(row) {
+      if (!row) return;
+      const list = window.__liveAccommodations || [];
+      const normalized = cleanText(row.student_name || "").toLowerCase();
+      const idx = list.findIndex((item) => item.id === row.id || (
+        item.session_id === row.session_id && cleanText(item.student_name || "").toLowerCase() === normalized
+      ));
+      if (idx >= 0) list[idx] = row;
+      else list.push(row);
+      window.__liveAccommodations = list;
+    }
+
+    async function subscribeToAccommodations(sessionId) {
+      if (liveAccommodationsChannel) await supabaseClient.removeChannel(liveAccommodationsChannel);
+      window.__liveAccommodations = [];
+      const { data, error } = await supabaseClient.from("student_accommodations").select("*").eq("session_id", sessionId);
+      if (error) console.warn("⚠️ Could not load accommodations", error);
+      window.__liveAccommodations = data || [];
+      renderParticipantsLobby();
+      liveAccommodationsChannel = supabaseClient
+        .channel(`accommodations-${sessionId}`)
+        .on("postgres_changes", { event: "*", schema: "public", table: "student_accommodations", filter: `session_id=eq.${sessionId}` }, (payload) => {
+          console.log("ACCOMMODATIONS UPDATED:", payload);
+          console.log("ACCOMMODATION UPDATE:", payload);
+          if (payload.eventType === "DELETE") {
+            window.__liveAccommodations = (window.__liveAccommodations || []).filter((row) => row.id !== payload.old?.id);
+          } else {
+            upsertLocalAccommodation(payload.new);
+          }
+          renderParticipantsLobby();
+          updateDashboard();
+        })
+        .subscribe();
+    }
+
+
     function formatResponseSummary(response) {
       const score = scoreLiveResponse(response);
       const rawName = cleanText(response?.student_name || "Student");
@@ -3383,7 +3849,8 @@
                   <div class="student-row-body">
                     <div class="student-row-name">${escapeHtml(name)}</div>
                     <div class="student-row-meta">${escapeHtml(meta)}</div>
-                    <div class="badge-row">${scoreBadge}</div>
+                    <div class="badge-row">${scoreBadge}<button class="live-compact-btn" type="button" data-open-accommodations="${escapeHtml(name)}">Accommodations</button></div>
+                    ${renderAccommodationChips(name)}
                   </div>
                 </div>
               </li>
@@ -4065,7 +4532,9 @@
         }).length;
         const correctCount = Math.max(0, answeredCount - missed.length);
         const percent = answeredCount ? Math.round((correctCount / answeredCount) * 100) : null;
-        return { name: cleanText(response.student_name || "Student"), missed, answeredCount, correctCount, percent };
+        const name = cleanText(response.student_name || "Student");
+        const accommodations = getEnabledAccommodationLabels(getAccommodationForStudent(name));
+        return { name, missed, answeredCount, correctCount, percent, accommodations };
       });
 
       const below60 = studentSummaries.filter((student) => student.percent !== null && student.percent < 60);
@@ -4095,7 +4564,12 @@
 
       renderReportCards("report-missed-questions", missedQuestions, totalResponses ? "No missed questions yet." : "Start a live session to collect responses.");
       renderReportCards("report-weak-teks", weakTeks, totalResponses ? "No weak TEKS yet." : "No weak TEKS yet.");
-      renderList("report-below-60", below60.map((student) => `${student.name} — ${student.percent}% (${student.correctCount}/${student.answeredCount})`), totalResponses ? "No students below 60%." : "No student data yet.");
+      renderReportCards("report-below-60", below60.map((student) => `
+        <li class="report-detail-card">
+          <strong>${escapeHtml(student.name)} — ${student.percent}% (${student.correctCount}/${student.answeredCount})</strong>
+          <span>Accommodations: ${escapeHtml(student.accommodations.length ? student.accommodations.join(", ") : "None")}</span>
+        </li>
+      `), totalResponses ? "No students below 60%." : "No student data yet.");
       renderReportCards("report-small-groups", smallGroups, totalResponses ? "No small groups needed yet." : "Small groups will appear after submissions.");
     }
 
@@ -4150,6 +4624,10 @@
       if (liveHelpRequestsChannel) {
         await supabaseClient.removeChannel(liveHelpRequestsChannel);
         liveHelpRequestsChannel = null;
+      }
+      if (liveAccommodationsChannel) {
+        await supabaseClient.removeChannel(liveAccommodationsChannel);
+        liveAccommodationsChannel = null;
       }
     }
 
@@ -6311,6 +6789,13 @@ Create your second version now.`;
       const questions = getAnnotatedLiveQuestions();
       const score = scoreLiveResponse(response);
       const missed = getMissedQuestionDetails(response, questions);
+      const accommodationLabels = getEnabledAccommodationLabels(getAccommodationForStudent(response.student_name || "Student"));
+      const accommodationMarkup = `
+        <div class="student-miss-card">
+          <strong>Accommodations</strong>
+          <span>${escapeHtml(accommodationLabels.length ? accommodationLabels.join(", ") : "None")}</span>
+        </div>
+      `;
       const missedMarkup = missed.length
         ? `<ul class="student-miss-list">${missed.map((miss) => `
             <li class="student-miss-card">
@@ -6332,6 +6817,7 @@ Create your second version now.`;
           </div>
           <button class="live-compact-btn" type="button" data-close-student-review>Close</button>
         </div>
+        ${accommodationMarkup}
         ${missedMarkup}
       `;
       drawer.classList.remove("is-hidden");
@@ -6467,6 +6953,39 @@ Create your second version now.`;
           return;
         }
 
+        const accommodationsTarget = target.closest("[data-open-accommodations]");
+        if (accommodationsTarget) {
+          openAccommodationsModal(accommodationsTarget.getAttribute("data-open-accommodations") || "Student");
+          return;
+        }
+
+        if (target.closest("[data-close-accommodations]")) {
+          closeAccommodationsModal();
+          return;
+        }
+
+        const presetTarget = target.closest("[data-accommodation-preset]");
+        if (presetTarget) {
+          const preset = ACCOMMODATION_PRESETS[presetTarget.getAttribute("data-accommodation-preset") || ""];
+          if (preset) {
+            const search = document.getElementById("accommodation-search");
+            if (search) search.value = "";
+            renderAccommodationForm(getAccommodationForStudent(activeAccommodationStudent));
+            document.querySelectorAll("[data-accommodation-key]").forEach((input) => { input.checked = false; });
+            document.querySelectorAll("[data-accommodation-select]").forEach((select) => {
+              const item = ACCOMMODATION_DEFINITIONS.find((definition) => definition.key === select.getAttribute("data-accommodation-select"));
+              if (item?.defaultValue) select.value = item.defaultValue;
+            });
+            Object.entries(preset).forEach(([key, value]) => {
+              const checkbox = document.querySelector(`[data-accommodation-key="${CSS.escape(key)}"]`);
+              const select = document.querySelector(`[data-accommodation-select="${CSS.escape(key)}"]`);
+              if (checkbox) checkbox.checked = value === true;
+              if (select) select.value = String(value);
+            });
+          }
+          return;
+        }
+
         const weakSkillReteachTarget = target.closest("[data-generate-reteach-skill]");
         if (weakSkillReteachTarget) {
           void generateSmallGroupLessonFromWeakSkill({
@@ -6573,6 +7092,13 @@ Create your second version now.`;
 
 
       endBtn?.addEventListener("click", handleEndSessionClick);
+      document.getElementById("save-accommodations-btn")?.addEventListener("click", saveActiveAccommodations);
+      document.getElementById("accommodations-modal")?.addEventListener("click", (event) => {
+        if (event.target === event.currentTarget) closeAccommodationsModal();
+      });
+      document.getElementById("accommodation-search")?.addEventListener("input", (event) => {
+        renderAccommodationForm(getAccommodationForStudent(activeAccommodationStudent), event.target.value || "");
+      });
 
       copyLinkBtn?.addEventListener("click", async () => {
         await navigator.clipboard.writeText(`${window.location.origin}/student`);
@@ -6645,6 +7171,7 @@ Create your second version now.`;
           subscribeToResponses(session.id);
           console.log("➡️ SUBSCRIBING TO HELP REQUESTS", session.id);
           await subscribeToHelpRequests(session.id);
+          await subscribeToAccommodations(session.id);
         } catch (error) {
           sessionStatus.textContent = `❌ ${error.message || "Could not start live class."}`;
         } finally {
