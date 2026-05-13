@@ -357,6 +357,36 @@
       background: #fff1f2;
     }
 
+    .teacher-response-card {
+      display: none;
+      margin: 14px 0 0;
+      padding: 16px 18px;
+      border: 1px solid rgba(124, 92, 255, 0.22);
+      border-radius: 18px;
+      background: #f5f3ff;
+      color: #312e81;
+      box-shadow: 0 12px 28px rgba(91, 33, 182, 0.08);
+      animation: fadeUp 0.28s ease both;
+    }
+
+    .teacher-response-card.is-visible {
+      display: block;
+    }
+
+    .teacher-response-card strong {
+      display: block;
+      margin-bottom: 6px;
+      color: #4c1d95;
+      font-weight: 950;
+    }
+
+    .teacher-response-card p {
+      margin: 0;
+      color: #312e81;
+      font-weight: 800;
+      line-height: 1.5;
+    }
+
     .waiting-card {
       display: none;
       margin-top: 16px;
@@ -563,6 +593,7 @@
     </section>
 
     <div id="status" role="status" aria-live="polite"></div>
+    <section id="teacher-response-card" class="teacher-response-card" aria-live="polite"></section>
     <div id="waiting" class="waiting-card">✨ You’re in! Waiting for your teacher to start the lesson...</div>
 
     <section id="progress-wrap" class="progress-wrap" aria-label="Lesson progress">
@@ -624,8 +655,10 @@ let currentSession = null;
 let hasSubmitted = false;
 let sessionStatusChannel = null;
 let sessionStatusInterval = null;
+let helpRequestsChannel = null;
 let lessonStarted = false;
 let handRaised = false;
+let currentHelpRequest = null;
 let totalQuestionCount = 0;
 
 function escapeHtml(value = "") {
@@ -647,6 +680,81 @@ function setStatus(message, type = "default") {
 function updateSessionLabel(text) {
   const label = document.getElementById("student-session-label");
   if (label) label.textContent = text;
+}
+
+function renderTeacherResponse(request = currentHelpRequest) {
+  const card = document.getElementById("teacher-response-card");
+  if (!card) return;
+  const response = String(request?.teacher_response || "").trim();
+  if (!response) {
+    card.classList.remove("is-visible");
+    card.innerHTML = "";
+    return;
+  }
+  const respondedAt = request?.responded_at
+    ? new Date(request.responded_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : "Just now";
+  card.innerHTML = `
+    <strong>👩‍🏫 Teacher Response</strong>
+    <p>"${escapeHtml(response)}"</p>
+    <small>${escapeHtml(respondedAt)}</small>
+  `;
+  card.classList.add("is-visible");
+}
+
+function applyHelpRequestUpdate(request) {
+  if (!request || !currentSession) return;
+  if (request.session_id !== currentSession.id) return;
+  if (String(request.student_name || "").trim().toLowerCase() !== String(currentSession.student || "").trim().toLowerCase()) return;
+  currentHelpRequest = request;
+  renderTeacherResponse(currentHelpRequest);
+  const handBtn = document.getElementById("raise-hand");
+  if (request.resolved === true) {
+    handRaised = false;
+    if (handBtn) {
+      handBtn.disabled = false;
+      handBtn.textContent = "✋ Raise Hand";
+    }
+    return;
+  }
+  handRaised = true;
+  if (handBtn) {
+    handBtn.disabled = true;
+    handBtn.textContent = request.teacher_response ? "Teacher Responded" : "Hand Raised";
+  }
+}
+
+async function subscribeToHelpResponses() {
+  if (!currentSession) return;
+  if (helpRequestsChannel) await studentSupabase.removeChannel(helpRequestsChannel);
+  const studentName = currentSession.student;
+  const { data, error } = await studentSupabase
+    .from("help_requests")
+    .select("*")
+    .eq("session_id", currentSession.id)
+    .eq("student_name", studentName)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (error) {
+    console.warn("⚠️ Could not load student help request updates", error);
+  }
+  if (Array.isArray(data) && data[0]) applyHelpRequestUpdate(data[0]);
+
+  helpRequestsChannel = studentSupabase
+    .channel(`student-help-${currentSession.id}-${studentName}`)
+    .on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "help_requests",
+      filter: `session_id=eq.${currentSession.id}`
+    }, (payload) => {
+      console.log("STUDENT HELP REQUEST UPDATE:", payload);
+      const row = payload?.new || payload?.old;
+      if (row) applyHelpRequestUpdate(row);
+    })
+    .subscribe((status) => {
+      console.log("STUDENT HELP CHANNEL STATUS:", status);
+    });
 }
 
 function showLessonActions(show = true) {
@@ -903,14 +1011,16 @@ async function sendHelpRequest() {
   handBtn.textContent = "Hand Raised";
 
   try {
-    const { error } = await studentSupabase.from("help_requests").insert({
+    const { data, error } = await studentSupabase.from("help_requests").insert({
       session_id: currentSession.id,
       student_name: currentSession.student,
       message
-    });
+    }).select("*").single();
     if (error) throw error;
+    currentHelpRequest = data;
     handRaised = true;
     closeRaiseHandModal();
+    renderTeacherResponse(currentHelpRequest);
     setStatus("✋ Hand raised. Your teacher can see you need help.", "success");
   } catch (e) {
     console.error(e);
@@ -921,6 +1031,7 @@ async function sendHelpRequest() {
       handBtn.textContent = "Hand Raised";
       closeRaiseHandModal();
       setStatus("✋ Your hand is already raised. Your teacher can see it.", "success");
+      subscribeToHelpResponses();
       return;
     }
     setStatus("Could not raise hand. Try again.", "error");
@@ -968,6 +1079,7 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("join-panel")?.setAttribute("hidden", "");
       lessonStarted = false;
       subscribeToSessionStatus(session.code);
+      subscribeToHelpResponses();
       if (session.status === "lobby") {
         waiting.style.display = "block";
         setStatus("✅ Joined! Your teacher will start soon.", "success");
