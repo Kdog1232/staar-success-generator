@@ -963,6 +963,7 @@ let handRaised = false;
 let currentHelpRequest = null;
 let totalQuestionCount = 0;
 let currentLessonData = null;
+const LIVE_SESSION_SELECT = "id,lesson_id,code,is_active,status,allow_join,lesson_data";
 const DEFAULT_ACCOMMODATIONS = {
   text_to_speech: false,
   spanish_translation: false,
@@ -1737,7 +1738,7 @@ async function joinSession(code, studentName) {
     console.log("[joinSession] BEFORE session lookup", { joinTraceId, code });
     const { data: session, error: sessionError, status: sessionStatus, statusText: sessionStatusText } = await studentSupabase
       .from("sessions")
-      .select("id,lesson_id,code,is_active,status,allow_join")
+      .select(LIVE_SESSION_SELECT)
       .eq("code", code)
       .single();
     console.log("[joinSession] AFTER session lookup", { joinTraceId, session, sessionError, sessionStatus, sessionStatusText });
@@ -1919,21 +1920,65 @@ function rerenderLessonPreservingState() {
   }, 120);
 }
 
-async function startStudentLesson() {
+async function startStudentLesson(sessionUpdate = null) {
   if (lessonStarted || !currentSession) return;
+  if (sessionUpdate) {
+    currentSession = {
+      ...currentSession,
+      id: sessionUpdate.id || currentSession.id,
+      lesson_id: sessionUpdate.lesson_id || currentSession.lesson_id,
+      code: sessionUpdate.code || currentSession.code,
+      status: sessionUpdate.status || currentSession.status,
+      lesson_data: sessionUpdate.lesson_data || currentSession.lesson_data
+    };
+  }
+
+  console.log("LIVE SESSION STATUS:", currentSession.status);
+  console.log("SESSION PAYLOAD:", currentSession);
+  console.log("SESSION LESSON DATA:", currentSession.lesson_data);
+
   lessonStarted = true;
-  clearSessionStatusPolling();
-  const { data: lessonRow, error } = await studentSupabase.from("lessons").select("data").eq("id", currentSession.lesson_id).maybeSingle();
-  const lessonData = extractLessonData(lessonRow);
-  console.log("LESSON LOOKUP:", { lessonRow, lessonData, error, currentSession });
-  if (error || !lessonData) {
+
+  let lessonData = extractLessonData(currentSession.lesson_data);
+  let sessionLookup = null;
+  let sessionError = null;
+
+  if (!lessonData) {
+    const sessionResult = await studentSupabase
+      .from("sessions")
+      .select(LIVE_SESSION_SELECT)
+      .eq("code", currentSession.code)
+      .maybeSingle();
+    sessionLookup = sessionResult.data;
+    sessionError = sessionResult.error;
+    console.log("SESSION PAYLOAD:", sessionLookup);
+    console.log("SESSION LESSON DATA:", sessionLookup?.lesson_data);
+    if (!sessionError && sessionLookup) {
+      currentSession = {
+        ...currentSession,
+        ...sessionLookup,
+        student: currentSession.student
+      };
+      lessonData = extractLessonData(sessionLookup.lesson_data);
+    }
+  }
+
+  console.log("LESSON LOOKUP:", { sessionLookup, lessonData, error: sessionError, currentSession });
+  if (sessionError || !lessonData) {
     lessonStarted = false;
-    setStatus("No questions available.", "error");
+    const waiting = document.getElementById("waiting");
+    if (waiting) waiting.style.display = "none";
+    setStatus("⚠️ Your teacher started the live session, but the lesson did not arrive. Ask your teacher to restart the live session.", "error");
+    console.error("LIVE SESSION STARTED WITHOUT LESSON DATA", { sessionError, currentSession, sessionLookup });
     return;
   }
+  clearSessionStatusPolling();
   await fetchStudentAccommodations();
+  console.log("ABOUT TO RENDER LESSON");
   if (renderQuestions(lessonData) !== false) {
     setStatus("🟢 Class is live. Answer each question, then submit when you’re ready.");
+  } else {
+    lessonStarted = false;
   }
 }
 
@@ -1946,13 +1991,17 @@ function clearSessionStatusPolling() {
 
 async function checkSessionStatus() {
   if (!currentSession || lessonStarted) return;
-  const { data: session, error } = await studentSupabase.from("sessions").select("status").eq("code", currentSession.code).single();
+  const { data: session, error } = await studentSupabase.from("sessions").select(LIVE_SESSION_SELECT).eq("code", currentSession.code).single();
   if (error) {
     console.error("[checkSessionStatus] Session status lookup failed", { error, currentSession });
     return;
   }
   console.log("SESSION STATUS CHECK:", session);
-  if (session?.status === "live") await startStudentLesson();
+  console.log("LIVE SESSION STATUS:", session?.status);
+  console.log("SESSION PAYLOAD:", session);
+  console.log("SESSION LESSON DATA:", session?.lesson_data);
+  currentSession = { ...currentSession, ...session, student: currentSession.student };
+  if (session?.status === "live") await startStudentLesson(session);
 }
 
 function subscribeToSessionStatus(code) {
@@ -1961,8 +2010,13 @@ function subscribeToSessionStatus(code) {
   sessionStatusChannel = studentSupabase
     .channel(`session-${code}`)
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `code=eq.${code}` }, (payload) => {
+      console.log("STUDENT RECEIVED SESSION UPDATE");
       console.log("SESSION UPDATE:", payload);
-      if (payload.new?.status === "live") startStudentLesson();
+      console.log("LIVE SESSION STATUS:", payload.new?.status);
+      console.log("SESSION PAYLOAD:", payload.new);
+      console.log("SESSION LESSON DATA:", payload.new?.lesson_data);
+      if (payload.new) currentSession = { ...currentSession, ...payload.new, student: currentSession?.student };
+      if (payload.new?.status === "live") startStudentLesson(payload.new);
     })
     .subscribe((status) => {
       console.log("SESSION CHANNEL STATUS:", status);
@@ -2244,7 +2298,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setStatus("Joining your live lesson...");
     try {
       const session = await joinSession(code, student);
-      currentSession = { id: session.id, lesson_id: session.lesson_id, code: session.code, student };
+      currentSession = { id: session.id, lesson_id: session.lesson_id, code: session.code, status: session.status, lesson_data: session.lesson_data, student };
       loadLocalWorkspaceState();
       updateSessionLabel(`Code ${session.code}`);
       document.getElementById("join-panel")?.setAttribute("hidden", "");
@@ -2252,6 +2306,9 @@ document.addEventListener("DOMContentLoaded", () => {
       initializeStudentSubscription("session status", () => subscribeToSessionStatus(session.code));
       initializeStudentSubscription("help responses", () => subscribeToHelpResponses());
       initializeStudentSubscription("student accommodations", () => subscribeToStudentAccommodations());
+      console.log("LIVE SESSION STATUS:", session.status);
+      console.log("SESSION PAYLOAD:", session);
+      console.log("SESSION LESSON DATA:", session.lesson_data);
       if (session.status === "lobby") {
         waiting.style.display = "block";
         setStatus("✅ Joined! Your teacher will start soon.", "success");

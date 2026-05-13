@@ -3385,7 +3385,7 @@
           is_active: false,
           allow_join: true
         })
-        .select("id, lesson_id, code, status, is_active, allow_join")
+        .select("id, lesson_id, code, status, is_active, allow_join, lesson_data")
         .single();
 
       if (error) {
@@ -4268,7 +4268,38 @@
       console.log("START SESSION BEGIN");
       console.log("🚀 startSession REST fallback CALLED", sessionId);
 
-      const url = `${SUPABASE_URL}/rest/v1/sessions?id=eq.${encodeURIComponent(sessionId)}`;
+      const { data: existingSession, error: lookupError } = await supabaseClient
+        .from("sessions")
+        .select("id, lesson_id, code, status, is_active, allow_join, lesson_data")
+        .eq("id", sessionId)
+        .maybeSingle();
+
+      if (lookupError) {
+        console.error("❌ START SESSION LOOKUP ERROR:", lookupError);
+        throw lookupError;
+      }
+
+      const lessonId = existingSession?.lesson_id || currentLessonId;
+      if (!lessonId) throw new Error("No lesson is attached to this live session.");
+
+      const lessonPayload = currentGeneratedLesson && currentLessonId === lessonId
+        ? currentGeneratedLesson
+        : await loadLiveLessonData(lessonId);
+
+      if (!lessonPayload?.practice?.questions?.length && !lessonPayload?.cross?.questions?.length) {
+        throw new Error("Cannot start a live session without lesson questions.");
+      }
+
+      const updatePayload = {
+        lesson_id: lessonId,
+        lesson_data: lessonPayload,
+        status: "live",
+        is_active: true
+      };
+      console.log("SESSION PAYLOAD:", { ...existingSession, ...updatePayload });
+      console.log("SESSION LESSON DATA:", updatePayload.lesson_data);
+
+      const url = `${SUPABASE_URL}/rest/v1/sessions?id=eq.${encodeURIComponent(sessionId)}&select=id,lesson_id,code,status,is_active,allow_join,lesson_data`;
 
       const response = await fetch(url, {
         method: "PATCH",
@@ -4278,12 +4309,9 @@
             ? `Bearer ${cachedSession.access_token}`
             : `Bearer ${SUPABASE_ANON_KEY}`,
           "Content-Type": "application/json",
-          Prefer: "return=minimal"
+          Prefer: "return=representation"
         },
-        body: JSON.stringify({
-          status: "live",
-          is_active: true
-        })
+        body: JSON.stringify(updatePayload)
       });
 
       console.log("START SESSION RESPONSE:", response.status);
@@ -4295,9 +4323,16 @@
         throw new Error(text || "Could not start session.");
       }
 
+      const updatedRows = await response.json();
+      const updatedSession = Array.isArray(updatedRows) ? updatedRows[0] : updatedRows;
+      console.log("LIVE SESSION STATUS:", updatedSession?.status);
+      console.log("SESSION PAYLOAD:", updatedSession);
+      console.log("SESSION LESSON DATA:", updatedSession?.lesson_data);
       console.log("START SESSION COMPLETE");
-      return {
+      return updatedSession || {
         id: sessionId,
+        lesson_id: lessonId,
+        lesson_data: lessonPayload,
         status: "live",
         is_active: true
       };
