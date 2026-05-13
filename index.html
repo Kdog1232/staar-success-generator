@@ -246,24 +246,24 @@
     .floating-feature-card {
       position: relative;
       overflow: hidden;
-      padding: 16px;
-      border: 1px solid rgba(255, 255, 255, 0.58);
-      border-radius: 22px;
-      background: linear-gradient(145deg, rgba(255,255,255,0.74), rgba(255,255,255,0.42));
-      box-shadow: 0 16px 38px rgba(49, 46, 129, 0.09);
-      backdrop-filter: blur(18px);
+      padding: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.38);
+      border-radius: 20px;
+      background: linear-gradient(145deg, rgba(255,255,255,0.62), rgba(255,255,255,0.34));
+      box-shadow: 0 12px 28px rgba(49, 46, 129, 0.07);
+      backdrop-filter: blur(13px);
       animation: cardFloat 7s ease-in-out infinite;
     }
 
     .floating-feature-card:nth-child(2) {
-      transform: translateY(12px);
       animation-delay: -2.6s;
     }
 
     .floating-feature-card strong {
       display: block;
       color: #1e1b4b;
-      font-size: 1rem;
+      font-size: 0.94rem;
+      line-height: 1.2;
       letter-spacing: -0.02em;
     }
 
@@ -271,21 +271,22 @@
       display: block;
       margin-top: 5px;
       color: #64748b;
-      font-size: 0.88rem;
+      font-size: 0.8rem;
       font-weight: 700;
+      line-height: 1.4;
     }
 
     .floating-feature-icon {
-      width: 42px;
-      height: 42px;
+      width: 36px;
+      height: 36px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 14px;
-      border-radius: 14px;
+      margin-bottom: 10px;
+      border-radius: 13px;
       color: #fff;
       background: linear-gradient(135deg, #7c3aed, #2563eb);
-      box-shadow: 0 12px 24px rgba(79, 70, 229, 0.22);
+      box-shadow: 0 9px 18px rgba(79, 70, 229, 0.16);
     }
 
     .login-card {
@@ -462,16 +463,17 @@
 
     .hero-product-stage {
       position: relative;
-      max-width: 590px;
-      margin-top: 24px;
-      min-height: 276px;
+      max-width: 610px;
+      margin-top: 34px;
+      min-height: 386px;
+      padding: 0 18px 96px;
     }
 
     .hero-dashboard-preview {
       position: relative;
       overflow: hidden;
-      min-height: 248px;
-      padding: 16px;
+      min-height: 286px;
+      padding: 20px;
       border: 1px solid rgba(255, 255, 255, 0.76);
       border-radius: 28px;
       background:
@@ -504,7 +506,7 @@
       align-items: center;
       justify-content: space-between;
       gap: 14px;
-      margin-bottom: 16px;
+      margin-bottom: 18px;
     }
 
     .preview-window-dots {
@@ -545,52 +547,59 @@
     .preview-stat-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
-      margin-bottom: 12px;
+      gap: 12px;
+      margin-bottom: 14px;
     }
 
     .mini-stat {
-      padding: 12px;
-      border: 1px solid rgba(255,255,255,0.1);
+      min-height: 88px;
+      padding: 13px;
+      border: 1px solid rgba(255,255,255,0.09);
       border-radius: 16px;
-      background: rgba(255,255,255,0.065);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.062);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.09);
     }
 
     .mini-stat strong {
       display: block;
-      font-size: 1.22rem;
-      letter-spacing: -0.04em;
+      font-size: clamp(0.68rem, 1.55vw, 0.84rem);
+      line-height: 1.2;
+      letter-spacing: 0.02em;
+      overflow-wrap: anywhere;
     }
 
     .mini-stat span {
       display: block;
-      margin-top: 3px;
+      margin-top: 8px;
       color: #cbd5e1;
-      font-size: 0.72rem;
+      font-size: 0.7rem;
       font-weight: 800;
+      line-height: 1.35;
     }
 
     .preview-panel-row {
       display: grid;
-      grid-template-columns: 1.15fr .85fr;
-      gap: 12px;
+      grid-template-columns: 1.12fr .88fr;
+      gap: 14px;
+      align-items: stretch;
     }
 
     .preview-mastery-card,
     .preview-ai-card {
-      padding: 14px;
-      border: 1px solid rgba(255,255,255,0.1);
+      min-height: 118px;
+      padding: 15px;
+      border: 1px solid rgba(255,255,255,0.09);
       border-radius: 18px;
-      background: rgba(255,255,255,0.075);
+      background: rgba(255,255,255,0.07);
     }
 
     .preview-mastery-card p,
     .preview-ai-card p {
-      margin: 0 0 10px;
+      margin: 0 0 12px;
       color: #e2e8f0;
-      font-size: 0.78rem;
+      font-size: 0.74rem;
       font-weight: 900;
+      line-height: 1.35;
     }
 
     .mini-bars {
@@ -642,19 +651,38 @@
 
     .preview-ai-card span {
       display: block;
-      margin-top: 5px;
+      margin-top: 7px;
       color: #cbd5e1;
-      font-size: 0.76rem;
+      font-size: 0.72rem;
       font-weight: 750;
+      line-height: 1.4;
     }
 
     .floating-feature-grid {
       position: absolute;
-      right: -10px;
-      bottom: -14px;
-      width: min(82%, 390px);
+      inset: 0;
+      display: block;
+      max-width: none;
       margin-top: 0;
+      pointer-events: none;
       z-index: 2;
+    }
+
+    .floating-feature-grid .floating-feature-card {
+      position: absolute;
+      width: min(44%, 218px);
+      min-height: 120px;
+      opacity: 0.93;
+    }
+
+    .floating-feature-grid .floating-feature-card:first-child {
+      left: 0;
+      bottom: 32px;
+    }
+
+    .floating-feature-grid .floating-feature-card:nth-child(2) {
+      right: 0;
+      bottom: 22px;
     }
 
     .supporting-feature-strip {
@@ -662,7 +690,7 @@
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 12px;
-      margin: clamp(18px, 3vw, 30px) auto 0;
+      margin: clamp(44px, 6vw, 76px) auto 0;
       padding: 0 4px;
     }
 
@@ -3005,6 +3033,17 @@
         transform: none;
       }
 
+      .floating-feature-grid .floating-feature-card,
+      .floating-feature-grid .floating-feature-card:first-child,
+      .floating-feature-grid .floating-feature-card:nth-child(2) {
+        position: relative;
+        left: auto;
+        right: auto;
+        bottom: auto;
+        width: 100%;
+        min-height: auto;
+      }
+
       .login-card {
         max-width: none;
         justify-self: stretch;
@@ -3025,10 +3064,12 @@
 
       .hero-product-stage {
         min-height: auto;
+        padding: 0;
       }
 
       .hero-dashboard-preview {
         min-height: auto;
+        padding: 16px;
         transform: none;
       }
 
@@ -3039,8 +3080,10 @@
 
       .floating-feature-grid {
         position: static;
+        display: grid;
         width: 100%;
-        margin-top: 14px;
+        margin-top: 18px;
+        pointer-events: auto;
       }
 
       .login-footer-links {
@@ -3385,7 +3428,7 @@
               </div>
               <div class="preview-panel-row">
                 <div class="preview-mastery-card">
-                  <p>Generate → Save → Share Code → Students Complete → Review Results</p>
+                  <p>Generate, save, launch, and review results</p>
                   <div class="mini-bars">
                     <span style="--w: 82%"></span>
                     <span style="--w: 64%"></span>
