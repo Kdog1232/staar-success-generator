@@ -959,6 +959,7 @@ let sessionStatusInterval = null;
 let helpRequestsChannel = null;
 let accommodationsChannel = null;
 let lessonStarted = false;
+let lessonRenderInProgress = false;
 let handRaised = false;
 let currentHelpRequest = null;
 let totalQuestionCount = 0;
@@ -1921,64 +1922,87 @@ function rerenderLessonPreservingState() {
 }
 
 async function startStudentLesson(sessionUpdate = null) {
-  if (lessonStarted || !currentSession) return;
-  if (sessionUpdate) {
-    currentSession = {
-      ...currentSession,
-      id: sessionUpdate.id || currentSession.id,
-      lesson_id: sessionUpdate.lesson_id || currentSession.lesson_id,
-      code: sessionUpdate.code || currentSession.code,
-      status: sessionUpdate.status || currentSession.status,
-      lesson_data: sessionUpdate.lesson_data || currentSession.lesson_data
-    };
-  }
+  if (!currentSession) return;
+  if (lessonRenderInProgress) return;
+  if (lessonStarted && currentLessonData) return;
+  lessonRenderInProgress = true;
 
-  console.log("LIVE SESSION STATUS:", currentSession.status);
-  console.log("SESSION PAYLOAD:", currentSession);
-  console.log("SESSION LESSON DATA:", currentSession.lesson_data);
-
-  lessonStarted = true;
-
-  let lessonData = extractLessonData(currentSession.lesson_data);
-  let sessionLookup = null;
-  let sessionError = null;
-
-  if (!lessonData) {
-    const sessionResult = await studentSupabase
-      .from("sessions")
-      .select(LIVE_SESSION_SELECT)
-      .eq("code", currentSession.code)
-      .maybeSingle();
-    sessionLookup = sessionResult.data;
-    sessionError = sessionResult.error;
-    console.log("SESSION PAYLOAD:", sessionLookup);
-    console.log("SESSION LESSON DATA:", sessionLookup?.lesson_data);
-    if (!sessionError && sessionLookup) {
+  try {
+    if (sessionUpdate) {
       currentSession = {
         ...currentSession,
-        ...sessionLookup,
-        student: currentSession.student
+        id: sessionUpdate.id || currentSession.id,
+        lesson_id: sessionUpdate.lesson_id || currentSession.lesson_id,
+        code: sessionUpdate.code || currentSession.code,
+        status: sessionUpdate.status || currentSession.status,
+        is_active: sessionUpdate.is_active ?? currentSession.is_active,
+        lesson_data: sessionUpdate.lesson_data ?? currentSession.lesson_data
       };
-      lessonData = extractLessonData(sessionLookup.lesson_data);
     }
-  }
 
-  console.log("LESSON LOOKUP:", { sessionLookup, lessonData, error: sessionError, currentSession });
-  if (sessionError || !lessonData) {
-    lessonStarted = false;
-    const waiting = document.getElementById("waiting");
-    if (waiting) waiting.style.display = "none";
-    setStatus("⚠️ Your teacher started the live session, but the lesson did not arrive. Ask your teacher to restart the live session.", "error");
-    console.error("LIVE SESSION STARTED WITHOUT LESSON DATA", { sessionError, currentSession, sessionLookup });
-    return;
-  }
-  clearSessionStatusPolling();
-  await fetchStudentAccommodations();
-  console.log("ABOUT TO RENDER LESSON");
-  if (renderQuestions(lessonData) !== false) {
+    console.log("STUDENT SESSION UPDATE:", currentSession);
+    console.log("SESSION STATUS:", currentSession?.status);
+    console.log("SESSION ACTIVE:", currentSession?.is_active);
+    console.log("SESSION LESSON DATA:", currentSession?.lesson_data);
+    console.log("LIVE SESSION STATUS:", currentSession.status);
+    console.log("SESSION PAYLOAD:", currentSession);
+
+    let lessonData = extractLessonData(currentSession.lesson_data);
+    let sessionLookup = null;
+    let sessionError = null;
+
+    if (!lessonData) {
+      const sessionResult = await studentSupabase
+        .from("sessions")
+        .select(LIVE_SESSION_SELECT)
+        .eq("code", currentSession.code)
+        .maybeSingle();
+      sessionLookup = sessionResult.data;
+      sessionError = sessionResult.error;
+      console.log("STUDENT SESSION UPDATE:", sessionLookup);
+      console.log("SESSION STATUS:", sessionLookup?.status);
+      console.log("SESSION ACTIVE:", sessionLookup?.is_active);
+      console.log("SESSION LESSON DATA:", sessionLookup?.lesson_data);
+      console.log("SESSION PAYLOAD:", sessionLookup);
+      if (!sessionError && sessionLookup) {
+        currentSession = {
+          ...currentSession,
+          ...sessionLookup,
+          student: currentSession.student
+        };
+        lessonData = extractLessonData(sessionLookup.lesson_data);
+      }
+    }
+
+    console.log("LESSON LOOKUP:", { sessionLookup, lessonData, error: sessionError, currentSession });
+    if (sessionError || !lessonData) {
+      lessonStarted = false;
+      const waiting = document.getElementById("waiting");
+      if (waiting) waiting.style.display = "none";
+      setStatus("⚠️ Your teacher started the live session, but the lesson did not arrive. Ask your teacher to restart the live session.", "error");
+      console.error("LIVE SESSION STARTED WITHOUT LESSON DATA", { sessionError, currentSession, sessionLookup });
+      return;
+    }
+
+    console.log("ABOUT TO CALL renderLesson()");
+    const rendered = renderQuestions(lessonData) !== false;
+    if (!rendered) {
+      lessonStarted = false;
+      return;
+    }
+
+    lessonStarted = true;
+    clearSessionStatusPolling();
     setStatus("🟢 Class is live. Answer each question, then submit when you’re ready.");
-  } else {
-    lessonStarted = false;
+
+    try {
+      await fetchStudentAccommodations();
+    } catch (error) {
+      console.warn("⚠️ Accommodations load did not block lesson render", error);
+      renderAccommodationToolbar();
+    }
+  } finally {
+    lessonRenderInProgress = false;
   }
 }
 
@@ -1990,13 +2014,16 @@ function clearSessionStatusPolling() {
 }
 
 async function checkSessionStatus() {
-  if (!currentSession || lessonStarted) return;
+  if (!currentSession || (lessonStarted && currentLessonData)) return;
   const { data: session, error } = await studentSupabase.from("sessions").select(LIVE_SESSION_SELECT).eq("code", currentSession.code).single();
   if (error) {
     console.error("[checkSessionStatus] Session status lookup failed", { error, currentSession });
     return;
   }
   console.log("SESSION STATUS CHECK:", session);
+  console.log("STUDENT SESSION UPDATE:", session);
+  console.log("SESSION STATUS:", session?.status);
+  console.log("SESSION ACTIVE:", session?.is_active);
   console.log("LIVE SESSION STATUS:", session?.status);
   console.log("SESSION PAYLOAD:", session);
   console.log("SESSION LESSON DATA:", session?.lesson_data);
@@ -2012,6 +2039,9 @@ function subscribeToSessionStatus(code) {
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `code=eq.${code}` }, (payload) => {
       console.log("STUDENT RECEIVED SESSION UPDATE");
       console.log("SESSION UPDATE:", payload);
+      console.log("STUDENT SESSION UPDATE:", payload.new);
+      console.log("SESSION STATUS:", payload.new?.status);
+      console.log("SESSION ACTIVE:", payload.new?.is_active);
       console.log("LIVE SESSION STATUS:", payload.new?.status);
       console.log("SESSION PAYLOAD:", payload.new);
       console.log("SESSION LESSON DATA:", payload.new?.lesson_data);
@@ -2024,8 +2054,67 @@ function subscribeToSessionStatus(code) {
   sessionStatusInterval = setInterval(checkSessionStatus, 2000);
 }
 
+function normalizeQuestionForStudent(question = {}, index = 0, type = "practice", lessonMeta = {}) {
+  const rawChoices = Array.isArray(question?.choices) ? question.choices : (Array.isArray(question?.answers) ? question.answers : []);
+  return {
+    ...question,
+    id: question?.id || question?.question_id || `${type}-${index + 1}`,
+    question_id: question?.question_id || question?.id || `${type}-${index + 1}`,
+    type,
+    subject: question?.subject || lessonMeta.subject || "Reading",
+    skill: question?.skill || lessonMeta.skill || "",
+    teks: question?.teks || question?.standard || lessonMeta.teks || lessonMeta.standard || "",
+    question: question?.question || question?.prompt || question?.text || "",
+    choices: rawChoices.map((choice) => typeof choice === "string" ? { text: choice } : { ...choice, text: choice?.text || choice?.choice || "" })
+  };
+}
+
+function normalizeWorkerPayload(raw = {}, { fallbackPassage = "" } = {}) {
+  const safe = raw && typeof raw === "object" ? raw : {};
+  const legacyQuestions = Array.isArray(safe?.questions) ? safe.questions : [];
+  const practiceQuestions = Array.isArray(safe?.practice?.questions) ? safe.practice.questions : legacyQuestions;
+  const crossQuestions = Array.isArray(safe?.cross?.questions) ? safe.cross.questions : [];
+  const lessonMeta = {
+    title: safe.title || "",
+    subject: safe.subject || safe?.metadata?.subject || "Reading",
+    grade: safe.grade || safe?.metadata?.grade || "",
+    level: safe.level || safe?.metadata?.level || "",
+    purpose: safe.purpose || safe?.metadata?.purpose || "",
+    skill: safe.skill || safe?.metadata?.skill || "",
+    teks: safe.teks || safe.standard || safe?.metadata?.teks || safe?.metadata?.standard || "",
+    standard: safe.standard || safe.teks || safe?.metadata?.standard || safe?.metadata?.teks || ""
+  };
+  return {
+    ...safe,
+    ...lessonMeta,
+    passage: safe?.passage || safe?.practice?.passage || fallbackPassage || "",
+    metadata: {
+      ...(safe?.metadata && typeof safe.metadata === "object" ? safe.metadata : {}),
+      ...lessonMeta
+    },
+    practice: {
+      ...(safe?.practice && typeof safe.practice === "object" ? safe.practice : {}),
+      passage: safe?.practice?.passage || safe?.passage || fallbackPassage || "",
+      questions: practiceQuestions.map((question, index) => normalizeQuestionForStudent(question, index, "practice", lessonMeta))
+    },
+    cross: {
+      ...(safe?.cross && typeof safe.cross === "object" ? safe.cross : {}),
+      passage: safe?.cross?.passage || "",
+      questions: crossQuestions.map((question, index) => normalizeQuestionForStudent(question, index, "cross", lessonMeta))
+    },
+    tutor: {
+      practice: Array.isArray(safe?.tutor?.practice) ? safe.tutor.practice : [],
+      cross: Array.isArray(safe?.tutor?.cross) ? safe.tutor.cross : []
+    },
+    answerKey: {
+      practice: Array.isArray(safe?.answerKey?.practice) ? safe.answerKey.practice : [],
+      cross: Array.isArray(safe?.answerKey?.cross) ? safe.answerKey.cross : []
+    }
+  };
+}
+
 function extractLessonData(lesson) {
-  let data = lesson?.data || lesson;
+  let data = lesson?.lesson_data || lesson?.lesson || lesson?.lesson_payload || lesson?.currentLesson || lesson?.data || lesson;
   if (typeof data === "string") {
     try {
       data = JSON.parse(data);
@@ -2034,7 +2123,17 @@ function extractLessonData(lesson) {
       return null;
     }
   }
-  return data && typeof data === "object" ? data : null;
+  if (!data || typeof data !== "object") return null;
+  const normalized = normalizeWorkerPayload(data, { fallbackPassage: data?.passage || data?.practice?.passage || "" });
+  const hasLessonContent = normalized.practice.questions.length || normalized.cross.questions.length || normalized.practice.passage || normalized.cross.passage;
+  console.log("NORMALIZED STUDENT LESSON DATA:", {
+    practice: normalized.practice,
+    cross: normalized.cross,
+    tutor: normalized.tutor,
+    answerKey: normalized.answerKey,
+    metadata: normalized.metadata
+  });
+  return hasLessonContent ? normalized : null;
 }
 
 function getQuestionSection(data, sectionName) {
@@ -2167,7 +2266,7 @@ function renderQuestions(lesson) {
       ${cross.map((question, index) => renderQuestionCard(question, "c", practice.length + index + 1, index, "cross")).join("")}
     </section>
   `;
-  waiting.style.display = "none";
+  if (waiting) waiting.style.display = "none";
   showLessonActions(true);
   submitBtn.disabled = false;
   updateSessionLabel(`Code ${currentSession?.code || ""}`.trim());
@@ -2298,7 +2397,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setStatus("Joining your live lesson...");
     try {
       const session = await joinSession(code, student);
-      currentSession = { id: session.id, lesson_id: session.lesson_id, code: session.code, status: session.status, lesson_data: session.lesson_data, student };
+      currentSession = { id: session.id, lesson_id: session.lesson_id, code: session.code, status: session.status, is_active: session.is_active, lesson_data: session.lesson_data, student };
       loadLocalWorkspaceState();
       updateSessionLabel(`Code ${session.code}`);
       document.getElementById("join-panel")?.setAttribute("hidden", "");
@@ -2306,6 +2405,9 @@ document.addEventListener("DOMContentLoaded", () => {
       initializeStudentSubscription("session status", () => subscribeToSessionStatus(session.code));
       initializeStudentSubscription("help responses", () => subscribeToHelpResponses());
       initializeStudentSubscription("student accommodations", () => subscribeToStudentAccommodations());
+      console.log("STUDENT SESSION UPDATE:", session);
+      console.log("SESSION STATUS:", session?.status);
+      console.log("SESSION ACTIVE:", session?.is_active);
       console.log("LIVE SESSION STATUS:", session.status);
       console.log("SESSION PAYLOAD:", session);
       console.log("SESSION LESSON DATA:", session.lesson_data);
