@@ -359,14 +359,26 @@
 
     .teacher-response-card {
       display: none;
-      margin: 14px 0 0;
-      padding: 16px 18px;
+      position: relative;
+      overflow: hidden;
+      margin: 16px 0 0;
+      padding: 18px 20px 18px 22px;
       border: 1px solid rgba(124, 92, 255, 0.22);
-      border-radius: 18px;
-      background: #f5f3ff;
+      border-radius: 22px;
+      background:
+        linear-gradient(135deg, rgba(237, 233, 254, 0.98), rgba(255, 255, 255, 0.98)),
+        radial-gradient(circle at 8% 12%, rgba(139, 92, 246, 0.18), transparent 34%);
       color: #312e81;
-      box-shadow: 0 12px 28px rgba(91, 33, 182, 0.08);
-      animation: fadeUp 0.28s ease both;
+      box-shadow: 0 18px 42px rgba(91, 33, 182, 0.12);
+      animation: responseSlideIn 0.34s ease both;
+    }
+
+    .teacher-response-card::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 5px;
+      background: linear-gradient(180deg, #8b5cf6, #14b8a6);
     }
 
     .teacher-response-card.is-visible {
@@ -374,17 +386,34 @@
     }
 
     .teacher-response-card strong {
-      display: block;
-      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
       color: #4c1d95;
       font-weight: 950;
+      letter-spacing: -0.01em;
     }
 
     .teacher-response-card p {
       margin: 0;
       color: #312e81;
-      font-weight: 800;
-      line-height: 1.5;
+      font-size: 1.02rem;
+      font-weight: 850;
+      line-height: 1.55;
+    }
+
+    .teacher-response-card small {
+      display: block;
+      margin-top: 8px;
+      color: #64748b;
+      font-size: 0.82rem;
+      font-weight: 850;
+    }
+
+    @keyframes responseSlideIn {
+      from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
     }
 
     .waiting-card {
@@ -655,23 +684,30 @@
     }
 
 
-    .student-shell.dyslexia-font,
-    .student-shell.dyslexia-font * {
+    .student-shell.dyslexia-font #questions,
+    .student-shell.dyslexia-font #questions * {
       font-family: Lexend, "Atkinson Hyperlegible", "Comic Sans MS", Verdana, sans-serif;
       letter-spacing: 0.01em;
     }
 
-    .student-shell.font-small { font-size: 0.92rem; }
-    .student-shell.font-large { font-size: 1.08rem; }
-    .student-shell.font-extra_large { font-size: 1.18rem; }
+    .student-shell.font-small #questions { font-size: 0.92rem; }
+    .student-shell.font-large #questions { font-size: 1.08rem; }
+    .student-shell.font-extra_large #questions { font-size: 1.18rem; }
 
-    .student-shell.overlay-cream { background: #fff7ed; }
-    .student-shell.overlay-soft_blue { background: #eff6ff; }
-    .student-shell.overlay-soft_gray { background: #f1f5f9; }
-    .student-shell.overlay-dark { background: #111827; color: #f8fafc; }
-    .student-shell.overlay-dark .passage-card,
-    .student-shell.overlay-dark .question-card,
-    .student-shell.overlay-dark .answer-choice {
+    .student-shell.overlay-cream #questions { background: #fff7ed; }
+    .student-shell.overlay-soft_blue #questions { background: #eff6ff; }
+    .student-shell.overlay-soft_gray #questions { background: #f1f5f9; }
+    .student-shell.overlay-dark #questions { background: #111827; color: #f8fafc; }
+    .student-shell.overlay-cream #questions,
+    .student-shell.overlay-soft_blue #questions,
+    .student-shell.overlay-soft_gray #questions,
+    .student-shell.overlay-dark #questions {
+      padding: 14px;
+      border-radius: 22px;
+    }
+    .student-shell.overlay-dark #questions .passage-card,
+    .student-shell.overlay-dark #questions .question-card,
+    .student-shell.overlay-dark #questions .answer-choice {
       background: #1f2937;
       color: #f8fafc;
       border-color: #475569;
@@ -919,7 +955,7 @@ let handRaised = false;
 let currentHelpRequest = null;
 let totalQuestionCount = 0;
 let currentLessonData = null;
-let currentAccommodations = {
+const DEFAULT_ACCOMMODATIONS = {
   text_to_speech: false,
   spanish_translation: false,
   content_supports: false,
@@ -942,6 +978,7 @@ let currentAccommodations = {
   color_overlay: "default",
   reduced_distraction: false
 };
+let currentAccommodations = { ...DEFAULT_ACCOMMODATIONS };
 let highlightColor = "yellow";
 let lineReaderIndex = 0;
 let visibleChunkCount = 1;
@@ -981,7 +1018,7 @@ function renderTeacherResponse(request = currentHelpRequest) {
   const card = document.getElementById("teacher-response-card");
   if (!card) return;
   const response = String(request?.teacher_response || "").trim();
-  if (!response) {
+  if (!response || request?.resolved === true) {
     card.classList.remove("is-visible");
     card.innerHTML = "";
     return;
@@ -997,25 +1034,39 @@ function renderTeacherResponse(request = currentHelpRequest) {
   card.classList.add("is-visible");
 }
 
-function applyHelpRequestUpdate(request) {
-  if (!request || !currentSession) return;
-  if (request.session_id !== currentSession.id) return;
-  if (String(request.student_name || "").trim().toLowerCase() !== String(currentSession.student || "").trim().toLowerCase()) return;
-  currentHelpRequest = request;
-  renderTeacherResponse(currentHelpRequest);
+function clearStudentHelpState({ announce = false } = {}) {
+  handRaised = false;
+  currentHelpRequest = null;
+  renderTeacherResponse(null);
   const handBtn = document.getElementById("raise-hand");
+  if (handBtn) {
+    handBtn.disabled = false;
+    handBtn.textContent = "✋ Raise Hand";
+  }
+  if (announce) setStatus("✅ Your help request was resolved. You can raise your hand again if you need more help.", "success");
+  console.log("STUDENT HELP STATE CLEARED");
+}
+
+function isHelpRequestForCurrentStudent(request) {
+  if (!request || !currentSession) return false;
+  return request.session_id === currentSession.id && String(request.student_name || "").trim().toLowerCase() === String(currentSession.student || "").trim().toLowerCase();
+}
+
+function applyHelpRequestUpdate(request) {
+  if (!isHelpRequestForCurrentStudent(request)) return;
   if (request.resolved === true) {
-    handRaised = false;
-    if (handBtn) {
-      handBtn.disabled = false;
-      handBtn.textContent = "✋ Raise Hand";
-    }
+    clearStudentHelpState({ announce: true });
     return;
   }
+  currentHelpRequest = request;
+  const response = String(request.teacher_response || "").trim();
+  if (response) console.log("TEACHER RESPONSE RECEIVED:", response);
+  renderTeacherResponse(currentHelpRequest);
+  const handBtn = document.getElementById("raise-hand");
   handRaised = true;
   if (handBtn) {
     handBtn.disabled = true;
-    handBtn.textContent = request.teacher_response ? "Teacher Responded" : "Hand Raised";
+    handBtn.textContent = response ? "Teacher Responded" : "Hand Raised";
   }
 }
 
@@ -1028,6 +1079,7 @@ async function subscribeToHelpResponses() {
     .select("*")
     .eq("session_id", currentSession.id)
     .eq("student_name", studentName)
+    .eq("resolved", false)
     .order("created_at", { ascending: false })
     .limit(1);
   if (error) {
@@ -1043,9 +1095,11 @@ async function subscribeToHelpResponses() {
       table: "help_requests",
       filter: `session_id=eq.${currentSession.id}`
     }, (payload) => {
-      console.log("STUDENT HELP REQUEST UPDATE:", payload);
+      console.log("HELP REQUEST UPDATE:", payload);
       const row = payload?.new || payload?.old;
-      if (row) applyHelpRequestUpdate(row);
+      if (!isHelpRequestForCurrentStudent(row)) return;
+      if (payload.eventType === "DELETE" || row.resolved === true) clearStudentHelpState({ announce: true });
+      else applyHelpRequestUpdate(row);
     })
     .subscribe((status) => {
       console.log("STUDENT HELP CHANNEL STATUS:", status);
@@ -1224,6 +1278,11 @@ function applyWorkspaceClasses() {
   shell.classList.toggle("reduced-distraction", currentAccommodations.reduced_distraction === true);
   FONT_SIZE_OPTIONS.forEach((size) => shell.classList.toggle(`font-${size}`, currentAccommodations.font_size === size));
   COLOR_OVERLAY_OPTIONS.forEach((overlay) => shell.classList.toggle(`overlay-${overlay}`, currentAccommodations.color_overlay === overlay));
+  Object.entries(currentAccommodations).forEach(([key, value]) => {
+    if (value === true || (key === "font_size" && value !== "normal") || (key === "color_overlay" && value !== "default")) {
+      console.log("APPLYING ACCOMMODATION:", key);
+    }
+  });
   if (currentAccommodations.line_reader) console.log("LINE READER ENABLED");
   if (currentAccommodations.chunked_reading) console.log("CHUNKED MODE ENABLED");
   if (currentAccommodations.dyslexia_font) console.log("DYSLEXIA FONT ENABLED");
@@ -1355,12 +1414,12 @@ function glossaryTermsForText(text = "") {
 }
 
 function renderGlossaryPanel(text = "") {
-  if (!currentAccommodations.vocabulary_glossary && !currentAccommodations.bilingual_vocabulary) return "";
+  if (!currentAccommodations.vocabulary_glossary && !currentAccommodations.bilingual_vocabulary && !currentAccommodations.content_supports) return "";
   const terms = glossaryTermsForText(text);
   if (!terms.length) return "";
   return `
     <aside class="glossary-panel">
-      <strong>Vocabulary support</strong>
+      <strong>${currentAccommodations.bilingual_vocabulary ? "English + Spanish vocabulary support" : "Vocabulary support"}</strong>
       <dl>
         ${terms.map((term) => `
           <div>
@@ -1455,20 +1514,32 @@ function speakText(text = "") {
 
 function questionSpeechText(question = {}) {
   const choices = Array.isArray(question.choices) ? question.choices : [];
-  return [question.question || "", ...choices.map((choice, idx) => `${String.fromCharCode(65 + idx)}. ${sanitizeAnswerChoiceText(choice)}`)].join(" ");
+  const questionText = getDisplayText(question.question || "", question.spanish_question || question.question_es || "");
+  return [questionText, ...choices.map((choice, idx) => {
+    const choiceText = typeof choice === "string" ? choice : (choice?.text || "");
+    const translatedChoice = typeof choice === "string" ? "" : (choice?.spanish || choice?.text_es || "");
+    return `${String.fromCharCode(65 + idx)}. ${sanitizeAnswerChoiceText(getDisplayText(choiceText, translatedChoice))}`;
+  })].join(" ");
+}
+
+function isAccommodationRowForCurrentStudent(row) {
+  if (!row || !currentSession) return false;
+  return row.session_id === currentSession.id && normalizeStudentName(row.student_name) === normalizeStudentName(currentSession.student);
 }
 
 function applyAccommodationUpdate(row) {
   if (!row || !currentSession) return;
-  if (row.session_id !== currentSession.id) return;
-  if (normalizeStudentName(row.student_name) !== normalizeStudentName(currentSession.student)) return;
-  currentAccommodations = { ...currentAccommodations, ...row };
+  if (!isAccommodationRowForCurrentStudent(row)) {
+    console.log("IGNORING ACCOMMODATION FOR DIFFERENT STUDENT", { row, currentSession });
+    return;
+  }
+  currentAccommodations = { ...DEFAULT_ACCOMMODATIONS, ...row };
   if (!currentAccommodations.font_size) currentAccommodations.font_size = "normal";
   if (!currentAccommodations.color_overlay) currentAccommodations.color_overlay = "default";
   if (localWorkspacePrefs.fontSizeOverride) currentAccommodations.font_size = localWorkspacePrefs.fontSizeOverride;
   if (localWorkspacePrefs.colorOverlayOverride) currentAccommodations.color_overlay = localWorkspacePrefs.colorOverlayOverride;
   if (!currentAccommodations.spanish_translation) spanishMode = false;
-  console.log("STUDENT ACCOMMODATIONS:", currentAccommodations);
+  console.log("ACTIVE ACCOMMODATIONS:", currentAccommodations);
   renderAccommodationToolbar();
   if (lessonStarted && currentLessonData) {
     const checked = getCheckedAnswers();
@@ -1476,29 +1547,63 @@ function applyAccommodationUpdate(row) {
     restoreCheckedAnswers(checked);
     updateProgress();
   }
+  console.log("STUDENT UI UPDATED");
+}
+
+function clearStudentAccommodations() {
+  currentAccommodations = { ...DEFAULT_ACCOMMODATIONS };
+  spanishMode = false;
+  console.log("ACTIVE ACCOMMODATIONS:", currentAccommodations);
+  renderAccommodationToolbar();
+  if (lessonStarted && currentLessonData) {
+    const checked = getCheckedAnswers();
+    renderQuestions(currentLessonData);
+    restoreCheckedAnswers(checked);
+    updateProgress();
+  }
+  console.log("STUDENT UI UPDATED");
+}
+
+async function fetchStudentAccommodations() {
+  if (!currentSession) return null;
+  const sessionId = currentSession.id;
+  const studentName = currentSession.student;
+  console.log("FETCHING STUDENT ACCOMMODATIONS");
+  console.log("STUDENT NAME:", studentName);
+  console.log("SESSION ID:", sessionId);
+  const { data, error } = await studentSupabase
+    .from("student_accommodations")
+    .select("*")
+    .eq("session_id", sessionId)
+    .eq("student_name", studentName)
+    .maybeSingle();
+  console.log("ACCOMMODATIONS RESULT:", data);
+  if (error) {
+    console.warn("⚠️ Could not load accommodations", error);
+    renderAccommodationToolbar();
+    return null;
+  }
+  if (data) applyAccommodationUpdate(data);
+  else clearStudentAccommodations();
+  return data;
 }
 
 async function subscribeToStudentAccommodations() {
   if (!currentSession) return;
   if (accommodationsChannel) await studentSupabase.removeChannel(accommodationsChannel);
-  const { data, error } = await studentSupabase
-    .from("student_accommodations")
-    .select("*")
-    .eq("session_id", currentSession.id)
-    .eq("student_name", currentSession.student)
-    .maybeSingle();
-  if (error) console.warn("⚠️ Could not load accommodations", error);
-  if (data) applyAccommodationUpdate(data);
-  else renderAccommodationToolbar();
+  await fetchStudentAccommodations();
   accommodationsChannel = studentSupabase
     .channel(`student-accommodations-${currentSession.id}-${currentSession.student}`)
     .on("postgres_changes", { event: "*", schema: "public", table: "student_accommodations", filter: `session_id=eq.${currentSession.id}` }, (payload) => {
-      console.log("ACCOMMODATIONS UPDATED:", payload);
-      console.log("ACCOMMODATION UPDATE:", payload);
+      console.log("REALTIME ACCOMMODATION UPDATE:", payload);
       const row = payload?.new || payload?.old;
-      if (row) applyAccommodationUpdate(row);
+      if (!row || !isAccommodationRowForCurrentStudent(row)) return;
+      if (payload.eventType === "DELETE") clearStudentAccommodations();
+      else applyAccommodationUpdate(row);
     })
-    .subscribe();
+    .subscribe((status) => {
+      console.log("STUDENT ACCOMMODATIONS CHANNEL STATUS:", status);
+    });
 }
 
 function showLessonActions(show = true) {
@@ -1594,7 +1699,7 @@ async function startStudentLesson() {
     setStatus("No questions available.", "error");
     return;
   }
-  await subscribeToStudentAccommodations();
+  await fetchStudentAccommodations();
   if (renderQuestions(lessonData) !== false) {
     setStatus("🟢 Class is live. Answer each question, then submit when you’re ready.");
   }
@@ -1648,7 +1753,13 @@ function extractLessonData(lesson) {
 
 function getQuestionSection(data, sectionName) {
   const section = data?.[sectionName] || {};
-  return { passage: section?.passage || "", questions: Array.isArray(section?.questions) ? section.questions : [] };
+  return {
+    ...section,
+    passage: section?.passage || "",
+    spanish_passage: section?.spanish_passage || section?.passage_es || "",
+    passage_es: section?.passage_es || section?.spanish_passage || "",
+    questions: Array.isArray(section?.questions) ? section.questions : []
+  };
 }
 
 function renderPassage(title, passage, translatedPassage = "") {
@@ -1666,6 +1777,7 @@ function renderPassage(title, passage, translatedPassage = "") {
     <article class="passage-card" data-highlightable="${escapeHtml(passageKey)}">
       <h2>${escapeHtml(displayTitle)}</h2>
       <div class="workspace-controls">${readButton}${highlightButton}</div>
+      ${currentAccommodations.content_supports ? `<div class="support-hint"><strong>Comprehension prompt:</strong> Pause after each paragraph and ask, “What is the most important idea so far?”</div>` : ""}
       ${renderGlossaryPanel(displayPassage)}
       ${renderChunkedPassage(displayPassage, passageKey)}
       ${renderAnnotationCard(`${passageKey}-note`, `${displayTitle} note`)}
@@ -1794,6 +1906,23 @@ function closeRaiseHandModal() {
   }, 220);
 }
 
+async function fetchActiveHelpRequest() {
+  if (!currentSession) return null;
+  const { data, error } = await studentSupabase
+    .from("help_requests")
+    .select("*")
+    .eq("session_id", currentSession.id)
+    .eq("student_name", currentSession.student)
+    .eq("resolved", false)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (error) {
+    console.warn("⚠️ Could not check active help request", error);
+    return null;
+  }
+  return Array.isArray(data) ? data[0] || null : null;
+}
+
 async function sendHelpRequest() {
   const handBtn = document.getElementById("raise-hand");
   const sendBtn = document.getElementById("send-help-request");
@@ -1807,6 +1936,13 @@ async function sendHelpRequest() {
   handBtn.textContent = "Hand Raised";
 
   try {
+    const activeRequest = await fetchActiveHelpRequest();
+    if (activeRequest) {
+      applyHelpRequestUpdate(activeRequest);
+      closeRaiseHandModal();
+      setStatus("✋ Your hand is already raised. Your teacher can see it.", "success");
+      return;
+    }
     const { data, error } = await studentSupabase.from("help_requests").insert({
       session_id: currentSession.id,
       student_name: currentSession.student,
@@ -1822,11 +1958,11 @@ async function sendHelpRequest() {
     console.error(e);
     const duplicate = e?.code === "23505" || String(e?.message || "").toLowerCase().includes("duplicate");
     if (duplicate) {
-      handRaised = true;
-      handBtn.disabled = true;
-      handBtn.textContent = "Hand Raised";
+      const activeRequest = await fetchActiveHelpRequest();
+      if (activeRequest) applyHelpRequestUpdate(activeRequest);
+      else clearStudentHelpState();
       closeRaiseHandModal();
-      setStatus("✋ Your hand is already raised. Your teacher can see it.", "success");
+      setStatus(activeRequest ? "✋ Your hand is already raised. Your teacher can see it." : "Your previous request was resolved. Try raising your hand again.", activeRequest ? "success" : "default");
       subscribeToHelpResponses();
       return;
     }
@@ -1877,7 +2013,7 @@ document.addEventListener("DOMContentLoaded", () => {
       lessonStarted = false;
       subscribeToSessionStatus(session.code);
       subscribeToHelpResponses();
-      subscribeToStudentAccommodations();
+      await subscribeToStudentAccommodations();
       if (session.status === "lobby") {
         waiting.style.display = "block";
         setStatus("✅ Joined! Your teacher will start soon.", "success");

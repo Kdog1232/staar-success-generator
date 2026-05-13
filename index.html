@@ -3735,7 +3735,8 @@
         let query = supabaseClient
           .from("student_accommodations")
           .upsert(payload, { onConflict: "session_id,student_name" })
-          .select();
+          .select("*")
+          .maybeSingle();
 
         if (abortController && typeof query.abortSignal === "function") {
           query = query.abortSignal(abortController.signal);
@@ -3759,7 +3760,9 @@
       } catch (error) {
         console.error("❌ ACCOMMODATIONS SAVE ERROR:", error);
         console.log("UPSERT ERROR:", error);
-        if (status) status.textContent = `❌ ${error.message || "Could not save accommodations."}`;
+        if (status) status.textContent = error?.message === "TIMEOUT"
+          ? "❌ Save timed out. Check the connection and try again; no loading state is stuck."
+          : `❌ ${error.message || "Could not save accommodations."}`;
       } finally {
         if (abortTimeoutId) window.clearTimeout(abortTimeoutId);
         if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "Save Accommodations"; }
@@ -4037,6 +4040,7 @@
             const name = escapeHtml(cleanText(request.student_name || "Student"));
             const message = escapeHtml(cleanText(request.message || "Student raised their hand."));
             const createdAt = request.created_at ? new Date(request.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "Just now";
+            const disabled = request.resolved === true ? "disabled" : "";
             return `
               <li>
                 <div class="student-roster-row">
@@ -4046,10 +4050,10 @@
                     <div class="student-row-meta">${message} • ${escapeHtml(createdAt)}</div>
                     ${request.teacher_response ? `<div class="teacher-response-preview"><strong>Response sent:</strong> ${escapeHtml(cleanText(request.teacher_response))}</div>` : ""}
                     <div class="help-response-form">
-                      <textarea class="help-response-input" data-help-response-input="${id}" placeholder="Type a response for ${name}..." maxlength="700">${escapeHtml(cleanText(request.teacher_response || ""))}</textarea>
+                      <textarea class="help-response-input" data-help-response-input="${id}" placeholder="Type a response for ${name}... Press Enter to send, Shift+Enter for a new line." maxlength="700" ${disabled}>${escapeHtml(cleanText(request.teacher_response || ""))}</textarea>
                       <div class="badge-row">
-                        <button class="live-compact-btn primary" type="button" data-help-id="${id}" data-respond-help-id="${id}" data-send-help-response-id="${id}">Send Response</button>
-                        <button class="live-compact-btn" type="button" data-help-id="${id}" data-resolve-help-id="${id}">Mark Resolved</button>
+                        <button class="live-compact-btn primary" type="button" data-help-id="${id}" data-respond-help-id="${id}" data-send-help-response-id="${id}" ${disabled}>Send Response</button>
+                        <button class="live-compact-btn" type="button" data-help-id="${id}" data-resolve-help-id="${id}" ${disabled}>Mark Resolved</button>
                       </div>
                     </div>
                   </div>
@@ -4087,16 +4091,18 @@
             .update({ resolved: true })
             .eq("id", helpId)
             .eq("session_id", sessionId)
-            .select("*"),
+            .select("*")
+            .maybeSingle(),
           HELP_ACTION_TIMEOUT_MS
         );
         console.log("RESOLVE RESULT:", data);
         console.log("SUPABASE ERROR:", error);
         console.log("HELP RESPONSE STATUS:", { status: responseStatus, statusText });
         if (error) throw error;
-        if (!Array.isArray(data) || data.length === 0) throw new Error("No help request was updated. Check the help request id, session ownership, and RLS policy.");
+        if (!data) throw new Error("No help request was updated. Check the help request id, session ownership, and RLS policy.");
 
-        const updatedRow = data[0];
+        const updatedRow = data;
+        console.log("HELP REQUEST RESOLVED:", helpId);
         window.__liveHelpRequests = (window.__liveHelpRequests || [])
           .map((request) => request.id === helpId ? { ...request, ...updatedRow, resolved: true } : request)
           .filter((request) => request && request.resolved !== true && request.id !== helpId);
@@ -4150,19 +4156,22 @@
         const { data, error, status: responseStatus, statusText } = await withTimeout(
           supabaseClient
             .from("help_requests")
-            .update({ teacher_response: responseText, responded_at: new Date().toISOString() })
+            .update({ teacher_response: responseText, responded_at: new Date().toISOString(), resolved: false })
             .eq("id", helpId)
             .eq("session_id", sessionId)
-            .select("*"),
+            .eq("resolved", false)
+            .select("*")
+            .maybeSingle(),
           HELP_ACTION_TIMEOUT_MS
         );
         console.log("SUPABASE RESPONSE:", data);
         console.log("SUPABASE ERROR:", error);
         console.log("HELP RESPONSE STATUS:", { status: responseStatus, statusText });
         if (error) throw error;
-        if (!Array.isArray(data) || data.length === 0) throw new Error("No help request was updated. Check the help request id, session ownership, and RLS policy.");
+        if (!data) throw new Error("No active help request was updated. It may already be resolved.");
 
-        const updatedRow = data[0];
+        const updatedRow = data;
+        console.log("RESPONSE SAVED:", updatedRow);
         window.__liveHelpRequests = (window.__liveHelpRequests || []).map((request) => request.id === helpId ? updatedRow : request);
         console.log("UPDATED HELP STATE:", window.__liveHelpRequests);
         renderHelpRequests();
@@ -4206,6 +4215,7 @@
           table: "help_requests",
           filter: `session_id=eq.${sessionId}`
         }, (payload) => {
+          console.log("HELP REQUEST UPDATE:", payload);
           console.log("HELP REQUEST PAYLOAD:", payload);
 
           const nextRow = payload?.new || payload?.old;
@@ -4221,6 +4231,7 @@
           }
           console.log("UPDATED HELP STATE:", window.__liveHelpRequests);
           renderHelpRequests();
+          updateDashboard();
         })
         .subscribe((status) => {
           console.log("HELP REQUEST CHANNEL STATUS:", status);
@@ -4930,7 +4941,7 @@
     const API_FETCH_TIMEOUT_MS = 30000;
     const API_PARSE_TIMEOUT_MS = 10000;
     const RENDER_TIMEOUT_MS = 10000;
-    const ACCOMMODATIONS_SAVE_TIMEOUT_MS = 12000;
+    const ACCOMMODATIONS_SAVE_TIMEOUT_MS = 20000;
     const HELP_ACTION_TIMEOUT_MS = 12000;
 
     function withTimeout(promise, ms = API_FETCH_TIMEOUT_MS) {
@@ -7216,6 +7227,15 @@ Create your second version now.`;
 
 
       endBtn?.addEventListener("click", handleEndSessionClick);
+      document.addEventListener("keydown", (event) => {
+        const input = event.target?.closest?.("[data-help-response-input]");
+        if (!input || event.key !== "Enter" || event.shiftKey) return;
+        event.preventDefault();
+        const helpId = input.getAttribute("data-help-response-input") || "";
+        console.log("SEND RESPONSE CLICKED");
+        void sendHelpResponse(helpId);
+      });
+
       document.getElementById("save-accommodations-btn")?.addEventListener("click", saveActiveAccommodations);
       document.getElementById("accommodations-modal")?.addEventListener("click", (event) => {
         if (event.target === event.currentTarget) closeAccommodationsModal();
