@@ -3692,7 +3692,7 @@
     }
 
     async function saveActiveAccommodations() {
-      console.log("SAVE ACCOMMODATIONS CLICKED");
+      console.log("SAVE BUTTON CLICKED");
       const sessionId = getCurrentLiveSessionId();
       const saveBtn = document.getElementById("save-accommodations-btn");
       const status = document.getElementById("accommodations-status");
@@ -3732,11 +3732,12 @@
         if (authError) throw authError;
         if (!authData?.user) throw new Error("Login required to save accommodations.");
 
+        console.log("UPSERT BEGIN");
         let query = supabaseClient
           .from("student_accommodations")
-          .upsert(payload, { onConflict: "session_id,student_name" })
+          .upsert(payload, { onConflict: "session_id,student_name", ignoreDuplicates: false })
           .select("*")
-          .maybeSingle();
+          .limit(1);
 
         if (abortController && typeof query.abortSignal === "function") {
           query = query.abortSignal(abortController.signal);
