@@ -24,6 +24,7 @@ type Question = {
   type?: QuestionType;
   question: string;
   choices: [string, string, string, string];
+  choice_misconceptions?: Partial<Record<ChoiceLetter, string>>;
   correct_answer: ChoiceLetter | ChoiceLetter[];
   explanation: string;
   paired_with?: number;
@@ -90,7 +91,7 @@ type EnrichmentResponse = {
 type WorkerAttempt = CoreResponse & EnrichmentResponse;
 type IncomingCrossQuestion = Pick<
   Question,
-  "question" | "type" | "choices" | "correct_answer" | "explanation" | "common_mistake" | "parent_tip"
+  "question" | "type" | "choices" | "choice_misconceptions" | "correct_answer" | "explanation" | "common_mistake" | "parent_tip"
 >;
 
 const corsHeaders = {
@@ -1423,6 +1424,7 @@ Requirements:
 - Every question and choice must be answerable from the passage.
 - Use exactly 4 answer choices (A-D) for each question.
 - Only one correct answer per question.
+- Include choice_misconceptions for every wrong letter only; each entry must explain why that exact distractor is tempting and what misconception it reveals.
 - Keep output concise.
 
 Practice Mode rigor enforcement (CRITICAL):
@@ -1448,6 +1450,7 @@ Return JSON:
     {
       "question": "",
       "choices": ["", "", "", ""],
+      "choice_misconceptions": { "B": "Why a student might choose B and what confusion it shows.", "C": "Why a student might choose C and what confusion it shows.", "D": "Why a student might choose D and what confusion it shows." },
       "correct_answer": "A"
     }
   ]
@@ -1484,6 +1487,7 @@ Grade Guardrails:
 - Grade 5 and above: percentages and multi-step operations are allowed.
 - Use exactly 4 answer choices (A-D) for each question.
 - Only one correct answer per question.
+- Include choice_misconceptions for every wrong letter only; each entry must explain why that exact distractor is tempting and what misconception it reveals.
 - Each question must be self-contained with its own context.
 - Keep questions clear, classroom-ready, and appropriate for the selected level.
 - Most questions should require thinking, not just direct calculation.
@@ -1512,7 +1516,7 @@ Grade Guardrails:
   - Avoid obviously incorrect or unrelated answers.
 - Do NOT overcomplicate or create trick questions.
 - Maintain classroom usability.
-- Do NOT include explanations, rationales, or worked steps in the output.
+- Do NOT include answer explanations, rationales, or worked steps outside choice_misconceptions.
 ${levelThinkingGuidance}
 ${purposeBlock}
 - Keep output concise.
@@ -1524,6 +1528,7 @@ Return JSON:
     {
       "question": "",
       "choices": ["", "", "", ""],
+      "choice_misconceptions": { "B": "Why a student might choose B and what confusion it shows.", "C": "Why a student might choose C and what confusion it shows.", "D": "Why a student might choose D and what confusion it shows." },
       "correct_answer": "A"
     }
   ]
@@ -1539,6 +1544,7 @@ Requirements:
 - Then write exactly 5 questions in "questions" based on that excerpt.
 - Use exactly 4 answer choices (A-D) for each question.
 - Only one correct answer per question.
+- Include choice_misconceptions for every wrong letter only; each entry must explain why that exact distractor is tempting and what misconception it reveals.
 - Do NOT generate definition-only or identification-only sets.
 - Allow at most 1 light recall question; at least 4 questions must require reasoning.
 - Most questions should require thinking beyond direct recall.
@@ -1564,6 +1570,7 @@ Return JSON:
     {
       "question": "",
       "choices": ["", "", "", ""],
+      "choice_misconceptions": { "B": "Why a student might choose B and what confusion it shows.", "C": "Why a student might choose C and what confusion it shows.", "D": "Why a student might choose D and what confusion it shows." },
       "correct_answer": "A"
     }
   ]
@@ -1578,6 +1585,7 @@ Requirements:
 - Then write exactly 5 questions in "questions" based on that excerpt.
 - Use exactly 4 answer choices (A-D) for each question.
 - Only one correct answer per question.
+- Include choice_misconceptions for every wrong letter only; each entry must explain why that exact distractor is tempting and what misconception it reveals.
 - Do NOT generate sets that only ask for names, dates, or numbers.
 - Allow at most 1 light recall question; at least 4 questions must require reasoning.
 - Most questions should require thinking beyond direct recall.
@@ -1600,6 +1608,7 @@ Return JSON:
     {
       "question": "",
       "choices": ["", "", "", ""],
+      "choice_misconceptions": { "B": "Why a student might choose B and what confusion it shows.", "C": "Why a student might choose C and what confusion it shows.", "D": "Why a student might choose D and what confusion it shows." },
       "correct_answer": "A"
     }
   ]
@@ -1785,6 +1794,7 @@ Return JSON only:
       {
         "question": "string",
         "choices": ["string", "string", "string", "string"],
+        "choice_misconceptions": { "B": "Why a student might choose B and what confusion it shows.", "C": "Why a student might choose C and what confusion it shows.", "D": "Why a student might choose D and what confusion it shows." },
         "correct_answer": "A"
       }
     ]
@@ -1795,6 +1805,7 @@ Hard constraints:
 - Exactly 5 questions
 - Exactly 4 choices per question
 - Only one correct answer per question
+- Include choice_misconceptions for every wrong letter only; each entry must explain why that exact distractor is tempting and what misconception it reveals.
 - No explanations
 - No extra text outside JSON
 - No placeholders
@@ -2232,11 +2243,81 @@ function buildUniversalChoices(
 //   };
 // }
 
+function choiceText(choice: unknown): string {
+  if (choice && typeof choice === "object") {
+    const source = choice as Record<string, unknown>;
+    return String(source.text ?? source.choice ?? source.answer ?? "");
+  }
+  return String(choice ?? "");
+}
+
 function normalizeChoices(choices: unknown): [string, string, string, string] {
   if (!Array.isArray(choices)) return ["A", "B", "C", "D"];
-  const clean = choices.slice(0, 4).map((choice) => String(choice ?? ""));
+  const clean = choices.slice(0, 4).map((choice) => choiceText(choice));
   while (clean.length < 4) clean.push(clean[0] || "Option");
   return clean as [string, string, string, string];
+}
+
+function normalizeChoiceMisconceptions(
+  choices: unknown,
+  existing: unknown,
+  correctAnswer: unknown,
+  question = "",
+): Partial<Record<ChoiceLetter, string>> {
+  const correct = normalizeAnswer(normalizeAnswerKeyEntry(correctAnswer));
+  const map: Partial<Record<ChoiceLetter, string>> = {};
+
+  if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+    for (const [key, value] of Object.entries(existing as Record<string, unknown>)) {
+      const letter = key.toUpperCase().trim() as ChoiceLetter;
+      if (LETTERS.includes(letter) && letter !== correct) {
+        const misconception = String(value || "").trim();
+        if (misconception) map[letter] = misconception;
+      }
+    }
+  }
+
+  if (Array.isArray(choices)) {
+    choices.slice(0, 4).forEach((choice, index) => {
+      if (!choice || typeof choice !== "object") return;
+      const source = choice as Record<string, unknown>;
+      const letter = String(source.letter || LETTERS[index] || "").toUpperCase().trim() as ChoiceLetter;
+      const misconception = String(
+        source.misconception ?? source.common_misconception ?? source.common_mistake ?? source.rationale ?? "",
+      ).trim();
+      if (LETTERS.includes(letter) && letter !== correct && misconception) map[letter] = misconception;
+    });
+  }
+
+  const normalizedChoices = normalizeChoices(choices);
+  normalizedChoices.forEach((choice, index) => {
+    const letter = LETTERS[index];
+    if (letter === correct || map[letter]) return;
+    const answerText = String(choice || `choice ${letter}`).trim();
+    map[letter] = buildFallbackChoiceMisconception(question, answerText, letter);
+  });
+
+  return map;
+}
+
+function buildFallbackChoiceMisconception(question: string, answerText: string, letter: ChoiceLetter): string {
+  const prompt = `${question} ${answerText}`.toLowerCase();
+  if (/theme|message|lesson/.test(prompt)) {
+    return `Student chose ${letter} because this option sounds connected to the passage, but it likely focuses on a surface detail, event, or character feeling instead of the deeper message.`;
+  }
+  if (/infer|imply|conclude|most likely/.test(prompt)) {
+    return `Student chose ${letter} because this option seems possible, but it goes beyond what the evidence actually supports.`;
+  }
+  if (/main idea|central idea|summary|summarize/.test(prompt)) {
+    return `Student chose ${letter} because this option matches part of the text, but it is too narrow or partial to represent the whole idea.`;
+  }
+  if (/why|cause|effect|result/.test(prompt)) {
+    return `Student chose ${letter} because this option is related to the situation, but it mixes up the specific cause-and-effect relationship.`;
+  }
+  if (/total|difference|product|quotient|fraction|equation|number|how many|how much/.test(prompt)) {
+    return `Student chose ${letter} because this option reflects a plausible calculation path, but it likely comes from a wrong operation, partial step, or misread quantity.`;
+  }
+  return `Student chose ${letter} because this distractor is related to the question, but it does not match the specific evidence or reasoning needed.`;
 }
 
 function normalizeCorrectAnswer(q: Question): Question {
@@ -2255,6 +2336,14 @@ function withSafeQuestionDefaults(q: Partial<Question> | null | undefined): Ques
     ...base,
     question: String(base.question || ""),
     choices: normalizeChoices(base.choices),
+    choice_misconceptions: normalizeChoiceMisconceptions(
+      base.choices,
+      (base as Question & { choiceMisconceptions?: unknown; distractor_misconceptions?: unknown }).choice_misconceptions ||
+        (base as Question & { choiceMisconceptions?: unknown; distractor_misconceptions?: unknown }).choiceMisconceptions ||
+        (base as Question & { choiceMisconceptions?: unknown; distractor_misconceptions?: unknown }).distractor_misconceptions,
+      base.correct_answer ?? "A",
+      String(base.question || ""),
+    ),
     correct_answer: base.correct_answer ?? "A",
     explanation: String(base.explanation || ""),
   };
@@ -2262,6 +2351,12 @@ function withSafeQuestionDefaults(q: Partial<Question> | null | undefined): Ques
   return {
     ...normalized,
     choices: normalizeChoices(normalized.choices),
+    choice_misconceptions: normalizeChoiceMisconceptions(
+      normalized.choices,
+      normalized.choice_misconceptions,
+      normalized.correct_answer,
+      normalized.question,
+    ),
     correct_answer: safeCorrectAnswer(normalized.correct_answer),
   };
 }

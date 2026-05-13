@@ -791,6 +791,41 @@
       margin-top: 8px;
     }
 
+    .help-response-form {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .help-response-input {
+      width: 100%;
+      min-height: 72px;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      padding: 10px 12px;
+      color: #0f172a;
+      background: #ffffff;
+      font: inherit;
+      font-size: 0.92rem;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .help-response-input:focus {
+      border-color: #8b5cf6;
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+    }
+
+    .teacher-response-preview {
+      margin-top: 8px;
+      border-left: 3px solid #8b5cf6;
+      padding-left: 10px;
+      color: #334155;
+      font-size: 0.88rem;
+      font-weight: 750;
+    }
+
     .mini-badge {
       border-radius: 999px;
       background: #f1f5f9;
@@ -3503,7 +3538,14 @@
                   <div class="student-row-body">
                     <div class="student-row-name">${name}</div>
                     <div class="student-row-meta">${message} • ${escapeHtml(createdAt)}</div>
-                    <div class="badge-row"><button class="live-compact-btn" type="button" data-resolve-help-id="${id}">Mark Resolved</button></div>
+                    ${request.teacher_response ? `<div class="teacher-response-preview"><strong>Response sent:</strong> ${escapeHtml(cleanText(request.teacher_response))}</div>` : ""}
+                    <div class="help-response-form">
+                      <textarea class="help-response-input" data-help-response-input="${id}" placeholder="Type a response for ${name}..." maxlength="700">${escapeHtml(cleanText(request.teacher_response || ""))}</textarea>
+                      <div class="badge-row">
+                        <button class="live-compact-btn primary" type="button" data-send-help-response-id="${id}">Send Response</button>
+                        <button class="live-compact-btn" type="button" data-resolve-help-id="${id}">Mark Resolved</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </li>
@@ -3513,18 +3555,57 @@
     }
 
     async function resolveHelpRequest(requestId) {
-      if (!requestId) return;
+      const helpId = cleanText(requestId);
+      if (!helpId) return;
+      console.log("RESOLVE CLICKED:", helpId);
       const sessionStatus = document.getElementById("live-session-status");
-      const { error } = await supabaseClient
+      const { data, error } = await supabaseClient
         .from("help_requests")
         .update({ resolved: true })
-        .eq("id", requestId);
+        .eq("id", helpId)
+        .select("*");
+      console.log("RESOLVE RESPONSE:", data);
       if (error) {
         console.error("❌ RESOLVE HELP REQUEST ERROR:", error);
         if (sessionStatus) sessionStatus.textContent = `❌ ${error.message || "Could not resolve help request."}`;
         return;
       }
-      window.__liveHelpRequests = (window.__liveHelpRequests || []).filter((request) => request.id !== requestId);
+      const updatedRow = Array.isArray(data) ? data[0] : data;
+      window.__liveHelpRequests = (window.__liveHelpRequests || [])
+        .map((request) => request.id === helpId ? { ...request, ...(updatedRow || {}), resolved: true } : request)
+        .filter((request) => request && request.resolved !== true && request.id !== helpId);
+      console.log("UPDATED HELP STATE:", window.__liveHelpRequests);
+      renderHelpRequests();
+    }
+
+    async function sendHelpResponse(requestId) {
+      const helpId = cleanText(requestId);
+      if (!helpId) return;
+      const input = document.querySelector(`[data-help-response-input="${CSS.escape(helpId)}"]`);
+      const teacherResponse = cleanText(input?.value || "");
+      const sessionStatus = document.getElementById("live-session-status");
+      if (!teacherResponse) {
+        if (sessionStatus) sessionStatus.textContent = "Type a response before sending.";
+        input?.focus();
+        return;
+      }
+      console.log("HELP RESPONSE CLICKED:", helpId);
+      const { data, error } = await supabaseClient
+        .from("help_requests")
+        .update({ teacher_response: teacherResponse, responded_at: new Date().toISOString() })
+        .eq("id", helpId)
+        .select("*");
+      console.log("HELP RESPONSE UPDATE:", data);
+      if (error) {
+        console.error("❌ HELP RESPONSE ERROR:", error);
+        if (sessionStatus) sessionStatus.textContent = `❌ ${error.message || "Could not send help response."}`;
+        return;
+      }
+      const updatedRow = Array.isArray(data) ? data[0] : data;
+      if (updatedRow) {
+        window.__liveHelpRequests = (window.__liveHelpRequests || []).map((request) => request.id === helpId ? updatedRow : request);
+      }
+      console.log("UPDATED HELP STATE:", window.__liveHelpRequests);
       renderHelpRequests();
     }
 
@@ -3549,19 +3630,25 @@
       liveHelpRequestsChannel = supabaseClient
         .channel(`help-${sessionId}`)
         .on("postgres_changes", {
-          event: "INSERT",
+          event: "*",
           schema: "public",
-          table: "help_requests"
+          table: "help_requests",
+          filter: `session_id=eq.${sessionId}`
         }, (payload) => {
           console.log("HELP REQUEST PAYLOAD:", payload);
 
-          if (payload?.new?.session_id !== sessionId) return;
+          const nextRow = payload?.new || payload?.old;
+          if (!nextRow || nextRow.session_id !== sessionId) return;
 
           window.__liveHelpRequests = window.__liveHelpRequests || [];
-          const existingIndex = window.__liveHelpRequests.findIndex((request) => request.id === payload.new.id);
-          if (existingIndex >= 0) window.__liveHelpRequests[existingIndex] = payload.new;
-          else window.__liveHelpRequests.push(payload.new);
-          console.log("LIVE HELP STATE:", window.__liveHelpRequests);
+          if (payload.eventType === "DELETE" || nextRow.resolved === true) {
+            window.__liveHelpRequests = window.__liveHelpRequests.filter((request) => request.id !== nextRow.id);
+          } else {
+            const existingIndex = window.__liveHelpRequests.findIndex((request) => request.id === nextRow.id);
+            if (existingIndex >= 0) window.__liveHelpRequests[existingIndex] = nextRow;
+            else window.__liveHelpRequests.push(nextRow);
+          }
+          console.log("UPDATED HELP STATE:", window.__liveHelpRequests);
           renderHelpRequests();
         })
         .subscribe((status) => {
@@ -3815,6 +3902,51 @@
       return { answer, count, percent };
     }
 
+    function getChoiceByLetter(question = {}, letter = "") {
+      const index = ["A", "B", "C", "D"].indexOf(String(letter || "").toUpperCase().trim());
+      if (index < 0) return null;
+      const rawChoices = Array.isArray(question.raw_choices) ? question.raw_choices : question.choices;
+      const rawChoice = Array.isArray(rawChoices) ? rawChoices[index] : null;
+      const choiceText = Array.isArray(question.choices) ? question.choices[index] : "";
+      if (rawChoice && typeof rawChoice === "object") {
+        return {
+          letter: String(rawChoice.letter || letter).toUpperCase(),
+          text: cleanText(rawChoice.text || rawChoice.choice || choiceText),
+          misconception: cleanText(rawChoice.misconception || rawChoice.common_misconception || rawChoice.common_mistake || rawChoice.rationale || "")
+        };
+      }
+      return { letter: String(letter || "").toUpperCase(), text: cleanText(choiceText || rawChoice || ""), misconception: "" };
+    }
+
+    function getChoiceMisconceptionMap(question = {}) {
+      const source = question.choice_misconceptions || question.choiceMisconceptions || question.distractor_misconceptions || {};
+      if (!source || typeof source !== "object" || Array.isArray(source)) return {};
+      return Object.entries(source).reduce((map, [key, value]) => {
+        map[String(key || "").toUpperCase().trim()] = cleanText(value);
+        return map;
+      }, {});
+    }
+
+    function buildDistractorMisconception(question = {}, selectedAnswer = "") {
+      const choice = getChoiceByLetter(question, selectedAnswer);
+      const metadata = resolveQuestionMetadata(question, {
+        subject: coreData?.subject || selectedSubject || "Reading",
+        skill: coreData?.skill || document.getElementById("skill")?.value || "",
+        teks: coreData?.teks || ""
+      });
+      const selectedText = cleanText(choice?.text || "this answer");
+      const skill = cleanText(metadata.skill || "the target skill").toLowerCase();
+      if (!choice || !selectedText) return "Choosing an answer before proving it with the strongest evidence.";
+      if (skill.includes("theme")) return `Student chose ${choice.letter} because ${selectedText} sounded connected to the passage, but the answer likely focuses on a surface detail or character feeling instead of the deeper message.`;
+      if (skill.includes("inference")) return `Student chose ${choice.letter} because ${selectedText} seemed possible, but the reasoning goes beyond what the evidence actually supports.`;
+      if (skill.includes("main") || skill.includes("central")) return `Student chose ${choice.letter} because ${selectedText} matches part of the text, but it is too narrow to capture the whole idea.`;
+      if (skill.includes("support")) return `Student chose ${choice.letter} because ${selectedText} is related to the topic, but it does not provide the strongest support for the question.`;
+      if (metadata.subject === "Math") return `Student chose ${choice.letter} because ${selectedText} reflects a plausible calculation path, but it likely comes from using the wrong operation, stopping after a partial step, or misreading what the question asks.`;
+      if (metadata.subject === "Science") return `Student chose ${choice.letter} because ${selectedText} sounds scientifically reasonable, but it confuses the specific cause, evidence, or variable in this item.`;
+      if (metadata.subject === "Social Studies") return `Student chose ${choice.letter} because ${selectedText} is historically or civically related, but it mixes up the specific cause, effect, or evidence needed here.`;
+      return `Student chose ${choice.letter} because ${selectedText} seemed plausible, but it does not match the specific reasoning this question requires.`;
+    }
+
     function buildReteachButton({ skill = "", subject = "", teks = "" } = {}) {
       if (!skill) return "";
       return `
@@ -3848,7 +3980,7 @@
           skill: metadata.skill,
           teks: metadata.teks,
           standard: metadata.standard,
-          misconception: getQuestionMisconception(question)
+          misconception: getQuestionMisconception(question, studentAnswer)
         };
         console.log("MISSED QUESTION:", missedQuestion);
         return missedQuestion;
@@ -3883,7 +4015,7 @@
           attempts: picks.length,
           mostCommonWrongAnswer,
           missed: picks.filter((pick) => pick.answer !== correct),
-          misconception: getQuestionMisconception(q)
+          misconception: getQuestionMisconception(q, mostCommonWrongAnswer?.answer)
         };
       });
 
@@ -5315,7 +5447,7 @@
     function normalizeChoicesForUI(choices) {
       const source = Array.isArray(choices) ? choices : [];
       const normalized = source
-        .map((choice) => cleanText(typeof choice === "string" ? choice : choice?.text || ""))
+        .map((choice) => cleanText(typeof choice === "string" ? choice : choice?.text || choice?.choice || ""))
         .filter((choice) => Boolean(choice));
 
       while (normalized.length < 4) {
@@ -5323,6 +5455,24 @@
       }
 
       return normalized.slice(0, 4);
+    }
+
+    function normalizeChoiceMisconceptionsForUI(choices, existing = {}) {
+      const map = {};
+      if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+        Object.entries(existing).forEach(([letter, misconception]) => {
+          const normalizedLetter = String(letter || "").toUpperCase().trim();
+          const cleaned = cleanText(misconception);
+          if (normalizedLetter && cleaned) map[normalizedLetter] = cleaned;
+        });
+      }
+      (Array.isArray(choices) ? choices : []).forEach((choice, index) => {
+        if (!choice || typeof choice !== "object") return;
+        const letter = String(choice.letter || ["A", "B", "C", "D"][index] || "").toUpperCase().trim();
+        const misconception = cleanText(choice.misconception || choice.common_misconception || choice.common_mistake || choice.rationale || "");
+        if (letter && misconception) map[letter] = misconception;
+      });
+      return map;
     }
 
     function looksLikeTeks(value = "") {
@@ -5356,7 +5506,7 @@
       return { subject, skill, teks, standard };
     }
 
-    function getQuestionMisconception(question = {}) {
+    function getQuestionMisconception(question = {}, selectedAnswer = "") {
       const supportCollections = [
         ...(Array.isArray(supportData?.answerKey?.practice) ? supportData.answerKey.practice : []),
         ...(Array.isArray(supportData?.answerKey?.cross) ? supportData.answerKey.cross : []),
@@ -5364,6 +5514,21 @@
         ...(Array.isArray(supportData?.tutor?.cross) ? supportData.tutor.cross : [])
       ];
       const supportMatch = supportCollections.find((item) => item?.question_id && item.question_id === question.question_id) || {};
+      const selectedLetter = String(selectedAnswer || "").toUpperCase().trim();
+      const choiceMap = {
+        ...getChoiceMisconceptionMap(question),
+        ...getChoiceMisconceptionMap(supportMatch)
+      };
+      const selectedChoice = getChoiceByLetter(question, selectedLetter);
+      const selectedMisconception = cleanText(
+        selectedChoice?.misconception ||
+        choiceMap[selectedLetter] ||
+        supportMatch?.choice_misconceptions?.[selectedLetter] ||
+        supportMatch?.distractor_misconceptions?.[selectedLetter] ||
+        ""
+      );
+      if (selectedLetter && selectedMisconception) return selectedMisconception;
+      if (selectedLetter) return buildDistractorMisconception(question, selectedLetter);
       return cleanText(
         question.common_misconception ||
         question.common_mistake ||
@@ -5372,7 +5537,7 @@
         supportMatch.common_misconception ||
         supportMatch.common_mistake ||
         supportMatch.misconception ||
-        "Picking a plausible answer without matching it to the text evidence."
+        "Choosing an answer before proving it with the strongest evidence."
       );
     }
 
@@ -5385,7 +5550,9 @@
         ...metadata,
         question_id: cleanText(safe?.question_id || `${modePrefix}_q${index + 1}`),
         question: cleanText(safe?.question || `Question ${index + 1}`),
+        raw_choices: Array.isArray(safe?.choices) ? safe.choices : [],
         choices: normalizeChoicesForUI(safe?.choices),
+        choice_misconceptions: normalizeChoiceMisconceptionsForUI(safe?.choices, safe?.choice_misconceptions || safe?.choiceMisconceptions || safe?.distractor_misconceptions),
         correct_answer: normalizeCorrectAnswerValue(safe?.correct_answer),
         common_misconception: getQuestionMisconception(safe)
       };
@@ -6285,6 +6452,12 @@ Create your second version now.`;
 
         if (target.closest("[data-close-student-review]")) {
           closeStudentReviewPanel();
+          return;
+        }
+
+        const responseTarget = target.closest("[data-send-help-response-id]");
+        if (responseTarget) {
+          sendHelpResponse(responseTarget.getAttribute("data-send-help-response-id") || "");
           return;
         }
 
