@@ -3783,12 +3783,24 @@
     }
 
     async function subscribeToAccommodations(sessionId) {
-      if (liveAccommodationsChannel) await supabaseClient.removeChannel(liveAccommodationsChannel);
+      try {
+        if (liveAccommodationsChannel) await supabaseClient.removeChannel(liveAccommodationsChannel);
+      } catch (error) {
+        console.warn("⚠️ Could not remove accommodations channel", error);
+      }
+      liveAccommodationsChannel = null;
       window.__liveAccommodations = [];
-      const { data, error } = await supabaseClient.from("student_accommodations").select("*").eq("session_id", sessionId);
-      if (error) console.warn("⚠️ Could not load accommodations", error);
-      window.__liveAccommodations = data || [];
-      renderParticipantsLobby();
+      try {
+        const { data, error } = await withTimeout(
+          supabaseClient.from("student_accommodations").select("*").eq("session_id", sessionId),
+          LIVE_SUBSCRIPTION_INIT_TIMEOUT_MS
+        );
+        if (error) console.warn("⚠️ Could not load accommodations", error);
+        window.__liveAccommodations = data || [];
+        renderParticipantsLobby();
+      } catch (error) {
+        console.warn("⚠️ Accommodations initial load did not complete", error);
+      }
       liveAccommodationsChannel = supabaseClient
         .channel(`accommodations-${sessionId}`)
         .on("postgres_changes", { event: "*", schema: "public", table: "student_accommodations", filter: `session_id=eq.${sessionId}` }, (payload) => {
@@ -3802,7 +3814,9 @@
           renderParticipantsLobby();
           updateDashboard();
         })
-        .subscribe();
+        .subscribe((status) => {
+          console.log("ACCOMMODATIONS CHANNEL STATUS:", status);
+        });
     }
 
 
@@ -4191,22 +4205,33 @@
 
     async function subscribeToHelpRequests(sessionId) {
       console.log("CURRENT SESSION ID:", sessionId);
-      if (liveHelpRequestsChannel) await supabaseClient.removeChannel(liveHelpRequestsChannel);
+      try {
+        if (liveHelpRequestsChannel) await supabaseClient.removeChannel(liveHelpRequestsChannel);
+      } catch (error) {
+        console.warn("⚠️ Could not remove help request channel", error);
+      }
       liveHelpRequestsChannel = null;
       window.__liveHelpRequests = [];
-      const { data, error } = await supabaseClient
-        .from("help_requests")
-        .select("*")
-        .eq("session_id", sessionId)
-        .eq("resolved", false)
-        .order("created_at", { ascending: true });
-      console.log("INITIAL HELP REQUESTS:", data);
-      if (error) {
-        console.warn("⚠️ Could not load help requests", error);
+      try {
+        const { data, error } = await withTimeout(
+          supabaseClient
+            .from("help_requests")
+            .select("*")
+            .eq("session_id", sessionId)
+            .eq("resolved", false)
+            .order("created_at", { ascending: true }),
+          LIVE_SUBSCRIPTION_INIT_TIMEOUT_MS
+        );
+        console.log("INITIAL HELP REQUESTS:", data);
+        if (error) {
+          console.warn("⚠️ Could not load help requests", error);
+        }
+        window.__liveHelpRequests = data || [];
+        console.log("LIVE HELP STATE:", window.__liveHelpRequests);
+        renderHelpRequests();
+      } catch (error) {
+        console.warn("⚠️ Help requests initial load did not complete", error);
       }
-      window.__liveHelpRequests = data || [];
-      console.log("LIVE HELP STATE:", window.__liveHelpRequests);
-      renderHelpRequests();
       liveHelpRequestsChannel = supabaseClient
         .channel(`help-${sessionId}`)
         .on("postgres_changes", {
@@ -4239,6 +4264,7 @@
     }
 
     async function startSession(sessionId) {
+      console.log("START SESSION BEGIN");
       console.log("🚀 startSession REST fallback CALLED", sessionId);
 
       const url = `${SUPABASE_URL}/rest/v1/sessions?id=eq.${encodeURIComponent(sessionId)}`;
@@ -4259,6 +4285,7 @@
         })
       });
 
+      console.log("START SESSION RESPONSE:", response.status);
       console.log("🔥 REST UPDATE STATUS:", response.status);
 
       if (!response.ok) {
@@ -4267,6 +4294,7 @@
         throw new Error(text || "Could not start session.");
       }
 
+      console.log("START SESSION COMPLETE");
       return {
         id: sessionId,
         status: "live",
@@ -4943,12 +4971,21 @@
     const RENDER_TIMEOUT_MS = 10000;
     const ACCOMMODATIONS_SAVE_TIMEOUT_MS = 20000;
     const HELP_ACTION_TIMEOUT_MS = 12000;
+    const LIVE_SUBSCRIPTION_INIT_TIMEOUT_MS = 8000;
 
     function withTimeout(promise, ms = API_FETCH_TIMEOUT_MS) {
       return Promise.race([
         promise,
         new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), ms))
       ]);
+    }
+
+    function initializeLiveSubscription(label, init) {
+      Promise.resolve()
+        .then(init)
+        .catch((error) => {
+          console.error(`❌ ${label} subscription failed to initialize:`, error);
+        });
     }
 
     async function getSafeSession() {
@@ -7293,9 +7330,13 @@ Create your second version now.`;
         btnEl.disabled = true;
         btnEl.textContent = "Starting...";
         try {
+          console.log("START CLASS CLICKED");
           console.log("🚀 START CLASS CLICKED");
+          console.log("LESSON ID:", lessonId);
           setWorkspaceView("live");
+          console.log("START SESSION BEGIN");
           const session = await createSession(lessonId);
+          console.log("SESSION CREATED:", session);
           console.log("🧪 AFTER CREATE SESSION:", session);
           if (!session?.id) {
             throw new Error("SESSION CREATE FAILED");
@@ -7307,20 +7348,26 @@ Create your second version now.`;
           syncCurrentLiveSession(session);
           addRecentActivity(`Started live session ${session.code}`, "Live class", "▶");
           console.log("✅ SESSION STORED:", session.id);
+          console.log("ABOUT TO RENDER LIVE SESSION");
           showTeacherLobby(session);
-          copyCodeBtn.disabled = false;
+          if (copyCodeBtn) copyCodeBtn.disabled = false;
           if (lockJoinBtn) { lockJoinBtn.disabled = false; lockJoinBtn.textContent = "Lock Join"; }
+          console.log("ABOUT TO SUBSCRIBE");
           console.log("➡️ ABOUT TO SUBSCRIBE", session.code);
-          subscribeToParticipants(session.code);
-          subscribeToResponses(session.id);
+          initializeLiveSubscription("participants", () => subscribeToParticipants(session.code));
+          initializeLiveSubscription("responses", () => subscribeToResponses(session.id));
           console.log("➡️ SUBSCRIBING TO HELP REQUESTS", session.id);
-          await subscribeToHelpRequests(session.id);
-          await subscribeToAccommodations(session.id);
+          initializeLiveSubscription("help requests", () => subscribeToHelpRequests(session.id));
+          initializeLiveSubscription("accommodations", () => subscribeToAccommodations(session.id));
+          console.log("START SESSION COMPLETE");
         } catch (error) {
-          sessionStatus.textContent = `❌ ${error.message || "Could not start live class."}`;
+          console.error("❌ START CLASS ERROR:", error);
+          if (sessionStatus) sessionStatus.textContent = `❌ ${error.message || "Could not start live class."}`;
         } finally {
-          btnEl.disabled = false;
-          btnEl.textContent = originalLabel;
+          if (document.body.contains(btnEl)) {
+            btnEl.disabled = false;
+            btnEl.textContent = originalLabel;
+          }
         }
       });
 

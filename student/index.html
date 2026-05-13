@@ -1590,8 +1590,16 @@ async function fetchStudentAccommodations() {
 
 async function subscribeToStudentAccommodations() {
   if (!currentSession) return;
-  if (accommodationsChannel) await studentSupabase.removeChannel(accommodationsChannel);
-  await fetchStudentAccommodations();
+  try {
+    if (accommodationsChannel) await studentSupabase.removeChannel(accommodationsChannel);
+  } catch (error) {
+    console.warn("⚠️ Could not remove student accommodations channel", error);
+  }
+  try {
+    await fetchStudentAccommodations();
+  } catch (error) {
+    console.warn("⚠️ Student accommodations initial load did not complete", error);
+  }
   accommodationsChannel = studentSupabase
     .channel(`student-accommodations-${currentSession.id}-${currentSession.student}`)
     .on("postgres_changes", { event: "*", schema: "public", table: "student_accommodations", filter: `session_id=eq.${currentSession.id}` }, (payload) => {
@@ -1603,6 +1611,14 @@ async function subscribeToStudentAccommodations() {
     })
     .subscribe((status) => {
       console.log("STUDENT ACCOMMODATIONS CHANNEL STATUS:", status);
+    });
+}
+
+function initializeStudentSubscription(label, init) {
+  Promise.resolve()
+    .then(init)
+    .catch((error) => {
+      console.error(`❌ ${label} subscription failed to initialize:`, error);
     });
 }
 
@@ -2011,9 +2027,9 @@ document.addEventListener("DOMContentLoaded", () => {
       updateSessionLabel(`Code ${session.code}`);
       document.getElementById("join-panel")?.setAttribute("hidden", "");
       lessonStarted = false;
-      subscribeToSessionStatus(session.code);
-      subscribeToHelpResponses();
-      await subscribeToStudentAccommodations();
+      initializeStudentSubscription("session status", () => subscribeToSessionStatus(session.code));
+      initializeStudentSubscription("help responses", () => subscribeToHelpResponses());
+      initializeStudentSubscription("student accommodations", () => subscribeToStudentAccommodations());
       if (session.status === "lobby") {
         waiting.style.display = "block";
         setStatus("✅ Joined! Your teacher will start soon.", "success");
