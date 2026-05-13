@@ -996,6 +996,62 @@ let localWorkspacePrefs = {};
 let spanishMode = false;
 let translationGenerationPromise = null;
 
+function hasSessionLessonData(session) {
+  return Boolean(extractLessonData(session?.lesson_data));
+}
+
+function isSessionLive(session) {
+  return session?.status === "live" && session?.is_active === true;
+}
+
+function shouldRenderLiveLesson(session) {
+  return isSessionLive(session) || hasSessionLessonData(session);
+}
+
+function logFullSessionDebug(session) {
+  console.log("FULL SESSION:", session);
+  console.log("LESSON DATA EXISTS:", !!session?.lesson_data);
+  console.log("LESSON DATA:", session?.lesson_data);
+}
+
+function logStudentSessionState(label, session) {
+  const isLive = isSessionLive(session);
+  const hasLessonPayload = hasSessionLessonData(session);
+  console.log(label, session);
+  console.log("SESSION STATUS:", session?.status);
+  console.log("SESSION IS_ACTIVE:", session?.is_active);
+  console.log("SESSION ALLOW_JOIN:", session?.allow_join);
+  console.log("STUDENT LIVE CHECK:", isLive);
+  console.log("STUDENT LESSON_DATA FAILSAFE:", hasLessonPayload);
+  console.log("SESSION PAYLOAD:", session);
+  console.log("SESSION LESSON DATA:", session?.lesson_data);
+  logFullSessionDebug(session);
+  return isLive;
+}
+
+async function fetchLatestSessionByCode(reason, code = currentSession?.code) {
+  if (!code) return null;
+  const { data: session, error } = await studentSupabase
+    .from("sessions")
+    .select(LIVE_SESSION_SELECT)
+    .eq("code", code)
+    .maybeSingle();
+  if (error) {
+    console.error(`[${reason}] Fresh session fetch failed`, { error, code });
+    return null;
+  }
+  console.log(`[${reason}] Fresh session fetch complete`, session);
+  logFullSessionDebug(session);
+  return session;
+}
+
+async function ensureLessonDataForLiveSession(session, reason) {
+  if (session?.status !== "live" || session?.lesson_data) return session;
+  console.warn(`[${reason}] Live session is missing lesson_data; forcing fresh session fetch.`);
+  const refreshedSession = await fetchLatestSessionByCode(reason, session.code || currentSession?.code);
+  return refreshedSession || session;
+}
+
 function escapeHtml(value = "") {
   return String(value)
     .replace(/&/g, "&amp;")
@@ -1737,12 +1793,15 @@ async function joinSession(code, studentName) {
   console.log("[joinSession] START", { joinTraceId, code, studentName });
   try {
     console.log("[joinSession] BEFORE session lookup", { joinTraceId, code });
-    const { data: session, error: sessionError, status: sessionStatus, statusText: sessionStatusText } = await studentSupabase
+    const sessionResult = await studentSupabase
       .from("sessions")
       .select(LIVE_SESSION_SELECT)
       .eq("code", code)
       .single();
+    let session = sessionResult.data;
+    const { error: sessionError, status: sessionStatus, statusText: sessionStatusText } = sessionResult;
     console.log("[joinSession] AFTER session lookup", { joinTraceId, session, sessionError, sessionStatus, sessionStatusText });
+    logFullSessionDebug(session);
     if (sessionError) {
       console.error("[joinSession] Session lookup failed", { joinTraceId, sessionError, code });
       throw new Error(`Session lookup failed (${sessionError.message || "unknown error"}).`);
@@ -1751,6 +1810,7 @@ async function joinSession(code, studentName) {
       console.error("[joinSession] Session lookup returned null", { joinTraceId, code });
       throw new Error("Session not found.");
     }
+    session = await ensureLessonDataForLiveSession(session, "joinSession");
     const { data: { session: authSession }, error: authError } = await studentSupabase.auth.getSession();
     if (authError) {
       console.error("[joinSession] Auth session check failed", { joinTraceId, authError });
@@ -1936,16 +1996,13 @@ async function startStudentLesson(sessionUpdate = null) {
         code: sessionUpdate.code || currentSession.code,
         status: sessionUpdate.status || currentSession.status,
         is_active: sessionUpdate.is_active ?? currentSession.is_active,
+        allow_join: sessionUpdate.allow_join ?? currentSession.allow_join,
         lesson_data: sessionUpdate.lesson_data ?? currentSession.lesson_data
       };
     }
 
-    console.log("STUDENT SESSION UPDATE:", currentSession);
-    console.log("SESSION STATUS:", currentSession?.status);
-    console.log("SESSION ACTIVE:", currentSession?.is_active);
-    console.log("SESSION LESSON DATA:", currentSession?.lesson_data);
+    logStudentSessionState("STUDENT SESSION UPDATE:", currentSession);
     console.log("LIVE SESSION STATUS:", currentSession.status);
-    console.log("SESSION PAYLOAD:", currentSession);
 
     let lessonData = extractLessonData(currentSession.lesson_data);
     let sessionLookup = null;
@@ -1959,11 +2016,7 @@ async function startStudentLesson(sessionUpdate = null) {
         .maybeSingle();
       sessionLookup = sessionResult.data;
       sessionError = sessionResult.error;
-      console.log("STUDENT SESSION UPDATE:", sessionLookup);
-      console.log("SESSION STATUS:", sessionLookup?.status);
-      console.log("SESSION ACTIVE:", sessionLookup?.is_active);
-      console.log("SESSION LESSON DATA:", sessionLookup?.lesson_data);
-      console.log("SESSION PAYLOAD:", sessionLookup);
+      logStudentSessionState("STUDENT SESSION UPDATE:", sessionLookup);
       if (!sessionError && sessionLookup) {
         currentSession = {
           ...currentSession,
@@ -1984,6 +2037,8 @@ async function startStudentLesson(sessionUpdate = null) {
       return;
     }
 
+    const waiting = document.getElementById("waiting");
+    if (waiting) waiting.style.display = "none";
     console.log("ABOUT TO CALL renderLesson()");
     const rendered = renderQuestions(lessonData) !== false;
     if (!rendered) {
@@ -2015,20 +2070,18 @@ function clearSessionStatusPolling() {
 
 async function checkSessionStatus() {
   if (!currentSession || (lessonStarted && currentLessonData)) return;
-  const { data: session, error } = await studentSupabase.from("sessions").select(LIVE_SESSION_SELECT).eq("code", currentSession.code).single();
+  const { data, error } = await studentSupabase.from("sessions").select(LIVE_SESSION_SELECT).eq("code", currentSession.code).single();
   if (error) {
     console.error("[checkSessionStatus] Session status lookup failed", { error, currentSession });
     return;
   }
+  let session = data;
   console.log("SESSION STATUS CHECK:", session);
-  console.log("STUDENT SESSION UPDATE:", session);
-  console.log("SESSION STATUS:", session?.status);
-  console.log("SESSION ACTIVE:", session?.is_active);
+  logStudentSessionState("STUDENT SESSION UPDATE:", session);
   console.log("LIVE SESSION STATUS:", session?.status);
-  console.log("SESSION PAYLOAD:", session);
-  console.log("SESSION LESSON DATA:", session?.lesson_data);
+  session = await ensureLessonDataForLiveSession(session, "checkSessionStatus");
   currentSession = { ...currentSession, ...session, student: currentSession.student };
-  if (session?.status === "live") await startStudentLesson(session);
+  if (shouldRenderLiveLesson(currentSession)) await startStudentLesson(currentSession);
 }
 
 function subscribeToSessionStatus(code) {
@@ -2036,17 +2089,15 @@ function subscribeToSessionStatus(code) {
   clearSessionStatusPolling();
   sessionStatusChannel = studentSupabase
     .channel(`session-${code}`)
-    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `code=eq.${code}` }, (payload) => {
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `code=eq.${code}` }, async (payload) => {
       console.log("STUDENT RECEIVED SESSION UPDATE");
       console.log("SESSION UPDATE:", payload);
-      console.log("STUDENT SESSION UPDATE:", payload.new);
-      console.log("SESSION STATUS:", payload.new?.status);
-      console.log("SESSION ACTIVE:", payload.new?.is_active);
-      console.log("LIVE SESSION STATUS:", payload.new?.status);
-      console.log("SESSION PAYLOAD:", payload.new);
-      console.log("SESSION LESSON DATA:", payload.new?.lesson_data);
-      if (payload.new) currentSession = { ...currentSession, ...payload.new, student: currentSession?.student };
-      if (payload.new?.status === "live") startStudentLesson(payload.new);
+      let nextSession = payload.new;
+      logStudentSessionState("STUDENT SESSION UPDATE:", nextSession);
+      console.log("LIVE SESSION STATUS:", nextSession?.status);
+      nextSession = await ensureLessonDataForLiveSession(nextSession, "subscribeToSessionStatus");
+      if (nextSession) currentSession = { ...currentSession, ...nextSession, student: currentSession?.student };
+      if (shouldRenderLiveLesson(currentSession)) startStudentLesson(currentSession);
     })
     .subscribe((status) => {
       console.log("SESSION CHANNEL STATUS:", status);
@@ -2397,7 +2448,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setStatus("Joining your live lesson...");
     try {
       const session = await joinSession(code, student);
-      currentSession = { id: session.id, lesson_id: session.lesson_id, code: session.code, status: session.status, is_active: session.is_active, lesson_data: session.lesson_data, student };
+      currentSession = { id: session.id, lesson_id: session.lesson_id, code: session.code, status: session.status, is_active: session.is_active, allow_join: session.allow_join, lesson_data: session.lesson_data, student };
       loadLocalWorkspaceState();
       updateSessionLabel(`Code ${session.code}`);
       document.getElementById("join-panel")?.setAttribute("hidden", "");
@@ -2405,13 +2456,9 @@ document.addEventListener("DOMContentLoaded", () => {
       initializeStudentSubscription("session status", () => subscribeToSessionStatus(session.code));
       initializeStudentSubscription("help responses", () => subscribeToHelpResponses());
       initializeStudentSubscription("student accommodations", () => subscribeToStudentAccommodations());
-      console.log("STUDENT SESSION UPDATE:", session);
-      console.log("SESSION STATUS:", session?.status);
-      console.log("SESSION ACTIVE:", session?.is_active);
+      logStudentSessionState("STUDENT SESSION UPDATE:", session);
       console.log("LIVE SESSION STATUS:", session.status);
-      console.log("SESSION PAYLOAD:", session);
-      console.log("SESSION LESSON DATA:", session.lesson_data);
-      if (session.status === "lobby") {
+      if (!shouldRenderLiveLesson(currentSession)) {
         waiting.style.display = "block";
         setStatus("✅ Joined! Your teacher will start soon.", "success");
         alert("✅ Joined!");

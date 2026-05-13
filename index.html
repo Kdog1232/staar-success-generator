@@ -3400,13 +3400,40 @@
       return window.currentLiveSessionId || currentLiveSessionId || null;
     }
 
+    function isSessionLive(session) {
+      return session?.status === "live" && session?.is_active === true;
+    }
+
+    function logFullSessionDebug(session) {
+      console.log("FULL SESSION:", session);
+      console.log("LESSON DATA EXISTS:", !!session?.lesson_data);
+      console.log("LESSON DATA:", session?.lesson_data);
+    }
+
+    function logSessionState(label, session) {
+      const isTeacherLive = isSessionLive(session);
+      console.log(label, session);
+      console.log("SESSION STATUS:", session?.status);
+      console.log("SESSION IS_ACTIVE:", session?.is_active);
+      console.log("SESSION ALLOW_JOIN:", session?.allow_join);
+      console.log("TEACHER LIVE CHECK:", isTeacherLive);
+      logFullSessionDebug(session);
+      return isTeacherLive;
+    }
+
+    function getCurrentLiveSession() {
+      return window.currentLiveSession || null;
+    }
+
     function syncCurrentLiveSession(session) {
       if (!session?.id) return;
       currentLiveSessionId = session.id;
       currentLiveCode = session.code || currentLiveCode;
       window.currentLiveSessionId = session.id;
       window.currentLiveCode = currentLiveCode;
+      window.currentLiveSession = { ...(window.currentLiveSession || {}), ...session };
       window.currentLiveSessionStatus = session.status || window.currentLiveSessionStatus || "lobby";
+      logSessionState("TEACHER SESSION UPDATE:", window.currentLiveSession);
       updateTopStatusBar();
     }
 
@@ -3861,9 +3888,14 @@
       if (responseBadgeCount) responseBadgeCount.textContent = String(responses.length);
       if (responseLabel) responseLabel.textContent = responses.length === 1 ? "Response" : "Responses";
       if (participantBadgeCount) participantBadgeCount.textContent = String(participants.length);
-      const sessionStatus = window.currentLiveSessionStatus;
-      const isLive = sessionStatus === "live";
+      const currentSession = getCurrentLiveSession();
+      const sessionStatus = currentSession?.status || window.currentLiveSessionStatus;
+      const isLive = isSessionLive(currentSession);
       const isEnded = sessionStatus === "ended";
+      console.log("SESSION STATUS:", currentSession?.status);
+      console.log("SESSION IS_ACTIVE:", currentSession?.is_active);
+      console.log("SESSION ALLOW_JOIN:", currentSession?.allow_join);
+      console.log("TEACHER LIVE CHECK:", isLive);
       if (state) state.textContent = isEnded ? "Ended" : (isLive ? "Live" : "Lobby");
       if (stateLabel) stateLabel.textContent = isEnded ? "Closed" : (isLive ? "Session Active" : "Open");
     }
@@ -3886,7 +3918,7 @@
       const participants = window.__liveParticipants || [];
       const responsesByName = new Map((window.__liveResponses || []).map((response) => [cleanText(response.student_name || "Student"), response]));
       count.textContent = String(participants.length);
-      startLiveBtn.disabled = !getCurrentLiveSessionId() || window.__isStartingLiveSession === true || window.currentLiveSessionStatus === "live";
+      startLiveBtn.disabled = !getCurrentLiveSessionId() || window.__isStartingLiveSession === true || isSessionLive(getCurrentLiveSession());
       list.innerHTML = participants.length
         ? participants.map((participant) => {
             const name = cleanText(participant.student_name || "Student");
@@ -4274,6 +4306,8 @@
         .eq("id", sessionId)
         .maybeSingle();
 
+      logFullSessionDebug(existingSession);
+
       if (lookupError) {
         console.error("❌ START SESSION LOOKUP ERROR:", lookupError);
         throw lookupError;
@@ -4294,9 +4328,10 @@
         lesson_id: lessonId,
         lesson_data: lessonPayload,
         status: "live",
-        is_active: true
+        is_active: true,
+        allow_join: true
       };
-      console.log("SESSION PAYLOAD:", { ...existingSession, ...updatePayload });
+      logSessionState("SESSION PAYLOAD:", { ...existingSession, ...updatePayload });
       console.log("SESSION LESSON DATA:", updatePayload.lesson_data);
 
       const url = `${SUPABASE_URL}/rest/v1/sessions?id=eq.${encodeURIComponent(sessionId)}&select=id,lesson_id,code,status,is_active,allow_join,lesson_data`;
@@ -4325,16 +4360,31 @@
 
       const updatedRows = await response.json();
       const updatedSession = Array.isArray(updatedRows) ? updatedRows[0] : updatedRows;
+      logSessionState("SESSION PAYLOAD:", updatedSession);
       console.log("LIVE SESSION STATUS:", updatedSession?.status);
-      console.log("SESSION PAYLOAD:", updatedSession);
       console.log("SESSION LESSON DATA:", updatedSession?.lesson_data);
+
+      const { data: verifiedSession, error: verifyError } = await supabaseClient
+        .from("sessions")
+        .select("id, lesson_id, code, status, is_active, allow_join, lesson_data")
+        .eq("id", sessionId)
+        .maybeSingle();
+
+      if (verifyError) {
+        console.error("❌ START SESSION VERIFY ERROR:", verifyError);
+      } else {
+        console.log("✅ START SESSION VERIFY ROW:", verifiedSession);
+        logFullSessionDebug(verifiedSession);
+      }
+
       console.log("START SESSION COMPLETE");
-      return updatedSession || {
+      return verifiedSession || updatedSession || {
         id: sessionId,
         lesson_id: lessonId,
         lesson_data: lessonPayload,
         status: "live",
-        is_active: true
+        is_active: true,
+        allow_join: true
       };
     }
 
