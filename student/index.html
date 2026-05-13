@@ -429,6 +429,14 @@
       display: grid;
       gap: 20px;
       margin-top: 22px;
+      opacity: 1;
+      transition: opacity 180ms ease, transform 180ms ease;
+      will-change: opacity, transform;
+    }
+
+    #questions.is-language-transitioning {
+      opacity: 0.35;
+      transform: translateY(4px);
     }
 
     .lesson-section {
@@ -984,6 +992,7 @@ let lineReaderIndex = 0;
 let visibleChunkCount = 1;
 let localWorkspacePrefs = {};
 let spanishMode = false;
+let translationGenerationPromise = null;
 
 function escapeHtml(value = "") {
   return String(value)
@@ -1023,12 +1032,20 @@ function renderTeacherResponse(request = currentHelpRequest) {
     card.innerHTML = "";
     return;
   }
+  request.translations = request.translations || {};
+  if (!request.translations.spanish?.teacher_response) {
+    request.translations.spanish = {
+      ...(request.translations.spanish || {}),
+      teacher_response: translateText(response)
+    };
+  }
+  const displayResponse = getDisplayText(response, request.translations.spanish.teacher_response);
   const respondedAt = request?.responded_at
     ? new Date(request.responded_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
-    : "Just now";
+    : getDisplayText("Just now", "Ahora mismo");
   card.innerHTML = `
-    <strong>👩‍🏫 Teacher Response</strong>
-    <p>"${escapeHtml(response)}"</p>
+    <strong>👩‍🏫 ${escapeHtml(getDisplayText("Teacher Response", "Respuesta del maestro"))}</strong>
+    <p>"${escapeHtml(displayResponse)}"</p>
     <small>${escapeHtml(respondedAt)}</small>
   `;
   card.classList.add("is-visible");
@@ -1323,7 +1340,7 @@ function renderAccommodationToolbar() {
   }
   toolbar.classList.add("is-visible");
   const languageButton = currentAccommodations.spanish_translation
-    ? `<button class="language-toggle" type="button" id="toggle-spanish-mode">${spanishMode ? "Spanish" : "English"} | ${spanishMode ? "English" : "Spanish"}</button>`
+    ? `<button class="language-toggle" type="button" id="toggle-spanish-mode" aria-pressed="${getActiveLanguage() === "spanish"}">${getActiveLanguage() === "spanish" ? "Spanish" : "English"} | ${getActiveLanguage() === "spanish" ? "English" : "Spanish"}</button>`
     : "";
   const fontControl = `<label class="workspace-controls">Font <select class="workspace-control-select" id="student-font-size-control">
     ${FONT_SIZE_OPTIONS.map((size) => `<option value="${size}" ${currentAccommodations.font_size === size ? "selected" : ""}>${size === "extra_large" ? "Extra Large" : size[0].toUpperCase() + size.slice(1)}</option>`).join("")}
@@ -1342,7 +1359,7 @@ function renderAccommodationToolbar() {
     : "";
   const extended = currentAccommodations.extended_time ? `<span class="extended-time-note">⏱ Extended time is active. Future timers will honor this support.</span>` : "";
   toolbar.innerHTML = `
-    <div class="support-chip-row">${labels.map((label) => `<span class="support-chip">${escapeHtml(label)}</span>`).join("")}</div>
+    <div class="support-chip-row">${labels.map((label) => `<span class="support-chip">${escapeHtml(getDisplayText(label, translateText(label)))}</span>`).join("")}</div>
     ${languageButton}
     ${fontControl}
     ${overlayControl}
@@ -1352,16 +1369,87 @@ function renderAccommodationToolbar() {
   `;
 }
 
+const SPANISH_PHRASE_TRANSLATIONS = {
+  "Read the question carefully. Choose the best answer.": "Lee la pregunta con cuidado. Escoge la mejor respuesta.",
+  "Look back at the passage and choose the detail that proves the answer.": "Vuelve a la lectura y escoge el detalle que comprueba la respuesta.",
+  "Ask: What is the passage mostly teaching or explaining?": "Pregunta: ¿Qué enseña o explica principalmente la lectura?",
+  "Use clues from the text plus what you already know.": "Usa pistas del texto junto con lo que ya sabes.",
+  "Find the cause or reason in the passage before choosing.": "Encuentra la causa o razón en la lectura antes de escoger.",
+  "Underline the important words in the question, then eliminate choices that do not match the passage.": "Subraya las palabras importantes de la pregunta y luego elimina las opciones que no coinciden con la lectura.",
+  "Comprehension prompt:": "Pregunta de comprensión:",
+  "Pause after each paragraph and ask, “What is the most important idea so far?”": "Haz una pausa después de cada párrafo y pregunta: “¿Cuál es la idea más importante hasta ahora?”",
+  "Rephrase": "Reformular",
+  "Simplified": "Simplificado",
+  "Hint": "Pista",
+  "Highlight question": "Resaltar pregunta",
+  "Highlight passage": "Resaltar lectura",
+  "Question note": "Nota de pregunta",
+  "Practice Passage note": "Nota de lectura de práctica",
+  "Cross-Curricular Passage note": "Nota de lectura interdisciplinaria",
+  "First, reread the key details. Then answer:": "Primero, vuelve a leer los detalles clave. Luego responde:",
+  "What can the reader figure out": "Qué puede deducir el lector",
+  "Which detail best proves": "Qué detalle comprueba mejor",
+  "Why did this most likely happen": "Por qué ocurrió esto probablemente",
+  "Which sentence tells the most important ideas from": "Qué oración expresa las ideas más importantes de",
+  "💡 What changed in this paragraph?": "💡 ¿Qué cambió en este párrafo?",
+  "💡 What is the author mainly describing here?": "💡 ¿Qué describe principalmente el autor aquí?",
+  "💡 What big idea keeps showing up?": "💡 ¿Qué idea importante aparece una y otra vez?",
+  "💡 What is this part mostly about?": "💡 ¿De qué trata principalmente esta parte?",
+  "💡 Which detail helps you decide?": "💡 ¿Qué detalle te ayuda a decidir?",
+  "English + Spanish vocabulary support": "Apoyo de vocabulario en inglés y español",
+  "Vocabulary support": "Apoyo de vocabulario",
+  "Add a note for yourself...": "Agrega una nota para ti...",
+  "Paragraph": "Párrafo",
+  "Continue": "Continuar",
+  "Restore": "Restaurar",
+  "Eliminate": "Eliminar",
+  "Highlight": "Resaltar",
+  "Teacher Response": "Respuesta del maestro",
+  "Just now": "Ahora mismo"
+};
+
+const SPANISH_WORD_TRANSLATIONS = {
+  students: "estudiantes", student: "estudiante", teacher: "maestro", teachers: "maestros", reader: "lector", readers: "lectores", author: "autor",
+  passage: "lectura", paragraph: "párrafo", question: "pregunta", questions: "preguntas", answer: "respuesta", answers: "respuestas", choice: "opción", choices: "opciones",
+  evidence: "evidencia", detail: "detalle", details: "detalles", idea: "idea", main: "principal", theme: "tema", summary: "resumen", summarize: "resumir",
+  infer: "inferir", inference: "inferencia", conclusion: "conclusión", support: "apoyo", supports: "apoya", supported: "apoyado", explain: "explicar", explains: "explica",
+  compare: "comparar", contrast: "contrastar", cause: "causa", effect: "efecto", reason: "razón", result: "resultado", shows: "muestra", means: "significa", because: "porque",
+  best: "mejor", most: "más", likely: "probable", important: "importante", correct: "correcto", incorrect: "incorrecto", strong: "fuerte", key: "clave",
+  read: "lee", reread: "vuelve a leer", choose: "escoge", select: "selecciona", describe: "describe", tells: "dice", find: "encuentra",
+  which: "cuál", what: "qué", why: "por qué", how: "cómo", when: "cuándo", where: "dónde", who: "quién",
+  math: "matemáticas", science: "ciencias", data: "datos", table: "tabla", model: "modelo", number: "número", numbers: "números", value: "valor",
+  water: "agua", heat: "calor", energy: "energía", animal: "animal", animals: "animales", plant: "planta", plants: "plantas", habitat: "hábitat", community: "comunidad",
+  history: "historia", people: "personas", group: "grupo", groups: "grupos", change: "cambio", changed: "cambió", city: "ciudad", town: "pueblo", school: "escuela"
+};
+
+function getActiveLanguage() {
+  return spanishMode && currentAccommodations.spanish_translation ? "spanish" : "english";
+}
+
+function preserveCase(replacement = "", original = "") {
+  if (!original) return replacement;
+  if (original === original.toUpperCase()) return replacement.toUpperCase();
+  if (original[0] === original[0].toUpperCase()) return replacement.charAt(0).toUpperCase() + replacement.slice(1);
+  return replacement;
+}
+
 function translateText(text = "") {
-  let output = String(text || "");
-  Object.entries(SPANISH_GLOSSARY).forEach(([english, spanish]) => {
-    output = output.replace(new RegExp(`\\b${escapeRegExp(english)}\\b`, "gi"), spanish);
+  const source = String(text || "");
+  if (!source.trim()) return "";
+  if (SPANISH_PHRASE_TRANSLATIONS[source]) return SPANISH_PHRASE_TRANSLATIONS[source];
+  let output = source;
+  Object.entries({ ...SPANISH_GLOSSARY, ...SPANISH_PHRASE_TRANSLATIONS }).forEach(([english, spanish]) => {
+    output = output.replace(new RegExp(`\\b${escapeRegExp(english)}\\b`, "gi"), (match) => preserveCase(spanish, match));
   });
-  return output === text ? `ES: ${text}` : output;
+  output = output.replace(/\b[A-Za-z][A-Za-z'’-]*\b/g, (word) => {
+    const normalized = word.toLowerCase().replace(/[’']/g, "'");
+    return SPANISH_WORD_TRANSLATIONS[normalized] ? preserveCase(SPANISH_WORD_TRANSLATIONS[normalized], word) : word;
+  });
+  return output;
 }
 
 function getDisplayText(source = "", translated = "") {
-  if (!spanishMode) return String(source || "");
+  if (getActiveLanguage() !== "spanish") return String(source || "");
   if (translated) return String(translated);
   return translateText(source || "");
 }
@@ -1459,10 +1547,10 @@ function renderChunkedPassage(displayPassage = "", passageKey = "passage") {
   return `<div class="passage-copy chunked-passage" data-passage-key="${escapeHtml(passageKey)}">
     ${chunks.map((chunk, index) => `
       <section class="chunk-card ${index >= visibleChunkCount ? "is-hidden" : ""}" data-chunk-index="${index}">
-        <span class="chunk-label">Paragraph ${index + 1} of ${chunks.length}</span>
+        <span class="chunk-label">${escapeHtml(getDisplayText("Paragraph", "Párrafo"))} ${index + 1} of ${chunks.length}</span>
         <div>${highlightVocabularyHtml(chunk)}</div>
-        ${currentAccommodations.guided_reading_prompts ? `<div class="guided-prompt">${escapeHtml(getGuidedPrompt(chunk, index))}</div>` : ""}
-        ${index < chunks.length - 1 && index === visibleChunkCount - 1 ? `<button class="chunk-continue-btn" type="button" data-reveal-next-chunk>Continue</button>` : ""}
+        ${currentAccommodations.guided_reading_prompts ? `<div class="guided-prompt">${escapeHtml(getDisplayText(getGuidedPrompt(chunk, index), translateText(getGuidedPrompt(chunk, index))))}</div>` : ""}
+        ${index < chunks.length - 1 && index === visibleChunkCount - 1 ? `<button class="chunk-continue-btn" type="button" data-reveal-next-chunk>${escapeHtml(getDisplayText("Continue", "Continuar"))}</button>` : ""}
       </section>
     `).join("")}
   </div>`;
@@ -1507,17 +1595,18 @@ function speakText(text = "") {
   }
   stopSpeech();
   const utterance = new SpeechSynthesisUtterance(String(text || ""));
-  utterance.lang = spanishMode ? "es-US" : "en-US";
+  utterance.lang = getActiveLanguage() === "spanish" ? "es-US" : "en-US";
   window.speechSynthesis.speak(utterance);
   console.log("TEXT TO SPEECH STARTED");
 }
 
-function questionSpeechText(question = {}) {
+function questionSpeechText(question = {}, sectionName = "practice", localIndex = 0) {
+  const cachedSpanishQuestion = getCachedSpanishQuestion(sectionName, localIndex);
   const choices = Array.isArray(question.choices) ? question.choices : [];
-  const questionText = getDisplayText(question.question || "", question.spanish_question || question.question_es || "");
+  const questionText = getDisplayText(question.question || "", cachedSpanishQuestion.question || question.spanish_question || question.question_es || "");
   return [questionText, ...choices.map((choice, idx) => {
     const choiceText = typeof choice === "string" ? choice : (choice?.text || "");
-    const translatedChoice = typeof choice === "string" ? "" : (choice?.spanish || choice?.text_es || "");
+    const translatedChoice = (Array.isArray(cachedSpanishQuestion.choices) ? cachedSpanishQuestion.choices[idx] : "") || (typeof choice === "string" ? "" : (choice?.spanish || choice?.text_es || ""));
     return `${String.fromCharCode(65 + idx)}. ${sanitizeAnswerChoiceText(getDisplayText(choiceText, translatedChoice))}`;
   })].join(" ");
 }
@@ -1703,6 +1792,133 @@ async function joinSession(code, studentName) {
   }
 }
 
+
+function getLessonTranslationCache(lesson = currentLessonData) {
+  if (!lesson || typeof lesson !== "object") return null;
+  lesson.translations = lesson.translations || {};
+  lesson.translations.spanish = lesson.translations.spanish || null;
+  return lesson.translations.spanish;
+}
+
+function normalizeTranslatedChoices(question = {}) {
+  const choices = Array.isArray(question.choices) ? question.choices : [];
+  return choices.map((choice) => translateText(typeof choice === "string" ? choice : (choice?.text || "")));
+}
+
+function buildLocalSpanishTranslation(lesson = {}) {
+  const data = extractLessonData(lesson) || {};
+  const practiceSection = getQuestionSection(data, "practice");
+  const crossSection = getQuestionSection(data, "cross");
+  const practicePassage = practiceSection.spanish_passage || practiceSection.passage_es || data?.spanish_passage || data?.passage_es || translateText(practiceSection.passage || data?.passage || "");
+  const crossPassage = crossSection.spanish_passage || crossSection.passage_es || translateText(crossSection.passage || "");
+  const mapQuestions = (questions = []) => questions.map((question) => ({
+    question: question?.spanish_question || question?.question_es || translateText(question?.question || ""),
+    choices: Array.isArray(question?.choices)
+      ? question.choices.map((choice) => typeof choice === "string"
+        ? translateText(choice)
+        : (choice?.spanish || choice?.text_es || translateText(choice?.text || "")))
+      : [],
+    answers: normalizeTranslatedChoices(question),
+    hint: translateText(getSupportHint(question)),
+    simplified: translateText(simplifyQuestionText(question?.question || "")),
+    rephrase: translateText(rephraseQuestionText(question?.question || "")),
+    guided_prompt: translateText(getGuidedPrompt(question?.question || "", 0))
+  }));
+  const practiceQuestions = mapQuestions(practiceSection.questions);
+  const crossQuestions = mapQuestions(crossSection.questions);
+  return {
+    passage: practicePassage,
+    questions: practiceQuestions.map((q) => q.question),
+    answers: practiceQuestions.map((q) => q.choices),
+    directions: {
+      practiceTitle: SPANISH_GLOSSARY["Practice Passage"],
+      crossTitle: SPANISH_GLOSSARY["Cross-Curricular Passage"],
+      practiceQuestionsTitle: SPANISH_GLOSSARY["Practice Questions"],
+      crossQuestionsTitle: SPANISH_GLOSSARY["Cross-Curricular Questions"]
+    },
+    practice: { passage: practicePassage, questions: practiceQuestions },
+    cross: { passage: crossPassage, questions: crossQuestions }
+  };
+}
+
+function mergeSpanishTranslationCache(lesson = {}, incoming = {}) {
+  const fallback = buildLocalSpanishTranslation(lesson);
+  const merged = {
+    ...fallback,
+    ...(incoming && typeof incoming === "object" ? incoming : {}),
+    practice: {
+      ...fallback.practice,
+      ...(incoming?.practice && typeof incoming.practice === "object" ? incoming.practice : {})
+    },
+    cross: {
+      ...fallback.cross,
+      ...(incoming?.cross && typeof incoming.cross === "object" ? incoming.cross : {})
+    }
+  };
+  merged.practice.questions = Array.isArray(merged.practice.questions) && merged.practice.questions.length ? merged.practice.questions : fallback.practice.questions;
+  merged.cross.questions = Array.isArray(merged.cross.questions) && merged.cross.questions.length ? merged.cross.questions : fallback.cross.questions;
+  merged.passage = merged.passage || merged.practice.passage || fallback.passage;
+  merged.questions = Array.isArray(merged.questions) && merged.questions.length ? merged.questions : merged.practice.questions.map((q) => q.question);
+  merged.answers = Array.isArray(merged.answers) && merged.answers.length ? merged.answers : merged.practice.questions.map((q) => q.choices);
+  lesson.translations = lesson.translations || {};
+  lesson.translations.spanish = merged;
+  console.log("SPANISH TRANSLATION CACHE:", lesson.translations?.spanish);
+  return merged;
+}
+
+async function ensureSpanishTranslationCache(lesson = currentLessonData) {
+  const data = extractLessonData(lesson);
+  if (!data) return null;
+  if (data.translations?.spanish) {
+    console.log("SPANISH TRANSLATION CACHE:", data.translations.spanish);
+    return data.translations.spanish;
+  }
+  if (translationGenerationPromise) return translationGenerationPromise;
+  translationGenerationPromise = (async () => {
+    const localFallback = mergeSpanishTranslationCache(data, {});
+    try {
+      const { data: translated, error } = await studentSupabase.functions.invoke("translate-lesson", {
+        body: { lesson: data, targetLanguage: "spanish" }
+      });
+      if (error) throw error;
+      return mergeSpanishTranslationCache(data, translated?.translations?.spanish || translated?.spanish || translated || localFallback);
+    } catch (error) {
+      console.warn("⚠️ Spanish translation generation failed; using local cache", error);
+      return localFallback;
+    } finally {
+      translationGenerationPromise = null;
+    }
+  })();
+  return translationGenerationPromise;
+}
+
+function getCachedSpanishQuestion(sectionName = "practice", index = 0) {
+  const cache = currentLessonData?.translations?.spanish;
+  const section = cache?.[sectionName];
+  return Array.isArray(section?.questions) ? section.questions[index] || {} : {};
+}
+
+function getCachedSpanishPassage(sectionName = "practice") {
+  const cache = currentLessonData?.translations?.spanish;
+  return sectionName === "practice"
+    ? (cache?.practice?.passage || cache?.passage || "")
+    : (cache?.cross?.passage || "");
+}
+
+function rerenderLessonPreservingState() {
+  const scrollY = window.scrollY;
+  const checked = getCheckedAnswers();
+  const qf = document.getElementById("questions");
+  qf?.classList.add("is-language-transitioning");
+  window.setTimeout(() => {
+    if (currentLessonData) renderQuestions(currentLessonData);
+    restoreCheckedAnswers(checked);
+    updateProgress();
+    window.scrollTo({ top: scrollY, behavior: "instant" });
+    requestAnimationFrame(() => qf?.classList.remove("is-language-transitioning"));
+  }, 120);
+}
+
 async function startStudentLesson() {
   if (lessonStarted || !currentSession) return;
   lessonStarted = true;
@@ -1787,13 +2003,13 @@ function renderPassage(title, passage, translatedPassage = "") {
     ? `<button class="read-btn" type="button" data-read-text="${escapeHtml(displayPassage)}">🔊 ${escapeHtml(getDisplayText("Read Passage", "Leer lectura"))}</button>`
     : "";
   const highlightButton = currentAccommodations.highlighting_tools
-    ? `<button class="tool-btn" type="button" data-highlight-target="${escapeHtml(passageKey)}">Highlight passage</button>`
+    ? `<button class="tool-btn" type="button" data-highlight-target="${escapeHtml(passageKey)}">${escapeHtml(getDisplayText("Highlight passage", "Resaltar lectura"))}</button>`
     : "";
   return `
     <article class="passage-card" data-highlightable="${escapeHtml(passageKey)}">
       <h2>${escapeHtml(displayTitle)}</h2>
       <div class="workspace-controls">${readButton}${highlightButton}</div>
-      ${currentAccommodations.content_supports ? `<div class="support-hint"><strong>Comprehension prompt:</strong> Pause after each paragraph and ask, “What is the most important idea so far?”</div>` : ""}
+      ${currentAccommodations.content_supports ? `<div class="support-hint"><strong>${escapeHtml(getDisplayText("Comprehension prompt:", "Pregunta de comprensión:"))}</strong> ${escapeHtml(getDisplayText("Pause after each paragraph and ask, “What is the most important idea so far?”", "Haz una pausa después de cada párrafo y pregunta: “¿Cuál es la idea más importante hasta ahora?”"))}</div>` : ""}
       ${renderGlossaryPanel(displayPassage)}
       ${renderChunkedPassage(displayPassage, passageKey)}
       ${renderAnnotationCard(`${passageKey}-note`, `${displayTitle} note`)}
@@ -1801,24 +2017,28 @@ function renderPassage(title, passage, translatedPassage = "") {
   `;
 }
 
-function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex) {
+function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex, sectionName = "practice") {
   const choices = Array.isArray(question.choices) ? question.choices : [];
   const questionKey = `${sectionPrefix}${localIndex}`;
-  const questionText = getDisplayText(question.question || "", question.spanish_question || question.question_es || "");
+  const cachedSpanishQuestion = getCachedSpanishQuestion(sectionName, localIndex);
+  const questionText = getDisplayText(question.question || "", cachedSpanishQuestion.question || question.spanish_question || question.question_es || "");
   const readButton = currentAccommodations.read_aloud || currentAccommodations.text_to_speech
-    ? `<button class="read-btn question-read-btn" type="button" data-read-text="${escapeHtml(questionSpeechText(question))}">🔊 ${escapeHtml(getDisplayText("Read Question", "Leer pregunta"))}</button>`
+    ? `<button class="read-btn question-read-btn" type="button" data-read-text="${escapeHtml(questionSpeechText(question, sectionName, localIndex))}">🔊 ${escapeHtml(getDisplayText("Read Question", "Leer pregunta"))}</button>`
     : "";
+  const simplifiedText = currentAccommodations.question_rephrase
+    ? getDisplayText(rephraseQuestionText(question.question || ""), cachedSpanishQuestion.rephrase || translateText(rephraseQuestionText(question.question || "")))
+    : getDisplayText(simplifyQuestionText(question.question || ""), cachedSpanishQuestion.simplified || translateText(simplifyQuestionText(question.question || "")));
   const simplified = currentAccommodations.simplified_supports || currentAccommodations.question_rephrase
-    ? `<div class="simplified-support"><strong>${currentAccommodations.question_rephrase ? "Rephrase" : "Simplified"}:</strong> ${escapeHtml(currentAccommodations.question_rephrase ? rephraseQuestionText(questionText) : simplifyQuestionText(questionText))}</div>`
+    ? `<div class="simplified-support"><strong>${escapeHtml(getDisplayText(currentAccommodations.question_rephrase ? "Rephrase" : "Simplified", currentAccommodations.question_rephrase ? "Reformular" : "Simplificado"))}:</strong> ${escapeHtml(simplifiedText)}</div>`
     : "";
   const hint = currentAccommodations.content_supports
-    ? `<div class="support-hint"><strong>Hint:</strong> ${escapeHtml(getSupportHint(question))}</div>`
+    ? `<div class="support-hint"><strong>${escapeHtml(getDisplayText("Hint", "Pista"))}:</strong> ${escapeHtml(getDisplayText(getSupportHint(question), cachedSpanishQuestion.hint || translateText(getSupportHint(question))))}</div>`
     : "";
   const guided = currentAccommodations.guided_reading_prompts
-    ? `<div class="guided-prompt">${escapeHtml(getGuidedPrompt(questionText, displayIndex))}</div>`
+    ? `<div class="guided-prompt">${escapeHtml(getDisplayText(getGuidedPrompt(question.question || "", displayIndex), cachedSpanishQuestion.guided_prompt || translateText(getGuidedPrompt(question.question || "", displayIndex))))}</div>`
     : "";
   const highlightButton = currentAccommodations.highlighting_tools
-    ? `<button class="tool-btn" type="button" data-highlight-target="${escapeHtml(questionKey)}">Highlight question</button>`
+    ? `<button class="tool-btn" type="button" data-highlight-target="${escapeHtml(questionKey)}">${escapeHtml(getDisplayText("Highlight question", "Resaltar pregunta"))}</button>`
     : "";
   return `
     <article class="question-card" data-highlightable="${escapeHtml(questionKey)}" style="animation-delay:${Math.min(displayIndex * 0.02, 0.22)}s">
@@ -1835,14 +2055,14 @@ function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex) {
           const letter = String.fromCharCode(65 + idx);
           const choiceKey = `${questionKey}-${letter}`;
           const choiceText = typeof choice === "string" ? choice : (choice?.text || "");
-          const translatedChoice = typeof choice === "string" ? "" : (choice?.spanish || choice?.text_es || "");
+          const translatedChoice = (Array.isArray(cachedSpanishQuestion.choices) ? cachedSpanishQuestion.choices[idx] : "") || (typeof choice === "string" ? "" : (choice?.spanish || choice?.text_es || ""));
           const displayChoice = sanitizeAnswerChoiceText(getDisplayText(choiceText, translatedChoice));
           const eliminated = getEliminatedChoice(choiceKey);
           const storedHighlight = getLocalHighlight(choiceKey);
           const answerTools = currentAccommodations.eliminate_answers || currentAccommodations.highlighting_tools
             ? `<span class="answer-choice-tools">
-                ${currentAccommodations.eliminate_answers ? `<button class="eliminate-btn" type="button" data-eliminate-choice="${escapeHtml(choiceKey)}">${eliminated ? "Restore" : "❌ Eliminate"}</button>` : ""}
-                ${currentAccommodations.highlighting_tools ? `<button class="tool-btn" type="button" data-highlight-choice="${escapeHtml(choiceKey)}">Highlight</button>` : ""}
+                ${currentAccommodations.eliminate_answers ? `<button class="eliminate-btn" type="button" data-eliminate-choice="${escapeHtml(choiceKey)}">${eliminated ? escapeHtml(getDisplayText("Restore", "Restaurar")) : `❌ ${escapeHtml(getDisplayText("Eliminate", "Eliminar"))}`}</button>` : ""}
+                ${currentAccommodations.highlighting_tools ? `<button class="tool-btn" type="button" data-highlight-choice="${escapeHtml(choiceKey)}">${escapeHtml(getDisplayText("Highlight", "Resaltar"))}</button>` : ""}
               </span>`
             : "";
           return `
@@ -1870,6 +2090,8 @@ function renderQuestions(lesson) {
   const cross = crossSection.questions;
   const practicePassage = practiceSection.passage || data?.passage || "";
   const crossPassage = crossSection.passage || "";
+  console.log("RENDERING LANGUAGE:", getActiveLanguage());
+  console.log("SPANISH TRANSLATION CACHE:", data?.translations?.spanish);
   console.log("RENDER LESSON DATA:", { data, practiceQuestions: practice.length, crossQuestions: cross.length, practicePassage: !!practicePassage, crossPassage: !!crossPassage });
   totalQuestionCount = practice.length + cross.length;
   if (!practice.length && !cross.length) {
@@ -1881,14 +2103,14 @@ function renderQuestions(lesson) {
   }
   qf.innerHTML = `
     <section class="lesson-section">
-      ${renderPassage("Practice Passage", practicePassage, practiceSection.spanish_passage || practiceSection.passage_es || data?.spanish_passage || data?.passage_es || "")}
+      ${renderPassage("Practice Passage", practicePassage, getCachedSpanishPassage("practice") || practiceSection.spanish_passage || practiceSection.passage_es || data?.spanish_passage || data?.passage_es || "")}
       ${practice.length ? `<h2 class="section-title">${escapeHtml(getDisplayText("Practice Questions", "Preguntas de práctica"))}</h2>` : ""}
-      ${practice.map((question, index) => renderQuestionCard(question, "p", index + 1, index)).join("")}
+      ${practice.map((question, index) => renderQuestionCard(question, "p", index + 1, index, "practice")).join("")}
     </section>
     <section class="lesson-section">
-      ${renderPassage("Cross-Curricular Passage", crossPassage, crossSection.spanish_passage || crossSection.passage_es || "")}
+      ${renderPassage("Cross-Curricular Passage", crossPassage, getCachedSpanishPassage("cross") || crossSection.spanish_passage || crossSection.passage_es || "")}
       ${cross.length ? `<h2 class="section-title">${escapeHtml(getDisplayText("Cross-Curricular Questions", "Preguntas interdisciplinarias"))}</h2>` : ""}
-      ${cross.map((question, index) => renderQuestionCard(question, "c", practice.length + index + 1, index)).join("")}
+      ${cross.map((question, index) => renderQuestionCard(question, "c", practice.length + index + 1, index, "cross")).join("")}
     </section>
   `;
   waiting.style.display = "none";
@@ -2062,7 +2284,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (event.key === "Escape") closeRaiseHandModal();
   });
 
-  document.addEventListener("click", (event) => {
+  document.addEventListener("click", async (event) => {
     const readBtn = event.target.closest?.("[data-read-text]");
     if (readBtn) {
       speakText(readBtn.getAttribute("data-read-text") || "");
@@ -2096,7 +2318,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const next = !getEliminatedChoice(key);
       saveEliminatedChoice(key, next);
       label?.classList.toggle("is-eliminated", next);
-      eliminateBtn.textContent = next ? "Restore" : "❌ Eliminate";
+      eliminateBtn.textContent = next ? getDisplayText("Restore", "Restaurar") : `❌ ${getDisplayText("Eliminate", "Eliminar")}`;
       return;
     }
     if (event.target.closest?.("[data-reveal-next-chunk]")) {
@@ -2114,11 +2336,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (event.target.closest?.("#toggle-spanish-mode")) {
       spanishMode = !spanishMode;
-      if (spanishMode) console.log("SPANISH MODE ENABLED");
-      const checked = getCheckedAnswers();
-      if (currentLessonData) renderQuestions(currentLessonData);
-      restoreCheckedAnswers(checked);
-      updateProgress();
+      const selectedLanguage = getActiveLanguage();
+      console.log("LANGUAGE TOGGLE:", selectedLanguage);
+      if (spanishMode && currentLessonData) await ensureSpanishTranslationCache(currentLessonData);
+      console.log("SPANISH TRANSLATION CACHE:", currentLessonData?.translations?.spanish);
+      rerenderLessonPreservingState();
     }
   });
 
