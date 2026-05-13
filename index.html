@@ -4998,6 +4998,60 @@
       return data.session;
     }
 
+    async function safelyLoadLessonLibrary() {
+      try {
+        await withTimeout(loadLessonLibrary(), AUTH_TIMEOUT_MS);
+      } catch (error) {
+        console.error("❌ Lesson library failed during app initialization:", error);
+      }
+    }
+
+    function renderDashboard() {
+      console.log("ABOUT TO RENDER DASHBOARD");
+      try {
+        updateTopStatusBar();
+      } catch (error) {
+        console.error("❌ Dashboard status render failed:", error);
+      }
+      try {
+        updateReportsSummary(getAnnotatedLiveQuestions(), window.__liveResponses || []);
+      } catch (error) {
+        console.error("❌ Dashboard report render failed:", error);
+      }
+      try {
+        renderRecentActivity();
+      } catch (error) {
+        console.error("❌ Recent activity render failed:", error);
+      }
+      try {
+        setWorkspaceView((window.location.hash || "#dashboard").replace("#", "") || "dashboard");
+      } catch (error) {
+        console.error("❌ Workspace render failed:", error);
+      }
+    }
+
+    async function initializeApp(user = cachedUser) {
+      console.log("ABOUT TO INITIALIZE APP");
+      if (!user?.id) {
+        console.warn("⚠️ initializeApp called without an authenticated user.");
+        return;
+      }
+
+      setAppAuthenticatedState(true);
+      updateProfileSection(user);
+      startProfileUpdatesSubscription(user.id);
+      renderDashboard();
+      console.log("APP INITIALIZATION COMPLETE");
+
+      void safelyLoadLessonLibrary();
+      void checkAndUpgradeUser(user).catch((error) => {
+        console.error("❌ User upgrade check failed after login:", error);
+      });
+      void refreshUsageStatus(user.id).catch((error) => {
+        console.error("❌ Usage status refresh failed after login:", error);
+      });
+    }
+
     async function initAuth() {
       console.log("🔐 Initializing auth...");
 
@@ -5022,25 +5076,22 @@
       authReady = true;
 
       if (cachedUser) {
-        setAppAuthenticatedState(true);
-        updateProfileSection(cachedUser);
-        startProfileUpdatesSubscription(cachedUser.id);
-        await checkAndUpgradeUser(cachedUser);
-        await refreshUsageStatus(cachedUser.id);
-        await loadLessonLibrary();
+        await initializeApp(cachedUser);
       } else {
         setAppAuthenticatedState(false);
-        await loadLessonLibrary();
+        await safelyLoadLessonLibrary();
       }
 
       supabaseClient.auth.onAuthStateChange(async (event, session) => {
         console.log("🔄 Auth state changed");
+        console.log("SESSION:", session);
         if (isGenerating) {
           return;
         }
 
         cachedSession = session ?? null;
         cachedUser = cachedSession?.user ?? null;
+        console.log("AUTH USER:", cachedUser);
 
         if (!cachedUser) {
           authRevealRequested = true;
@@ -5048,14 +5099,15 @@
           setAppAuthenticatedState(false);
           stopProfileUpdatesSubscription();
           resetProtectedUI();
-          await loadLessonLibrary();
+          await safelyLoadLessonLibrary();
           if (event === "SIGNED_OUT") {
             redirectToLogin();
           }
           return;
         }
-        await loadLessonLibrary();
-        // Only update lightweight auth state here.
+
+        authRevealRequested = false;
+        await initializeApp(cachedUser);
       });
     }
 
@@ -6575,19 +6627,28 @@
         if (error) {
           showAuthFeedback("Login failed. Check your email/password and try again.", "error");
         } else {
+          console.log("LOGIN SUCCESS");
+          console.log("SESSION:", data?.session ?? null);
+          console.log("AUTH USER:", data?.session?.user ?? null);
           cachedSession = data?.session ?? null;
           cachedUser = cachedSession?.user ?? null;
           authRevealRequested = false;
           showAuthFeedback("Logged in successfully!", "success");
           const user = await requireAuth({ showPrompt: false });
           if (user) {
-            await supabaseClient.functions.invoke("bright-worker", {
+            await initializeApp(user);
+            void supabaseClient.functions.invoke("bright-worker", {
               body: { trigger: "login_check" }
+            }).catch((invokeError) => {
+              console.error("❌ Login check failed after app initialization:", invokeError);
             });
-            await refreshUsageStatus(user.id);
+            void refreshUsageStatus(user.id).catch((usageError) => {
+              console.error("❌ Usage status refresh failed after login:", usageError);
+            });
           }
         }
-      } catch {
+      } catch (error) {
+        console.error("❌ LOGIN POST-INITIALIZATION ERROR:", error);
         showAuthFeedback("Login failed. Please try again in a moment.", "error");
       }
     }
@@ -7219,7 +7280,7 @@ Create your second version now.`;
       const copyLinkBtn = document.getElementById("copy-student-link-btn");
       const copyCodeBtn = document.getElementById("copy-code-btn");
       const sessionStatus = document.getElementById("live-session-status");
-      copyCodeBtn.disabled = true;
+      if (copyCodeBtn) copyCodeBtn.disabled = true;
 
       saveBtn?.addEventListener("click", async () => {
         console.log("SAVE BUTTON CLICKED");
@@ -7284,13 +7345,13 @@ Create your second version now.`;
 
       copyLinkBtn?.addEventListener("click", async () => {
         await navigator.clipboard.writeText(`${window.location.origin}/student`);
-        sessionStatus.textContent = "✅ Student link copied.";
+        if (sessionStatus) sessionStatus.textContent = "✅ Student link copied.";
       });
 
       copyCodeBtn?.addEventListener("click", async () => {
         if (!currentLiveCode) return;
         await navigator.clipboard.writeText(currentLiveCode);
-        sessionStatus.textContent = "✅ Class code copied.";
+        if (sessionStatus) sessionStatus.textContent = "✅ Class code copied.";
       });
 
       document.getElementById("lesson-library-list")?.addEventListener("click", async (event) => {
@@ -7373,8 +7434,10 @@ Create your second version now.`;
       });
 
       console.log("✅ Button wired safely");
-      applyAuthMode("signup");
-      await loadLessonLibrary();
+      if (!cachedUser) {
+        applyAuthMode("signup");
+      }
+      await safelyLoadLessonLibrary();
       console.log("✅ App fully initialized");
     });
 
