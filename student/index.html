@@ -2145,17 +2145,144 @@ function attachSpanishTranslationCache(lesson = currentLessonData, spanish = nul
   return lesson;
 }
 
+function getSupabaseDebugUrl(client = null) {
+  if (!client || typeof client !== "object") return null;
+  if (client.supabaseUrl) return client.supabaseUrl;
+  if (client.rest?.url) return String(client.rest.url).replace(/\/rest\/v1\/?$/, "");
+  if (client.functions?.url) return String(client.functions.url).replace(/\/functions\/v1\/?$/, "");
+  return null;
+}
+
+function logTranslateLessonProjectConsistency() {
+  const teacherClient = typeof teacherSupabase !== "undefined"
+    ? teacherSupabase
+    : (window.teacherSupabase || window.__teacherSupabaseClient || null);
+  const globalClient = window.supabaseClient || window.__staarSupabaseClient || null;
+  const studentUrl = getSupabaseDebugUrl(studentSupabase) || SUPABASE_URL;
+  const teacherUrl = getSupabaseDebugUrl(teacherClient);
+  const globalUrl = getSupabaseDebugUrl(globalClient);
+  console.log("STUDENT SUPABASE URL:", studentUrl);
+  console.log("TEACHER SUPABASE URL:", teacherUrl);
+  console.log("GLOBAL SUPABASE URL:", globalUrl);
+  console.log("SUPABASE PROJECT URL COMPARISON:", {
+    studentUrl,
+    teacherUrl,
+    globalUrl,
+    studentMatchesConfigured: studentUrl === SUPABASE_URL,
+    teacherMatchesStudent: teacherUrl ? teacherUrl === studentUrl : null,
+    globalMatchesStudent: globalUrl ? globalUrl === studentUrl : null
+  });
+}
+
 async function translateLessonContent(lesson = currentLessonData) {
   const data = extractLessonData(lesson);
   if (!data) return lesson;
   try {
     console.log("CALLING translate-lesson EDGE FUNCTION");
     console.log("TRANSLATE LESSON PAYLOAD:", data);
-    const { data: translated, error } = await studentSupabase.functions.invoke("translate-lesson", {
-      body: { lesson: data, targetLanguage: "spanish" }
-    });
-    console.log("EDGE FUNCTION RESPONSE:", translated);
-    console.log("EDGE FUNCTION ERROR:", error);
+    console.log("PRACTICE QUESTIONS:", data?.practice?.questions?.length);
+    console.log("CROSS QUESTIONS:", data?.cross?.questions?.length);
+    console.log("===== EDGE INVOKE DEBUG START =====");
+    console.log("studentSupabase:", studentSupabase);
+    console.log("studentSupabase.functions:", studentSupabase?.functions);
+    console.log("invoke typeof:", typeof studentSupabase?.functions?.invoke);
+    console.log("SUPABASE URL:", studentSupabase?.supabaseUrl);
+    console.log("CURRENT WINDOW LOCATION:", window.location.href);
+    console.log("LESSON DATA EXISTS:", !!data);
+    console.log("LESSON DATA KEYS:", Object.keys(data || {}));
+    console.log(
+      "EXPECTED EDGE URL:",
+      `${studentSupabase?.supabaseUrl}/functions/v1/translate-lesson`
+    );
+    logTranslateLessonProjectConsistency();
+    console.log("GOING TO INVOKE translate-lesson");
+    console.time("SPANISH_TRANSLATION_FLOW");
+
+    let invokeResponse = null;
+    let translated = null;
+    let error = null;
+    let invokeCrashForOuterCatch = null;
+
+    try {
+      console.log("ATTEMPTING EDGE INVOCATION");
+      window.__EDGE_TRANSLATION_INVOKED = true;
+
+      invokeResponse = await studentSupabase.functions.invoke(
+        "translate-lesson",
+        {
+          body: {
+            lesson: data,
+            targetLanguage: "spanish",
+          },
+        }
+      );
+
+      window.__EDGE_TRANSLATION_RESPONSE = invokeResponse;
+      console.log("RAW INVOKE RESPONSE:", invokeResponse);
+
+      ({ data: translated, error } = invokeResponse || {});
+
+      console.log("EDGE RESPONSE DATA:", translated);
+      console.log("EDGE RESPONSE ERROR:", error);
+
+      if (error) {
+        console.error("EDGE FUNCTION RETURNED ERROR:", error);
+        console.error("EDGE ERROR NAME:", error?.name);
+        console.error("EDGE ERROR MESSAGE:", error?.message);
+        console.error("EDGE ERROR CONTEXT:", error?.context);
+
+        if (error?.context?.json) {
+          try {
+            const contextJson = await error.context.json();
+            console.error("EDGE ERROR JSON:", contextJson);
+          } catch (contextErr) {
+            console.error("FAILED TO READ EDGE ERROR JSON:", contextErr);
+          }
+        }
+      }
+    } catch (invokeCrash) {
+      invokeCrashForOuterCatch = invokeCrash;
+      console.error("EDGE INVOCATION CRASHED");
+      console.error(invokeCrash);
+      console.error("CRASH NAME:", invokeCrash?.name);
+      console.error("CRASH MESSAGE:", invokeCrash?.message);
+      console.error("CRASH STACK:", invokeCrash?.stack);
+    } finally {
+      console.timeEnd("SPANISH_TRANSLATION_FLOW");
+      console.log("===== EDGE INVOKE DEBUG END =====");
+    }
+
+    try {
+      console.log("DIRECT FETCH AUTH HEADERS PRESENT:", {
+        hasApikey: Boolean(SUPABASE_ANON_KEY),
+        hasAuthorization: Boolean(SUPABASE_ANON_KEY)
+      });
+      const directResponse = await fetch(
+        `${studentSupabase?.supabaseUrl}/functions/v1/translate-lesson`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            lesson: data,
+            targetLanguage: "spanish",
+          }),
+        }
+      );
+
+      console.log("DIRECT FETCH STATUS:", directResponse.status);
+
+      const directJson = await directResponse.json();
+
+      console.log("DIRECT FETCH RESPONSE:", directJson);
+    } catch (directErr) {
+      console.error("DIRECT FETCH FAILED:", directErr);
+    }
+
+    if (invokeCrashForOuterCatch) throw invokeCrashForOuterCatch;
     if (!translated) console.error("EDGE FUNCTION RETURNED EMPTY RESPONSE");
     if (error) throw error;
 
@@ -2384,9 +2511,8 @@ async function startStudentLesson(sessionUpdate = null) {
     console.log("ABOUT TO CALL renderLesson()");
     const rendered = renderQuestions(lessonData) !== false;
     if (!rendered) {
-      lessonStarted = false;
-      console.error("START STUDENT LESSON FAILED", { reason: "renderQuestions returned false", lessonData, currentSession });
-      return;
+      console.error("LESSON RENDER FAILURE DETECTED");
+      console.error("START STUDENT LESSON RENDER DIAGNOSTIC", { reason: "renderQuestions returned false", lessonData, currentSession });
     }
 
     const questionContainer = document.getElementById("questions");
@@ -2410,9 +2536,8 @@ async function startStudentLesson(sessionUpdate = null) {
     setStatus("🟢 Class is live. Answer each question, then submit when you’re ready.");
 
   } catch (error) {
-    lessonStarted = false;
+    console.error("LESSON RENDER FAILURE DETECTED");
     console.error("START STUDENT LESSON FAILED", { error, currentSession, sessionUpdate });
-    setStatus("⚠️ The live lesson could not render. Ask your teacher to restart the live session.", "error");
   } finally {
     lessonRenderInProgress = false;
   }
