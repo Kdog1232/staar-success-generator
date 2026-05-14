@@ -1782,7 +1782,7 @@ function questionSpeechText(question = {}, sectionName = "practice", localIndex 
     : (Array.isArray(cachedSpanishQuestion.choices) ? cachedSpanishQuestion.choices : []);
   const safeChoices = getActiveLanguage() === "spanish" && Array.isArray(spanishChoices) && spanishChoices.length === choices.length ? spanishChoices : (choices || []);
   return [questionText, ...safeChoices.map((choice, idx) => {
-    const displayChoice = getLanguageText(choice, getActiveLanguage()) || choice?.text || choice?.choice || String(choice || "");
+    const displayChoice = String(choice || "");
     return `${String.fromCharCode(65 + idx)}. ${sanitizeAnswerChoiceText(displayChoice)}`;
   })].join(" ");
 }
@@ -2021,7 +2021,7 @@ function getLessonTranslationCache(lesson = currentLessonData) {
 
 function normalizeTranslatedChoices(question = {}) {
   const choices = Array.isArray(question.choices) ? question.choices : [];
-  return choices.map((choice) => translateText(getLanguageText(choice, "english") || choice?.text || choice?.choice || ""));
+  return choices.map((choice) => translateText(String(choice || "")));
 }
 
 function buildLocalSpanishTranslation(lesson = {}) {
@@ -2086,7 +2086,7 @@ function applySpanishTranslationFields(lesson = {}, spanish = {}) {
       const translatedQuestion = translatedQuestions[index] && typeof translatedQuestions[index] === "object" ? translatedQuestions[index] : {};
       question.spanish_question = question.spanish_question || translatedQuestion.question || "";
       if (!Array.isArray(question.spanish_choices) && Array.isArray(translatedQuestion.choices) && translatedQuestion.choices.length) {
-        question.spanish_choices = translatedQuestion.choices;
+        question.spanish_choices = translatedQuestion.choices.map(String);
       }
       question.spanish_hint = question.spanish_hint || translatedQuestion.hint || "";
       question.spanish_explanation = question.spanish_explanation || translatedQuestion.explanation || translatedQuestion.simplified || "";
@@ -2106,11 +2106,9 @@ async function translateLessonContent(lesson = currentLessonData) {
       body: { lesson: data, targetLanguage: "spanish" }
     });
     if (error) throw error;
-    const translatedLesson = translated?.lesson && typeof translated.lesson === "object" ? translated.lesson : null;
-    const incomingSpanish = translated?.translations?.spanish || translated?.spanish || translated || localFallback;
-    const merged = mergeSpanishTranslationCache(data, incomingSpanish);
-    if (translatedLesson) applySpanishTranslationFields(data, buildLocalSpanishTranslation(translatedLesson));
-    applySpanishTranslationFields(data, merged);
+    const incomingSpanish = translated?.translations?.spanish || {};
+    mergeSpanishTranslationCache(data, incomingSpanish);
+    applySpanishTranslationFields(data, translated?.translations?.spanish || {});
     currentLessonData = data;
     return data;
   } catch (error) {
@@ -2161,7 +2159,7 @@ async function ensureSpanishTranslationCache(lesson = currentLessonData) {
   }
   if (translationGenerationPromise) return translationGenerationPromise;
   translationGenerationPromise = translateLessonContent(data)
-    .then((translatedLesson) => translatedLesson?.translations?.spanish || null)
+    .then((translatedResponse) => translatedResponse?.translations?.spanish || null)
     .finally(() => { translationGenerationPromise = null; });
   return translationGenerationPromise;
 }
@@ -2389,14 +2387,18 @@ async function handleLiveSessionTransition(source, sessionPayload) {
 }
 
 function normalizeQuestionForStudent(question = {}, index = 0, type = "practice", lessonMeta = {}) {
-  const rawQuestion = question?.question ?? question?.prompt ?? question?.text ?? "";
-  const englishQuestion = getLanguageText(rawQuestion, "english") || String(rawQuestion || "");
-  const embeddedSpanishQuestion = hasLanguageText(rawQuestion, "spanish") ? getLanguageText(rawQuestion, "spanish") : "";
-  const rawChoices = Array.isArray(question?.choices) ? question.choices : (Array.isArray(question?.answers) ? question.answers : []);
-  const englishChoices = rawChoices.map((choice) => getLanguageText(choice, "english") || choice?.text || choice?.choice || String(choice || ""));
-  const embeddedSpanishChoices = rawChoices.map((choice) => hasLanguageText(choice, "spanish") ? getLanguageText(choice, "spanish") : "");
-  const hasEmbeddedSpanishChoices = embeddedSpanishChoices.some((choice) => String(choice || "").trim());
-  const explicitSpanishChoices = Array.isArray(question?.spanish_choices) ? question.spanish_choices : (hasEmbeddedSpanishChoices ? embeddedSpanishChoices : undefined);
+  const rawChoices = Array.isArray(question?.choices)
+    ? question.choices
+    : Array.isArray(question?.answers)
+      ? question.answers
+      : [];
+  const englishChoices = rawChoices.map((choice) => {
+    if (typeof choice === "string") return choice;
+    return String(choice?.text || choice?.choice || "");
+  });
+  const spanishChoices = Array.isArray(question?.spanish_choices)
+    ? question.spanish_choices.map(String)
+    : [];
   return {
     ...question,
     id: question?.id || question?.question_id || `${type}-${index + 1}`,
@@ -2405,10 +2407,10 @@ function normalizeQuestionForStudent(question = {}, index = 0, type = "practice"
     subject: question?.subject || lessonMeta.subject || "Reading",
     skill: question?.skill || lessonMeta.skill || "",
     teks: question?.teks || question?.standard || lessonMeta.teks || lessonMeta.standard || "",
-    question: englishQuestion,
+    question: String(question?.question || question?.prompt || ""),
+    spanish_question: String(question?.spanish_question || ""),
     choices: englishChoices,
-    spanish_question: question?.spanish_question || question?.question_es || embeddedSpanishQuestion || "",
-    ...(Array.isArray(explicitSpanishChoices) ? { spanish_choices: explicitSpanishChoices } : {})
+    spanish_choices: spanishChoices
   };
 }
 
@@ -2585,14 +2587,19 @@ function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex, s
     : (hasLanguageText(currentQuestion?.question, "spanish") ? getLanguageText(currentQuestion?.question, "spanish") : "");
   const questionText = getActiveLanguage() === "spanish" ? (spanishText || englishText) : englishText;
   const safeSpanishChoices = Array.isArray(currentQuestion?.spanish_choices) && currentQuestion.spanish_choices.length ? currentQuestion.spanish_choices : cachedSpanishChoices;
-  const safeChoices = getActiveLanguage() === "spanish" && Array.isArray(safeSpanishChoices) && safeSpanishChoices.length === choices.length
-    ? safeSpanishChoices
-    : choices || [];
+  const safeChoices = getActiveLanguage() === "spanish"
+    ? (
+        Array.isArray(currentQuestion.spanish_choices) &&
+        currentQuestion.spanish_choices.length
+          ? currentQuestion.spanish_choices
+          : choices
+      )
+    : choices;
   const normalizedQuestionText = { english: englishText, spanish: spanishText };
   const normalizedChoices = (choices || []).map((choice, idx) => ({
-    raw: choice,
-    english: getLanguageText(choice, "english") || choice?.text || choice?.choice || String(choice || ""),
-    spanish: Array.isArray(safeSpanishChoices) ? (safeSpanishChoices[idx] || "") : ""
+    raw: String(choice || ""),
+    english: String(choice || ""),
+    spanish: Array.isArray(safeSpanishChoices) ? String(safeSpanishChoices[idx] || "") : ""
   }));
   console.log("LANGUAGE:", getActiveLanguage());
   console.log("QUESTION OBJECT:", currentQuestion);
@@ -2638,16 +2645,9 @@ function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex, s
       ${renderAnnotationCard(`${questionKey}-note`, `Question ${displayIndex} note`)}
       <div class="answer-list">
         ${safeChoices.map((rawDisplayChoice, idx) => {
-          const choice = normalizedChoices[idx] || { english: choices[idx] || "", spanish: "" };
           const letter = String.fromCharCode(65 + idx);
           const choiceKey = `${questionKey}-${letter}`;
-          let displayChoice = "";
-          try {
-            displayChoice = sanitizeAnswerChoiceText(getLanguageText(rawDisplayChoice, getActiveLanguage()) || rawDisplayChoice?.text || rawDisplayChoice?.choice || String(rawDisplayChoice || ""));
-          } catch (choicesError) {
-            console.error("CHOICES RENDERING ERROR", { choicesError, rawDisplayChoice, choice, currentQuestion });
-            displayChoice = sanitizeAnswerChoiceText(choice.english || "");
-          }
+          const displayChoice = sanitizeAnswerChoiceText(String(rawDisplayChoice || ""));
           const eliminated = getEliminatedChoice(choiceKey);
           const storedHighlight = getLocalHighlight(choiceKey);
           const answerTools = currentAccommodations.eliminate_answers || currentAccommodations.highlighting_tools
