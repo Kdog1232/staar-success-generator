@@ -1015,6 +1015,16 @@ const DEFAULT_ACCOMMODATIONS = {
   reduced_distraction: false
 };
 let currentAccommodations = { ...DEFAULT_ACCOMMODATIONS };
+
+function hasSpanishAccommodation() {
+  return (
+    currentAccommodations?.spanish_translation === true ||
+    currentAccommodations?.spanish_translation === "true" ||
+    currentAccommodations?.spanish_translation === 1 ||
+    currentAccommodations?.spanish_translation === "1"
+  );
+}
+
 let highlightColor = "yellow";
 let lineReaderIndex = 0;
 let visibleChunkCount = 1;
@@ -1449,7 +1459,7 @@ function restoreCheckedAnswers(answers = {}) {
 }
 
 function getAccommodationLabels() {
-  const labels = Object.entries(SUPPORT_LABELS).filter(([key]) => currentAccommodations?.[key]).map(([, label]) => label);
+  const labels = Object.entries(SUPPORT_LABELS).filter(([key]) => key === "spanish_translation" ? hasSpanishAccommodation() : currentAccommodations?.[key]).map(([, label]) => label);
   if (currentAccommodations.font_size && currentAccommodations.font_size !== "normal") labels.push(`Font: ${currentAccommodations.font_size.replace("_", " ")}`);
   if (currentAccommodations.color_overlay && currentAccommodations.color_overlay !== "default") labels.push(`Overlay: ${currentAccommodations.color_overlay.replace("_", " ")}`);
   return labels;
@@ -1467,7 +1477,7 @@ function renderAccommodationToolbar() {
   }
   toolbar.classList.add("is-visible");
   const activeLanguage = getActiveLanguage();
-  const languageButton = currentAccommodations.spanish_translation
+  const languageButton = hasSpanishAccommodation()
     ? `<div class="language-tabs" role="tablist" aria-label="Lesson language">
         <button class="language-tab ${activeLanguage === "english" ? "is-active" : ""}" type="button" data-language-tab="english" role="tab" aria-selected="${activeLanguage === "english"}">English</button>
         <button class="language-tab ${activeLanguage === "spanish" ? "is-active" : ""}" type="button" data-language-tab="spanish" role="tab" aria-selected="${activeLanguage === "spanish"}">Spanish</button>
@@ -1554,13 +1564,13 @@ const SPANISH_WORD_TRANSLATIONS = {
 };
 
 function getActiveLanguage() {
-  if (!currentAccommodations.spanish_translation) return "english";
+  if (!hasSpanishAccommodation()) return "english";
   return currentLanguage === "spanish" ? "spanish" : "english";
 }
 
 function setActiveLanguage(language = "english", { userInitiated = false } = {}) {
   if (userInitiated) languagePreferenceTouched = true;
-  currentLanguage = language === "spanish" && currentAccommodations.spanish_translation ? "spanish" : "english";
+  currentLanguage = language === "spanish" && hasSpanishAccommodation() ? "spanish" : "english";
   spanishMode = currentLanguage === "spanish";
   console.log("LANGUAGE:", currentLanguage);
 }
@@ -1801,11 +1811,14 @@ async function applyAccommodationUpdate(row, { rerenderLesson = true } = {}) {
     return;
   }
   currentAccommodations = { ...DEFAULT_ACCOMMODATIONS, ...row };
+  console.log("FULL ACCOMMODATIONS:", currentAccommodations);
+  console.log("SPANISH ACCOMMODATION VALUE:", currentAccommodations.spanish_translation);
+  console.log("SPANISH ACCOMMODATION TYPE:", typeof currentAccommodations.spanish_translation);
   if (!currentAccommodations.font_size) currentAccommodations.font_size = "normal";
   if (!currentAccommodations.color_overlay) currentAccommodations.color_overlay = "default";
   if (localWorkspacePrefs.fontSizeOverride) currentAccommodations.font_size = localWorkspacePrefs.fontSizeOverride;
   if (localWorkspacePrefs.colorOverlayOverride) currentAccommodations.color_overlay = localWorkspacePrefs.colorOverlayOverride;
-  if (currentAccommodations.spanish_translation) {
+  if (hasSpanishAccommodation()) {
     if (!languagePreferenceTouched) setActiveLanguage("spanish");
   } else {
     setActiveLanguage("english");
@@ -1832,9 +1845,13 @@ async function clearStudentAccommodations({ rerenderLesson = true } = {}) {
 
 async function rerenderLessonForAccommodationUpdate() {
   if (!currentLessonData) return;
-  if (currentAccommodations.spanish_translation) {
+  if (hasSpanishAccommodation()) {
+    console.log("ABOUT TO GENERATE SPANISH CACHE");
+    console.log("CURRENT LANGUAGE:", currentLanguage);
+    console.log("LESSON DATA BEFORE SPANISH:", currentLessonData);
     const spanishCache = await ensureSpanishTranslationCache(currentLessonData);
     attachSpanishTranslationCache(currentLessonData, spanishCache);
+    console.log("SPANISH CACHE ATTACHED:", currentLessonData?.translations?.spanish);
   }
   const checked = getCheckedAnswers();
   renderQuestions(currentLessonData);
@@ -2130,9 +2147,15 @@ async function translateLessonContent(lesson = currentLessonData) {
   if (!data) return lesson;
   const localFallback = mergeSpanishTranslationCache(data, {});
   try {
+    console.log("CALLING translate-lesson EDGE FUNCTION");
+    console.log("TRANSLATE LESSON PAYLOAD:", data);
     const { data: translated, error } = await studentSupabase.functions.invoke("translate-lesson", {
       body: { lesson: data, targetLanguage: "spanish" }
     });
+    console.log("EDGE FUNCTION RESPONSE:", translated);
+    console.log("EDGE FUNCTION ERROR:", error);
+    data.__spanishTranslationEdgeInvoked = true;
+    if (!translated) console.error("EDGE FUNCTION RETURNED EMPTY RESPONSE");
     if (error) throw error;
     const incomingSpanish = translated?.translations?.spanish || {};
     mergeSpanishTranslationCache(data, incomingSpanish);
@@ -2140,6 +2163,7 @@ async function translateLessonContent(lesson = currentLessonData) {
     currentLessonData = data;
     return data;
   } catch (error) {
+    data.__spanishTranslationEdgeInvoked = true;
     console.warn("⚠️ Spanish translation generation failed; using local cache", error);
     applySpanishTranslationFields(data, localFallback);
     currentLessonData = data;
@@ -2181,14 +2205,26 @@ async function ensureSpanishTranslationCache(lesson = currentLessonData) {
     data.practice?.questions?.some?.((question) => question?.spanish_question || Array.isArray(question?.spanish_choices)) ||
     data.cross?.questions?.some?.((question) => question?.spanish_question || Array.isArray(question?.spanish_choices))
   );
-  if (data.translations?.spanish) {
+  if (data.translations?.spanish && data.__spanishTranslationEdgeInvoked) {
     applySpanishTranslationFields(data, data.translations.spanish);
     console.log("SPANISH TRANSLATION CACHE:", data.translations.spanish);
     return data.translations.spanish;
   }
-  if (hasFlatSpanishFields) {
-    return mergeSpanishTranslationCache(data, {});
+  if (!hasSpanishAccommodation()) {
+    if (data.translations?.spanish) {
+      applySpanishTranslationFields(data, data.translations.spanish);
+      console.log("SPANISH TRANSLATION CACHE:", data.translations.spanish);
+      return data.translations.spanish;
+    }
+    if (hasFlatSpanishFields) {
+      return mergeSpanishTranslationCache(data, {});
+    }
   }
+  console.log("SPANISH CACHE NEEDS EDGE GENERATION", {
+    hasExistingSpanishCache: Boolean(data.translations?.spanish),
+    hasFlatSpanishFields,
+    edgeAlreadyInvoked: Boolean(data.__spanishTranslationEdgeInvoked)
+  });
   if (translationGenerationPromise) return translationGenerationPromise;
   translationGenerationPromise = translateLessonContent(data)
     .then((translatedLesson) => translatedLesson?.translations?.spanish || null)
@@ -2305,10 +2341,14 @@ async function startStudentLesson(sessionUpdate = null) {
       renderAccommodationToolbar();
     }
 
-    if (currentAccommodations.spanish_translation) {
+    if (hasSpanishAccommodation()) {
       if (!languagePreferenceTouched) setActiveLanguage("spanish");
+      console.log("ABOUT TO GENERATE SPANISH CACHE");
+      console.log("CURRENT LANGUAGE:", currentLanguage);
+      console.log("LESSON DATA BEFORE SPANISH:", lessonData);
       const spanishCache = await ensureSpanishTranslationCache(lessonData);
       attachSpanishTranslationCache(lessonData, spanishCache);
+      console.log("SPANISH CACHE ATTACHED:", lessonData?.translations?.spanish);
       currentLessonData = lessonData;
       currentSession.lesson_data = lessonData;
       console.log("SPANISH TRANSLATION CACHE BEFORE RENDER:", lessonData?.translations?.spanish);
@@ -2616,7 +2656,7 @@ function renderQuestionTextHtml(englishText = "", spanishText = "") {
   const safeEnglish = getLanguageText(englishText, "english");
   const safeSpanish = String(spanishText || "").trim();
 
-  if (currentAccommodations.spanish_translation && getActiveLanguage() === "spanish" && safeSpanish && safeSpanish !== safeEnglish) {
+  if (hasSpanishAccommodation() && getActiveLanguage() === "spanish" && safeSpanish && safeSpanish !== safeEnglish) {
     return `
       <span class="language-line language-line-english">${highlightVocabularyHtml(safeEnglish)}</span>
       <span class="language-line language-line-spanish">${highlightVocabularyHtml(safeSpanish)}</span>
@@ -2639,13 +2679,24 @@ function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex, s
     : (hasLanguageText(currentQuestion?.question, "spanish") ? getLanguageText(currentQuestion?.question, "spanish") : "");
   const questionText = getActiveLanguage() === "spanish" ? (spanishText || englishText) : englishText;
   const safeSpanishChoices = Array.isArray(currentQuestion?.spanish_choices) && currentQuestion.spanish_choices.length ? currentQuestion.spanish_choices : cachedSpanishChoices;
+  const hasValidSpanishChoices = Array.isArray(safeSpanishChoices) && safeSpanishChoices.length === choices.length;
+  if (getActiveLanguage() === "spanish" && safeSpanishChoices?.length && !hasValidSpanishChoices) {
+    console.error("MALFORMED SPANISH CHOICES; FALLING BACK TO ENGLISH", {
+      sectionName,
+      displayIndex,
+      englishChoices: choices,
+      spanishChoices: safeSpanishChoices
+    });
+  }
   const safeChoices = getActiveLanguage() === "spanish"
-    ? (
-        Array.isArray(safeSpanishChoices) && safeSpanishChoices.length === choices.length
-          ? safeSpanishChoices
-          : choices
-      )
+    ? (hasValidSpanishChoices ? safeSpanishChoices : choices)
     : choices;
+  console.log("FINAL QUESTION RENDER", {
+    language: getActiveLanguage(),
+    englishChoices: choices,
+    spanishChoices: safeSpanishChoices,
+    renderedChoices: safeChoices
+  });
   const normalizedQuestionText = { english: englishText, spanish: spanishText };
   const normalizedChoices = (choices || []).map((choice, idx) => ({
     raw: String(choice || ""),
@@ -3082,8 +3133,12 @@ document.addEventListener("DOMContentLoaded", () => {
       setActiveLanguage(selectedLanguage, { userInitiated: true });
       console.log("LANGUAGE TOGGLE:", getActiveLanguage());
       if (getActiveLanguage() === "spanish" && currentLessonData) {
+        console.log("ABOUT TO GENERATE SPANISH CACHE");
+        console.log("CURRENT LANGUAGE:", currentLanguage);
+        console.log("LESSON DATA BEFORE SPANISH:", currentLessonData);
         const spanishCache = await ensureSpanishTranslationCache(currentLessonData);
         attachSpanishTranslationCache(currentLessonData, spanishCache);
+        console.log("SPANISH CACHE ATTACHED:", currentLessonData?.translations?.spanish);
       }
       console.log("SPANISH TRANSLATION CACHE:", currentLessonData?.translations?.spanish);
       rerenderLessonPreservingState();
