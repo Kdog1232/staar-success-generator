@@ -102,6 +102,7 @@ Do not add, remove, reorder, or relabel answer choices. Translate display text o
 Lesson JSON:
 ${JSON.stringify(seed)}`;
 
+  console.log("[translateWithOpenAI] sending request");
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -117,9 +118,11 @@ ${JSON.stringify(seed)}`;
     signal: AbortSignal.timeout(20000),
   });
 
+  console.log("[translateWithOpenAI] response status:", response.status);
   if (!response.ok) throw new Error(`openai_status_${response.status}`);
   const json = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ text?: string }> }> };
   const raw = String(json.output_text || json.output?.[0]?.content?.[0]?.text || "").trim();
+  console.log("[translateWithOpenAI] raw response length:", raw.length);
   const cleaned = raw.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
   return JSON.parse(cleaned);
 }
@@ -136,6 +139,14 @@ function normalizeTranslation(translated: Record<string, unknown>, seed: ReturnT
         ? translatedQuestions[index] as Record<string, unknown>
         : {};
       const incomingChoices = Array.isArray(incoming.choices) ? incoming.choices.map((choice) => String(choice || "")) : [];
+      if (incomingChoices.length !== sourceQuestion.choices.length) {
+        console.error("[normalizeTranslation] CHOICE LENGTH MISMATCH", {
+          sectionName,
+          index,
+          sourceChoices: sourceQuestion.choices,
+          incomingChoices,
+        });
+      }
       const choices = sourceQuestion.choices.map((choice, choiceIndex) => incomingChoices[choiceIndex] || choice);
       return {
         question: String(incoming.question || sourceQuestion.question),
@@ -152,6 +163,8 @@ function normalizeTranslation(translated: Record<string, unknown>, seed: ReturnT
 
   const practiceQuestions = normalizeQuestions("practice");
   const crossQuestions = normalizeQuestions("cross");
+  console.log("[normalizeTranslation] practice translated questions:", practiceQuestions.length);
+  console.log("[normalizeTranslation] cross translated questions:", crossQuestions.length);
   const practiceSection = translated.practice && typeof translated.practice === "object" ? translated.practice as Record<string, unknown> : {};
   const crossSection = translated.cross && typeof translated.cross === "object" ? translated.cross as Record<string, unknown> : {};
   return {
@@ -207,27 +220,36 @@ function mergeSpanishFieldsIntoLesson(lesson: Record<string, unknown>, spanish: 
 }
 
 async function translateLessonContent(lesson: Record<string, unknown>) {
+  console.log("[translateLessonContent] building seed");
   const seed = buildTranslationSeed(lesson);
+  console.log("[translateLessonContent] practice questions:", seed.practice.questions.length);
+  console.log("[translateLessonContent] cross questions:", seed.cross.questions.length);
   try {
     const translated = await translateWithOpenAI(seed);
     const spanish = normalizeTranslation(translated, seed);
+    console.log("[translateLessonContent] translation complete");
     return { lesson: mergeSpanishFieldsIntoLesson(lesson, spanish), translations: { spanish } };
   } catch (error) {
     console.warn("[translateLessonContent] falling back to English fields:", error instanceof Error ? error.message : String(error));
     const spanish = normalizeTranslation({}, seed);
+    console.log("[translateLessonContent] translation complete");
     return { lesson: mergeSpanishFieldsIntoLesson(lesson, spanish), translations: { spanish }, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
 serve(async (req) => {
+  console.log("[translate-lesson] request received");
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
     const body = await req.json();
     const targetLanguage = String(body?.targetLanguage || "spanish").toLowerCase();
-    if (targetLanguage !== "spanish") throw new Error("Only Spanish translation is supported.");
     const lesson = body?.lesson && typeof body.lesson === "object" ? body.lesson as Record<string, unknown> : {};
+    console.log("[translate-lesson] target language:", targetLanguage);
+    console.log("[translate-lesson] lesson keys:", Object.keys(lesson || {}));
+    if (targetLanguage !== "spanish") throw new Error("Only Spanish translation is supported.");
     const translatedLesson = await translateLessonContent(lesson);
+    console.log("[translate-lesson] sending response");
     return jsonResponse(translatedLesson);
   } catch (error) {
     console.warn("[translate-lesson] failed:", error instanceof Error ? error.message : String(error));
