@@ -9,6 +9,8 @@ const corsHeaders = {
 type LessonQuestion = {
   question?: string;
   choices?: Array<string | { text?: string; choice?: string }>;
+  explanation?: string;
+  hint?: string;
 };
 
 type LessonSection = {
@@ -41,6 +43,8 @@ function buildTranslationSeed(lesson: Record<string, unknown>) {
   const mapQuestions = (questions: LessonQuestion[] = []) => questions.map((question) => ({
     question: String(question?.question || ""),
     choices: Array.isArray(question?.choices) ? question.choices.map(extractChoiceText) : [],
+    explanation: String(question?.explanation || ""),
+    hint: String(question?.hint || ""),
   }));
   return {
     practice: { passage: practice.passage || "", questions: mapQuestions(practice.questions) },
@@ -49,11 +53,12 @@ function buildTranslationSeed(lesson: Record<string, unknown>) {
 }
 
 function blankTranslationFromSeed(seed: ReturnType<typeof buildTranslationSeed>) {
-  const mapQuestions = (questions: Array<{ question: string; choices: string[] }>) => questions.map(() => ({
+  const mapQuestions = (questions: Array<{ question: string; choices: string[]; explanation?: string; hint?: string }>) => questions.map(() => ({
     question: "",
     choices: [],
     answers: [],
     hint: "",
+    explanation: "",
     simplified: "",
     rephrase: "",
     guided_prompt: "",
@@ -89,10 +94,10 @@ Return ONLY valid JSON matching this schema:
     "practiceQuestionsTitle": "Preguntas de práctica",
     "crossQuestionsTitle": "Preguntas interdisciplinarias"
   },
-  "practice": { "passage": "...", "questions": [{ "question": "...", "choices": ["..."], "answers": ["..."], "hint": "", "simplified": "", "rephrase": "", "guided_prompt": "" }] },
-  "cross": { "passage": "...", "questions": [{ "question": "...", "choices": ["..."], "answers": ["..."], "hint": "", "simplified": "", "rephrase": "", "guided_prompt": "" }] }
+  "practice": { "passage": "...", "questions": [{ "question": "...", "choices": ["..."], "answers": ["..."], "hint": "", "explanation": "", "simplified": "", "rephrase": "", "guided_prompt": "" }] },
+  "cross": { "passage": "...", "questions": [{ "question": "...", "choices": ["..."], "answers": ["..."], "hint": "", "explanation": "", "simplified": "", "rephrase": "", "guided_prompt": "" }] }
 }
-Do not add, remove, reorder, or relabel answer choices. Translate display text only. Preserve names, numbers, units, formulas, answer order, and IDs implicitly by position.
+Do not add, remove, reorder, or relabel answer choices. Translate display text only: passages, question text, answer choice text, hints, and explanations. Preserve names, numbers, units, formulas, answer order, and IDs implicitly by position.
 
 Lesson JSON:
 ${JSON.stringify(seed)}`;
@@ -136,7 +141,8 @@ function normalizeTranslation(translated: Record<string, unknown>, seed: ReturnT
         question: String(incoming.question || sourceQuestion.question),
         choices,
         answers: choices,
-        hint: String(incoming.hint || ""),
+        hint: String(incoming.hint || sourceQuestion.hint || ""),
+        explanation: String(incoming.explanation || sourceQuestion.explanation || ""),
         simplified: String(incoming.simplified || ""),
         rephrase: String(incoming.rephrase || ""),
         guided_prompt: String(incoming.guided_prompt || ""),
@@ -168,6 +174,51 @@ function normalizeTranslation(translated: Record<string, unknown>, seed: ReturnT
   };
 }
 
+function mergeSpanishFieldsIntoLesson(lesson: Record<string, unknown>, spanish: ReturnType<typeof normalizeTranslation>) {
+  const merged = structuredClone(lesson || {}) as Record<string, unknown>;
+  merged.spanish_practice_passage = String(spanish.practice?.passage || spanish.passage || "");
+  merged.spanish_cross_passage = String(spanish.cross?.passage || "");
+
+  const mergeSection = (sectionName: "practice" | "cross") => {
+    const sourceSection = merged[sectionName] && typeof merged[sectionName] === "object"
+      ? merged[sectionName] as Record<string, unknown>
+      : {};
+    const translatedSection = spanish[sectionName];
+    const sourceQuestions = Array.isArray(sourceSection.questions) ? sourceSection.questions : [];
+    sourceSection.spanish_passage = sectionName === "practice" ? merged.spanish_practice_passage : merged.spanish_cross_passage;
+    sourceSection.passage_es = sourceSection.spanish_passage;
+    sourceSection.questions = sourceQuestions.map((question, index) => {
+      const sourceQuestion = question && typeof question === "object" ? question as Record<string, unknown> : {};
+      const translatedQuestion = Array.isArray(translatedSection.questions) ? translatedSection.questions[index] : undefined;
+      return {
+        ...sourceQuestion,
+        spanish_question: translatedQuestion?.question || String(sourceQuestion.spanish_question || ""),
+        spanish_choices: Array.isArray(translatedQuestion?.choices) ? translatedQuestion.choices : (Array.isArray(sourceQuestion.spanish_choices) ? sourceQuestion.spanish_choices : []),
+        spanish_explanation: translatedQuestion?.explanation || translatedQuestion?.simplified || String(sourceQuestion.spanish_explanation || ""),
+        spanish_hint: translatedQuestion?.hint || String(sourceQuestion.spanish_hint || ""),
+      };
+    });
+    merged[sectionName] = sourceSection;
+  };
+
+  mergeSection("practice");
+  mergeSection("cross");
+  return merged;
+}
+
+async function translateLessonContent(lesson: Record<string, unknown>) {
+  const seed = buildTranslationSeed(lesson);
+  try {
+    const translated = await translateWithOpenAI(seed);
+    const spanish = normalizeTranslation(translated, seed);
+    return { lesson: mergeSpanishFieldsIntoLesson(lesson, spanish), translations: { spanish } };
+  } catch (error) {
+    console.warn("[translateLessonContent] falling back to English fields:", error instanceof Error ? error.message : String(error));
+    const spanish = normalizeTranslation({}, seed);
+    return { lesson: mergeSpanishFieldsIntoLesson(lesson, spanish), translations: { spanish }, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -176,12 +227,10 @@ serve(async (req) => {
     const targetLanguage = String(body?.targetLanguage || "spanish").toLowerCase();
     if (targetLanguage !== "spanish") throw new Error("Only Spanish translation is supported.");
     const lesson = body?.lesson && typeof body.lesson === "object" ? body.lesson as Record<string, unknown> : {};
-    const seed = buildTranslationSeed(lesson);
-    const translated = await translateWithOpenAI(seed);
-    const spanish = normalizeTranslation(translated, seed);
-    return jsonResponse({ translations: { spanish } });
+    const translatedLesson = await translateLessonContent(lesson);
+    return jsonResponse(translatedLesson);
   } catch (error) {
     console.warn("[translate-lesson] failed:", error instanceof Error ? error.message : String(error));
-    return jsonResponse({ translations: { spanish: null }, error: error instanceof Error ? error.message : String(error) }, 500);
+    return jsonResponse({ translations: { spanish: null }, error: error instanceof Error ? error.message : String(error) }, 200);
   }
 });

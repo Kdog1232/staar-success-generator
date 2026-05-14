@@ -635,6 +635,32 @@
       font-weight: 950;
     }
 
+    .language-tabs {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      border-radius: 999px;
+      background: #ede9fe;
+      border: 1px solid #ddd6fe;
+    }
+
+    .language-tab {
+      min-height: auto;
+      padding: 8px 12px;
+      border-radius: 999px;
+      color: #4c1d95;
+      background: transparent;
+      border: 0;
+      font-size: 0.86rem;
+      font-weight: 950;
+    }
+
+    .language-tab.is-active {
+      color: #ffffff;
+      background: #7c3aed;
+      box-shadow: 0 8px 18px rgba(124, 58, 237, 0.22);
+    }
+
     .language-toggle, .read-btn {
       min-height: auto;
       padding: 9px 12px;
@@ -993,6 +1019,7 @@ let highlightColor = "yellow";
 let lineReaderIndex = 0;
 let visibleChunkCount = 1;
 let localWorkspacePrefs = {};
+let currentLanguage = "english";
 let spanishMode = false;
 let translationGenerationPromise = null;
 
@@ -1438,8 +1465,12 @@ function renderAccommodationToolbar() {
     return;
   }
   toolbar.classList.add("is-visible");
+  const activeLanguage = getActiveLanguage();
   const languageButton = currentAccommodations.spanish_translation
-    ? `<button class="language-toggle" type="button" id="toggle-spanish-mode" aria-pressed="${getActiveLanguage() === "spanish"}">${getActiveLanguage() === "spanish" ? "Spanish" : "English"} | ${getActiveLanguage() === "spanish" ? "English" : "Spanish"}</button>`
+    ? `<div class="language-tabs" role="tablist" aria-label="Lesson language">
+        <button class="language-tab ${activeLanguage === "english" ? "is-active" : ""}" type="button" data-language-tab="english" role="tab" aria-selected="${activeLanguage === "english"}">English</button>
+        <button class="language-tab ${activeLanguage === "spanish" ? "is-active" : ""}" type="button" data-language-tab="spanish" role="tab" aria-selected="${activeLanguage === "spanish"}">Spanish</button>
+      </div>`
     : "";
   const fontControl = `<label class="workspace-controls">Font <select class="workspace-control-select" id="student-font-size-control">
     ${FONT_SIZE_OPTIONS.map((size) => `<option value="${size}" ${currentAccommodations.font_size === size ? "selected" : ""}>${size === "extra_large" ? "Extra Large" : size[0].toUpperCase() + size.slice(1)}</option>`).join("")}
@@ -1522,7 +1553,14 @@ const SPANISH_WORD_TRANSLATIONS = {
 };
 
 function getActiveLanguage() {
-  return spanishMode && currentAccommodations.spanish_translation ? "spanish" : "english";
+  if (!currentAccommodations.spanish_translation) return "english";
+  return currentLanguage === "spanish" ? "spanish" : "english";
+}
+
+function setActiveLanguage(language = "english") {
+  currentLanguage = language === "spanish" && currentAccommodations.spanish_translation ? "spanish" : "english";
+  spanishMode = currentLanguage === "spanish";
+  console.log("LANGUAGE:", currentLanguage);
 }
 
 function preserveCase(replacement = "", original = "") {
@@ -1734,22 +1772,18 @@ function questionSpeechText(question = {}, sectionName = "practice", localIndex 
   const cachedSpanishQuestion = getCachedSpanishQuestion(sectionName, localIndex);
   const choices = Array.isArray(question.choices) ? question.choices : [];
   const englishText = getLanguageText(question.question || "", "english");
-  const explicitSpanishQuestion = cachedSpanishQuestion.question || question.spanish_question || question.question_es || "";
+  const explicitSpanishQuestion = question.spanish_question || question.question_es || cachedSpanishQuestion.question || "";
   const spanishText = explicitSpanishQuestion
     ? getLanguageText(explicitSpanishQuestion, "spanish")
     : (hasLanguageText(question.question, "spanish") ? getLanguageText(question.question, "spanish") : "");
-  const questionText = getDisplayText(englishText, spanishText);
-  const normalizedChoices = choices.map((choice, idx) => {
-    const explicitSpanishChoice = (Array.isArray(cachedSpanishQuestion.choices) ? cachedSpanishQuestion.choices[idx] : "") || "";
-    return {
-      english: getLanguageText(choice, "english") || choice?.text || choice?.choice || "",
-      spanish: explicitSpanishChoice
-        ? getLanguageText(explicitSpanishChoice, "spanish")
-        : (hasLanguageText(choice, "spanish") ? getLanguageText(choice, "spanish") : "")
-    };
-  });
-  return [questionText, ...normalizedChoices.map((choice, idx) => {
-    return `${String.fromCharCode(65 + idx)}. ${sanitizeAnswerChoiceText(getDisplayText(choice.english, choice.spanish))}`;
+  const questionText = getActiveLanguage() === "spanish" ? (spanishText || englishText) : englishText;
+  const spanishChoices = Array.isArray(question.spanish_choices) && question.spanish_choices.length
+    ? question.spanish_choices
+    : (Array.isArray(cachedSpanishQuestion.choices) ? cachedSpanishQuestion.choices : []);
+  const safeChoices = getActiveLanguage() === "spanish" && Array.isArray(spanishChoices) && spanishChoices.length === choices.length ? spanishChoices : (choices || []);
+  return [questionText, ...safeChoices.map((choice, idx) => {
+    const displayChoice = getLanguageText(choice, getActiveLanguage()) || choice?.text || choice?.choice || String(choice || "");
+    return `${String.fromCharCode(65 + idx)}. ${sanitizeAnswerChoiceText(displayChoice)}`;
   })].join(" ");
 }
 
@@ -1769,7 +1803,7 @@ function applyAccommodationUpdate(row) {
   if (!currentAccommodations.color_overlay) currentAccommodations.color_overlay = "default";
   if (localWorkspacePrefs.fontSizeOverride) currentAccommodations.font_size = localWorkspacePrefs.fontSizeOverride;
   if (localWorkspacePrefs.colorOverlayOverride) currentAccommodations.color_overlay = localWorkspacePrefs.colorOverlayOverride;
-  if (!currentAccommodations.spanish_translation) spanishMode = false;
+  if (!currentAccommodations.spanish_translation) setActiveLanguage("english");
   console.log("ACTIVE ACCOMMODATIONS:", currentAccommodations);
   renderAccommodationToolbar();
   if (lessonStarted && currentLessonData) {
@@ -1783,7 +1817,7 @@ function applyAccommodationUpdate(row) {
 
 function clearStudentAccommodations() {
   currentAccommodations = { ...DEFAULT_ACCOMMODATIONS };
-  spanishMode = false;
+  setActiveLanguage("english");
   console.log("ACTIVE ACCOMMODATIONS:", currentAccommodations);
   renderAccommodationToolbar();
   if (lessonStarted && currentLessonData) {
@@ -1994,22 +2028,22 @@ function buildLocalSpanishTranslation(lesson = {}) {
   const data = extractLessonData(lesson) || {};
   const practiceSection = getQuestionSection(data, "practice");
   const crossSection = getQuestionSection(data, "cross");
-  const practicePassage = practiceSection.spanish_passage || practiceSection.passage_es || data?.spanish_passage || data?.passage_es || translateText(practiceSection.passage || data?.passage || "");
-  const crossPassage = crossSection.spanish_passage || crossSection.passage_es || translateText(crossSection.passage || "");
+  const practicePassage = practiceSection.spanish_passage || data?.spanish_practice_passage || translateText(practiceSection.passage || data?.passage || "");
+  const crossPassage = crossSection.spanish_passage || data?.spanish_cross_passage || translateText(crossSection.passage || "");
   const mapQuestions = (questions = []) => questions.map((question) => {
     const englishQuestion = getLanguageText(question?.question || "", "english");
+    const spanishChoices = Array.isArray(question?.spanish_choices)
+      ? question.spanish_choices
+      : normalizeTranslatedChoices(question);
     return {
       question: question?.spanish_question || question?.question_es || (hasLanguageText(question?.question, "spanish") ? getLanguageText(question?.question, "spanish") : translateText(englishQuestion)),
-      choices: Array.isArray(question?.choices)
-        ? question.choices.map((choice) => hasLanguageText(choice, "spanish")
-          ? getLanguageText(choice, "spanish")
-          : translateText(getLanguageText(choice, "english") || choice?.text || choice?.choice || ""))
-        : [],
-      answers: normalizeTranslatedChoices(question),
-      hint: translateText(getSupportHint(question)),
+      choices: spanishChoices,
+      answers: spanishChoices,
+      hint: question?.spanish_hint || translateText(getSupportHint(question)),
       simplified: translateText(simplifyQuestionText(englishQuestion)),
       rephrase: translateText(rephraseQuestionText(englishQuestion)),
-      guided_prompt: translateText(getGuidedPrompt(englishQuestion, 0))
+      guided_prompt: translateText(getGuidedPrompt(englishQuestion, 0)),
+      explanation: question?.spanish_explanation || translateText(question?.explanation || "")
     };
   });
   const practiceQuestions = mapQuestions(practiceSection.questions);
@@ -2027,6 +2061,64 @@ function buildLocalSpanishTranslation(lesson = {}) {
     practice: { passage: practicePassage, questions: practiceQuestions },
     cross: { passage: crossPassage, questions: crossQuestions }
   };
+}
+
+function applySpanishTranslationFields(lesson = {}, spanish = {}) {
+  if (!lesson || typeof lesson !== "object") return lesson;
+  const practiceTranslation = spanish?.practice && typeof spanish.practice === "object" ? spanish.practice : {};
+  const crossTranslation = spanish?.cross && typeof spanish.cross === "object" ? spanish.cross : {};
+  const practiceQuestions = Array.isArray(practiceTranslation.questions) ? practiceTranslation.questions : [];
+  const crossQuestions = Array.isArray(crossTranslation.questions) ? crossTranslation.questions : [];
+  lesson.spanish_practice_passage = lesson.spanish_practice_passage || practiceTranslation.passage || spanish?.passage || lesson?.practice?.spanish_passage || "";
+  lesson.spanish_cross_passage = lesson.spanish_cross_passage || crossTranslation.passage || lesson?.cross?.spanish_passage || "";
+  if (lesson.practice && typeof lesson.practice === "object") {
+    lesson.practice.spanish_passage = lesson.practice.spanish_passage || lesson.spanish_practice_passage || "";
+    lesson.practice.passage_es = lesson.practice.passage_es || lesson.spanish_practice_passage || "";
+  }
+  if (lesson.cross && typeof lesson.cross === "object") {
+    lesson.cross.spanish_passage = lesson.cross.spanish_passage || lesson.spanish_cross_passage || "";
+    lesson.cross.passage_es = lesson.cross.passage_es || lesson.spanish_cross_passage || "";
+  }
+  const mergeQuestions = (questions = [], translatedQuestions = []) => {
+    if (!Array.isArray(questions)) return;
+    questions.forEach((question, index) => {
+      if (!question || typeof question !== "object") return;
+      const translatedQuestion = translatedQuestions[index] && typeof translatedQuestions[index] === "object" ? translatedQuestions[index] : {};
+      question.spanish_question = question.spanish_question || translatedQuestion.question || "";
+      if (!Array.isArray(question.spanish_choices) && Array.isArray(translatedQuestion.choices) && translatedQuestion.choices.length) {
+        question.spanish_choices = translatedQuestion.choices;
+      }
+      question.spanish_hint = question.spanish_hint || translatedQuestion.hint || "";
+      question.spanish_explanation = question.spanish_explanation || translatedQuestion.explanation || translatedQuestion.simplified || "";
+    });
+  };
+  mergeQuestions(lesson.practice?.questions, practiceQuestions);
+  mergeQuestions(lesson.cross?.questions, crossQuestions);
+  return lesson;
+}
+
+async function translateLessonContent(lesson = currentLessonData) {
+  const data = extractLessonData(lesson);
+  if (!data) return lesson;
+  const localFallback = mergeSpanishTranslationCache(data, {});
+  try {
+    const { data: translated, error } = await studentSupabase.functions.invoke("translate-lesson", {
+      body: { lesson: data, targetLanguage: "spanish" }
+    });
+    if (error) throw error;
+    const translatedLesson = translated?.lesson && typeof translated.lesson === "object" ? translated.lesson : null;
+    const incomingSpanish = translated?.translations?.spanish || translated?.spanish || translated || localFallback;
+    const merged = mergeSpanishTranslationCache(data, incomingSpanish);
+    if (translatedLesson) applySpanishTranslationFields(data, buildLocalSpanishTranslation(translatedLesson));
+    applySpanishTranslationFields(data, merged);
+    currentLessonData = data;
+    return data;
+  } catch (error) {
+    console.warn("⚠️ Spanish translation generation failed; using local cache", error);
+    applySpanishTranslationFields(data, localFallback);
+    currentLessonData = data;
+    return data;
+  }
 }
 
 function mergeSpanishTranslationCache(lesson = {}, incoming = {}) {
@@ -2057,26 +2149,20 @@ function mergeSpanishTranslationCache(lesson = {}, incoming = {}) {
 async function ensureSpanishTranslationCache(lesson = currentLessonData) {
   const data = extractLessonData(lesson);
   if (!data) return null;
-  if (data.translations?.spanish) {
+  const hasFlatSpanishFields = Boolean(
+    data.spanish_practice_passage ||
+    data.spanish_cross_passage ||
+    data.practice?.questions?.some?.((question) => question?.spanish_question || Array.isArray(question?.spanish_choices)) ||
+    data.cross?.questions?.some?.((question) => question?.spanish_question || Array.isArray(question?.spanish_choices))
+  );
+  if (data.translations?.spanish && hasFlatSpanishFields) {
     console.log("SPANISH TRANSLATION CACHE:", data.translations.spanish);
     return data.translations.spanish;
   }
   if (translationGenerationPromise) return translationGenerationPromise;
-  translationGenerationPromise = (async () => {
-    const localFallback = mergeSpanishTranslationCache(data, {});
-    try {
-      const { data: translated, error } = await studentSupabase.functions.invoke("translate-lesson", {
-        body: { lesson: data, targetLanguage: "spanish" }
-      });
-      if (error) throw error;
-      return mergeSpanishTranslationCache(data, translated?.translations?.spanish || translated?.spanish || translated || localFallback);
-    } catch (error) {
-      console.warn("⚠️ Spanish translation generation failed; using local cache", error);
-      return localFallback;
-    } finally {
-      translationGenerationPromise = null;
-    }
-  })();
+  translationGenerationPromise = translateLessonContent(data)
+    .then((translatedLesson) => translatedLesson?.translations?.spanish || null)
+    .finally(() => { translationGenerationPromise = null; });
   return translationGenerationPromise;
 }
 
@@ -2303,7 +2389,14 @@ async function handleLiveSessionTransition(source, sessionPayload) {
 }
 
 function normalizeQuestionForStudent(question = {}, index = 0, type = "practice", lessonMeta = {}) {
+  const rawQuestion = question?.question ?? question?.prompt ?? question?.text ?? "";
+  const englishQuestion = getLanguageText(rawQuestion, "english") || String(rawQuestion || "");
+  const embeddedSpanishQuestion = hasLanguageText(rawQuestion, "spanish") ? getLanguageText(rawQuestion, "spanish") : "";
   const rawChoices = Array.isArray(question?.choices) ? question.choices : (Array.isArray(question?.answers) ? question.answers : []);
+  const englishChoices = rawChoices.map((choice) => getLanguageText(choice, "english") || choice?.text || choice?.choice || String(choice || ""));
+  const embeddedSpanishChoices = rawChoices.map((choice) => hasLanguageText(choice, "spanish") ? getLanguageText(choice, "spanish") : "");
+  const hasEmbeddedSpanishChoices = embeddedSpanishChoices.some((choice) => String(choice || "").trim());
+  const explicitSpanishChoices = Array.isArray(question?.spanish_choices) ? question.spanish_choices : (hasEmbeddedSpanishChoices ? embeddedSpanishChoices : undefined);
   return {
     ...question,
     id: question?.id || question?.question_id || `${type}-${index + 1}`,
@@ -2312,13 +2405,10 @@ function normalizeQuestionForStudent(question = {}, index = 0, type = "practice"
     subject: question?.subject || lessonMeta.subject || "Reading",
     skill: question?.skill || lessonMeta.skill || "",
     teks: question?.teks || question?.standard || lessonMeta.teks || lessonMeta.standard || "",
-    question: question?.question || question?.prompt || question?.text || "",
-    choices: rawChoices.map((choice) => {
-      if (typeof choice === "string") return { text: choice, english: choice };
-      const english = getLanguageText(choice, "english") || choice?.text || choice?.choice || "";
-      const spanish = hasLanguageText(choice, "spanish") ? getLanguageText(choice, "spanish") : "";
-      return { ...choice, text: choice?.text || choice?.choice || english, english, spanish };
-    })
+    question: englishQuestion,
+    choices: englishChoices,
+    spanish_question: question?.spanish_question || question?.question_es || embeddedSpanishQuestion || "",
+    ...(Array.isArray(explicitSpanishChoices) ? { spanish_choices: explicitSpanishChoices } : {})
   };
 }
 
@@ -2345,6 +2435,8 @@ function normalizeWorkerPayload(raw = {}, { fallbackPassage = "" } = {}) {
     ...safe,
     ...lessonMeta,
     passage: normalizedPassage,
+    spanish_practice_passage: safe?.spanish_practice_passage || safe?.practice?.spanish_passage || safe?.practice?.passage_es || safe?.spanish_passage || safe?.passage_es || "",
+    spanish_cross_passage: safe?.spanish_cross_passage || safe?.cross?.spanish_passage || safe?.cross?.passage_es || "",
     practiceQuestions: practiceQuestions.map((question, index) => normalizeQuestionForStudent(question, index, "practice", lessonMeta)),
     crossQuestions: crossQuestions.map((question, index) => normalizeQuestionForStudent(question, index, "cross", lessonMeta)),
     metadata: {
@@ -2354,11 +2446,15 @@ function normalizeWorkerPayload(raw = {}, { fallbackPassage = "" } = {}) {
     practice: {
       ...(safe?.practice && typeof safe.practice === "object" ? safe.practice : {}),
       passage: safe?.practice?.passage || safe?.practicePassage || normalizedPassage,
+      spanish_passage: safe?.practice?.spanish_passage || safe?.practice?.passage_es || safe?.spanish_practice_passage || safe?.spanish_passage || safe?.passage_es || "",
+      passage_es: safe?.practice?.passage_es || safe?.practice?.spanish_passage || safe?.spanish_practice_passage || "",
       questions: practiceQuestions.map((question, index) => normalizeQuestionForStudent(question, index, "practice", lessonMeta))
     },
     cross: {
       ...(safe?.cross && typeof safe.cross === "object" ? safe.cross : {}),
       passage: safe?.cross?.passage || safe?.crossPassage || "",
+      spanish_passage: safe?.cross?.spanish_passage || safe?.cross?.passage_es || safe?.spanish_cross_passage || "",
+      passage_es: safe?.cross?.passage_es || safe?.cross?.spanish_passage || safe?.spanish_cross_passage || "",
       questions: crossQuestions.map((question, index) => normalizeQuestionForStudent(question, index, "cross", lessonMeta))
     },
     tutor: {
@@ -2416,8 +2512,18 @@ function getQuestionSection(data, sectionName) {
 }
 
 function renderPassage(title, passage, translatedPassage = "") {
-  const displayTitle = getDisplayText(title, SPANISH_GLOSSARY[title] || "");
-  const displayPassage = getDisplayText(passage, translatedPassage);
+  let displayTitle = "";
+  let displayPassage = "";
+  try {
+    displayTitle = getDisplayText(title, SPANISH_GLOSSARY[title] || "");
+    displayPassage = getActiveLanguage() === "spanish" ? (translatedPassage || passage || "") : (passage || "");
+    console.log("LANGUAGE:", getActiveLanguage());
+    console.log("DISPLAY PASSAGE:", { title, displayPassage });
+  } catch (passageError) {
+    console.error("PASSAGE RENDERING ERROR", { passageError, title, passage, translatedPassage });
+    displayTitle = title || "Passage";
+    displayPassage = passage || translatedPassage || "";
+  }
   if (!displayPassage) return "";
   const passageKey = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
   const readButton = currentAccommodations.text_to_speech
@@ -2467,28 +2573,36 @@ function renderQuestionTextHtml(englishText = "", spanishText = "") {
 }
 
 function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex, sectionName = "practice") {
-  const choices = Array.isArray(question?.choices) ? question.choices : [];
+  const currentQuestion = question && typeof question === "object" ? question : {};
+  const choices = Array.isArray(currentQuestion?.choices) ? currentQuestion.choices : [];
   const questionKey = `${sectionPrefix}${localIndex}`;
   const cachedSpanishQuestion = getCachedSpanishQuestion(sectionName, localIndex) || {};
   const cachedSpanishChoices = Array.isArray(cachedSpanishQuestion.choices) ? cachedSpanishQuestion.choices : [];
-  const englishText = getLanguageText(question?.question || "", "english");
-  const explicitSpanishQuestion = cachedSpanishQuestion.question || question?.spanish_question || question?.question_es || "";
+  const englishText = getLanguageText(currentQuestion?.question || "", "english");
+  const explicitSpanishQuestion = currentQuestion?.spanish_question || currentQuestion?.question_es || cachedSpanishQuestion.question || "";
   const spanishText = explicitSpanishQuestion
     ? getLanguageText(explicitSpanishQuestion, "spanish")
-    : (hasLanguageText(question?.question, "spanish") ? getLanguageText(question?.question, "spanish") : "");
+    : (hasLanguageText(currentQuestion?.question, "spanish") ? getLanguageText(currentQuestion?.question, "spanish") : "");
+  const questionText = getActiveLanguage() === "spanish" ? (spanishText || englishText) : englishText;
+  const safeSpanishChoices = Array.isArray(currentQuestion?.spanish_choices) && currentQuestion.spanish_choices.length ? currentQuestion.spanish_choices : cachedSpanishChoices;
+  const safeChoices = getActiveLanguage() === "spanish" && Array.isArray(safeSpanishChoices) && safeSpanishChoices.length === choices.length
+    ? safeSpanishChoices
+    : choices || [];
   const normalizedQuestionText = { english: englishText, spanish: spanishText };
-  const questionText = getDisplayText(englishText, spanishText);
-  const normalizedChoices = choices.map((choice, idx) => {
-    const cachedChoice = cachedSpanishChoices[idx] || "";
-    return {
-      raw: choice,
-      english: getLanguageText(choice, "english") || choice?.text || choice?.choice || "",
-      spanish: cachedChoice
-        ? getLanguageText(cachedChoice, "spanish")
-        : (hasLanguageText(choice, "spanish") ? getLanguageText(choice, "spanish") : "")
-    };
-  });
-  logQuestionRenderPayload(question, displayIndex, sectionName, normalizedQuestionText, normalizedChoices);
+  const normalizedChoices = (choices || []).map((choice, idx) => ({
+    raw: choice,
+    english: getLanguageText(choice, "english") || choice?.text || choice?.choice || String(choice || ""),
+    spanish: Array.isArray(safeSpanishChoices) ? (safeSpanishChoices[idx] || "") : ""
+  }));
+  console.log("LANGUAGE:", getActiveLanguage());
+  console.log("QUESTION OBJECT:", currentQuestion);
+  console.log("DISPLAY QUESTION:", questionText);
+  console.log("DISPLAY CHOICES:", safeChoices);
+  try {
+    logQuestionRenderPayload(currentQuestion, displayIndex, sectionName, normalizedQuestionText, normalizedChoices);
+  } catch (questionLogError) {
+    console.error("QUESTION RENDERING ERROR", { questionLogError, currentQuestion, displayIndex, sectionName });
+  }
   const readButton = currentAccommodations.read_aloud || currentAccommodations.text_to_speech
     ? `<button class="read-btn question-read-btn" type="button" data-read-text="${escapeHtml(questionSpeechText(question, sectionName, localIndex))}">🔊 ${escapeHtml(getDisplayText("Read Question", "Leer pregunta"))}</button>`
     : "";
@@ -2516,17 +2630,24 @@ function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex, s
     <article class="question-card" data-highlightable="${escapeHtml(questionKey)}" style="animation-delay:${Math.min(displayIndex * 0.02, 0.22)}s">
       <span class="question-label">${escapeHtml(getDisplayText("Question", "Pregunta"))} ${displayIndex}</span>
       <div class="workspace-controls">${readButton}${highlightButton}</div>
-      <p>${renderQuestionTextHtml(englishText, spanishText)}</p>
+      <p>${highlightVocabularyHtml(questionText)}</p>
       ${renderGlossaryPanel(questionText)}
       ${simplified}
       ${guided}
       ${hint}
       ${renderAnnotationCard(`${questionKey}-note`, `Question ${displayIndex} note`)}
       <div class="answer-list">
-        ${normalizedChoices.map((choice, idx) => {
+        ${safeChoices.map((rawDisplayChoice, idx) => {
+          const choice = normalizedChoices[idx] || { english: choices[idx] || "", spanish: "" };
           const letter = String.fromCharCode(65 + idx);
           const choiceKey = `${questionKey}-${letter}`;
-          const displayChoice = sanitizeAnswerChoiceText(getDisplayText(choice.english, choice.spanish));
+          let displayChoice = "";
+          try {
+            displayChoice = sanitizeAnswerChoiceText(getLanguageText(rawDisplayChoice, getActiveLanguage()) || rawDisplayChoice?.text || rawDisplayChoice?.choice || String(rawDisplayChoice || ""));
+          } catch (choicesError) {
+            console.error("CHOICES RENDERING ERROR", { choicesError, rawDisplayChoice, choice, currentQuestion });
+            displayChoice = sanitizeAnswerChoiceText(choice.english || "");
+          }
           const eliminated = getEliminatedChoice(choiceKey);
           const storedHighlight = getLocalHighlight(choiceKey);
           const answerTools = currentAccommodations.eliminate_answers || currentAccommodations.highlighting_tools
@@ -2577,8 +2698,10 @@ function renderQuestions(lesson) {
     const crossSection = getQuestionSection(data, "cross") || {};
     const practice = Array.isArray(practiceSection.questions) ? practiceSection.questions : [];
     const cross = Array.isArray(crossSection.questions) ? crossSection.questions : [];
-    const practicePassage = practiceSection.passage || data?.passage || "";
-    const crossPassage = crossSection.passage || "";
+    const practicePassage = practiceSection.passage || data?.practicePassage || data?.passage || "";
+    const crossPassage = crossSection.passage || data?.crossPassage || "";
+    const spanishPracticePassage = data?.spanish_practice_passage || practiceSection.spanish_passage || practiceSection.passage_es || data?.spanish_passage || data?.passage_es || "";
+    const spanishCrossPassage = data?.spanish_cross_passage || crossSection.spanish_passage || crossSection.passage_es || "";
     console.log("PRACTICE QUESTION COUNT", practice.length);
     console.log("CROSS QUESTION COUNT", cross.length);
     console.log("PRACTICE PASSAGE EXISTS", Boolean(practicePassage));
@@ -2616,12 +2739,12 @@ function renderQuestions(lesson) {
     console.log("ABOUT TO SET innerHTML", { practiceQuestionCount: practice.length, crossQuestionCount: cross.length, practiceCardsLength: practiceCardsHtml.length, crossCardsLength: crossCardsHtml.length });
     qf.innerHTML = `
       <section class="lesson-section">
-        ${renderPassage("Practice Passage", practicePassage, getCachedSpanishPassage("practice") || practiceSection.spanish_passage || practiceSection.passage_es || data?.spanish_passage || data?.passage_es || "")}
+        ${renderPassage("Practice Passage", practicePassage, spanishPracticePassage || getCachedSpanishPassage("practice") || "")}
         ${practice.length ? `<h2 class="section-title">${escapeHtml(getDisplayText("Practice Questions", "Preguntas de práctica"))}</h2>` : ""}
         ${practiceCardsHtml}
       </section>
       <section class="lesson-section">
-        ${renderPassage("Cross-Curricular Passage", crossPassage, getCachedSpanishPassage("cross") || crossSection.spanish_passage || crossSection.passage_es || "")}
+        ${renderPassage("Cross-Curricular Passage", crossPassage, spanishCrossPassage || getCachedSpanishPassage("cross") || "")}
         ${cross.length ? `<h2 class="section-title">${escapeHtml(getDisplayText("Cross-Curricular Questions", "Preguntas interdisciplinarias"))}</h2>` : ""}
         ${crossCardsHtml}
       </section>
@@ -2883,11 +3006,12 @@ document.addEventListener("DOMContentLoaded", () => {
       updateLineReaderStrip(lineMove.getAttribute("data-line-reader-move") || "down");
       return;
     }
-    if (event.target.closest?.("#toggle-spanish-mode")) {
-      spanishMode = !spanishMode;
-      const selectedLanguage = getActiveLanguage();
-      console.log("LANGUAGE TOGGLE:", selectedLanguage);
-      if (spanishMode && currentLessonData) await ensureSpanishTranslationCache(currentLessonData);
+    const languageTab = event.target.closest?.("[data-language-tab]");
+    if (languageTab) {
+      const selectedLanguage = languageTab.getAttribute("data-language-tab") === "spanish" ? "spanish" : "english";
+      setActiveLanguage(selectedLanguage);
+      console.log("LANGUAGE TOGGLE:", getActiveLanguage());
+      if (getActiveLanguage() === "spanish" && currentLessonData) await translateLessonContent(currentLessonData);
       console.log("SPANISH TRANSLATION CACHE:", currentLessonData?.translations?.spanish);
       rerenderLessonPreservingState();
     }
