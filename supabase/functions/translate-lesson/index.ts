@@ -181,8 +181,14 @@ async function translateLessonContent(lesson: Record<string, unknown>) {
 }
 
 serve(async (req) => {
+  console.log("TRANSLATE LESSON FUNCTION HIT");
   console.log("[translate-lesson] request received");
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  return jsonResponse({
+    smoke_test: true,
+    timestamp: Date.now(),
+  });
 
   let lesson: Record<string, unknown> = {};
 
