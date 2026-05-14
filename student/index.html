@@ -1021,6 +1021,7 @@ let visibleChunkCount = 1;
 let localWorkspacePrefs = {};
 let currentLanguage = "english";
 let spanishMode = false;
+let languagePreferenceTouched = false;
 let translationGenerationPromise = null;
 
 function hasSessionLessonData(session) {
@@ -1557,7 +1558,8 @@ function getActiveLanguage() {
   return currentLanguage === "spanish" ? "spanish" : "english";
 }
 
-function setActiveLanguage(language = "english") {
+function setActiveLanguage(language = "english", { userInitiated = false } = {}) {
+  if (userInitiated) languagePreferenceTouched = true;
   currentLanguage = language === "spanish" && currentAccommodations.spanish_translation ? "spanish" : "english";
   spanishMode = currentLanguage === "spanish";
   console.log("LANGUAGE:", currentLanguage);
@@ -1792,7 +1794,7 @@ function isAccommodationRowForCurrentStudent(row) {
   return row.session_id === currentSession.id && normalizeStudentName(row.student_name) === normalizeStudentName(currentSession.student);
 }
 
-function applyAccommodationUpdate(row) {
+async function applyAccommodationUpdate(row, { rerenderLesson = true } = {}) {
   if (!row || !currentSession) return;
   if (!isAccommodationRowForCurrentStudent(row)) {
     console.log("IGNORING ACCOMMODATION FOR DIFFERENT STUDENT", { row, currentSession });
@@ -1803,33 +1805,44 @@ function applyAccommodationUpdate(row) {
   if (!currentAccommodations.color_overlay) currentAccommodations.color_overlay = "default";
   if (localWorkspacePrefs.fontSizeOverride) currentAccommodations.font_size = localWorkspacePrefs.fontSizeOverride;
   if (localWorkspacePrefs.colorOverlayOverride) currentAccommodations.color_overlay = localWorkspacePrefs.colorOverlayOverride;
-  if (!currentAccommodations.spanish_translation) setActiveLanguage("english");
+  if (currentAccommodations.spanish_translation) {
+    if (!languagePreferenceTouched) setActiveLanguage("spanish");
+  } else {
+    setActiveLanguage("english");
+  }
   console.log("ACTIVE ACCOMMODATIONS:", currentAccommodations);
   renderAccommodationToolbar();
-  if (lessonStarted && currentLessonData) {
-    const checked = getCheckedAnswers();
-    renderQuestions(currentLessonData);
-    restoreCheckedAnswers(checked);
-    updateProgress();
+  if (rerenderLesson && lessonStarted && currentLessonData) {
+    await rerenderLessonForAccommodationUpdate();
   }
   console.log("STUDENT UI UPDATED");
 }
 
-function clearStudentAccommodations() {
+async function clearStudentAccommodations({ rerenderLesson = true } = {}) {
   currentAccommodations = { ...DEFAULT_ACCOMMODATIONS };
   setActiveLanguage("english");
   console.log("ACTIVE ACCOMMODATIONS:", currentAccommodations);
   renderAccommodationToolbar();
-  if (lessonStarted && currentLessonData) {
-    const checked = getCheckedAnswers();
-    renderQuestions(currentLessonData);
-    restoreCheckedAnswers(checked);
-    updateProgress();
+  if (rerenderLesson && lessonStarted && currentLessonData) {
+    await rerenderLessonForAccommodationUpdate();
   }
   console.log("STUDENT UI UPDATED");
 }
 
-async function fetchStudentAccommodations() {
+
+async function rerenderLessonForAccommodationUpdate() {
+  if (!currentLessonData) return;
+  if (currentAccommodations.spanish_translation) {
+    const spanishCache = await ensureSpanishTranslationCache(currentLessonData);
+    attachSpanishTranslationCache(currentLessonData, spanishCache);
+  }
+  const checked = getCheckedAnswers();
+  renderQuestions(currentLessonData);
+  restoreCheckedAnswers(checked);
+  updateProgress();
+}
+
+async function fetchStudentAccommodations({ rerenderLesson = true } = {}) {
   if (!currentSession) return null;
   const sessionId = currentSession.id;
   const studentName = currentSession.student;
@@ -1848,8 +1861,8 @@ async function fetchStudentAccommodations() {
     renderAccommodationToolbar();
     return null;
   }
-  if (data) applyAccommodationUpdate(data);
-  else clearStudentAccommodations();
+  if (data) await applyAccommodationUpdate(data, { rerenderLesson });
+  else await clearStudentAccommodations({ rerenderLesson });
   return data;
 }
 
@@ -1871,8 +1884,11 @@ async function subscribeToStudentAccommodations() {
       console.log("REALTIME ACCOMMODATION UPDATE:", payload);
       const row = payload?.new || payload?.old;
       if (!row || !isAccommodationRowForCurrentStudent(row)) return;
-      if (payload.eventType === "DELETE") clearStudentAccommodations();
-      else applyAccommodationUpdate(row);
+      if (payload.eventType === "DELETE") {
+        clearStudentAccommodations().catch((error) => console.warn("⚠️ Accommodation rerender failed", error));
+      } else {
+        applyAccommodationUpdate(row).catch((error) => console.warn("⚠️ Accommodation rerender failed", error));
+      }
     })
     .subscribe((status) => {
       console.log("STUDENT ACCOMMODATIONS CHANNEL STATUS:", status);
@@ -2085,8 +2101,11 @@ function applySpanishTranslationFields(lesson = {}, spanish = {}) {
       if (!question || typeof question !== "object") return;
       const translatedQuestion = translatedQuestions[index] && typeof translatedQuestions[index] === "object" ? translatedQuestions[index] : {};
       question.spanish_question = question.spanish_question || translatedQuestion.question || "";
-      if (!Array.isArray(question.spanish_choices) && Array.isArray(translatedQuestion.choices) && translatedQuestion.choices.length) {
-        question.spanish_choices = translatedQuestion.choices.map(String);
+      if (Array.isArray(translatedQuestion.choices) && translatedQuestion.choices.length) {
+        const existingSpanishChoices = Array.isArray(question.spanish_choices) ? question.spanish_choices : [];
+        if (existingSpanishChoices.length !== translatedQuestion.choices.length) {
+          question.spanish_choices = translatedQuestion.choices.map(String);
+        }
       }
       question.spanish_hint = question.spanish_hint || translatedQuestion.hint || "";
       question.spanish_explanation = question.spanish_explanation || translatedQuestion.explanation || translatedQuestion.simplified || "";
@@ -2094,6 +2113,15 @@ function applySpanishTranslationFields(lesson = {}, spanish = {}) {
   };
   mergeQuestions(lesson.practice?.questions, practiceQuestions);
   mergeQuestions(lesson.cross?.questions, crossQuestions);
+  return lesson;
+}
+
+
+function attachSpanishTranslationCache(lesson = currentLessonData, spanish = null) {
+  if (!lesson || typeof lesson !== "object" || !spanish) return lesson;
+  lesson.translations = lesson.translations || {};
+  lesson.translations.spanish = spanish;
+  applySpanishTranslationFields(lesson, spanish);
   return lesson;
 }
 
@@ -2153,9 +2181,13 @@ async function ensureSpanishTranslationCache(lesson = currentLessonData) {
     data.practice?.questions?.some?.((question) => question?.spanish_question || Array.isArray(question?.spanish_choices)) ||
     data.cross?.questions?.some?.((question) => question?.spanish_question || Array.isArray(question?.spanish_choices))
   );
-  if (data.translations?.spanish && hasFlatSpanishFields) {
+  if (data.translations?.spanish) {
+    applySpanishTranslationFields(data, data.translations.spanish);
     console.log("SPANISH TRANSLATION CACHE:", data.translations.spanish);
     return data.translations.spanish;
+  }
+  if (hasFlatSpanishFields) {
+    return mergeSpanishTranslationCache(data, {});
   }
   if (translationGenerationPromise) return translationGenerationPromise;
   translationGenerationPromise = translateLessonContent(data)
@@ -2265,6 +2297,23 @@ async function startStudentLesson(sessionUpdate = null) {
     currentLessonData = lessonData;
     currentSession.lesson_data = lessonData;
     console.log("CURRENT LESSON DATA ASSIGNED", { currentLessonData, currentSession });
+
+    try {
+      await fetchStudentAccommodations({ rerenderLesson: false });
+    } catch (error) {
+      console.warn("⚠️ Accommodations load did not block lesson render", error);
+      renderAccommodationToolbar();
+    }
+
+    if (currentAccommodations.spanish_translation) {
+      if (!languagePreferenceTouched) setActiveLanguage("spanish");
+      const spanishCache = await ensureSpanishTranslationCache(lessonData);
+      attachSpanishTranslationCache(lessonData, spanishCache);
+      currentLessonData = lessonData;
+      currentSession.lesson_data = lessonData;
+      console.log("SPANISH TRANSLATION CACHE BEFORE RENDER:", lessonData?.translations?.spanish);
+    }
+
     setWaitingScreenVisible(false, "startStudentLesson render");
     console.log("STARTING STUDENT LESSON", { currentSession, lessonData });
     console.log("ABOUT TO CALL renderLesson()");
@@ -2295,12 +2344,6 @@ async function startStudentLesson(sessionUpdate = null) {
     clearSessionStatusPolling();
     setStatus("🟢 Class is live. Answer each question, then submit when you’re ready.");
 
-    try {
-      await fetchStudentAccommodations();
-    } catch (error) {
-      console.warn("⚠️ Accommodations load did not block lesson render", error);
-      renderAccommodationToolbar();
-    }
   } catch (error) {
     lessonStarted = false;
     console.error("START STUDENT LESSON FAILED", { error, currentSession, sessionUpdate });
@@ -2598,9 +2641,8 @@ function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex, s
   const safeSpanishChoices = Array.isArray(currentQuestion?.spanish_choices) && currentQuestion.spanish_choices.length ? currentQuestion.spanish_choices : cachedSpanishChoices;
   const safeChoices = getActiveLanguage() === "spanish"
     ? (
-        Array.isArray(currentQuestion.spanish_choices) &&
-        currentQuestion.spanish_choices.length
-          ? currentQuestion.spanish_choices
+        Array.isArray(safeSpanishChoices) && safeSpanishChoices.length === choices.length
+          ? safeSpanishChoices
           : choices
       )
     : choices;
@@ -3037,9 +3079,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const languageTab = event.target.closest?.("[data-language-tab]");
     if (languageTab) {
       const selectedLanguage = languageTab.getAttribute("data-language-tab") === "spanish" ? "spanish" : "english";
-      setActiveLanguage(selectedLanguage);
+      setActiveLanguage(selectedLanguage, { userInitiated: true });
       console.log("LANGUAGE TOGGLE:", getActiveLanguage());
-      if (getActiveLanguage() === "spanish" && currentLessonData) await translateLessonContent(currentLessonData);
+      if (getActiveLanguage() === "spanish" && currentLessonData) {
+        const spanishCache = await ensureSpanishTranslationCache(currentLessonData);
+        attachSpanishTranslationCache(currentLessonData, spanishCache);
+      }
       console.log("SPANISH TRANSLATION CACHE:", currentLessonData?.translations?.spanish);
       rerenderLessonPreservingState();
     }
