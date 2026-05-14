@@ -2159,7 +2159,7 @@ async function ensureSpanishTranslationCache(lesson = currentLessonData) {
   }
   if (translationGenerationPromise) return translationGenerationPromise;
   translationGenerationPromise = translateLessonContent(data)
-    .then((translatedResponse) => translatedResponse?.translations?.spanish || null)
+    .then((translatedLesson) => translatedLesson?.translations?.spanish || null)
     .finally(() => { translationGenerationPromise = null; });
   return translationGenerationPromise;
 }
@@ -2396,6 +2396,15 @@ function normalizeQuestionForStudent(question = {}, index = 0, type = "practice"
     if (typeof choice === "string") return choice;
     return String(choice?.text || choice?.choice || "");
   });
+  if (englishChoices.length !== 4) {
+    console.error(
+      "INVALID NORMALIZED CHOICES",
+      {
+        question,
+        englishChoices
+      }
+    );
+  }
   const spanishChoices = Array.isArray(question?.spanish_choices)
     ? question.spanish_choices.map(String)
     : [];
@@ -2605,6 +2614,25 @@ function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex, s
   console.log("QUESTION OBJECT:", currentQuestion);
   console.log("DISPLAY QUESTION:", questionText);
   console.log("DISPLAY CHOICES:", safeChoices);
+  if (
+    !Array.isArray(safeChoices) ||
+    safeChoices.length !== 4
+  ) {
+    console.error(
+      "INVALID QUESTION CHOICES",
+      {
+        currentQuestion,
+        safeChoices,
+        sectionName,
+        displayIndex
+      }
+    );
+    return `
+      <article class="question-card error-card">
+        <p>⚠️ Question failed to render.</p>
+      </article>
+    `;
+  }
   try {
     logQuestionRenderPayload(currentQuestion, displayIndex, sectionName, normalizedQuestionText, normalizedChoices);
   } catch (questionLogError) {
