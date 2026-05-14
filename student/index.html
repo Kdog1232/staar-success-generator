@@ -1802,33 +1802,41 @@ function updateProgress() {
 
 async function joinSession(code, studentName) {
   const joinTraceId = `join-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  console.log("STARTING SESSION LOOKUP", { joinTraceId, code, studentName });
+  const rawClassCode = code;
+  const normalizedCode = String(code ?? "").trim().replace(/\s+/g, "");
+  console.log("JOIN BUTTON CLICKED", { joinTraceId, source: "joinSession" });
+  console.log("RAW CLASS CODE INPUT", { joinTraceId, rawClassCode, rawType: typeof rawClassCode });
+  console.log("NORMALIZED CLASS CODE", { joinTraceId, normalizedCode, normalizedType: typeof normalizedCode });
   try {
-    console.log("STARTING SESSION LOOKUP", { joinTraceId, query: { table: "sessions", code, is_active: true, select: LIVE_SESSION_SELECT } });
+    console.log("STARTING SESSION QUERY", { joinTraceId, query: { table: "sessions", code: normalizedCode, select: LIVE_SESSION_SELECT, filters: ["code"], limit: 1 } });
     const sessionResult = await studentSupabase
       .from("sessions")
       .select(LIVE_SESSION_SELECT)
-      .eq("code", code)
-      .eq("is_active", true)
-      .maybeSingle();
+      .eq("code", normalizedCode)
+      .limit(1);
+    console.log("SESSION QUERY RESPONSE", { joinTraceId, sessionResult });
     console.log("FULL SUPABASE SESSION LOOKUP RESPONSE", sessionResult);
 
-    let session = sessionResult.data;
-    const { error: sessionError, status: sessionStatus, statusText: sessionStatusText } = sessionResult;
-    console.log("SESSION LOOKUP RESULT", { joinTraceId, session, sessionError, sessionStatus, sessionStatusText });
-    console.log("SESSION LOOKUP ERROR", sessionError);
+    const { data: sessionRows, error: sessionError, status: sessionStatus, statusText: sessionStatusText } = sessionResult;
+    let session = Array.isArray(sessionRows) ? sessionRows[0] : sessionRows;
+    console.log("SESSION QUERY ERROR", { joinTraceId, sessionError });
+    console.log("SESSION LOOKUP RESULT", { joinTraceId, sessionRows, session, sessionError, sessionStatus, sessionStatusText });
     logFullSessionDebug(session);
 
     if (sessionError) {
-      console.error("JOIN FLOW ERROR", { joinTraceId, step: "session lookup", sessionError, sessionResult });
+      console.error("JOIN FLOW ERROR", { joinTraceId, step: "session query", sessionError, sessionResult, normalizedCode });
       throw new Error(`Session lookup failed (${sessionError.message || "unknown error"}).`);
     }
     if (!session) {
-      console.warn("SESSION NOT FOUND", { joinTraceId, code, sessionResult });
+      console.warn("SESSION NOT FOUND", { joinTraceId, rawClassCode, normalizedCode, sessionRows, sessionResult });
       throw new Error("Session not found. Check the class code and ask your teacher to confirm the session is active.");
     }
 
     console.log("SESSION FOUND", { joinTraceId, session });
+    console.log("SESSION STATUS", { joinTraceId, status: session.status });
+    console.log("SESSION IS_ACTIVE", { joinTraceId, is_active: session.is_active });
+    console.log("SESSION CODE", { joinTraceId, code: session.code, normalizedCode });
+    console.log("SESSION PAYLOAD FULL", { joinTraceId, session });
     console.log("SESSION ID EXISTS", { joinTraceId, hasSessionId: !!session.id, sessionId: session.id });
     console.log("LESSON DATA EXISTS", { joinTraceId, hasLessonData: !!session.lesson_data, lessonData: session.lesson_data });
     if (!session.id) {
@@ -2504,9 +2512,12 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    const code = codeInput.value.trim();
+    const rawCode = codeInput.value;
+    const code = String(rawCode ?? "").trim().replace(/\s+/g, "");
     const student = studentInput.value.trim();
-    console.log("CLASS CODE VALUE", { code, rawValue: codeInput.value });
+    console.log("RAW CLASS CODE INPUT", { rawClassCode: rawCode, rawType: typeof rawCode });
+    console.log("NORMALIZED CLASS CODE", { normalizedCode: code, normalizedType: typeof code });
+    console.log("CLASS CODE VALUE", { code, rawValue: rawCode });
     console.log("STUDENT NAME VALUE", { studentName: student, rawValue: studentInput.value });
 
     if (!code || !student) {
