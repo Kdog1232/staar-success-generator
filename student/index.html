@@ -964,7 +964,7 @@ let handRaised = false;
 let currentHelpRequest = null;
 let totalQuestionCount = 0;
 let currentLessonData = null;
-const LIVE_SESSION_SELECT = "id,lesson_id,code,is_active,status,allow_join,lesson_data";
+const LIVE_SESSION_SELECT = "id,lesson_id,code,is_active,status,allow_join,lesson_data,started_at";
 const DEFAULT_ACCOMMODATIONS = {
   text_to_speech: false,
   spanish_translation: false,
@@ -1001,11 +1001,22 @@ function hasSessionLessonData(session) {
 }
 
 function isSessionLive(session) {
-  return session?.status === "live" && session?.is_active === true;
+  return session?.status === "live";
 }
 
 function shouldRenderLiveLesson(session) {
-  return isSessionLive(session) || hasSessionLessonData(session);
+  return isSessionLive(session) && hasSessionLessonData(session);
+}
+
+function mergeSessionState(sessionUpdate = {}) {
+  if (!sessionUpdate || typeof sessionUpdate !== "object") return currentSession;
+  currentSession = {
+    ...(currentSession || {}),
+    ...sessionUpdate,
+    student: currentSession?.student || sessionUpdate.student,
+    lesson_data: sessionUpdate.lesson_data ?? currentSession?.lesson_data
+  };
+  return currentSession;
 }
 
 function logFullSessionDebug(session) {
@@ -1021,6 +1032,7 @@ function logStudentSessionState(label, session) {
   console.log("SESSION STATUS:", session?.status);
   console.log("SESSION IS_ACTIVE:", session?.is_active);
   console.log("SESSION ALLOW_JOIN:", session?.allow_join);
+  console.log("SESSION STARTED_AT:", session?.started_at);
   console.log("STUDENT LIVE CHECK:", isLive);
   console.log("STUDENT LESSON_DATA FAILSAFE:", hasLessonPayload);
   console.log("SESSION PAYLOAD:", session);
@@ -1046,7 +1058,7 @@ async function fetchLatestSessionByCode(reason, code = currentSession?.code) {
 }
 
 async function ensureLessonDataForLiveSession(session, reason) {
-  if (session?.status !== "live" || session?.lesson_data) return session;
+  if (session?.status !== "live" || hasSessionLessonData(session)) return session;
   console.warn(`[${reason}] Live session is missing lesson_data; forcing fresh session fetch.`);
   const refreshedSession = await fetchLatestSessionByCode(reason, session.code || currentSession?.code);
   return refreshedSession || session;
@@ -1989,16 +2001,16 @@ async function startStudentLesson(sessionUpdate = null) {
 
   try {
     if (sessionUpdate) {
-      currentSession = {
-        ...currentSession,
+      mergeSessionState({
         id: sessionUpdate.id || currentSession.id,
         lesson_id: sessionUpdate.lesson_id || currentSession.lesson_id,
         code: sessionUpdate.code || currentSession.code,
         status: sessionUpdate.status || currentSession.status,
         is_active: sessionUpdate.is_active ?? currentSession.is_active,
         allow_join: sessionUpdate.allow_join ?? currentSession.allow_join,
-        lesson_data: sessionUpdate.lesson_data ?? currentSession.lesson_data
-      };
+        lesson_data: sessionUpdate.lesson_data ?? currentSession.lesson_data,
+        started_at: sessionUpdate.started_at ?? currentSession.started_at
+      });
     }
 
     logStudentSessionState("STUDENT SESSION UPDATE:", currentSession);
@@ -2018,11 +2030,7 @@ async function startStudentLesson(sessionUpdate = null) {
       sessionError = sessionResult.error;
       logStudentSessionState("STUDENT SESSION UPDATE:", sessionLookup);
       if (!sessionError && sessionLookup) {
-        currentSession = {
-          ...currentSession,
-          ...sessionLookup,
-          student: currentSession.student
-        };
+        mergeSessionState(sessionLookup);
         lessonData = extractLessonData(sessionLookup.lesson_data);
       }
     }
@@ -2070,18 +2078,14 @@ function clearSessionStatusPolling() {
 
 async function checkSessionStatus() {
   if (!currentSession || (lessonStarted && currentLessonData)) return;
-  const { data, error } = await studentSupabase.from("sessions").select(LIVE_SESSION_SELECT).eq("code", currentSession.code).single();
+  const { data, error } = await studentSupabase.from("sessions").select(LIVE_SESSION_SELECT).eq("code", currentSession.code).maybeSingle();
   if (error) {
     console.error("[checkSessionStatus] Session status lookup failed", { error, currentSession });
     return;
   }
-  let session = data;
-  console.log("SESSION STATUS CHECK:", session);
-  logStudentSessionState("STUDENT SESSION UPDATE:", session);
-  console.log("LIVE SESSION STATUS:", session?.status);
-  session = await ensureLessonDataForLiveSession(session, "checkSessionStatus");
-  currentSession = { ...currentSession, ...session, student: currentSession.student };
-  if (shouldRenderLiveLesson(currentSession)) await startStudentLesson(currentSession);
+  console.log("POLL UPDATE RECEIVED", data);
+  console.log("SESSION PAYLOAD RECEIVED", data);
+  await handleLiveSessionTransition("poll", data);
 }
 
 function subscribeToSessionStatus(code) {
@@ -2090,19 +2094,48 @@ function subscribeToSessionStatus(code) {
   sessionStatusChannel = studentSupabase
     .channel(`session-${code}`)
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `code=eq.${code}` }, async (payload) => {
+      console.log("REALTIME UPDATE RECEIVED", payload);
       console.log("STUDENT RECEIVED SESSION UPDATE");
       console.log("SESSION UPDATE:", payload);
-      let nextSession = payload.new;
-      logStudentSessionState("STUDENT SESSION UPDATE:", nextSession);
-      console.log("LIVE SESSION STATUS:", nextSession?.status);
-      nextSession = await ensureLessonDataForLiveSession(nextSession, "subscribeToSessionStatus");
-      if (nextSession) currentSession = { ...currentSession, ...nextSession, student: currentSession?.student };
-      if (shouldRenderLiveLesson(currentSession)) startStudentLesson(currentSession);
+      console.log("SESSION PAYLOAD RECEIVED", payload?.new);
+      await handleLiveSessionTransition("realtime", payload?.new);
     })
     .subscribe((status) => {
       console.log("SESSION CHANNEL STATUS:", status);
     });
   sessionStatusInterval = setInterval(checkSessionStatus, 2000);
+}
+
+async function handleLiveSessionTransition(source, sessionPayload) {
+  if (!sessionPayload) {
+    console.warn(`[${source}] Empty session payload received`, { currentSession });
+    return;
+  }
+
+  logStudentSessionState(`STUDENT SESSION UPDATE (${source}):`, sessionPayload);
+  let nextSession = await ensureLessonDataForLiveSession(sessionPayload, source);
+  if (nextSession) mergeSessionState(nextSession);
+
+  console.log("SESSION PAYLOAD RECEIVED", currentSession);
+  if (isSessionLive(currentSession)) {
+    console.log("LIVE STATUS DETECTED", currentSession);
+    const lessonData = extractLessonData(currentSession.lesson_data);
+    if (lessonData) {
+      console.log("LESSON DATA FOUND", lessonData);
+      console.log("STARTING STUDENT LESSON", currentSession);
+      await startStudentLesson(currentSession);
+    } else {
+      const waiting = document.getElementById("waiting");
+      if (waiting) waiting.style.display = "none";
+      console.error(`[${source}] LIVE STATUS DETECTED WITHOUT LESSON DATA`, currentSession);
+      setStatus("⚠️ Your teacher started the live session, but the lesson did not arrive. Ask your teacher to restart the live session.", "error");
+    }
+    return;
+  }
+
+  const waiting = document.getElementById("waiting");
+  if (waiting) waiting.style.display = "block";
+  console.log("WAITING STATE ACTIVE", currentSession);
 }
 
 function normalizeQuestionForStudent(question = {}, index = 0, type = "practice", lessonMeta = {}) {
@@ -2448,7 +2481,9 @@ document.addEventListener("DOMContentLoaded", () => {
     setStatus("Joining your live lesson...");
     try {
       const session = await joinSession(code, student);
-      currentSession = { id: session.id, lesson_id: session.lesson_id, code: session.code, status: session.status, is_active: session.is_active, allow_join: session.allow_join, lesson_data: session.lesson_data, student };
+      currentSession = { id: session.id, lesson_id: session.lesson_id, code: session.code, status: session.status, is_active: session.is_active, allow_join: session.allow_join, lesson_data: session.lesson_data, started_at: session.started_at, student };
+      console.log("JOINED SESSION", currentSession);
+      console.log("SESSION PAYLOAD RECEIVED", session);
       loadLocalWorkspaceState();
       updateSessionLabel(`Code ${session.code}`);
       document.getElementById("join-panel")?.setAttribute("hidden", "");
@@ -2458,13 +2493,10 @@ document.addEventListener("DOMContentLoaded", () => {
       initializeStudentSubscription("student accommodations", () => subscribeToStudentAccommodations());
       logStudentSessionState("STUDENT SESSION UPDATE:", session);
       console.log("LIVE SESSION STATUS:", session.status);
-      if (!shouldRenderLiveLesson(currentSession)) {
-        waiting.style.display = "block";
+      await handleLiveSessionTransition("join", session);
+      if (!isSessionLive(currentSession)) {
         setStatus("✅ Joined! Your teacher will start soon.", "success");
-        alert("✅ Joined!");
-        return;
       }
-      await startStudentLesson();
       alert("✅ Joined!");
     } catch (err) {
       console.error("❌ JOIN FAILED:", err);
