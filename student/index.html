@@ -1802,67 +1802,98 @@ function updateProgress() {
 
 async function joinSession(code, studentName) {
   const joinTraceId = `join-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  console.log("[joinSession] START", { joinTraceId, code, studentName });
+  console.log("STARTING SESSION LOOKUP", { joinTraceId, code, studentName });
   try {
-    console.log("[joinSession] BEFORE session lookup", { joinTraceId, code });
+    console.log("STARTING SESSION LOOKUP", { joinTraceId, query: { table: "sessions", code, is_active: true, select: LIVE_SESSION_SELECT } });
     const sessionResult = await studentSupabase
       .from("sessions")
       .select(LIVE_SESSION_SELECT)
       .eq("code", code)
-      .single();
+      .eq("is_active", true)
+      .maybeSingle();
+    console.log("FULL SUPABASE SESSION LOOKUP RESPONSE", sessionResult);
+
     let session = sessionResult.data;
     const { error: sessionError, status: sessionStatus, statusText: sessionStatusText } = sessionResult;
-    console.log("[joinSession] AFTER session lookup", { joinTraceId, session, sessionError, sessionStatus, sessionStatusText });
+    console.log("SESSION LOOKUP RESULT", { joinTraceId, session, sessionError, sessionStatus, sessionStatusText });
+    console.log("SESSION LOOKUP ERROR", sessionError);
     logFullSessionDebug(session);
+
     if (sessionError) {
-      console.error("[joinSession] Session lookup failed", { joinTraceId, sessionError, code });
+      console.error("JOIN FLOW ERROR", { joinTraceId, step: "session lookup", sessionError, sessionResult });
       throw new Error(`Session lookup failed (${sessionError.message || "unknown error"}).`);
     }
     if (!session) {
-      console.error("[joinSession] Session lookup returned null", { joinTraceId, code });
-      throw new Error("Session not found.");
+      console.warn("SESSION NOT FOUND", { joinTraceId, code, sessionResult });
+      throw new Error("Session not found. Check the class code and ask your teacher to confirm the session is active.");
     }
+
+    console.log("SESSION FOUND", { joinTraceId, session });
+    console.log("SESSION ID EXISTS", { joinTraceId, hasSessionId: !!session.id, sessionId: session.id });
+    console.log("LESSON DATA EXISTS", { joinTraceId, hasLessonData: !!session.lesson_data, lessonData: session.lesson_data });
+    if (!session.id) {
+      console.error("JOIN FLOW ERROR", { joinTraceId, step: "session id guard", session });
+      throw new Error("Session is missing an id. Ask your teacher to restart the live session.");
+    }
+
     session = await ensureLessonDataForLiveSession(session, "joinSession");
-    const { data: { session: authSession }, error: authError } = await studentSupabase.auth.getSession();
+    console.log("FULL SESSION PAYLOAD AFTER LESSON FAILSAFE", { joinTraceId, session });
+
+    const authResult = await studentSupabase.auth.getSession();
+    console.log("FULL SUPABASE AUTH SESSION RESPONSE", authResult);
+    const { data: { session: authSession } = {}, error: authError } = authResult;
     if (authError) {
-      console.error("[joinSession] Auth session check failed", { joinTraceId, authError });
+      console.error("JOIN FLOW ERROR", { joinTraceId, step: "auth session check", authError, authResult });
       throw new Error(`Auth session check failed (${authError.message || "unknown error"}).`);
     }
     if (!authSession) console.warn("[joinSession] No authenticated Supabase session (anon user)", { joinTraceId });
-    console.log("🔥 ABOUT TO INSERT PARTICIPANT", { joinTraceId, sessionCode: session.code, studentName });
+
+    const participantPayload = {
+      session_id: session.id,
+      session_code: session.code,
+      student_name: studentName,
+      joined_at: new Date().toISOString()
+    };
+    console.log("INSERTING PARTICIPANT", { joinTraceId, participantPayload });
     const insertAbortController = new AbortController();
     const insertTimeoutId = setTimeout(() => insertAbortController.abort("Join insert timed out after 5000ms."), 5000);
-    console.log("[joinSession] BEFORE insert", { joinTraceId, sessionCode: session.code, studentName });
-    const { data: joinData, error: joinError, status: joinStatus, statusText: joinStatusText } = await studentSupabase
-      .from("participants")
-      .insert([{ session_id: session.id, session_code: session.code, student_name: studentName }])
-      .select("id,session_id,session_code,student_name,joined_at")
-      .abortSignal(insertAbortController.signal);
-    clearTimeout(insertTimeoutId);
-    console.log("[joinSession] AFTER insert", { joinTraceId, joinData, joinError, joinStatus, joinStatusText });
+    let joinResult;
+    try {
+      joinResult = await studentSupabase
+        .from("participants")
+        .insert([participantPayload])
+        .select("id,session_id,session_code,student_name,joined_at")
+        .abortSignal(insertAbortController.signal);
+    } finally {
+      clearTimeout(insertTimeoutId);
+    }
+
+    console.log("FULL SUPABASE PARTICIPANT INSERT RESPONSE", joinResult);
+    const { data: joinData, error: joinError, status: joinStatus, statusText: joinStatusText } = joinResult;
+    console.log("PARTICIPANT INSERT RESULT", { joinTraceId, joinData, joinError, joinStatus, joinStatusText });
     if (joinError) {
+      console.error("PARTICIPANT INSERT FAILED", { joinTraceId, joinError, joinResult, participantPayload });
       const errorMessage = (joinError.message || "").toLowerCase();
       const details = (joinError.details || "").toLowerCase();
       const hint = (joinError.hint || "").toLowerCase();
       const isRlsLikely = errorMessage.includes("row-level security") || details.includes("row-level security") || hint.includes("policy") || joinError.code === "42501";
       if (isRlsLikely) {
-        console.error("[joinSession] RLS rejection while inserting participant", { joinTraceId, joinError });
         throw new Error(`Join rejected by RLS policy (${joinError.message || "policy denied"}).`);
       }
-      console.error("[joinSession] Participant insert failed", { joinTraceId, joinError });
       throw new Error(`Unable to join session (${joinError.message || "insert failed"}).`);
     }
-    console.log("[joinSession] SUCCESS", { joinTraceId, participant: joinData });
+    console.log("PARTICIPANT INSERT SUCCESS", { joinTraceId, participant: joinData, joinResult });
+    console.log("JOIN FLOW COMPLETE", { joinTraceId, session, participant: joinData });
     return session;
   } catch (err) {
     const maybeNetworkOffline = typeof navigator !== "undefined" && navigator && navigator.onLine === false;
-    console.error("[joinSession] CATCH", { joinTraceId, error: err, networkOffline: maybeNetworkOffline });
+    console.error("JOIN FLOW ERROR", { joinTraceId, error: err, networkOffline: maybeNetworkOffline, code, studentName });
     if (maybeNetworkOffline) throw new Error("Network appears offline. Check connection and try again.");
     if (err instanceof Error && err.name === "AbortError") throw new Error("Join insert timed out after 5000ms.");
     if (err instanceof Error) throw err;
     throw new Error("Unknown join error.");
   } finally {
-    console.log("[joinSession] FINALLY", { joinTraceId, code, studentName });
+    console.log("JOIN FLOW FINALLY", { joinTraceId, code, studentName });
   }
 }
 
@@ -2455,35 +2486,51 @@ document.addEventListener("DOMContentLoaded", () => {
   const questions = document.getElementById("questions");
   questions?.addEventListener("change", updateProgress);
 
-  joinBtn.addEventListener("click", async () => {
+  if (!joinBtn) {
+    console.error("JOIN FLOW ERROR", { step: "click listener attach", message: "Join button not found" });
+    return;
+  }
+
+  console.log("JOIN BUTTON CLICK LISTENER ATTACHED", { joinBtn });
+  joinBtn.addEventListener("click", async (event) => {
+    console.log("JOIN BUTTON CLICKED", { eventType: event?.type, disabledBeforeHandler: joinBtn.disabled });
+    event?.preventDefault();
+
     const codeInput = document.getElementById("code");
     const studentInput = document.getElementById("student");
-    const waiting = document.getElementById("waiting");
     if (!codeInput || !studentInput) {
-      console.error("❌ Inputs not found in DOM");
+      console.error("JOIN FLOW ERROR", { step: "input lookup", codeInputFound: !!codeInput, studentInputFound: !!studentInput });
       alert("Page error. Refresh and try again.");
       return;
     }
+
     const code = codeInput.value.trim();
     const student = studentInput.value.trim();
-    console.log("🚀 JOIN CLICKED", { code, name: student });
+    console.log("CLASS CODE VALUE", { code, rawValue: codeInput.value });
+    console.log("STUDENT NAME VALUE", { studentName: student, rawValue: studentInput.value });
+
     if (!code || !student) {
+      console.warn("JOIN FLOW ERROR", { step: "validation", codePresent: !!code, studentPresent: !!student });
       alert("Enter code and name");
       setStatus("Enter your class code and name to join.", "error");
       return;
     }
     if (hasSubmitted) {
+      console.warn("JOIN FLOW ERROR", { step: "already submitted guard", hasSubmitted });
       setStatus("✅ You already submitted. Wait for your teacher.", "success");
       return;
     }
+
     joinBtn.disabled = true;
     joinBtn.textContent = "Joining...";
     setStatus("Joining your live lesson...");
+
     try {
       const session = await joinSession(code, student);
       currentSession = { id: session.id, lesson_id: session.lesson_id, code: session.code, status: session.status, is_active: session.is_active, allow_join: session.allow_join, lesson_data: session.lesson_data, started_at: session.started_at, student };
       console.log("JOINED SESSION", currentSession);
       console.log("SESSION PAYLOAD RECEIVED", session);
+      console.log("FULL SESSION PAYLOAD", session);
       loadLocalWorkspaceState();
       updateSessionLabel(`Code ${session.code}`);
       document.getElementById("join-panel")?.setAttribute("hidden", "");
@@ -2493,18 +2540,25 @@ document.addEventListener("DOMContentLoaded", () => {
       initializeStudentSubscription("student accommodations", () => subscribeToStudentAccommodations());
       logStudentSessionState("STUDENT SESSION UPDATE:", session);
       console.log("LIVE SESSION STATUS:", session.status);
+      if (session.status === "live") {
+        console.log("JOIN FLOW LIVE SESSION: STARTING LESSON IMMEDIATELY", { session });
+      } else {
+        console.log("JOIN FLOW WAITING SESSION: SHOWING WAITING SCREEN", { session });
+      }
       await handleLiveSessionTransition("join", session);
       if (!isSessionLive(currentSession)) {
         setStatus("✅ Joined! Your teacher will start soon.", "success");
       }
+      console.log("JOIN FLOW COMPLETE", { currentSession, lessonStarted });
       alert("✅ Joined!");
     } catch (err) {
-      console.error("❌ JOIN FAILED:", err);
+      console.error("JOIN FLOW ERROR", { error: err, code, student });
       setStatus(escapeHtml(err.message || "Something went wrong. Try again."), "error");
       alert(err.message || "Join failed.");
     } finally {
       joinBtn.disabled = false;
       joinBtn.textContent = "Join Live Lesson";
+      console.log("JOIN BUTTON LOADING RESET", { disabled: joinBtn.disabled, text: joinBtn.textContent });
     }
   });
 
