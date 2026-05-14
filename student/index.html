@@ -2449,58 +2449,99 @@ function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex, s
 }
 
 function renderQuestions(lesson) {
-  const qf = document.getElementById("questions");
-  const submitBtn = document.getElementById("submit");
-  const waiting = document.getElementById("waiting");
-  console.log("QUESTION CONTAINER FOUND", { found: !!qf, questionContainer: qf });
-  if (!qf || !submitBtn) {
-    console.error("START STUDENT LESSON FAILED", { reason: "missing render target", questionContainerFound: !!qf, submitButtonFound: !!submitBtn, lesson });
+  console.log("RENDER QUESTIONS CALLED", { lesson });
+  try {
+    const qf = document.getElementById("questions");
+    console.log("QUESTION CONTAINER FOUND", { found: !!qf });
+    console.log("QUESTION CONTAINER ELEMENT", qf);
+    if (!qf) {
+      console.error("QUESTION CONTAINER MISSING", { reason: "Element with id=\"questions\" was not found. Lesson rendering stopped gracefully.", lesson });
+      return false;
+    }
+
+    const submitBtn = document.getElementById("submit");
+    if (!submitBtn) {
+      console.error("START STUDENT LESSON FAILED", { reason: "missing submit button", questionContainerFound: true, submitButtonFound: false, lesson });
+      return false;
+    }
+
+    const data = extractLessonData(lesson);
+    console.log("FULL NORMALIZED LESSON DATA", data);
+    if (!data) {
+      console.error("RENDER QUESTIONS FAILURE", { reason: "lesson data could not be normalized", lesson });
+      return false;
+    }
+
+    currentLessonData = data;
+    const practiceSection = getQuestionSection(data, "practice") || {};
+    const crossSection = getQuestionSection(data, "cross") || {};
+    const practice = Array.isArray(practiceSection.questions) ? practiceSection.questions : [];
+    const cross = Array.isArray(crossSection.questions) ? crossSection.questions : [];
+    const practicePassage = practiceSection.passage || data?.passage || "";
+    const crossPassage = crossSection.passage || "";
+    console.log("PRACTICE QUESTION COUNT", practice.length);
+    console.log("CROSS QUESTION COUNT", cross.length);
+    console.log("PRACTICE PASSAGE EXISTS", Boolean(practicePassage));
+    console.log("CROSS PASSAGE EXISTS", Boolean(crossPassage));
+    console.log("RENDERING LANGUAGE:", getActiveLanguage());
+    console.log("SPANISH TRANSLATION CACHE:", data?.translations?.spanish);
+    console.log("RENDER LESSON DATA:", { data, practiceQuestions: practice.length, crossQuestions: cross.length, practicePassage: !!practicePassage, crossPassage: !!crossPassage });
+    totalQuestionCount = practice.length + cross.length;
+    console.log("QUESTION COUNT", { totalQuestionCount, practiceQuestionCount: practice.length, crossQuestionCount: cross.length });
+    console.log("PASSAGE EXISTS", { passageExists: Boolean(practicePassage || crossPassage), practicePassageExists: Boolean(practicePassage), crossPassageExists: Boolean(crossPassage) });
+    if (!practice.length && !cross.length) {
+      qf.innerHTML = "";
+      submitBtn.disabled = true;
+      showLessonActions(false);
+      console.error("START STUDENT LESSON FAILED", { reason: "no questions available after normalization", data, practicePassageExists: Boolean(practicePassage), crossPassageExists: Boolean(crossPassage) });
+      setStatus("No questions available.", "error");
+      return false;
+    }
+
+    const renderQuestionCardsSafely = (questions, sectionPrefix, startingIndex, sectionName) => questions.map((question, index) => {
+      try {
+        return renderQuestionCard(question, sectionPrefix, startingIndex + index, index, sectionName);
+      } catch (questionError) {
+        console.error("BAD QUESTION OBJECT", question);
+        console.error("QUESTION INDEX", index);
+        console.error("QUESTION TYPE", sectionName);
+        console.error("RENDER QUESTION CARD FAILURE", { questionError, question, index, sectionName });
+        return "";
+      }
+    }).join("");
+
+    const practiceCardsHtml = renderQuestionCardsSafely(practice, "p", 1, "practice");
+    const crossCardsHtml = renderQuestionCardsSafely(cross, "c", practice.length + 1, "cross");
+
+    console.log("ABOUT TO SET innerHTML", { practiceQuestionCount: practice.length, crossQuestionCount: cross.length, practiceCardsLength: practiceCardsHtml.length, crossCardsLength: crossCardsHtml.length });
+    qf.innerHTML = `
+      <section class="lesson-section">
+        ${renderPassage("Practice Passage", practicePassage, getCachedSpanishPassage("practice") || practiceSection.spanish_passage || practiceSection.passage_es || data?.spanish_passage || data?.passage_es || "")}
+        ${practice.length ? `<h2 class="section-title">${escapeHtml(getDisplayText("Practice Questions", "Preguntas de práctica"))}</h2>` : ""}
+        ${practiceCardsHtml}
+      </section>
+      <section class="lesson-section">
+        ${renderPassage("Cross-Curricular Passage", crossPassage, getCachedSpanishPassage("cross") || crossSection.spanish_passage || crossSection.passage_es || "")}
+        ${cross.length ? `<h2 class="section-title">${escapeHtml(getDisplayText("Cross-Curricular Questions", "Preguntas interdisciplinarias"))}</h2>` : ""}
+        ${crossCardsHtml}
+      </section>
+    `;
+    console.log("INNERHTML SET SUCCESS", { htmlLength: qf.innerHTML.length });
+    console.log("QUESTION CONTAINER INJECTED", { htmlLength: qf.innerHTML.length, renderedQuestionCount: qf.querySelectorAll(".question-card").length, renderedPassageCount: qf.querySelectorAll(".passage-card").length });
+    setWaitingScreenVisible(false, "renderQuestions");
+    showLessonActions(true);
+    submitBtn.disabled = false;
+    updateSessionLabel(`Code ${currentSession?.code || ""}`.trim());
+    renderAccommodationToolbar();
+    document.querySelectorAll("[data-highlightable]").forEach((element) => applyStoredHighlight(element, element.getAttribute("data-highlightable") || ""));
+    if (currentAccommodations.line_reader) updateLineReaderStrip("stay");
+    updateProgress();
+    console.log("RENDER QUESTIONS SUCCESS", { renderedQuestionCount: qf.querySelectorAll(".question-card").length, renderedPassageCount: qf.querySelectorAll(".passage-card").length });
+    return true;
+  } catch (renderError) {
+    console.error("RENDER QUESTIONS FAILURE", { renderError, lesson });
     return false;
   }
-  const data = extractLessonData(lesson);
-  currentLessonData = data;
-  const practiceSection = getQuestionSection(data, "practice");
-  const crossSection = getQuestionSection(data, "cross");
-  const practice = practiceSection.questions;
-  const cross = crossSection.questions;
-  const practicePassage = practiceSection.passage || data?.passage || "";
-  const crossPassage = crossSection.passage || "";
-  console.log("RENDERING LANGUAGE:", getActiveLanguage());
-  console.log("SPANISH TRANSLATION CACHE:", data?.translations?.spanish);
-  console.log("RENDER LESSON DATA:", { data, practiceQuestions: practice.length, crossQuestions: cross.length, practicePassage: !!practicePassage, crossPassage: !!crossPassage });
-  totalQuestionCount = practice.length + cross.length;
-  console.log("QUESTION COUNT", { totalQuestionCount, practiceQuestionCount: practice.length, crossQuestionCount: cross.length });
-  console.log("PASSAGE EXISTS", { passageExists: Boolean(practicePassage || crossPassage), practicePassageExists: Boolean(practicePassage), crossPassageExists: Boolean(crossPassage) });
-  if (!practice.length && !cross.length) {
-    qf.innerHTML = "";
-    submitBtn.disabled = true;
-    showLessonActions(false);
-    console.error("START STUDENT LESSON FAILED", { reason: "no questions available after normalization", data, practicePassageExists: Boolean(practicePassage), crossPassageExists: Boolean(crossPassage) });
-    setStatus("No questions available.", "error");
-    return false;
-  }
-  qf.innerHTML = `
-    <section class="lesson-section">
-      ${renderPassage("Practice Passage", practicePassage, getCachedSpanishPassage("practice") || practiceSection.spanish_passage || practiceSection.passage_es || data?.spanish_passage || data?.passage_es || "")}
-      ${practice.length ? `<h2 class="section-title">${escapeHtml(getDisplayText("Practice Questions", "Preguntas de práctica"))}</h2>` : ""}
-      ${practice.map((question, index) => renderQuestionCard(question, "p", index + 1, index, "practice")).join("")}
-    </section>
-    <section class="lesson-section">
-      ${renderPassage("Cross-Curricular Passage", crossPassage, getCachedSpanishPassage("cross") || crossSection.spanish_passage || crossSection.passage_es || "")}
-      ${cross.length ? `<h2 class="section-title">${escapeHtml(getDisplayText("Cross-Curricular Questions", "Preguntas interdisciplinarias"))}</h2>` : ""}
-      ${cross.map((question, index) => renderQuestionCard(question, "c", practice.length + index + 1, index, "cross")).join("")}
-    </section>
-  `;
-  console.log("QUESTION CONTAINER INJECTED", { htmlLength: qf.innerHTML.length, renderedQuestionCount: qf.querySelectorAll(".question-card").length, renderedPassageCount: qf.querySelectorAll(".passage-card").length });
-  setWaitingScreenVisible(false, "renderQuestions");
-  showLessonActions(true);
-  submitBtn.disabled = false;
-  updateSessionLabel(`Code ${currentSession?.code || ""}`.trim());
-  renderAccommodationToolbar();
-  document.querySelectorAll("[data-highlightable]").forEach((element) => applyStoredHighlight(element, element.getAttribute("data-highlightable") || ""));
-  if (currentAccommodations.line_reader) updateLineReaderStrip("stay");
-  updateProgress();
-  return true;
 }
 
 
