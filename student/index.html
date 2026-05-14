@@ -1849,9 +1849,12 @@ async function rerenderLessonForAccommodationUpdate() {
     console.log("ABOUT TO GENERATE SPANISH CACHE");
     console.log("CURRENT LANGUAGE:", currentLanguage);
     console.log("LESSON DATA BEFORE SPANISH:", currentLessonData);
-    const spanishCache = await ensureSpanishTranslationCache(currentLessonData);
-    attachSpanishTranslationCache(currentLessonData, spanishCache);
-    console.log("SPANISH CACHE ATTACHED:", currentLessonData?.translations?.spanish);
+    const translatedLesson = await ensureSpanishTranslationCache(currentLessonData);
+    if (translatedLesson && typeof translatedLesson === "object") {
+      currentLessonData = translatedLesson;
+      if (currentSession) currentSession.lesson_data = translatedLesson;
+    }
+    console.log("SPANISH LESSON ATTACHED:", currentLessonData);
   }
   const checked = getCheckedAnswers();
   renderQuestions(currentLessonData);
@@ -2145,7 +2148,6 @@ function attachSpanishTranslationCache(lesson = currentLessonData, spanish = nul
 async function translateLessonContent(lesson = currentLessonData) {
   const data = extractLessonData(lesson);
   if (!data) return lesson;
-  const localFallback = mergeSpanishTranslationCache(data, {});
   try {
     console.log("CALLING translate-lesson EDGE FUNCTION");
     console.log("TRANSLATE LESSON PAYLOAD:", data);
@@ -2154,17 +2156,22 @@ async function translateLessonContent(lesson = currentLessonData) {
     });
     console.log("EDGE FUNCTION RESPONSE:", translated);
     console.log("EDGE FUNCTION ERROR:", error);
-    data.__spanishTranslationEdgeInvoked = true;
     if (!translated) console.error("EDGE FUNCTION RETURNED EMPTY RESPONSE");
     if (error) throw error;
-    const incomingSpanish = translated?.translations?.spanish || {};
-    mergeSpanishTranslationCache(data, incomingSpanish);
-    applySpanishTranslationFields(data, translated?.translations?.spanish || {});
-    currentLessonData = data;
-    return data;
+
+    const translatedLesson = translated?.lesson && typeof translated.lesson === "object"
+      ? translated.lesson
+      : data;
+    translatedLesson.__spanishTranslationEdgeInvoked = true;
+    translatedLesson.translations = translatedLesson.translations || {};
+    translatedLesson.translations.spanish = translated?.translations?.spanish || { enabled: true };
+    console.log("SPANISH TRANSLATED LESSON SOURCE:", translatedLesson);
+    currentLessonData = translatedLesson;
+    return translatedLesson;
   } catch (error) {
     data.__spanishTranslationEdgeInvoked = true;
     console.warn("⚠️ Spanish translation generation failed; using local cache", error);
+    const localFallback = mergeSpanishTranslationCache(data, {});
     applySpanishTranslationFields(data, localFallback);
     currentLessonData = data;
     return data;
@@ -2205,19 +2212,22 @@ async function ensureSpanishTranslationCache(lesson = currentLessonData) {
     data.practice?.questions?.some?.((question) => question?.spanish_question || Array.isArray(question?.spanish_choices)) ||
     data.cross?.questions?.some?.((question) => question?.spanish_question || Array.isArray(question?.spanish_choices))
   );
-  if (data.translations?.spanish && data.__spanishTranslationEdgeInvoked) {
-    applySpanishTranslationFields(data, data.translations.spanish);
-    console.log("SPANISH TRANSLATION CACHE:", data.translations.spanish);
-    return data.translations.spanish;
+  if (data.__spanishTranslationEdgeInvoked && hasFlatSpanishFields) {
+    currentLessonData = data;
+    console.log("SPANISH TRANSLATED LESSON CACHE:", data);
+    return data;
   }
   if (!hasSpanishAccommodation()) {
+    if (hasFlatSpanishFields) {
+      currentLessonData = data;
+      console.log("SPANISH TRANSLATED LESSON CACHE:", data);
+      return data;
+    }
     if (data.translations?.spanish) {
       applySpanishTranslationFields(data, data.translations.spanish);
+      currentLessonData = data;
       console.log("SPANISH TRANSLATION CACHE:", data.translations.spanish);
-      return data.translations.spanish;
-    }
-    if (hasFlatSpanishFields) {
-      return mergeSpanishTranslationCache(data, {});
+      return data;
     }
   }
   console.log("SPANISH CACHE NEEDS EDGE GENERATION", {
@@ -2227,18 +2237,31 @@ async function ensureSpanishTranslationCache(lesson = currentLessonData) {
   });
   if (translationGenerationPromise) return translationGenerationPromise;
   translationGenerationPromise = translateLessonContent(data)
-    .then((translatedLesson) => translatedLesson?.translations?.spanish || null)
     .finally(() => { translationGenerationPromise = null; });
   return translationGenerationPromise;
 }
 
 function getCachedSpanishQuestion(sectionName = "practice", index = 0) {
+  const section = getQuestionSection(currentLessonData || {}, sectionName);
+  const question = Array.isArray(section?.questions) ? section.questions[index] || {} : {};
+  if (question?.spanish_question || Array.isArray(question?.spanish_choices)) {
+    return {
+      question: question.spanish_question || question.question_es || "",
+      choices: Array.isArray(question.spanish_choices) ? question.spanish_choices : []
+    };
+  }
   const cache = currentLessonData?.translations?.spanish;
-  const section = cache?.[sectionName];
-  return Array.isArray(section?.questions) ? section.questions[index] || {} : {};
+  const cachedSection = cache?.[sectionName];
+  return Array.isArray(cachedSection?.questions) ? cachedSection.questions[index] || {} : {};
 }
 
 function getCachedSpanishPassage(sectionName = "practice") {
+  const data = currentLessonData || {};
+  const section = getQuestionSection(data, sectionName);
+  const flatPassage = sectionName === "practice"
+    ? (data?.spanish_practice_passage || section?.spanish_passage || section?.passage_es || "")
+    : (data?.spanish_cross_passage || section?.spanish_passage || section?.passage_es || "");
+  if (flatPassage) return flatPassage;
   const cache = currentLessonData?.translations?.spanish;
   return sectionName === "practice"
     ? (cache?.practice?.passage || cache?.passage || "")
@@ -2346,9 +2369,11 @@ async function startStudentLesson(sessionUpdate = null) {
       console.log("ABOUT TO GENERATE SPANISH CACHE");
       console.log("CURRENT LANGUAGE:", currentLanguage);
       console.log("LESSON DATA BEFORE SPANISH:", lessonData);
-      const spanishCache = await ensureSpanishTranslationCache(lessonData);
-      attachSpanishTranslationCache(lessonData, spanishCache);
-      console.log("SPANISH CACHE ATTACHED:", lessonData?.translations?.spanish);
+      const translatedLesson = await ensureSpanishTranslationCache(lessonData);
+      if (translatedLesson && typeof translatedLesson === "object") {
+        lessonData = translatedLesson;
+      }
+      console.log("SPANISH LESSON ATTACHED:", lessonData);
       currentLessonData = lessonData;
       currentSession.lesson_data = lessonData;
       console.log("SPANISH TRANSLATION CACHE BEFORE RENDER:", lessonData?.translations?.spanish);
@@ -3136,9 +3161,12 @@ document.addEventListener("DOMContentLoaded", () => {
         console.log("ABOUT TO GENERATE SPANISH CACHE");
         console.log("CURRENT LANGUAGE:", currentLanguage);
         console.log("LESSON DATA BEFORE SPANISH:", currentLessonData);
-        const spanishCache = await ensureSpanishTranslationCache(currentLessonData);
-        attachSpanishTranslationCache(currentLessonData, spanishCache);
-        console.log("SPANISH CACHE ATTACHED:", currentLessonData?.translations?.spanish);
+        const translatedLesson = await ensureSpanishTranslationCache(currentLessonData);
+        if (translatedLesson && typeof translatedLesson === "object") {
+          currentLessonData = translatedLesson;
+          if (currentSession) currentSession.lesson_data = translatedLesson;
+        }
+        console.log("SPANISH LESSON ATTACHED:", currentLessonData);
       }
       console.log("SPANISH TRANSLATION CACHE:", currentLessonData?.translations?.spanish);
       rerenderLessonPreservingState();
