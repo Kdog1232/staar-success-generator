@@ -1022,7 +1022,36 @@ function mergeSessionState(sessionUpdate = {}) {
 function logFullSessionDebug(session) {
   console.log("FULL SESSION:", session);
   console.log("LESSON DATA EXISTS:", !!session?.lesson_data);
+  console.log("LESSON DATA KEYS:", session?.lesson_data && typeof session.lesson_data === "object" ? Object.keys(session.lesson_data) : []);
   console.log("LESSON DATA:", session?.lesson_data);
+}
+
+function logLessonDataValidation(label, lessonData) {
+  const normalized = extractLessonData(lessonData);
+  const validation = {
+    practiceQuestions: Array.isArray(normalized?.practice?.questions),
+    practiceQuestionCount: normalized?.practice?.questions?.length || 0,
+    passage: Boolean(normalized?.practice?.passage || normalized?.passage),
+    metadata: Boolean(normalized?.metadata && typeof normalized.metadata === "object"),
+    lessonDataKeys: lessonData && typeof lessonData === "object" ? Object.keys(lessonData) : [],
+    normalizedLessonDataKeys: normalized && typeof normalized === "object" ? Object.keys(normalized) : []
+  };
+  console.log(`${label} LESSON DATA VALIDATION`, validation);
+  console.log("LESSON DATA", lessonData);
+  console.log("LESSON DATA KEYS", validation.lessonDataKeys);
+  console.log("LESSON DATA EXISTS", Boolean(normalized));
+  return { normalized, validation };
+}
+
+function setWaitingScreenVisible(show, source = "unknown") {
+  const waiting = document.getElementById("waiting");
+  if (!waiting) {
+    console.warn("WAITING SCREEN ELEMENT MISSING", { source, show });
+    return;
+  }
+  waiting.style.display = show ? "block" : "none";
+  if (show) console.log("WAITING SCREEN SHOWN", { source, currentSession });
+  else console.log("WAITING SCREEN HIDDEN", { source, currentSession });
 }
 
 function logStudentSessionState(label, session) {
@@ -2033,9 +2062,26 @@ function rerenderLessonPreservingState() {
 }
 
 async function startStudentLesson(sessionUpdate = null) {
-  if (!currentSession) return;
-  if (lessonRenderInProgress) return;
-  if (lessonStarted && currentLessonData) return;
+  console.log("START STUDENT LESSON CALLED", { sessionUpdate, currentSession, lessonRenderInProgress, lessonStarted, currentLessonData });
+  if (!currentSession) {
+    console.error("START STUDENT LESSON FAILED", { reason: "missing currentSession", sessionUpdate });
+    return;
+  }
+  if (lessonRenderInProgress) {
+    console.warn("START STUDENT LESSON EARLY RETURN: render in progress", { sessionUpdate, currentSession, lessonRenderInProgress, lessonStarted, currentLessonData });
+    return;
+  }
+  if (lessonStarted && currentLessonData) {
+    const questionContainer = document.getElementById("questions");
+    const existingQuestionCount = questionContainer?.querySelectorAll(".question-card")?.length || 0;
+    const hasRenderedLessonContent = Boolean(questionContainer?.innerHTML?.trim()) && existingQuestionCount > 0;
+    console.log("START STUDENT LESSON ALREADY RENDERED CHECK", { currentSession, currentLessonData, questionContainerFound: !!questionContainer, existingQuestionCount, hasRenderedLessonContent });
+    if (hasRenderedLessonContent) {
+      console.log("START STUDENT LESSON EARLY RETURN: already rendered", { currentSession, currentLessonData, existingQuestionCount });
+      return;
+    }
+    console.warn("START STUDENT LESSON CONTINUING: lessonStarted/currentLessonData were true but no rendered questions were found", { currentSession, currentLessonData, existingQuestionCount });
+  }
   lessonRenderInProgress = true;
 
   try {
@@ -2054,8 +2100,11 @@ async function startStudentLesson(sessionUpdate = null) {
 
     logStudentSessionState("STUDENT SESSION UPDATE:", currentSession);
     console.log("LIVE SESSION STATUS:", currentSession.status);
+    console.log("SESSION STATUS", currentSession.status);
+    console.log("SESSION IS_ACTIVE", currentSession.is_active);
+    console.log("LESSON DATA", currentSession.lesson_data);
 
-    let lessonData = extractLessonData(currentSession.lesson_data);
+    let { normalized: lessonData } = logLessonDataValidation("START STUDENT LESSON", currentSession.lesson_data);
     let sessionLookup = null;
     let sessionError = null;
 
@@ -2070,30 +2119,49 @@ async function startStudentLesson(sessionUpdate = null) {
       logStudentSessionState("STUDENT SESSION UPDATE:", sessionLookup);
       if (!sessionError && sessionLookup) {
         mergeSessionState(sessionLookup);
-        lessonData = extractLessonData(sessionLookup.lesson_data);
+        ({ normalized: lessonData } = logLessonDataValidation("START STUDENT LESSON REFRESH", sessionLookup.lesson_data));
       }
     }
 
     console.log("LESSON LOOKUP:", { sessionLookup, lessonData, error: sessionError, currentSession });
     if (sessionError || !lessonData) {
       lessonStarted = false;
-      const waiting = document.getElementById("waiting");
-      if (waiting) waiting.style.display = "none";
+      setWaitingScreenVisible(false, "startStudentLesson missing lesson data");
       setStatus("⚠️ Your teacher started the live session, but the lesson did not arrive. Ask your teacher to restart the live session.", "error");
-      console.error("LIVE SESSION STARTED WITHOUT LESSON DATA", { sessionError, currentSession, sessionLookup });
+      console.error("START STUDENT LESSON FAILED", { reason: "LIVE SESSION STARTED WITHOUT LESSON DATA", sessionError, currentSession, sessionLookup });
       return;
     }
 
-    const waiting = document.getElementById("waiting");
-    if (waiting) waiting.style.display = "none";
+    currentLessonData = lessonData;
+    currentSession.lesson_data = lessonData;
+    console.log("CURRENT LESSON DATA ASSIGNED", { currentLessonData, currentSession });
+    setWaitingScreenVisible(false, "startStudentLesson render");
+    console.log("STARTING STUDENT LESSON", { currentSession, lessonData });
     console.log("ABOUT TO CALL renderLesson()");
     const rendered = renderQuestions(lessonData) !== false;
     if (!rendered) {
       lessonStarted = false;
+      console.error("START STUDENT LESSON FAILED", { reason: "renderQuestions returned false", lessonData, currentSession });
       return;
     }
 
+    const questionContainer = document.getElementById("questions");
+    const waiting = document.getElementById("waiting");
+    const lessonActions = document.getElementById("lesson-actions");
+    const renderedQuestionCount = questionContainer?.querySelectorAll(".question-card")?.length || 0;
+    const renderedPassageCount = questionContainer?.querySelectorAll(".passage-card")?.length || 0;
+    console.log("LESSON RENDER SUCCESS", {
+      questionContainerFound: !!questionContainer,
+      renderedQuestionCount,
+      renderedPassageCount,
+      questionContainerHtmlLength: questionContainer?.innerHTML?.length || 0,
+      currentLessonDataExists: !!currentLessonData,
+      waitingScreenHidden: waiting ? waiting.style.display === "none" : null,
+      lessonContainerVisible: questionContainer ? getComputedStyle(questionContainer).display !== "none" : false,
+      lessonActionsVisible: lessonActions ? lessonActions.style.display !== "none" : null
+    });
     lessonStarted = true;
+    console.log("LESSON STARTED STATE TRUE", { lessonStarted, currentLessonDataExists: !!currentLessonData, currentLessonData });
     clearSessionStatusPolling();
     setStatus("🟢 Class is live. Answer each question, then submit when you’re ready.");
 
@@ -2103,6 +2171,10 @@ async function startStudentLesson(sessionUpdate = null) {
       console.warn("⚠️ Accommodations load did not block lesson render", error);
       renderAccommodationToolbar();
     }
+  } catch (error) {
+    lessonStarted = false;
+    console.error("START STUDENT LESSON FAILED", { error, currentSession, sessionUpdate });
+    setStatus("⚠️ The live lesson could not render. Ask your teacher to restart the live session.", "error");
   } finally {
     lessonRenderInProgress = false;
   }
@@ -2151,29 +2223,36 @@ async function handleLiveSessionTransition(source, sessionPayload) {
     return;
   }
 
+  console.log(`${source.toUpperCase()} UPDATE RECEIVED`, sessionPayload);
   logStudentSessionState(`STUDENT SESSION UPDATE (${source}):`, sessionPayload);
   let nextSession = await ensureLessonDataForLiveSession(sessionPayload, source);
   if (nextSession) mergeSessionState(nextSession);
 
   console.log("SESSION PAYLOAD RECEIVED", currentSession);
+  console.log("SESSION STATUS", currentSession?.status);
+  console.log("SESSION IS_ACTIVE", currentSession?.is_active);
+  console.log("LESSON DATA EXISTS", Boolean(currentSession?.lesson_data));
+  console.log("LESSON DATA KEYS", currentSession?.lesson_data && typeof currentSession.lesson_data === "object" ? Object.keys(currentSession.lesson_data) : []);
+
   if (isSessionLive(currentSession)) {
     console.log("LIVE STATUS DETECTED", currentSession);
-    const lessonData = extractLessonData(currentSession.lesson_data);
+    const { normalized: lessonData } = logLessonDataValidation(`LIVE TRANSITION ${source}`, currentSession.lesson_data);
     if (lessonData) {
+      currentSession.lesson_data = lessonData;
+      setWaitingScreenVisible(false, `live transition ${source}`);
+      showLessonActions(true);
       console.log("LESSON DATA FOUND", lessonData);
       console.log("STARTING STUDENT LESSON", currentSession);
       await startStudentLesson(currentSession);
     } else {
-      const waiting = document.getElementById("waiting");
-      if (waiting) waiting.style.display = "none";
-      console.error(`[${source}] LIVE STATUS DETECTED WITHOUT LESSON DATA`, currentSession);
+      setWaitingScreenVisible(false, `live transition ${source} missing lesson data`);
+      console.error("START STUDENT LESSON FAILED", { reason: `[${source}] LIVE STATUS DETECTED WITHOUT LESSON DATA`, currentSession, sessionPayload });
       setStatus("⚠️ Your teacher started the live session, but the lesson did not arrive. Ask your teacher to restart the live session.", "error");
     }
     return;
   }
 
-  const waiting = document.getElementById("waiting");
-  if (waiting) waiting.style.display = "block";
+  setWaitingScreenVisible(true, `non-live transition ${source}`);
   console.log("WAITING STATE ACTIVE", currentSession);
 }
 
@@ -2195,8 +2274,12 @@ function normalizeQuestionForStudent(question = {}, index = 0, type = "practice"
 function normalizeWorkerPayload(raw = {}, { fallbackPassage = "" } = {}) {
   const safe = raw && typeof raw === "object" ? raw : {};
   const legacyQuestions = Array.isArray(safe?.questions) ? safe.questions : [];
-  const practiceQuestions = Array.isArray(safe?.practice?.questions) ? safe.practice.questions : legacyQuestions;
-  const crossQuestions = Array.isArray(safe?.cross?.questions) ? safe.cross.questions : [];
+  const topLevelPracticeQuestions = Array.isArray(safe?.practiceQuestions) ? safe.practiceQuestions : null;
+  const topLevelCrossQuestions = Array.isArray(safe?.crossQuestions) ? safe.crossQuestions : null;
+  const explicitPracticeQuestions = Array.isArray(safe?.practice?.questions) ? safe.practice.questions : null;
+  const practiceQuestions = explicitPracticeQuestions ?? topLevelPracticeQuestions ?? legacyQuestions;
+  const crossQuestions = Array.isArray(safe?.cross?.questions) ? safe.cross.questions : (topLevelCrossQuestions ?? []);
+  const normalizedPassage = safe?.passage || safe?.practice?.passage || safe?.practicePassage || fallbackPassage || "";
   const lessonMeta = {
     title: safe.title || "",
     subject: safe.subject || safe?.metadata?.subject || "Reading",
@@ -2210,19 +2293,21 @@ function normalizeWorkerPayload(raw = {}, { fallbackPassage = "" } = {}) {
   return {
     ...safe,
     ...lessonMeta,
-    passage: safe?.passage || safe?.practice?.passage || fallbackPassage || "",
+    passage: normalizedPassage,
+    practiceQuestions: practiceQuestions.map((question, index) => normalizeQuestionForStudent(question, index, "practice", lessonMeta)),
+    crossQuestions: crossQuestions.map((question, index) => normalizeQuestionForStudent(question, index, "cross", lessonMeta)),
     metadata: {
       ...(safe?.metadata && typeof safe.metadata === "object" ? safe.metadata : {}),
       ...lessonMeta
     },
     practice: {
       ...(safe?.practice && typeof safe.practice === "object" ? safe.practice : {}),
-      passage: safe?.practice?.passage || safe?.passage || fallbackPassage || "",
+      passage: safe?.practice?.passage || safe?.practicePassage || normalizedPassage,
       questions: practiceQuestions.map((question, index) => normalizeQuestionForStudent(question, index, "practice", lessonMeta))
     },
     cross: {
       ...(safe?.cross && typeof safe.cross === "object" ? safe.cross : {}),
-      passage: safe?.cross?.passage || "",
+      passage: safe?.cross?.passage || safe?.crossPassage || "",
       questions: crossQuestions.map((question, index) => normalizeQuestionForStudent(question, index, "cross", lessonMeta))
     },
     tutor: {
@@ -2237,17 +2322,26 @@ function normalizeWorkerPayload(raw = {}, { fallbackPassage = "" } = {}) {
 }
 
 function extractLessonData(lesson) {
-  let data = lesson?.lesson_data || lesson?.lesson || lesson?.lesson_payload || lesson?.currentLesson || lesson?.data || lesson;
-  if (typeof data === "string") {
-    try {
-      data = JSON.parse(data);
-    } catch (parseError) {
-      console.error("Unable to parse lesson data JSON", parseError);
-      return null;
+  let data = lesson;
+  const unwrapKeys = ["lesson_data", "lesson", "lesson_payload", "currentLesson", "data", "payload"];
+  for (let i = 0; i < 4; i += 1) {
+    if (typeof data === "string") {
+      try {
+        data = JSON.parse(data);
+      } catch (parseError) {
+        console.error("Unable to parse lesson data JSON", { parseError, lesson });
+        return null;
+      }
     }
+    if (!data || typeof data !== "object") return null;
+    const nestedKey = unwrapKeys.find((key) => data?.[key] && typeof data[key] === "object");
+    const hasDirectLessonShape = Array.isArray(data?.practice?.questions) || Array.isArray(data?.practiceQuestions) || Array.isArray(data?.questions) || Boolean(data?.passage || data?.practice?.passage);
+    if (!nestedKey || hasDirectLessonShape) break;
+    console.warn("NORMALIZING NESTED LESSON DATA", { nestedKey, keys: Object.keys(data), data });
+    data = data[nestedKey];
   }
   if (!data || typeof data !== "object") return null;
-  const normalized = normalizeWorkerPayload(data, { fallbackPassage: data?.passage || data?.practice?.passage || "" });
+  const normalized = normalizeWorkerPayload(data, { fallbackPassage: data?.passage || data?.practice?.passage || data?.practicePassage || "" });
   const hasLessonContent = normalized.practice.questions.length || normalized.cross.questions.length || normalized.practice.passage || normalized.cross.passage;
   console.log("NORMALIZED STUDENT LESSON DATA:", {
     practice: normalized.practice,
@@ -2358,6 +2452,11 @@ function renderQuestions(lesson) {
   const qf = document.getElementById("questions");
   const submitBtn = document.getElementById("submit");
   const waiting = document.getElementById("waiting");
+  console.log("QUESTION CONTAINER FOUND", { found: !!qf, questionContainer: qf });
+  if (!qf || !submitBtn) {
+    console.error("START STUDENT LESSON FAILED", { reason: "missing render target", questionContainerFound: !!qf, submitButtonFound: !!submitBtn, lesson });
+    return false;
+  }
   const data = extractLessonData(lesson);
   currentLessonData = data;
   const practiceSection = getQuestionSection(data, "practice");
@@ -2370,10 +2469,13 @@ function renderQuestions(lesson) {
   console.log("SPANISH TRANSLATION CACHE:", data?.translations?.spanish);
   console.log("RENDER LESSON DATA:", { data, practiceQuestions: practice.length, crossQuestions: cross.length, practicePassage: !!practicePassage, crossPassage: !!crossPassage });
   totalQuestionCount = practice.length + cross.length;
+  console.log("QUESTION COUNT", { totalQuestionCount, practiceQuestionCount: practice.length, crossQuestionCount: cross.length });
+  console.log("PASSAGE EXISTS", { passageExists: Boolean(practicePassage || crossPassage), practicePassageExists: Boolean(practicePassage), crossPassageExists: Boolean(crossPassage) });
   if (!practice.length && !cross.length) {
     qf.innerHTML = "";
     submitBtn.disabled = true;
     showLessonActions(false);
+    console.error("START STUDENT LESSON FAILED", { reason: "no questions available after normalization", data, practicePassageExists: Boolean(practicePassage), crossPassageExists: Boolean(crossPassage) });
     setStatus("No questions available.", "error");
     return false;
   }
@@ -2389,7 +2491,8 @@ function renderQuestions(lesson) {
       ${cross.map((question, index) => renderQuestionCard(question, "c", practice.length + index + 1, index, "cross")).join("")}
     </section>
   `;
-  if (waiting) waiting.style.display = "none";
+  console.log("QUESTION CONTAINER INJECTED", { htmlLength: qf.innerHTML.length, renderedQuestionCount: qf.querySelectorAll(".question-card").length, renderedPassageCount: qf.querySelectorAll(".passage-card").length });
+  setWaitingScreenVisible(false, "renderQuestions");
   showLessonActions(true);
   submitBtn.disabled = false;
   updateSessionLabel(`Code ${currentSession?.code || ""}`.trim());
@@ -2539,6 +2642,7 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const session = await joinSession(code, student);
       currentSession = { id: session.id, lesson_id: session.lesson_id, code: session.code, status: session.status, is_active: session.is_active, allow_join: session.allow_join, lesson_data: session.lesson_data, started_at: session.started_at, student };
+      console.log("JOIN SUCCESS", { session, currentSession });
       console.log("JOINED SESSION", currentSession);
       console.log("SESSION PAYLOAD RECEIVED", session);
       console.log("FULL SESSION PAYLOAD", session);
@@ -2554,6 +2658,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (session.status === "live") {
         console.log("JOIN FLOW LIVE SESSION: STARTING LESSON IMMEDIATELY", { session });
       } else {
+        setWaitingScreenVisible(true, "join success lobby");
         console.log("JOIN FLOW WAITING SESSION: SHOWING WAITING SCREEN", { session });
       }
       await handleLiveSessionTransition("join", session);
