@@ -3286,88 +3286,212 @@ document.addEventListener("DOMContentLoaded", () => {
     return;
   }
 
-  console.log("JOIN BUTTON CLICK LISTENER ATTACHED", { joinBtn });
-  joinBtn.addEventListener("click", async (event) => {
-    console.log("JOIN BUTTON CLICKED", { eventType: event?.type, disabledBeforeHandler: joinBtn.disabled });
-    event?.preventDefault();
-
-    const codeInput = document.getElementById("code");
-    const studentInput = document.getElementById("student");
-    if (!codeInput || !studentInput) {
-      console.error("JOIN FLOW ERROR", { step: "input lookup", codeInputFound: !!codeInput, studentInputFound: !!studentInput });
-      alert("Page error. Refresh and try again.");
-      return;
-    }
-
-    const rawCode = codeInput.value;
-    const code = String(rawCode ?? "").trim().replace(/\s+/g, "");
-    const student = studentInput.value.trim();
-    console.log("RAW CLASS CODE INPUT", { rawClassCode: rawCode, rawType: typeof rawCode });
-    console.log("NORMALIZED CLASS CODE", { normalizedCode: code, normalizedType: typeof code });
-    console.log("CLASS CODE VALUE", { code, rawValue: rawCode });
-    console.log("STUDENT NAME VALUE", { studentName: student, rawValue: studentInput.value });
-
-    if (!code || !student) {
-      console.warn("JOIN FLOW ERROR", { step: "validation", codePresent: !!code, studentPresent: !!student });
-      alert("Enter code and name");
-      setStatus("Enter your class code and name to join.", "error");
-      return;
-    }
-    if (hasSubmitted) {
-      console.warn("JOIN FLOW ERROR", { step: "already submitted guard", hasSubmitted });
-      setStatus("✅ You already submitted. Wait for your teacher.", "success");
-      return;
-    }
-
-    joinBtn.disabled = true;
-    joinBtn.textContent = "Joining...";
-    setStatus("Joining your live lesson...");
-
+  const safeJoinLog = (label, payload) => {
     try {
-      console.log("JOIN CLICK HANDLER BEFORE AWAIT joinSession", { code, student, currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
-      const session = await joinSession(code, student);
-      console.log("JOIN CLICK HANDLER AFTER AWAIT joinSession", { session, currentSessionBeforeAssign: currentSession, sessionHasLessonData: hasSessionLessonData(session) });
-      const previousSession = currentSession;
-      currentSession = { id: session.id, lesson_id: session.lesson_id, code: session.code, status: session.status, is_active: session.is_active, allow_join: session.allow_join, lesson_data: session.lesson_data, started_at: session.started_at, student };
-      console.log("CURRENT SESSION ASSIGNED AFTER JOIN", { previousSession, currentSession, changed: previousSession !== currentSession, currentSessionHasLessonData: hasSessionLessonData(currentSession) });
-      console.log("JOIN SUCCESS", { session, currentSession });
-      console.log("JOINED SESSION", currentSession);
-      console.log("SESSION PAYLOAD RECEIVED", session);
-      console.log("FULL SESSION PAYLOAD", session);
-      loadLocalWorkspaceState();
-      updateSessionLabel(`Code ${session.code}`);
-      document.getElementById("join-panel")?.setAttribute("hidden", "");
-      lessonStarted = false;
-      initializeStudentSubscription("session status", () => subscribeToSessionStatus(session.code));
-      initializeStudentSubscription("help responses", () => subscribeToHelpResponses());
-      initializeStudentSubscription("student accommodations", () => subscribeToStudentAccommodations());
-      logStudentSessionState("STUDENT SESSION UPDATE:", session);
-      console.log("LIVE SESSION STATUS:", session.status);
-      if (session.status === "live") {
-        console.log("JOIN FLOW LIVE SESSION: STARTING LESSON IMMEDIATELY", { session });
-      } else {
-        setWaitingScreenVisible(true, "join success lobby");
-        console.log("JOIN FLOW WAITING SESSION: SHOWING WAITING SCREEN", { session });
+      if (payload !== undefined) console.log(label, payload);
+      else console.log(label);
+    } catch (logError) {
+      console.error("JOIN DIAGNOSTIC LOG FAILED", { label, message: logError?.message, stack: logError?.stack, error: logError });
+    }
+  };
+
+  window.__joinButtonListenerAttachCount = (window.__joinButtonListenerAttachCount || 0) + 1;
+  joinBtn.dataset.joinListenerAttached = String(Number(joinBtn.dataset.joinListenerAttached || "0") + 1);
+
+  const logJoinButtonEventPipeline = (label, event) => {
+    const currentJoinBtn = document.getElementById("join-btn");
+    const rect = currentJoinBtn?.getBoundingClientRect?.();
+    const centerX = rect ? rect.left + (rect.width / 2) : null;
+    const centerY = rect ? rect.top + (rect.height / 2) : null;
+    const elementAtButtonCenter = rect ? document.elementFromPoint(centerX, centerY) : null;
+    const eventPointElement = event && typeof event.clientX === "number" && typeof event.clientY === "number"
+      ? document.elementFromPoint(event.clientX, event.clientY)
+      : null;
+    safeJoinLog(label, {
+      eventType: event?.type,
+      eventTargetId: event?.target?.id,
+      eventTargetTagName: event?.target?.tagName,
+      eventCurrentTargetId: event?.currentTarget?.id,
+      defaultPrevented: event?.defaultPrevented,
+      cancelBubble: event?.cancelBubble,
+      eventPhase: event?.eventPhase,
+      capturedJoinBtnId: joinBtn?.id,
+      currentJoinBtnId: currentJoinBtn?.id,
+      sameButtonInstance: currentJoinBtn === joinBtn,
+      listenerAttachCount: window.__joinButtonListenerAttachCount,
+      elementListenerAttachCount: joinBtn.dataset.joinListenerAttached,
+      buttonDisabled: currentJoinBtn?.disabled,
+      buttonPointerEvents: currentJoinBtn ? getComputedStyle(currentJoinBtn).pointerEvents : null,
+      elementAtButtonCenterId: elementAtButtonCenter?.id,
+      elementAtButtonCenterTagName: elementAtButtonCenter?.tagName,
+      eventPointElementId: eventPointElement?.id,
+      eventPointElementTagName: eventPointElement?.tagName,
+      overlayInterceptPossible: !!elementAtButtonCenter && elementAtButtonCenter !== currentJoinBtn && !currentJoinBtn?.contains(elementAtButtonCenter),
+      joinLiveLessonType: typeof joinLiveLesson
+    });
+  };
+
+  window.addEventListener("click", (event) => {
+    if (event.target?.closest?.("#join-btn") || document.elementFromPoint(event.clientX, event.clientY)?.id === "join-btn") {
+      logJoinButtonEventPipeline("JOIN BUTTON WINDOW CAPTURE CLICK PIPELINE", event);
+    }
+  }, true);
+
+  async function joinLiveLesson(event, attachedJoinBtn) {
+    console.log("ENTERED joinLiveLesson");
+    const activeJoinBtn = document.getElementById("join-btn") || attachedJoinBtn;
+    try {
+      console.log("CLICK EVENT:", event);
+      console.log("JOIN BUTTON ELEMENT:", activeJoinBtn);
+      console.log("BUTTON DISABLED:", activeJoinBtn?.disabled);
+      logJoinButtonEventPipeline("JOIN LIVE LESSON PIPELINE SNAPSHOT", event);
+      console.log("CLICK EVENT BEFORE preventDefault/stop CHECK", { defaultPrevented: event?.defaultPrevented, cancelBubble: event?.cancelBubble });
+      event?.preventDefault();
+      console.log("CLICK EVENT AFTER preventDefault", { defaultPrevented: event?.defaultPrevented, cancelBubble: event?.cancelBubble });
+
+      const codeInput = document.getElementById("code");
+      const nameInput = document.getElementById("student");
+      console.log("CURRENT INPUT VALUES", {
+        code: codeInput?.value,
+        name: nameInput?.value
+      });
+      if (!codeInput || !nameInput) {
+        console.error("JOIN FLOW ERROR", { step: "input lookup", codeInputFound: !!codeInput, nameInputFound: !!nameInput });
+        alert("Page error. Refresh and try again.");
+        return;
       }
-      console.log("JOIN CLICK HANDLER BEFORE AWAIT handleLiveSessionTransition", { source: "join", session, currentSession });
-      await handleLiveSessionTransition("join", session);
-      console.log("JOIN CLICK HANDLER AFTER AWAIT handleLiveSessionTransition", { currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
-      if (!isSessionLive(currentSession)) {
-        console.log("JOIN CLICK HANDLER WAITING STATUS SET: currentSession is not live", { currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
-        setStatus("✅ Joined! Your teacher will start soon.", "success");
-      } else {
-        console.log("JOIN CLICK HANDLER SKIPPED WAITING STATUS: currentSession is live", { currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
+
+      const rawCode = codeInput.value;
+      const code = String(rawCode ?? "").trim().replace(/\s+/g, "");
+      const student = nameInput.value.trim();
+      console.log("RAW CLASS CODE INPUT", { rawClassCode: rawCode, rawType: typeof rawCode });
+      console.log("NORMALIZED CLASS CODE", { normalizedCode: code, normalizedType: typeof code });
+      console.log("CLASS CODE VALUE", { code, rawValue: rawCode });
+      console.log("STUDENT NAME VALUE", { studentName: student, rawValue: nameInput.value });
+
+      if (!code || !student) {
+        console.warn("JOIN FLOW ERROR", { step: "validation", codePresent: !!code, studentPresent: !!student });
+        alert("Enter code and name");
+        setStatus("Enter your class code and name to join.", "error");
+        return;
       }
-      console.log("JOIN FLOW COMPLETE", { currentSession, lessonStarted });
-      alert("✅ Joined!");
-    } catch (err) {
-      console.error("JOIN FLOW ERROR", { error: err, code, student });
-      setStatus(escapeHtml(err.message || "Something went wrong. Try again."), "error");
-      alert(err.message || "Join failed.");
-    } finally {
-      joinBtn.disabled = false;
-      joinBtn.textContent = "Join Live Lesson";
-      console.log("JOIN BUTTON LOADING RESET", { disabled: joinBtn.disabled, text: joinBtn.textContent });
+      if (hasSubmitted) {
+        console.warn("JOIN FLOW ERROR", { step: "already submitted guard", hasSubmitted });
+        setStatus("✅ You already submitted. Wait for your teacher.", "success");
+        return;
+      }
+
+      activeJoinBtn.disabled = true;
+      activeJoinBtn.textContent = "Joining...";
+      setStatus("Joining your live lesson...");
+
+      try {
+        console.log("ABOUT TO CALL joinSession", { code, student, currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
+        console.log("JOIN CLICK HANDLER BEFORE AWAIT joinSession", { code, student, currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
+        const session = await joinSession(code, student);
+        console.log("JOIN CLICK HANDLER AFTER AWAIT joinSession", { session, currentSessionBeforeAssign: currentSession, sessionHasLessonData: hasSessionLessonData(session) });
+        const previousSession = currentSession;
+        currentSession = { id: session.id, lesson_id: session.lesson_id, code: session.code, status: session.status, is_active: session.is_active, allow_join: session.allow_join, lesson_data: session.lesson_data, started_at: session.started_at, student };
+        console.log("CURRENT SESSION ASSIGNED AFTER JOIN", { previousSession, currentSession, changed: previousSession !== currentSession, currentSessionHasLessonData: hasSessionLessonData(currentSession) });
+        console.log("JOIN SUCCESS", { session, currentSession });
+        console.log("JOINED SESSION", currentSession);
+        console.log("SESSION PAYLOAD RECEIVED", session);
+        console.log("FULL SESSION PAYLOAD", session);
+        loadLocalWorkspaceState();
+        updateSessionLabel(`Code ${session.code}`);
+        document.getElementById("join-panel")?.setAttribute("hidden", "");
+        lessonStarted = false;
+        initializeStudentSubscription("session status", () => subscribeToSessionStatus(session.code));
+        initializeStudentSubscription("help responses", () => subscribeToHelpResponses());
+        initializeStudentSubscription("student accommodations", () => subscribeToStudentAccommodations());
+        logStudentSessionState("STUDENT SESSION UPDATE:", session);
+        console.log("LIVE SESSION STATUS:", session.status);
+        if (session.status === "live") {
+          console.log("JOIN FLOW LIVE SESSION: STARTING LESSON IMMEDIATELY", { session });
+        } else {
+          setWaitingScreenVisible(true, "join success lobby");
+          console.log("JOIN FLOW WAITING SESSION: SHOWING WAITING SCREEN", { session });
+        }
+        console.log("JOIN CLICK HANDLER BEFORE AWAIT handleLiveSessionTransition", { source: "join", session, currentSession });
+        await handleLiveSessionTransition("join", session);
+        console.log("JOIN CLICK HANDLER AFTER AWAIT handleLiveSessionTransition", { currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
+        if (!isSessionLive(currentSession)) {
+          console.log("JOIN CLICK HANDLER WAITING STATUS SET: currentSession is not live", { currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
+          setStatus("✅ Joined! Your teacher will start soon.", "success");
+        } else {
+          console.log("JOIN CLICK HANDLER SKIPPED WAITING STATUS: currentSession is live", { currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
+        }
+        console.log("JOIN FLOW COMPLETE", { currentSession, lessonStarted });
+        alert("✅ Joined!");
+      } catch (err) {
+        console.error("JOIN FLOW ERROR", { error: err, code, student });
+        setStatus(escapeHtml(err.message || "Something went wrong. Try again."), "error");
+        alert(err.message || "Join failed.");
+      } finally {
+        activeJoinBtn.disabled = false;
+        activeJoinBtn.textContent = "Join Live Lesson";
+        console.log("JOIN BUTTON LOADING RESET", { disabled: activeJoinBtn.disabled, text: activeJoinBtn.textContent });
+      }
+    } catch (error) {
+      console.error("JOIN CLICK HANDLER CRASH MESSAGE:", error?.message);
+      console.error("JOIN CLICK HANDLER CRASH STACK:", error?.stack);
+      console.error("JOIN CLICK HANDLER CRASH ERROR OBJECT:", error);
+      throw error;
+    }
+  }
+
+  safeJoinLog("JOIN BUTTON CLICK LISTENER ATTACHED", {
+    joinBtnId: joinBtn.id,
+    listenerAttachCount: window.__joinButtonListenerAttachCount,
+    elementListenerAttachCount: joinBtn.dataset.joinListenerAttached,
+    joinLiveLessonType: typeof joinLiveLesson
+  });
+  joinBtn.addEventListener("pointerdown", (event) => {
+    safeJoinLog("JOIN BUTTON POINTERDOWN FIRED", { targetId: event?.target?.id, buttonDisabled: joinBtn.disabled });
+  }, true);
+  joinBtn.addEventListener("mousedown", (event) => {
+    safeJoinLog("JOIN BUTTON MOUSEDOWN FIRED", { targetId: event?.target?.id, buttonDisabled: joinBtn.disabled });
+  }, true);
+  joinBtn.addEventListener("click", (event) => {
+    safeJoinLog("DIRECT CLICK FALLBACK FIRED", { targetId: event?.target?.id, buttonDisabled: joinBtn.disabled });
+  }, true);
+  joinBtn.addEventListener("click", async (event) => {
+    console.log("JOIN BUTTON CLICKED");
+    console.log("JOIN HANDLER BEFORE TRY");
+    try {
+      console.log("JOIN HANDLER TRY ENTERED");
+      console.log("joinLiveLesson typeof:", typeof joinLiveLesson);
+      if (typeof joinLiveLesson !== "function") {
+        throw new Error(`joinLiveLesson is ${typeof joinLiveLesson} at click time.`);
+      }
+      console.log("ABOUT TO LOG CLICK DIAGNOSTICS");
+      safeJoinLog("CLICK EVENT:", {
+        type: event?.type,
+        targetId: event?.target?.id,
+        currentTargetId: event?.currentTarget?.id,
+        defaultPrevented: event?.defaultPrevented
+      });
+      safeJoinLog("JOIN BUTTON ELEMENT:", {
+        id: joinBtn.id,
+        disabled: joinBtn.disabled,
+        text: joinBtn.textContent,
+        isConnected: joinBtn.isConnected
+      });
+      console.log("BUTTON DISABLED:", joinBtn.disabled);
+      const codeInput = document.getElementById("code");
+      const nameInput = document.getElementById("student");
+      console.log("CURRENT INPUT VALUES", {
+        code: codeInput?.value,
+        name: nameInput?.value
+      });
+      logJoinButtonEventPipeline("JOIN BUTTON HANDLER PIPELINE SNAPSHOT", event);
+      console.log("ABOUT TO CALL joinLiveLesson");
+      await joinLiveLesson(event, joinBtn);
+      console.log("RETURNED FROM joinLiveLesson");
+    } catch (error) {
+      console.error("JOIN CLICK HANDLER CRASH MESSAGE:", error?.message);
+      console.error("JOIN CLICK HANDLER CRASH STACK:", error?.stack);
+      console.error("JOIN CLICK HANDLER CRASH ERROR OBJECT:", error);
     }
   });
 
