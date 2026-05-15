@@ -1051,13 +1051,20 @@ function shouldRenderLiveLesson(session) {
 }
 
 function mergeSessionState(sessionUpdate = {}) {
-  if (!sessionUpdate || typeof sessionUpdate !== "object") return currentSession;
+  if (!sessionUpdate || typeof sessionUpdate !== "object") {
+    console.warn("MERGE SESSION STATE EARLY RETURN: invalid sessionUpdate", { sessionUpdate, currentSession });
+    return currentSession;
+  }
+  const previousSession = currentSession;
+  const previousLessonData = currentSession?.lesson_data;
+  console.log("MERGE SESSION STATE START", { previousSession, sessionUpdate, previousHasLessonData: hasSessionLessonData(previousSession), updateHasLessonData: hasSessionLessonData(sessionUpdate) });
   currentSession = {
     ...(currentSession || {}),
     ...sessionUpdate,
     student: currentSession?.student || sessionUpdate.student,
     lesson_data: sessionUpdate.lesson_data ?? currentSession?.lesson_data
   };
+  console.log("MERGE SESSION STATE COMPLETE", { previousSession, currentSession, changed: previousSession !== currentSession, lessonDataChanged: previousLessonData !== currentSession?.lesson_data, currentHasLessonData: hasSessionLessonData(currentSession) });
   return currentSession;
 }
 
@@ -1113,9 +1120,13 @@ function logStudentSessionState(label, session) {
 }
 
 async function fetchLatestSession(reason, session = currentSession) {
+  console.log("FETCH LATEST SESSION ENTERED", { reason, session, currentSession });
   const sessionId = session?.id || currentSession?.id;
   const code = session?.code || currentSession?.code;
-  if (!sessionId && !code) return null;
+  if (!sessionId && !code) {
+    console.warn("FETCH LATEST SESSION EARLY RETURN: missing session id and code", { reason, session, currentSession });
+    return null;
+  }
 
   let query = studentSupabase
     .from("sessions")
@@ -1127,13 +1138,16 @@ async function fetchLatestSession(reason, session = currentSession) {
     query = query.eq("code", code).order("started_at", { ascending: false, nullsFirst: false }).limit(1);
   }
 
+  console.log("FETCH LATEST SESSION BEFORE AWAIT query", { reason, sessionId, code, currentSession });
   const { data, error } = await query;
+  console.log("FETCH LATEST SESSION AFTER AWAIT query", { reason, data, error, sessionId, code, currentSession });
   if (error) {
     console.error(`[${reason}] Fresh session fetch failed`, { error, sessionId, code });
     return null;
   }
 
   const refreshedSession = Array.isArray(data) ? data[0] : data;
+  console.log("FETCH LATEST SESSION RESOLVED PAYLOAD", { reason, refreshedSession, hasLessonData: hasSessionLessonData(refreshedSession), status: refreshedSession?.status, is_active: refreshedSession?.is_active, allow_join: refreshedSession?.allow_join });
   console.log(`[${reason}] Fresh session fetch complete`, refreshedSession);
   logFullSessionDebug(refreshedSession);
   return refreshedSession || null;
@@ -1144,10 +1158,22 @@ async function fetchLatestSessionByCode(reason, code = currentSession?.code) {
 }
 
 async function ensureLessonDataForLiveSession(session, reason) {
-  if (!hasLiveActivationSignal(session) || hasSessionLessonData(session)) return session;
-  console.warn(`[${reason}] Live session activation is missing lesson_data; forcing fresh session fetch.`);
+  console.log("ENSURE LESSON DATA ENTERED", { reason, session, currentSession, hasLiveActivationSignal: hasLiveActivationSignal(session), hasLessonData: hasSessionLessonData(session) });
+  if (!hasLiveActivationSignal(session)) {
+    console.warn("ENSURE LESSON DATA EARLY RETURN: no live activation signal", { reason, session, currentSession });
+    return session;
+  }
+  if (hasSessionLessonData(session)) {
+    console.log("ENSURE LESSON DATA EARLY RETURN: lesson_data already exists", { reason, session, lessonData: session?.lesson_data });
+    return session;
+  }
+  console.warn(`[${reason}] Live session activation is missing lesson_data; forcing fresh session fetch.`, { session, currentSession });
+  console.log("ENSURE LESSON DATA BEFORE AWAIT fetchLatestSession", { reason, session });
   const refreshedSession = await fetchLatestSession(reason, session);
-  return refreshedSession || session;
+  console.log("ENSURE LESSON DATA AFTER AWAIT fetchLatestSession", { reason, refreshedSession, hasLessonData: hasSessionLessonData(refreshedSession), currentSession });
+  const resolvedSession = refreshedSession || session;
+  console.log("ENSURE LESSON DATA RETURNING", { reason, resolvedSession, lessonData: resolvedSession?.lesson_data });
+  return resolvedSession;
 }
 
 function escapeHtml(value = "") {
@@ -1970,11 +1996,13 @@ async function joinSession(code, studentName) {
   console.log("NORMALIZED CLASS CODE", { joinTraceId, normalizedCode, normalizedType: typeof normalizedCode });
   try {
     console.log("STARTING SESSION QUERY", { joinTraceId, query: { table: "sessions", code: normalizedCode, select: LIVE_SESSION_SELECT, filters: ["code"], limit: 1 } });
+    console.log("JOIN FLOW BEFORE AWAIT session lookup", { joinTraceId, normalizedCode, currentSession });
     const sessionResult = await studentSupabase
       .from("sessions")
       .select(LIVE_SESSION_SELECT)
       .eq("code", normalizedCode)
       .limit(1);
+    console.log("JOIN FLOW AFTER AWAIT session lookup", { joinTraceId, sessionResult, currentSession });
     console.log("SESSION QUERY RESPONSE", { joinTraceId, sessionResult });
     console.log("FULL SUPABASE SESSION LOOKUP RESPONSE", sessionResult);
 
@@ -2005,10 +2033,14 @@ async function joinSession(code, studentName) {
       throw new Error("Session is missing an id. Ask your teacher to restart the live session.");
     }
 
+    console.log("JOIN FLOW BEFORE AWAIT ensureLessonDataForLiveSession", { joinTraceId, session, currentSession, hasLessonData: hasSessionLessonData(session) });
     session = await ensureLessonDataForLiveSession(session, "joinSession");
+    console.log("JOIN FLOW AFTER AWAIT ensureLessonDataForLiveSession", { joinTraceId, session, currentSession, hasLessonData: hasSessionLessonData(session) });
     console.log("FULL SESSION PAYLOAD AFTER LESSON FAILSAFE", { joinTraceId, session });
 
+    console.log("JOIN FLOW BEFORE AWAIT auth.getSession", { joinTraceId, currentSession });
     const authResult = await studentSupabase.auth.getSession();
+    console.log("JOIN FLOW AFTER AWAIT auth.getSession", { joinTraceId, authResult, currentSession });
     console.log("FULL SUPABASE AUTH SESSION RESPONSE", authResult);
     const { data: { session: authSession } = {}, error: authError } = authResult;
     if (authError) {
@@ -2028,11 +2060,13 @@ async function joinSession(code, studentName) {
     const insertTimeoutId = setTimeout(() => insertAbortController.abort("Join insert timed out after 5000ms."), 5000);
     let joinResult;
     try {
+      console.log("JOIN FLOW BEFORE AWAIT participant insert", { joinTraceId, participantPayload, currentSession });
       joinResult = await studentSupabase
         .from("participants")
         .insert([participantPayload])
         .select("id,session_id,session_code,student_name,joined_at")
         .abortSignal(insertAbortController.signal);
+      console.log("JOIN FLOW AFTER AWAIT participant insert", { joinTraceId, joinResult, currentSession });
     } finally {
       clearTimeout(insertTimeoutId);
     }
@@ -2194,8 +2228,12 @@ function logTranslateLessonProjectConsistency() {
 }
 
 async function translateLessonContent(lesson = currentLessonData) {
+  console.log("TRANSLATE LESSON CONTENT ENTERED", { lesson, currentLessonData, currentSession });
   const data = extractLessonData(lesson);
-  if (!data) return lesson;
+  if (!data) {
+    console.warn("TRANSLATE LESSON CONTENT EARLY RETURN: no extractable lesson data", { lesson, currentLessonData, currentSession });
+    return lesson;
+  }
   try {
     console.log("CALLING translate-lesson EDGE FUNCTION");
     console.log("TRANSLATE LESSON PAYLOAD:", data);
@@ -2226,6 +2264,7 @@ async function translateLessonContent(lesson = currentLessonData) {
       console.log("ATTEMPTING EDGE INVOCATION");
       window.__EDGE_TRANSLATION_INVOKED = true;
 
+      console.log("TRANSLATE LESSON CONTENT BEFORE AWAIT functions.invoke", { data, currentSession });
       invokeResponse = await studentSupabase.functions.invoke(
         "translate-lesson",
         {
@@ -2235,6 +2274,7 @@ async function translateLessonContent(lesson = currentLessonData) {
           },
         }
       );
+      console.log("TRANSLATE LESSON CONTENT AFTER AWAIT functions.invoke", { invokeResponse, currentSession });
 
       window.__EDGE_TRANSLATION_RESPONSE = invokeResponse;
       console.log("RAW INVOKE RESPONSE:", invokeResponse);
@@ -2252,7 +2292,9 @@ async function translateLessonContent(lesson = currentLessonData) {
 
         if (error?.context?.json) {
           try {
+            console.log("TRANSLATE LESSON CONTENT BEFORE AWAIT error.context.json", { error });
             const contextJson = await error.context.json();
+            console.log("TRANSLATE LESSON CONTENT AFTER AWAIT error.context.json", { contextJson });
             console.error("EDGE ERROR JSON:", contextJson);
           } catch (contextErr) {
             console.error("FAILED TO READ EDGE ERROR JSON:", contextErr);
@@ -2276,6 +2318,7 @@ async function translateLessonContent(lesson = currentLessonData) {
         hasApikey: Boolean(SUPABASE_ANON_KEY),
         hasAuthorization: Boolean(SUPABASE_ANON_KEY)
       });
+      console.log("TRANSLATE LESSON CONTENT BEFORE AWAIT direct fetch", { edgeUrl: `${studentSupabase?.supabaseUrl}/functions/v1/translate-lesson`, currentSession });
       const directResponse = await fetch(
         `${studentSupabase?.supabaseUrl}/functions/v1/translate-lesson`,
         {
@@ -2292,9 +2335,12 @@ async function translateLessonContent(lesson = currentLessonData) {
         }
       );
 
+      console.log("TRANSLATE LESSON CONTENT AFTER AWAIT direct fetch", { directResponse, status: directResponse.status, currentSession });
       console.log("DIRECT FETCH STATUS:", directResponse.status);
 
+      console.log("TRANSLATE LESSON CONTENT BEFORE AWAIT directResponse.json", { status: directResponse.status });
       const directJson = await directResponse.json();
+      console.log("TRANSLATE LESSON CONTENT AFTER AWAIT directResponse.json", { directJson });
 
       console.log("DIRECT FETCH RESPONSE:", directJson);
     } catch (directErr) {
@@ -2350,8 +2396,12 @@ function mergeSpanishTranslationCache(lesson = {}, incoming = {}) {
 }
 
 async function ensureSpanishTranslationCache(lesson = currentLessonData) {
+  console.log("ENSURE SPANISH TRANSLATION CACHE ENTERED", { lesson, currentLessonData, currentSession });
   const data = extractLessonData(lesson);
-  if (!data) return null;
+  if (!data) {
+    console.warn("ENSURE SPANISH TRANSLATION CACHE EARLY RETURN: no lesson data", { lesson, currentLessonData, currentSession });
+    return null;
+  }
   const hasFlatSpanishFields = Boolean(
     data.spanish_practice_passage ||
     data.spanish_cross_passage ||
@@ -2361,18 +2411,21 @@ async function ensureSpanishTranslationCache(lesson = currentLessonData) {
   if (data.__spanishTranslationEdgeInvoked && hasFlatSpanishFields) {
     currentLessonData = data;
     console.log("SPANISH TRANSLATED LESSON CACHE:", data);
+    console.log("ENSURE SPANISH TRANSLATION CACHE EARLY RETURN: edge already invoked with flat Spanish fields", { data, currentSession });
     return data;
   }
   if (!hasSpanishAccommodation()) {
     if (hasFlatSpanishFields) {
       currentLessonData = data;
       console.log("SPANISH TRANSLATED LESSON CACHE:", data);
+      console.log("ENSURE SPANISH TRANSLATION CACHE EARLY RETURN: flat Spanish fields without Spanish accommodation", { data, currentSession });
       return data;
     }
     if (data.translations?.spanish) {
       applySpanishTranslationFields(data, data.translations.spanish);
       currentLessonData = data;
       console.log("SPANISH TRANSLATION CACHE:", data.translations.spanish);
+      console.log("ENSURE SPANISH TRANSLATION CACHE EARLY RETURN: existing translations.spanish cache", { data, currentSession });
       return data;
     }
   }
@@ -2381,7 +2434,11 @@ async function ensureSpanishTranslationCache(lesson = currentLessonData) {
     hasFlatSpanishFields,
     edgeAlreadyInvoked: Boolean(data.__spanishTranslationEdgeInvoked)
   });
-  if (translationGenerationPromise) return translationGenerationPromise;
+  if (translationGenerationPromise) {
+    console.log("ENSURE SPANISH TRANSLATION CACHE RETURNING EXISTING PROMISE", { translationGenerationPromise, currentSession });
+    return translationGenerationPromise;
+  }
+  console.log("ENSURE SPANISH TRANSLATION CACHE ABOUT TO CALL translateLessonContent", { data, currentSession });
   translationGenerationPromise = translateLessonContent(data)
     .finally(() => { translationGenerationPromise = null; });
   return translationGenerationPromise;
@@ -2453,6 +2510,7 @@ async function startStudentLesson(sessionUpdate = null) {
 
   try {
     if (sessionUpdate) {
+      console.log("START STUDENT LESSON MERGING sessionUpdate", { beforeCurrentSession: currentSession, sessionUpdate, sessionUpdateHasLessonData: hasSessionLessonData(sessionUpdate) });
       mergeSessionState({
         id: sessionUpdate.id || currentSession.id,
         lesson_id: sessionUpdate.lesson_id || currentSession.lesson_id,
@@ -2463,6 +2521,7 @@ async function startStudentLesson(sessionUpdate = null) {
         lesson_data: sessionUpdate.lesson_data ?? currentSession.lesson_data,
         started_at: sessionUpdate.started_at ?? currentSession.started_at
       });
+      console.log("START STUDENT LESSON AFTER mergeSessionState", { currentSession, currentSessionHasLessonData: hasSessionLessonData(currentSession) });
     }
 
     logStudentSessionState("STUDENT SESSION UPDATE:", currentSession);
@@ -2476,16 +2535,21 @@ async function startStudentLesson(sessionUpdate = null) {
     let sessionError = null;
 
     if (!lessonData) {
+      console.warn("START STUDENT LESSON LESSON DATA MISSING BEFORE REFRESH", { currentSession, sessionUpdate });
+      console.log("START STUDENT LESSON BEFORE AWAIT refresh session lookup", { code: currentSession.code, currentSession });
       const sessionResult = await studentSupabase
         .from("sessions")
         .select(LIVE_SESSION_SELECT)
         .eq("code", currentSession.code)
         .maybeSingle();
+      console.log("START STUDENT LESSON AFTER AWAIT refresh session lookup", { sessionResult, currentSession });
       sessionLookup = sessionResult.data;
       sessionError = sessionResult.error;
       logStudentSessionState("STUDENT SESSION UPDATE:", sessionLookup);
       if (!sessionError && sessionLookup) {
+        console.log("START STUDENT LESSON BEFORE mergeSessionState from refresh", { currentSession, sessionLookup, sessionLookupHasLessonData: hasSessionLessonData(sessionLookup) });
         mergeSessionState(sessionLookup);
+        console.log("START STUDENT LESSON AFTER mergeSessionState from refresh", { currentSession, currentSessionHasLessonData: hasSessionLessonData(currentSession) });
         ({ normalized: lessonData } = logLessonDataValidation("START STUDENT LESSON REFRESH", sessionLookup.lesson_data));
       }
     }
@@ -2504,7 +2568,9 @@ async function startStudentLesson(sessionUpdate = null) {
     console.log("CURRENT LESSON DATA ASSIGNED", { currentLessonData, currentSession });
 
     try {
+      console.log("START STUDENT LESSON BEFORE AWAIT fetchStudentAccommodations", { currentSession, lessonData });
       await fetchStudentAccommodations({ rerenderLesson: false });
+      console.log("START STUDENT LESSON AFTER AWAIT fetchStudentAccommodations", { currentSession, lessonData, currentAccommodations });
     } catch (error) {
       console.warn("⚠️ Accommodations load did not block lesson render", error);
       renderAccommodationToolbar();
@@ -2515,7 +2581,9 @@ async function startStudentLesson(sessionUpdate = null) {
       console.log("ABOUT TO GENERATE SPANISH CACHE");
       console.log("CURRENT LANGUAGE:", currentLanguage);
       console.log("LESSON DATA BEFORE SPANISH:", lessonData);
+      console.log("START STUDENT LESSON BEFORE AWAIT ensureSpanishTranslationCache", { lessonData, currentSession });
       const translatedLesson = await ensureSpanishTranslationCache(lessonData);
+      console.log("START STUDENT LESSON AFTER AWAIT ensureSpanishTranslationCache", { translatedLesson, currentSession });
       if (translatedLesson && typeof translatedLesson === "object") {
         lessonData = translatedLesson;
       }
@@ -2570,48 +2638,100 @@ function clearSessionStatusPolling() {
 }
 
 async function checkSessionStatus() {
-  if (!currentSession || (lessonStarted && currentLessonData)) return;
+  console.log("POLL CALLBACK ENTERED", { currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData, intervalActive: !!sessionStatusInterval });
+  if (!currentSession) {
+    console.warn("POLL CALLBACK EARLY RETURN: missing currentSession", { currentSession, lessonStarted, currentLessonData });
+    return;
+  }
+  if (lessonStarted && currentLessonData) {
+    console.log("POLL CALLBACK EARLY RETURN: lesson already started with lesson data", { currentSession, lessonStarted, currentLessonData });
+    return;
+  }
+  console.log("POLL CALLBACK BEFORE AWAIT fetchLatestSession", { currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
   const data = await fetchLatestSession("poll", currentSession);
+  console.log("POLL CALLBACK AFTER AWAIT fetchLatestSession", { data, currentSession, dataHasLessonData: hasSessionLessonData(data) });
   if (!data) {
     console.warn("[checkSessionStatus] Session status lookup returned no row", { currentSession });
     return;
   }
   console.log("POLL UPDATE RECEIVED", data);
   console.log("SESSION PAYLOAD RECEIVED", data);
+  console.log("POLL CALLBACK BEFORE AWAIT handleLiveSessionTransition", { data, currentSession });
   await handleLiveSessionTransition("poll", data);
+  console.log("POLL CALLBACK AFTER AWAIT handleLiveSessionTransition", { currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
 }
 
 function subscribeToSessionStatus(code) {
-  if (sessionStatusChannel) studentSupabase.removeChannel(sessionStatusChannel);
+  console.log("SUBSCRIBE TO SESSION STATUS ENTERED", { code, currentSession, existingChannel: !!sessionStatusChannel, existingInterval: !!sessionStatusInterval });
+  if (sessionStatusChannel) {
+    console.log("SUBSCRIBE TO SESSION STATUS REMOVING EXISTING CHANNEL", { code, sessionStatusChannel });
+    studentSupabase.removeChannel(sessionStatusChannel);
+  }
   clearSessionStatusPolling();
   sessionStatusChannel = studentSupabase
     .channel(`session-${code}`)
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions", filter: `code=eq.${code}` }, async (payload) => {
-      console.log("REALTIME UPDATE RECEIVED", payload);
-      console.log("STUDENT RECEIVED SESSION UPDATE");
-      console.log("SESSION UPDATE:", payload);
-      console.log("SESSION PAYLOAD RECEIVED", payload?.new);
-      await handleLiveSessionTransition("realtime", payload?.new);
+      console.log("REALTIME CALLBACK ENTERED", { payload, currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
+      try {
+        console.log("REALTIME UPDATE RECEIVED", payload);
+        console.log("REALTIME CALLBACK PAYLOAD FULL", payload);
+        console.log("REALTIME CALLBACK NEW SESSION HAS LESSON DATA", { hasLessonData: hasSessionLessonData(payload?.new), lessonData: payload?.new?.lesson_data });
+        console.log("STUDENT RECEIVED SESSION UPDATE");
+        console.log("SESSION UPDATE:", payload);
+        console.log("SESSION PAYLOAD RECEIVED", payload?.new);
+        console.log("REALTIME CALLBACK BEFORE AWAIT handleLiveSessionTransition", { newPayload: payload?.new, currentSession });
+        await handleLiveSessionTransition("realtime", payload?.new);
+        console.log("REALTIME CALLBACK AFTER AWAIT handleLiveSessionTransition", { currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
+      } catch (error) {
+        console.error("REALTIME CALLBACK FAILED", { error, payload, currentSession });
+      }
     })
     .subscribe((status) => {
-      console.log("SESSION CHANNEL STATUS:", status);
+      try {
+        console.log("SESSION CHANNEL STATUS:", status);
+        console.log("SESSION CHANNEL STATUS DETAIL", { status, code, currentSession, channel: sessionStatusChannel });
+      } catch (error) {
+        console.error("SESSION CHANNEL STATUS CALLBACK FAILED", { error, status, code, currentSession });
+      }
     });
-  checkSessionStatus().catch((error) => console.error("[subscribeToSessionStatus] Initial status check failed", { error, code, currentSession }));
+  console.log("SUBSCRIBE TO SESSION STATUS CHANNEL CREATED", { code, sessionStatusChannel, currentSession });
+  console.log("SUBSCRIBE TO SESSION STATUS BEFORE initial checkSessionStatus", { code, currentSession });
+  checkSessionStatus()
+    .then(() => console.log("SUBSCRIBE TO SESSION STATUS AFTER initial checkSessionStatus", { code, currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData }))
+    .catch((error) => console.error("[subscribeToSessionStatus] Initial status check failed", { error, code, currentSession }));
   sessionStatusInterval = setInterval(() => {
-    checkSessionStatus().catch((error) => console.error("[checkSessionStatus] Poll failed", { error, currentSession }));
+    console.log("POLL INTERVAL TICK", { code, currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData, intervalActive: !!sessionStatusInterval });
+    try {
+      checkSessionStatus()
+        .then(() => console.log("POLL INTERVAL TICK COMPLETE", { code, currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData }))
+        .catch((error) => console.error("[checkSessionStatus] Poll failed", { error, currentSession }));
+    } catch (error) {
+      console.error("POLL INTERVAL CALLBACK THREW", { error, code, currentSession });
+    }
   }, 2000);
+  console.log("POLLING STARTED", { code, intervalId: sessionStatusInterval, intervalActive: !!sessionStatusInterval, currentSession });
 }
 
 async function handleLiveSessionTransition(source, sessionPayload) {
+  console.log("HANDLE LIVE SESSION TRANSITION ENTERED", { source, sessionPayload, currentSession, payloadHasLessonData: hasSessionLessonData(sessionPayload), currentHasLessonData: hasSessionLessonData(currentSession) });
   if (!sessionPayload) {
     console.warn(`[${source}] Empty session payload received`, { currentSession });
+    console.warn("HANDLE LIVE SESSION TRANSITION EARLY RETURN: empty session payload", { source, sessionPayload, currentSession });
     return;
   }
 
   console.log(`${source.toUpperCase()} UPDATE RECEIVED`, sessionPayload);
   logStudentSessionState(`STUDENT SESSION UPDATE (${source}):`, sessionPayload);
+  console.log("HANDLE LIVE SESSION TRANSITION BEFORE AWAIT ensureLessonDataForLiveSession", { source, sessionPayload, currentSession });
   let nextSession = await ensureLessonDataForLiveSession(sessionPayload, source);
-  if (nextSession) mergeSessionState(nextSession);
+  console.log("HANDLE LIVE SESSION TRANSITION AFTER AWAIT ensureLessonDataForLiveSession", { source, nextSession, currentSession, nextHasLessonData: hasSessionLessonData(nextSession) });
+  if (nextSession) {
+    console.log("HANDLE LIVE SESSION TRANSITION BEFORE mergeSessionState", { source, beforeCurrentSession: currentSession, nextSession });
+    mergeSessionState(nextSession);
+    console.log("HANDLE LIVE SESSION TRANSITION AFTER mergeSessionState", { source, currentSession, currentHasLessonData: hasSessionLessonData(currentSession) });
+  } else {
+    console.warn("HANDLE LIVE SESSION TRANSITION merge skipped: no nextSession", { source, sessionPayload, currentSession });
+  }
 
   console.log("SESSION PAYLOAD RECEIVED", currentSession);
   console.log("SESSION STATUS", currentSession?.status);
@@ -2632,7 +2752,9 @@ async function handleLiveSessionTransition(source, sessionPayload) {
       showLessonActions(true);
       console.log("LESSON DATA FOUND", lessonData);
       console.log("STARTING STUDENT LESSON", currentSession);
+      console.log("HANDLE LIVE SESSION TRANSITION BEFORE AWAIT startStudentLesson", { source, currentSession, lessonData });
       await startStudentLesson(currentSession);
+      console.log("HANDLE LIVE SESSION TRANSITION AFTER AWAIT startStudentLesson", { source, currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
     } else {
       setWaitingScreenVisible(false, `live transition ${source} missing lesson data`);
       console.error("START STUDENT LESSON FAILED", { reason: `[${source}] LIVE STATUS DETECTED WITHOUT LESSON DATA`, currentSession, sessionPayload });
@@ -2641,6 +2763,7 @@ async function handleLiveSessionTransition(source, sessionPayload) {
     return;
   }
 
+  console.log("HANDLE LIVE SESSION TRANSITION NON-LIVE PATH", { source, currentSession, sessionPayload, isLive: isSessionLive(currentSession), status: currentSession?.status, is_active: currentSession?.is_active, allow_join: currentSession?.allow_join, lessonDataExists: hasSessionLessonData(currentSession) });
   setWaitingScreenVisible(true, `non-live transition ${source}`);
   console.log("WAITING STATE ACTIVE", currentSession);
 }
@@ -3201,8 +3324,12 @@ document.addEventListener("DOMContentLoaded", () => {
     setStatus("Joining your live lesson...");
 
     try {
+      console.log("JOIN CLICK HANDLER BEFORE AWAIT joinSession", { code, student, currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
       const session = await joinSession(code, student);
+      console.log("JOIN CLICK HANDLER AFTER AWAIT joinSession", { session, currentSessionBeforeAssign: currentSession, sessionHasLessonData: hasSessionLessonData(session) });
+      const previousSession = currentSession;
       currentSession = { id: session.id, lesson_id: session.lesson_id, code: session.code, status: session.status, is_active: session.is_active, allow_join: session.allow_join, lesson_data: session.lesson_data, started_at: session.started_at, student };
+      console.log("CURRENT SESSION ASSIGNED AFTER JOIN", { previousSession, currentSession, changed: previousSession !== currentSession, currentSessionHasLessonData: hasSessionLessonData(currentSession) });
       console.log("JOIN SUCCESS", { session, currentSession });
       console.log("JOINED SESSION", currentSession);
       console.log("SESSION PAYLOAD RECEIVED", session);
@@ -3222,9 +3349,14 @@ document.addEventListener("DOMContentLoaded", () => {
         setWaitingScreenVisible(true, "join success lobby");
         console.log("JOIN FLOW WAITING SESSION: SHOWING WAITING SCREEN", { session });
       }
+      console.log("JOIN CLICK HANDLER BEFORE AWAIT handleLiveSessionTransition", { source: "join", session, currentSession });
       await handleLiveSessionTransition("join", session);
+      console.log("JOIN CLICK HANDLER AFTER AWAIT handleLiveSessionTransition", { currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
       if (!isSessionLive(currentSession)) {
+        console.log("JOIN CLICK HANDLER WAITING STATUS SET: currentSession is not live", { currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
         setStatus("✅ Joined! Your teacher will start soon.", "success");
+      } else {
+        console.log("JOIN CLICK HANDLER SKIPPED WAITING STATUS: currentSession is live", { currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
       }
       console.log("JOIN FLOW COMPLETE", { currentSession, lessonStarted });
       alert("✅ Joined!");
