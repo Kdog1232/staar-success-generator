@@ -1038,8 +1038,12 @@ function hasSessionLessonData(session) {
   return Boolean(extractLessonData(session?.lesson_data));
 }
 
+function hasLiveActivationSignal(session) {
+  return session?.status === "live" || session?.is_active === true || session?.is_active === "true" || session?.is_active === 1;
+}
+
 function isSessionLive(session) {
-  return session?.status === "live";
+  return session?.status === "live" || (hasLiveActivationSignal(session) && hasSessionLessonData(session));
 }
 
 function shouldRenderLiveLesson(session) {
@@ -1108,26 +1112,41 @@ function logStudentSessionState(label, session) {
   return isLive;
 }
 
-async function fetchLatestSessionByCode(reason, code = currentSession?.code) {
-  if (!code) return null;
-  const { data: session, error } = await studentSupabase
+async function fetchLatestSession(reason, session = currentSession) {
+  const sessionId = session?.id || currentSession?.id;
+  const code = session?.code || currentSession?.code;
+  if (!sessionId && !code) return null;
+
+  let query = studentSupabase
     .from("sessions")
-    .select(LIVE_SESSION_SELECT)
-    .eq("code", code)
-    .maybeSingle();
+    .select(LIVE_SESSION_SELECT);
+
+  if (sessionId) {
+    query = query.eq("id", sessionId).maybeSingle();
+  } else {
+    query = query.eq("code", code).order("started_at", { ascending: false, nullsFirst: false }).limit(1);
+  }
+
+  const { data, error } = await query;
   if (error) {
-    console.error(`[${reason}] Fresh session fetch failed`, { error, code });
+    console.error(`[${reason}] Fresh session fetch failed`, { error, sessionId, code });
     return null;
   }
-  console.log(`[${reason}] Fresh session fetch complete`, session);
-  logFullSessionDebug(session);
-  return session;
+
+  const refreshedSession = Array.isArray(data) ? data[0] : data;
+  console.log(`[${reason}] Fresh session fetch complete`, refreshedSession);
+  logFullSessionDebug(refreshedSession);
+  return refreshedSession || null;
+}
+
+async function fetchLatestSessionByCode(reason, code = currentSession?.code) {
+  return fetchLatestSession(reason, { code });
 }
 
 async function ensureLessonDataForLiveSession(session, reason) {
-  if (session?.status !== "live" || hasSessionLessonData(session)) return session;
-  console.warn(`[${reason}] Live session is missing lesson_data; forcing fresh session fetch.`);
-  const refreshedSession = await fetchLatestSessionByCode(reason, session.code || currentSession?.code);
+  if (!hasLiveActivationSignal(session) || hasSessionLessonData(session)) return session;
+  console.warn(`[${reason}] Live session activation is missing lesson_data; forcing fresh session fetch.`);
+  const refreshedSession = await fetchLatestSession(reason, session);
   return refreshedSession || session;
 }
 
@@ -2552,9 +2571,9 @@ function clearSessionStatusPolling() {
 
 async function checkSessionStatus() {
   if (!currentSession || (lessonStarted && currentLessonData)) return;
-  const { data, error } = await studentSupabase.from("sessions").select(LIVE_SESSION_SELECT).eq("code", currentSession.code).maybeSingle();
-  if (error) {
-    console.error("[checkSessionStatus] Session status lookup failed", { error, currentSession });
+  const data = await fetchLatestSession("poll", currentSession);
+  if (!data) {
+    console.warn("[checkSessionStatus] Session status lookup returned no row", { currentSession });
     return;
   }
   console.log("POLL UPDATE RECEIVED", data);
@@ -2577,7 +2596,10 @@ function subscribeToSessionStatus(code) {
     .subscribe((status) => {
       console.log("SESSION CHANNEL STATUS:", status);
     });
-  sessionStatusInterval = setInterval(checkSessionStatus, 2000);
+  checkSessionStatus().catch((error) => console.error("[subscribeToSessionStatus] Initial status check failed", { error, code, currentSession }));
+  sessionStatusInterval = setInterval(() => {
+    checkSessionStatus().catch((error) => console.error("[checkSessionStatus] Poll failed", { error, currentSession }));
+  }, 2000);
 }
 
 async function handleLiveSessionTransition(source, sessionPayload) {
@@ -2598,6 +2620,10 @@ async function handleLiveSessionTransition(source, sessionPayload) {
   console.log("LESSON DATA KEYS", currentSession?.lesson_data && typeof currentSession.lesson_data === "object" ? Object.keys(currentSession.lesson_data) : []);
 
   if (isSessionLive(currentSession)) {
+    if (currentSession.status !== "live") {
+      console.warn("LIVE STATUS INFERRED FROM SESSION ACTIVATION SIGNAL", currentSession);
+      currentSession.status = "live";
+    }
     console.log("LIVE STATUS DETECTED", currentSession);
     const { normalized: lessonData } = logLessonDataValidation(`LIVE TRANSITION ${source}`, currentSession.lesson_data);
     if (lessonData) {
