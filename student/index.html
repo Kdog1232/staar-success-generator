@@ -1217,6 +1217,11 @@ async function ensureLessonDataForLiveSession(session, reason) {
   return resolvedSession;
 }
 
+function escapeRegExp(value = "") {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+console.log("escapeRegExp helper loaded");
+
 function escapeHtml(value = "") {
   return String(value)
     .replace(/&/g, "&amp;")
