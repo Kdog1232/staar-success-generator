@@ -2861,29 +2861,29 @@ async function handleLiveSessionTransition(source, sessionPayload) {
   console.log("WAITING STATE ACTIVE", currentSession);
 }
 
+function normalizeAnswerChoiceForStudent(choice) {
+  if (Array.isArray(choice)) return choice.map((nestedChoice) => normalizeAnswerChoiceForStudent(nestedChoice)).filter(Boolean).join(" / ");
+  if (typeof choice === "string" || typeof choice === "number" || typeof choice === "boolean") return String(choice);
+  if (choice && typeof choice === "object") {
+    return String(choice.text || choice.choice || choice.answer || choice.value || choice.label || choice.content || "");
+  }
+  return "";
+}
+
 function normalizeQuestionForStudent(question = {}, index = 0, type = "practice", lessonMeta = {}) {
   const rawChoices = Array.isArray(question?.choices)
     ? question.choices
     : Array.isArray(question?.answers)
       ? question.answers
-      : [];
-  const englishChoices = rawChoices.map((choice) => {
-    if (typeof choice === "string") return choice;
-    return String(choice?.text || choice?.choice || "");
-  });
-  if (englishChoices.length !== 4) {
-    console.error(
-      "INVALID NORMALIZED CHOICES",
-      {
-        question,
-        englishChoices
-      }
-    );
-  }
+      : Array.isArray(question?.options)
+        ? question.options
+        : [];
+  const englishChoices = rawChoices.map((choice) => normalizeAnswerChoiceForStudent(choice));
+  const questionText = String(question?.question || question?.text || question?.prompt || "");
   const spanishChoices = Array.isArray(question?.spanish_choices)
-    ? question.spanish_choices.map(String)
+    ? question.spanish_choices.map((choice) => normalizeAnswerChoiceForStudent(choice))
     : [];
-  return {
+  const normalizedQuestion = {
     ...question,
     id: question?.id || question?.question_id || `${type}-${index + 1}`,
     question_id: question?.question_id || question?.id || `${type}-${index + 1}`,
@@ -2891,11 +2891,31 @@ function normalizeQuestionForStudent(question = {}, index = 0, type = "practice"
     subject: question?.subject || lessonMeta.subject || "Reading",
     skill: question?.skill || lessonMeta.skill || "",
     teks: question?.teks || question?.standard || lessonMeta.teks || lessonMeta.standard || "",
-    question: String(question?.question || question?.prompt || ""),
-    spanish_question: String(question?.spanish_question || ""),
+    question: questionText,
+    spanish_question: String(question?.spanish_question || question?.question_es || question?.spanish_text || ""),
     choices: englishChoices,
     spanish_choices: spanishChoices
   };
+  if (!questionText.trim()) {
+    console.error("QUESTION SKIPPED", { reason: "missing question text during normalization", question });
+  }
+  if (!Array.isArray(rawChoices) || !rawChoices.length) {
+    console.error("QUESTION SKIPPED", { reason: "missing choices during normalization", question });
+  }
+  if (englishChoices.length !== 4 || englishChoices.some((choice) => !String(choice || "").trim())) {
+    console.error(
+      "INVALID NORMALIZED CHOICES",
+      {
+        reason: englishChoices.length !== 4 ? "expected exactly 4 choices" : "one or more choices normalized to empty text",
+        question,
+        rawChoices,
+        englishChoices,
+        choiceShapes: rawChoices.map((choice) => ({ isArray: Array.isArray(choice), type: typeof choice, value: choice }))
+      }
+    );
+  }
+  console.log("NORMALIZED QUESTION RESULT", normalizedQuestion);
+  return normalizedQuestion;
 }
 
 function normalizeWorkerPayload(raw = {}, { fallbackPassage = "" } = {}) {
@@ -3058,14 +3078,40 @@ function renderQuestionTextHtml(englishText = "", spanishText = "") {
   return highlightVocabularyHtml(getDisplayText(safeEnglish, safeSpanish));
 }
 
+function getQuestionValidationFailure(question, choices, renderedChoices, questionText) {
+  if (!question || typeof question !== "object") return "question is not an object";
+  if (!String(questionText || "").trim()) return "undefined question text";
+  if (!Array.isArray(choices)) return "choices are not an array";
+  if (!choices.length) return "missing choices";
+  if (choices.some((choice) => Array.isArray(choice))) return "nested choices array";
+  if (!Array.isArray(renderedChoices)) return "rendered choices are not an array";
+  if (renderedChoices.length !== 4) return "expected exactly 4 choices";
+  if (renderedChoices.some((choice) => !String(choice || "").trim())) return "malformed choices include empty text";
+  return "";
+}
+
+function renderQuestionDebugCard(question, reason, sectionName, displayIndex) {
+  console.log("QUESTION SKIPPED", { reason, question });
+  return `
+    <article class="question-card error-card" style="border:2px solid #dc2626;background:#fee2e2;color:#7f1d1d;padding:1rem;border-radius:0.75rem;">
+      <strong>⚠️ Debug: Question failed validation</strong>
+      <p><strong>Section:</strong> ${escapeHtml(sectionName)} · <strong>Question:</strong> ${escapeHtml(String(displayIndex))}</p>
+      <p><strong>Failure reason:</strong> ${escapeHtml(reason)}</p>
+      <pre style="white-space:pre-wrap;overflow:auto;max-height:18rem;background:#fff1f2;padding:0.75rem;border-radius:0.5rem;">${escapeHtml(JSON.stringify(question, null, 2))}</pre>
+    </article>
+  `;
+}
+
 function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex, sectionName = "practice") {
   const currentQuestion = question && typeof question === "object" ? question : {};
-  const choices = Array.isArray(currentQuestion?.choices) ? currentQuestion.choices : [];
+  const rawChoicesForRender = Array.isArray(currentQuestion?.choices) ? currentQuestion.choices : [];
+  const choices = rawChoicesForRender.map((choice) => normalizeAnswerChoiceForStudent(choice));
   const questionKey = `${sectionPrefix}${localIndex}`;
   const cachedSpanishQuestion = getCachedSpanishQuestion(sectionName, localIndex) || {};
   const cachedSpanishChoices = Array.isArray(cachedSpanishQuestion.choices) ? cachedSpanishQuestion.choices : [];
-  const englishText = getLanguageText(currentQuestion?.question || "", "english");
-  const explicitSpanishQuestion = currentQuestion?.spanish_question || currentQuestion?.question_es || cachedSpanishQuestion.question || "";
+  const rawQuestionText = currentQuestion?.question || currentQuestion?.text || currentQuestion?.prompt || "";
+  const englishText = getLanguageText(rawQuestionText, "english");
+  const explicitSpanishQuestion = currentQuestion?.spanish_question || currentQuestion?.question_es || currentQuestion?.spanish_text || cachedSpanishQuestion.question || "";
   const spanishText = explicitSpanishQuestion
     ? getLanguageText(explicitSpanishQuestion, "spanish")
     : (hasLanguageText(currentQuestion?.question, "spanish") ? getLanguageText(currentQuestion?.question, "spanish") : "");
@@ -3099,24 +3145,35 @@ function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex, s
   console.log("QUESTION OBJECT:", currentQuestion);
   console.log("DISPLAY QUESTION:", questionText);
   console.log("DISPLAY CHOICES:", safeChoices);
-  if (
-    !Array.isArray(safeChoices) ||
-    safeChoices.length !== 4
-  ) {
+  console.log("QUESTION TEXT FIELD CHECK", {
+    expectsQuestion: currentQuestion?.question,
+    text: currentQuestion?.text,
+    prompt: currentQuestion?.prompt,
+    selectedQuestionText: rawQuestionText,
+    renderedQuestionText: questionText
+  });
+  console.log("CHOICE STRUCTURE CHECK", {
+    choicesAreArray: Array.isArray(currentQuestion?.choices),
+    choicesType: typeof currentQuestion?.choices,
+    rawChoices: rawChoicesForRender,
+    choices,
+    renderedChoices: safeChoices,
+    choiceShapes: Array.isArray(rawChoicesForRender) ? rawChoicesForRender.map((choice) => ({ type: typeof choice, isArray: Array.isArray(choice), value: choice })) : []
+  });
+  const validationFailure = getQuestionValidationFailure(currentQuestion, choices, safeChoices, questionText);
+  if (validationFailure) {
     console.error(
       "INVALID QUESTION CHOICES",
       {
+        reason: validationFailure,
         currentQuestion,
+        choices,
         safeChoices,
         sectionName,
         displayIndex
       }
     );
-    return `
-      <article class="question-card error-card">
-        <p>⚠️ Question failed to render.</p>
-      </article>
-    `;
+    return renderQuestionDebugCard(currentQuestion, validationFailure, sectionName, displayIndex);
   }
   try {
     logQuestionRenderPayload(currentQuestion, displayIndex, sectionName, normalizedQuestionText, normalizedChoices);
@@ -3213,6 +3270,12 @@ function renderQuestions(lesson) {
     const crossSection = getQuestionSection(data, "cross") || {};
     const practice = Array.isArray(practiceSection.questions) ? practiceSection.questions : [];
     const cross = Array.isArray(crossSection.questions) ? crossSection.questions : [];
+    const practiceQuestions = practice;
+    console.log("FULL PRACTICE QUESTIONS ARRAY", practiceQuestions);
+    console.log("QUESTION COUNT", practiceQuestions?.length);
+    const crossQuestions = cross;
+    console.log("FULL CROSS QUESTIONS ARRAY", crossQuestions);
+    console.log("CROSS QUESTION COUNT", crossQuestions?.length);
     const practicePassage = practiceSection.passage || data?.practicePassage || data?.passage || "";
     const crossPassage = crossSection.passage || data?.crossPassage || "";
     const spanishPracticePassage = data?.spanish_practice_passage || practiceSection.spanish_passage || practiceSection.passage_es || data?.spanish_passage || data?.passage_es || "";
@@ -3237,14 +3300,22 @@ function renderQuestions(lesson) {
     }
 
     const renderQuestionCardsSafely = (questions, sectionPrefix, startingIndex, sectionName) => questions.map((question, index) => {
+      console.log("RENDERING QUESTION", {
+        index,
+        rawQuestion: question
+      });
       try {
+        if (!question || typeof question !== "object") {
+          return renderQuestionDebugCard(question, "question is undefined, null, or not an object", sectionName, startingIndex + index);
+        }
         return renderQuestionCard(question, sectionPrefix, startingIndex + index, index, sectionName);
       } catch (questionError) {
+        const reason = questionError?.message || "question rendering crashed inside loop";
         console.error("BAD QUESTION", question);
         console.error("QUESTION INDEX", index);
         console.error("QUESTION TYPE", sectionName);
-        console.error("RENDER QUESTION CARD FAILURE", { questionError, question, index, sectionName });
-        return "";
+        console.error("RENDER QUESTION CARD FAILURE", { questionError, reason, question, index, sectionName });
+        return renderQuestionDebugCard(question, reason, sectionName, startingIndex + index);
       }
     }).join("");
 
