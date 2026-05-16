@@ -2882,9 +2882,15 @@ function normalizeQuestionForStudent(question = {}, index = 0, type = "practice"
       ? question.answers
       : Array.isArray(question?.options)
         ? question.options
-        : [];
+        : Array.isArray(question?.answer_choices)
+          ? question.answer_choices
+          : Array.isArray(question?.answerChoices)
+            ? question.answerChoices
+            : Array.isArray(question?.answer_options)
+              ? question.answer_options
+              : [];
   const englishChoices = rawChoices.map((choice) => normalizeAnswerChoiceForStudent(choice));
-  const questionText = String(question?.question || question?.text || question?.prompt || "");
+  const questionText = String(question?.question || question?.text || question?.prompt || question?.stem || question?.questionText || question?.question_text || "");
   const spanishChoices = Array.isArray(question?.spanish_choices)
     ? question.spanish_choices.map((choice) => normalizeAnswerChoiceForStudent(choice))
     : [];
@@ -2903,21 +2909,25 @@ function normalizeQuestionForStudent(question = {}, index = 0, type = "practice"
   };
   if (!questionText.trim()) {
     console.error("QUESTION SKIPPED", { reason: "missing question text during normalization", question });
+    if (type === "cross") console.log("CROSS QUESTION SKIPPED", { reason: "missing question text during normalization", question });
   }
   if (!Array.isArray(rawChoices) || !rawChoices.length) {
     console.error("QUESTION SKIPPED", { reason: "missing choices during normalization", question });
+    if (type === "cross") console.log("CROSS QUESTION SKIPPED", { reason: "missing choices during normalization", question });
   }
   if (englishChoices.length !== 4 || englishChoices.some((choice) => !String(choice || "").trim())) {
+    const reason = englishChoices.length !== 4 ? "expected exactly 4 choices" : "one or more choices normalized to empty text";
     console.error(
       "INVALID NORMALIZED CHOICES",
       {
-        reason: englishChoices.length !== 4 ? "expected exactly 4 choices" : "one or more choices normalized to empty text",
+        reason,
         question,
         rawChoices,
         englishChoices,
         choiceShapes: rawChoices.map((choice) => ({ isArray: Array.isArray(choice), type: typeof choice, value: choice }))
       }
     );
+    if (type === "cross") console.log("CROSS QUESTION SKIPPED", { reason, question });
   }
   console.log("NORMALIZED QUESTION RESULT", normalizedQuestion);
   return normalizedQuestion;
@@ -2927,10 +2937,31 @@ function normalizeWorkerPayload(raw = {}, { fallbackPassage = "" } = {}) {
   const safe = raw && typeof raw === "object" ? raw : {};
   const legacyQuestions = Array.isArray(safe?.questions) ? safe.questions : [];
   const topLevelPracticeQuestions = Array.isArray(safe?.practiceQuestions) ? safe.practiceQuestions : null;
-  const topLevelCrossQuestions = Array.isArray(safe?.crossQuestions) ? safe.crossQuestions : null;
+  const topLevelCrossQuestions = Array.isArray(safe?.crossQuestions)
+    ? safe.crossQuestions
+    : (Array.isArray(safe?.cross_questions) ? safe.cross_questions : null);
   const explicitPracticeQuestions = Array.isArray(safe?.practice?.questions) ? safe.practice.questions : null;
+  const explicitCrossQuestions = Array.isArray(safe?.cross?.questions)
+    ? safe.cross.questions
+    : (Array.isArray(safe?.cross?.cross_questions) ? safe.cross.cross_questions : null);
   const practiceQuestions = explicitPracticeQuestions ?? topLevelPracticeQuestions ?? legacyQuestions;
-  const crossQuestions = Array.isArray(safe?.cross?.questions) ? safe.cross.questions : (topLevelCrossQuestions ?? []);
+  const crossQuestions = explicitCrossQuestions ?? topLevelCrossQuestions ?? [];
+  console.log("CROSS NORMALIZATION SOURCE", {
+    hasLessonCross: Boolean(safe?.cross && typeof safe.cross === "object"),
+    lessonCrossQuestionsIsArray: Array.isArray(safe?.cross?.questions),
+    lessonCrossQuestionsCount: Array.isArray(safe?.cross?.questions) ? safe.cross.questions.length : null,
+    topLevelCrossQuestionsIsArray: Array.isArray(safe?.crossQuestions),
+    topLevelCrossQuestionsCount: Array.isArray(safe?.crossQuestions) ? safe.crossQuestions.length : null,
+    topLevelCrossSnakeQuestionsIsArray: Array.isArray(safe?.cross_questions),
+    topLevelCrossSnakeQuestionsCount: Array.isArray(safe?.cross_questions) ? safe.cross_questions.length : null,
+    normalizedCrossQuestionCountBeforeMap: crossQuestions.length,
+    crossPassageCandidates: {
+      crossPassage: safe?.crossPassage,
+      cross_passage: safe?.cross_passage,
+      crossDotPassage: safe?.cross?.passage,
+      crossDotText: safe?.cross?.text
+    }
+  });
   const normalizedPassage = safe?.passage || safe?.practice?.passage || safe?.practicePassage || fallbackPassage || "";
   const lessonMeta = {
     title: safe.title || "",
@@ -2963,7 +2994,7 @@ function normalizeWorkerPayload(raw = {}, { fallbackPassage = "" } = {}) {
     },
     cross: {
       ...(safe?.cross && typeof safe.cross === "object" ? safe.cross : {}),
-      passage: safe?.cross?.passage || safe?.crossPassage || "",
+      passage: safe?.cross?.passage || safe?.crossPassage || safe?.cross_passage || safe?.cross?.text || "",
       spanish_passage: safe?.cross?.spanish_passage || safe?.cross?.passage_es || safe?.spanish_cross_passage || "",
       passage_es: safe?.cross?.passage_es || safe?.cross?.spanish_passage || safe?.spanish_cross_passage || "",
       questions: crossQuestions.map((question, index) => normalizeQuestionForStudent(question, index, "cross", lessonMeta))
@@ -2993,7 +3024,7 @@ function extractLessonData(lesson) {
     }
     if (!data || typeof data !== "object") return null;
     const nestedKey = unwrapKeys.find((key) => data?.[key] && typeof data[key] === "object");
-    const hasDirectLessonShape = Array.isArray(data?.practice?.questions) || Array.isArray(data?.practiceQuestions) || Array.isArray(data?.questions) || Boolean(data?.passage || data?.practice?.passage);
+    const hasDirectLessonShape = Array.isArray(data?.practice?.questions) || Array.isArray(data?.practiceQuestions) || Array.isArray(data?.questions) || Array.isArray(data?.cross?.questions) || Array.isArray(data?.crossQuestions) || Array.isArray(data?.cross_questions) || Boolean(data?.passage || data?.practice?.passage || data?.cross?.passage || data?.crossPassage || data?.cross_passage);
     if (!nestedKey || hasDirectLessonShape) break;
     console.warn("NORMALIZING NESTED LESSON DATA", { nestedKey, keys: Object.keys(data), data });
     data = data[nestedKey];
@@ -3013,12 +3044,41 @@ function extractLessonData(lesson) {
 
 function getQuestionSection(data, sectionName) {
   const section = data?.[sectionName] || {};
+  const crossQuestionCandidates = sectionName === "cross"
+    ? {
+        lessonCrossQuestions: data?.cross?.questions,
+        lessonCrossQuestionsCount: Array.isArray(data?.cross?.questions) ? data.cross.questions.length : null,
+        topLevelCrossQuestions: data?.crossQuestions,
+        topLevelCrossQuestionsCount: Array.isArray(data?.crossQuestions) ? data.crossQuestions.length : null,
+        topLevelCrossSnakeQuestions: data?.cross_questions,
+        topLevelCrossSnakeQuestionsCount: Array.isArray(data?.cross_questions) ? data.cross_questions.length : null,
+        sectionCrossSnakeQuestions: section?.cross_questions,
+        sectionCrossSnakeQuestionsCount: Array.isArray(section?.cross_questions) ? section.cross_questions.length : null
+      }
+    : null;
+  const questions = Array.isArray(section?.questions)
+    ? section.questions
+    : (sectionName === "cross" && Array.isArray(data?.crossQuestions)
+      ? data.crossQuestions
+      : (sectionName === "cross" && Array.isArray(data?.cross_questions)
+        ? data.cross_questions
+        : (sectionName === "cross" && Array.isArray(section?.cross_questions) ? section.cross_questions : [])));
+  if (sectionName === "cross") {
+    console.log("CROSS SECTION FIELD CHECK", {
+      section,
+      crossQuestionCandidates,
+      rendererUsesLessonCrossQuestions: Array.isArray(section?.questions),
+      rendererUsesTopLevelCrossQuestions: !Array.isArray(section?.questions) && Array.isArray(data?.crossQuestions),
+      rendererUsesTopLevelCrossSnakeQuestions: !Array.isArray(section?.questions) && !Array.isArray(data?.crossQuestions) && Array.isArray(data?.cross_questions),
+      selectedCrossQuestionCount: questions.length
+    });
+  }
   return {
     ...section,
-    passage: section?.passage || "",
+    passage: section?.passage || (sectionName === "cross" ? (data?.crossPassage || data?.cross_passage || section?.text || "") : ""),
     spanish_passage: section?.spanish_passage || section?.passage_es || "",
     passage_es: section?.passage_es || section?.spanish_passage || "",
-    questions: Array.isArray(section?.questions) ? section.questions : []
+    questions
   };
 }
 
@@ -3097,6 +3157,7 @@ function getQuestionValidationFailure(question, choices, renderedChoices, questi
 
 function renderQuestionDebugCard(question, reason, sectionName, displayIndex) {
   console.log("QUESTION SKIPPED", { reason, question });
+  if (sectionName === "cross") console.log("CROSS QUESTION SKIPPED", { reason, question });
   return `
     <article class="question-card error-card" style="border:2px solid #dc2626;background:#fee2e2;color:#7f1d1d;padding:1rem;border-radius:0.75rem;">
       <strong>⚠️ Debug: Question failed validation</strong>
@@ -3114,7 +3175,7 @@ function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex, s
   const questionKey = `${sectionPrefix}${localIndex}`;
   const cachedSpanishQuestion = getCachedSpanishQuestion(sectionName, localIndex) || {};
   const cachedSpanishChoices = Array.isArray(cachedSpanishQuestion.choices) ? cachedSpanishQuestion.choices : [];
-  const rawQuestionText = currentQuestion?.question || currentQuestion?.text || currentQuestion?.prompt || "";
+  const rawQuestionText = currentQuestion?.question || currentQuestion?.text || currentQuestion?.prompt || currentQuestion?.stem || currentQuestion?.questionText || currentQuestion?.question_text || "";
   const englishText = getLanguageText(rawQuestionText, "english");
   const explicitSpanishQuestion = currentQuestion?.spanish_question || currentQuestion?.question_es || currentQuestion?.spanish_text || cachedSpanishQuestion.question || "";
   const spanishText = explicitSpanishQuestion
@@ -3263,14 +3324,47 @@ function renderQuestions(lesson) {
       return false;
     }
 
+    console.log("CROSS DATA TRACE BEFORE NORMALIZATION", {
+      currentLessonData,
+      currentLessonDataCross: currentLessonData?.cross,
+      currentLessonDataCrossQuestions: currentLessonData?.cross?.questions,
+      currentLessonDataTopLevelCrossQuestions: currentLessonData?.crossQuestions,
+      currentLessonDataTopLevelCrossSnakeQuestions: currentLessonData?.cross_questions,
+      sessionLessonData: currentSession?.lesson_data,
+      sessionLessonDataCross: currentSession?.lesson_data?.cross,
+      sessionLessonDataCrossQuestions: currentSession?.lesson_data?.cross?.questions,
+      sessionLessonDataTopLevelCrossQuestions: currentSession?.lesson_data?.crossQuestions,
+      sessionLessonDataTopLevelCrossSnakeQuestions: currentSession?.lesson_data?.cross_questions,
+      incomingLesson: lesson,
+      incomingLessonCross: lesson?.cross,
+      incomingLessonCrossQuestions: lesson?.cross?.questions,
+      incomingLessonTopLevelCrossQuestions: lesson?.crossQuestions,
+      incomingLessonTopLevelCrossSnakeQuestions: lesson?.cross_questions
+    });
     const data = extractLessonData(lesson);
     console.log("FULL NORMALIZED LESSON DATA", data);
+    console.log("CROSS DATA TRACE AFTER NORMALIZATION", {
+      extractedLessonData: data,
+      normalizedLessonObject: data,
+      normalizedCross: data?.cross,
+      normalizedCrossQuestions: data?.cross?.questions,
+      normalizedTopLevelCrossQuestions: data?.crossQuestions,
+      normalizedTopLevelCrossSnakeQuestions: data?.cross_questions,
+      normalizedCrossPassage: data?.cross?.passage || data?.crossPassage || data?.cross_passage || ""
+    });
     if (!data) {
       console.error("RENDER QUESTIONS FAILURE", { reason: "lesson data could not be normalized", lesson });
       return false;
     }
 
     currentLessonData = data;
+    console.log("CROSS DATA TRACE CURRENT LESSON DATA UPDATED", {
+      currentLessonData,
+      currentLessonDataCross: currentLessonData?.cross,
+      currentLessonDataCrossQuestions: currentLessonData?.cross?.questions,
+      currentLessonDataTopLevelCrossQuestions: currentLessonData?.crossQuestions,
+      currentLessonDataTopLevelCrossSnakeQuestions: currentLessonData?.cross_questions
+    });
     const practiceSection = getQuestionSection(data, "practice") || {};
     const crossSection = getQuestionSection(data, "cross") || {};
     const practice = Array.isArray(practiceSection.questions) ? practiceSection.questions : [];
@@ -3279,8 +3373,30 @@ function renderQuestions(lesson) {
     console.log("FULL PRACTICE QUESTIONS ARRAY", practiceQuestions);
     console.log("QUESTION COUNT", practiceQuestions?.length);
     const crossQuestions = cross;
+    console.log("FULL CROSS OBJECT", lesson?.cross);
+    console.log("CROSS QUESTIONS ARRAY",
+lesson?.cross?.questions);
+    console.log("CROSS QUESTION COUNT",
+lesson?.cross?.questions?.length);
+    console.log("CROSS PASSAGE",
+lesson?.cross?.passage);
+    console.log("NORMALIZED CROSS OBJECT BEFORE RENDER", data?.cross);
+    console.log("NORMALIZED CROSS QUESTIONS ARRAY BEFORE RENDER", data?.cross?.questions);
+    console.log("NORMALIZED CROSS PASSAGE BEFORE RENDER", data?.cross?.passage);
     console.log("FULL CROSS QUESTIONS ARRAY", crossQuestions);
     console.log("CROSS QUESTION COUNT", crossQuestions?.length);
+    console.log("CROSS RENDER ARRAY SOURCE", {
+      usesLessonCrossQuestions: crossQuestions === data?.cross?.questions,
+      lessonCrossQuestionsIsArray: Array.isArray(data?.cross?.questions),
+      topLevelCrossQuestionsIsArray: Array.isArray(data?.crossQuestions),
+      topLevelCrossSnakeQuestionsIsArray: Array.isArray(data?.cross_questions),
+      crossQuestionsUndefined: typeof data?.cross?.questions === "undefined",
+      crossQuestionsEmpty: Array.isArray(data?.cross?.questions) && data.cross.questions.length === 0,
+      crossNormalizationReturnedEmptyArray: Array.isArray(crossQuestions) && crossQuestions.length === 0,
+      rawLessonCrossQuestionsIsArray: Array.isArray(lesson?.cross?.questions),
+      rawLessonTopLevelCrossQuestionsIsArray: Array.isArray(lesson?.crossQuestions),
+      rawLessonTopLevelCrossSnakeQuestionsIsArray: Array.isArray(lesson?.cross_questions)
+    });
     const practicePassage = practiceSection.passage || data?.practicePassage || data?.passage || "";
     const crossPassage = crossSection.passage || data?.crossPassage || "";
     const spanishPracticePassage = data?.spanish_practice_passage || practiceSection.spanish_passage || practiceSection.passage_es || data?.spanish_passage || data?.passage_es || "";
@@ -3295,6 +3411,22 @@ function renderQuestions(lesson) {
     totalQuestionCount = practice.length + cross.length;
     console.log("QUESTION COUNT", { totalQuestionCount, practiceQuestionCount: practice.length, crossQuestionCount: cross.length });
     console.log("PASSAGE EXISTS", { passageExists: Boolean(practicePassage || crossPassage), practicePassageExists: Boolean(practicePassage), crossPassageExists: Boolean(crossPassage) });
+    console.log("CROSS RENDER BLOCKERS", {
+      crossQuestionsUndefined: typeof crossSection?.questions === "undefined",
+      crossQuestionsEmpty: Array.isArray(crossSection?.questions) && crossSection.questions.length === 0,
+      crossPassageEmpty: !Boolean(crossPassage),
+      blockedByEmptyPassageCheck: false,
+      blockedByConditionalRenderingGuard: false,
+      blockedBySectionVisibilityLogic: false,
+      blockedByTranslationGating: false,
+      activeLanguage: getActiveLanguage(),
+      hasSpanishAccommodation: hasSpanishAccommodation(),
+      crossHtmlContainersBeforeInsertion: {
+        crossQuestions: Boolean(document.getElementById("cross-questions")),
+        crossSection: Boolean(document.getElementById("cross-section")),
+        crossContainer: Boolean(document.getElementById("cross-container"))
+      }
+    });
     if (!practice.length && !cross.length) {
       qf.innerHTML = "";
       submitBtn.disabled = true;
@@ -3309,6 +3441,12 @@ function renderQuestions(lesson) {
         index,
         rawQuestion: question
       });
+      if (sectionName === "cross") {
+        console.log("RENDERING CROSS QUESTION", {
+          index,
+          rawQuestion: question
+        });
+      }
       try {
         if (!question || typeof question !== "object") {
           return renderQuestionDebugCard(question, "question is undefined, null, or not an object", sectionName, startingIndex + index);
@@ -3326,21 +3464,50 @@ function renderQuestions(lesson) {
 
     const practiceCardsHtml = renderQuestionCardsSafely(practice, "p", 1, "practice");
     const crossCardsHtml = renderQuestionCardsSafely(cross, "c", practice.length + 1, "cross");
+    const shouldShowCrossFallbackDebugCard = !crossCardsHtml && Boolean(crossPassage || data?.cross?.passage || data?.crossPassage || data?.cross_passage || lesson?.cross || lesson?.crossQuestions || lesson?.cross_questions);
+    const finalCrossCardsHtml = shouldShowCrossFallbackDebugCard
+      ? renderQuestionDebugCard(
+          {
+            rawCross: lesson?.cross,
+            rawCrossQuestions: lesson?.cross?.questions,
+            rawTopLevelCrossQuestions: lesson?.crossQuestions,
+            rawTopLevelCrossSnakeQuestions: lesson?.cross_questions,
+            normalizedCross: data?.cross,
+            normalizedCrossQuestions: data?.cross?.questions,
+            crossSection
+          },
+          "cross questions array is missing or empty after normalization",
+          "cross",
+          practice.length + 1
+        )
+      : crossCardsHtml;
 
-    console.log("ABOUT TO SET innerHTML", { practiceQuestionCount: practice.length, crossQuestionCount: cross.length, practiceCardsLength: practiceCardsHtml.length, crossCardsLength: crossCardsHtml.length });
+    console.log("ABOUT TO SET innerHTML", { practiceQuestionCount: practice.length, crossQuestionCount: cross.length, practiceCardsLength: practiceCardsHtml.length, crossCardsLength: finalCrossCardsHtml.length });
     qf.innerHTML = `
       <section class="lesson-section">
         ${renderPassage("Practice Passage", practicePassage, spanishPracticePassage || getCachedSpanishPassage("practice") || "")}
         ${practice.length ? `<h2 class="section-title">${escapeHtml(getDisplayText("Practice Questions", "Preguntas de práctica"))}</h2>` : ""}
         ${practiceCardsHtml}
       </section>
-      <section class="lesson-section">
-        ${renderPassage("Cross-Curricular Passage", crossPassage, spanishCrossPassage || getCachedSpanishPassage("cross") || "")}
-        ${cross.length ? `<h2 class="section-title">${escapeHtml(getDisplayText("Cross-Curricular Questions", "Preguntas interdisciplinarias"))}</h2>` : ""}
-        ${crossCardsHtml}
+      <section class="lesson-section" id="cross-section">
+        <div id="cross-container">
+          ${renderPassage("Cross-Curricular Passage", crossPassage, spanishCrossPassage || getCachedSpanishPassage("cross") || "")}
+          <div id="cross-questions">
+            ${cross.length ? `<h2 class="section-title">${escapeHtml(getDisplayText("Cross-Curricular Questions", "Preguntas interdisciplinarias"))}</h2>` : ""}
+            ${finalCrossCardsHtml}
+          </div>
+        </div>
       </section>
     `;
     console.log("INNERHTML SET SUCCESS", { htmlLength: qf.innerHTML.length });
+    console.log("CROSS SECTION INSERTED INTO DOM");
+    console.log("CROSS HTML CONTAINER CHECK AFTER INSERTION", {
+      crossQuestions: Boolean(document.getElementById("cross-questions")),
+      crossSection: Boolean(document.getElementById("cross-section")),
+      crossContainer: Boolean(document.getElementById("cross-container")),
+      crossQuestionCardCount: document.querySelectorAll("#cross-questions .question-card").length,
+      crossPassageCardCount: document.querySelectorAll("#cross-section .passage-card").length
+    });
     console.log("QUESTION CONTAINER INJECTED", { htmlLength: qf.innerHTML.length, renderedQuestionCount: qf.querySelectorAll(".question-card").length, renderedPassageCount: qf.querySelectorAll(".passage-card").length });
     setWaitingScreenVisible(false, "renderQuestions");
     showLessonActions(true);
