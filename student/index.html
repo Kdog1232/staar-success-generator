@@ -1046,6 +1046,19 @@ function isSessionLive(session) {
   return session?.status === "live" || (hasLiveActivationSignal(session) && hasSessionLessonData(session));
 }
 
+function logLiveSessionEvaluation(session, source = "unknown") {
+  console.log("LIVE SESSION EVALUATION", {
+    source,
+    status: session?.status,
+    is_active: session?.is_active,
+    allow_join: session?.allow_join,
+    hasLessonData: !!session?.lesson_data,
+    lessonDataKeys: Object.keys(session?.lesson_data || {}),
+    inferredLive: hasLiveActivationSignal(session),
+    finalLive: isSessionLive(session)
+  });
+}
+
 function shouldRenderLiveLesson(session) {
   return isSessionLive(session) && hasSessionLessonData(session);
 }
@@ -1092,15 +1105,42 @@ function logLessonDataValidation(label, lessonData) {
   return { normalized, validation };
 }
 
+function logLessonContainerVisibility(source = "unknown") {
+  const questionContainer = document.getElementById("questions");
+  const lessonActions = document.getElementById("lesson-actions");
+  console.log("LESSON CONTAINER VISIBILITY CHANGE", {
+    source,
+    questionContainerFound: !!questionContainer,
+    questionContainerDisplay: questionContainer ? getComputedStyle(questionContainer).display : null,
+    questionContainerHidden: questionContainer ? questionContainer.hidden : null,
+    questionContainerHtmlLength: questionContainer?.innerHTML?.length || 0,
+    lessonActionsFound: !!lessonActions,
+    lessonActionsDisplay: lessonActions ? getComputedStyle(lessonActions).display : null,
+    lessonActionsInlineDisplay: lessonActions?.style?.display || "",
+    currentSession
+  });
+}
+
 function setWaitingScreenVisible(show, source = "unknown") {
   const waiting = document.getElementById("waiting");
   if (!waiting) {
     console.warn("WAITING SCREEN ELEMENT MISSING", { source, show });
+    logLessonContainerVisibility(`waiting screen missing ${source}`);
     return;
   }
+  const previousDisplay = waiting.style.display || getComputedStyle(waiting).display;
   waiting.style.display = show ? "block" : "none";
+  console.log("WAITING SCREEN VISIBILITY CHANGE", {
+    source,
+    show,
+    previousDisplay,
+    nextDisplay: waiting.style.display,
+    text: waiting.textContent?.trim(),
+    currentSession
+  });
   if (show) console.log("WAITING SCREEN SHOWN", { source, currentSession });
   else console.log("WAITING SCREEN HIDDEN", { source, currentSession });
+  logLessonContainerVisibility(`waiting screen ${source}`);
 }
 
 function logStudentSessionState(label, session) {
@@ -1147,6 +1187,7 @@ async function fetchLatestSession(reason, session = currentSession) {
   }
 
   const refreshedSession = Array.isArray(data) ? data[0] : data;
+  console.log("SESSION REFRESH RESULT", refreshedSession);
   console.log("FETCH LATEST SESSION RESOLVED PAYLOAD", { reason, refreshedSession, hasLessonData: hasSessionLessonData(refreshedSession), status: refreshedSession?.status, is_active: refreshedSession?.is_active, allow_join: refreshedSession?.allow_join });
   console.log(`[${reason}] Fresh session fetch complete`, refreshedSession);
   logFullSessionDebug(refreshedSession);
@@ -1970,7 +2011,10 @@ function initializeStudentSubscription(label, init) {
 
 function showLessonActions(show = true) {
   const actions = document.getElementById("lesson-actions");
+  const previousDisplay = actions?.style?.display || (actions ? getComputedStyle(actions).display : null);
   if (actions) actions.style.display = show ? "flex" : "none";
+  console.log("LESSON ACTIONS VISIBILITY CHANGE", { show, previousDisplay, nextDisplay: actions?.style?.display || null, actionsFound: !!actions, currentSession });
+  logLessonContainerVisibility("showLessonActions");
 }
 
 function updateProgress() {
@@ -2408,6 +2452,16 @@ async function ensureSpanishTranslationCache(lesson = currentLessonData) {
     data.practice?.questions?.some?.((question) => question?.spanish_question || Array.isArray(question?.spanish_choices)) ||
     data.cross?.questions?.some?.((question) => question?.spanish_question || Array.isArray(question?.spanish_choices))
   );
+  console.log("TRANSLATION INVOKE GATE CHECK", {
+    gate: "edge already invoked with flat Spanish fields",
+    willInvoke: !(data.__spanishTranslationEdgeInvoked && hasFlatSpanishFields),
+    edgeAlreadyInvoked: Boolean(data.__spanishTranslationEdgeInvoked),
+    hasFlatSpanishFields,
+    hasSpanishAccommodation: hasSpanishAccommodation(),
+    hasExistingSpanishCache: Boolean(data.translations?.spanish),
+    translationGenerationInProgress: Boolean(translationGenerationPromise),
+    currentSession
+  });
   if (data.__spanishTranslationEdgeInvoked && hasFlatSpanishFields) {
     currentLessonData = data;
     console.log("SPANISH TRANSLATED LESSON CACHE:", data);
@@ -2415,6 +2469,7 @@ async function ensureSpanishTranslationCache(lesson = currentLessonData) {
     return data;
   }
   if (!hasSpanishAccommodation()) {
+    console.log("TRANSLATION INVOKE GATE CHECK", { gate: "no Spanish accommodation", willInvoke: false, hasFlatSpanishFields, hasExistingSpanishCache: Boolean(data.translations?.spanish), currentSession });
     if (hasFlatSpanishFields) {
       currentLessonData = data;
       console.log("SPANISH TRANSLATED LESSON CACHE:", data);
@@ -2434,6 +2489,7 @@ async function ensureSpanishTranslationCache(lesson = currentLessonData) {
     hasFlatSpanishFields,
     edgeAlreadyInvoked: Boolean(data.__spanishTranslationEdgeInvoked)
   });
+  console.log("TRANSLATION INVOKE GATE CHECK", { gate: "final edge invocation", willInvoke: !translationGenerationPromise, hasSpanishAccommodation: hasSpanishAccommodation(), hasFlatSpanishFields, hasExistingSpanishCache: Boolean(data.translations?.spanish), translationGenerationInProgress: Boolean(translationGenerationPromise), currentSession });
   if (translationGenerationPromise) {
     console.log("ENSURE SPANISH TRANSLATION CACHE RETURNING EXISTING PROMISE", { translationGenerationPromise, currentSession });
     return translationGenerationPromise;
@@ -2486,8 +2542,18 @@ function rerenderLessonPreservingState() {
 }
 
 async function startStudentLesson(sessionUpdate = null) {
+  console.log("START STUDENT LESSON ENTERED");
   console.log("START STUDENT LESSON CALLED", { sessionUpdate, currentSession, lessonRenderInProgress, lessonStarted, currentLessonData });
+  console.log("ATTEMPTING STUDENT LESSON START", {
+    source: "startStudentLesson",
+    session: sessionUpdate,
+    currentSession,
+    lessonStarted,
+    hasLessonData: hasSessionLessonData(sessionUpdate || currentSession)
+  });
+  logLiveSessionEvaluation(sessionUpdate || currentSession, "startStudentLesson entry");
   if (!currentSession) {
+    console.warn("START STUDENT LESSON EARLY RETURN CHECK", { reason: "missing currentSession", sessionUpdate, currentSession });
     console.error("START STUDENT LESSON FAILED", { reason: "missing currentSession", sessionUpdate });
     return;
   }
@@ -2501,6 +2567,7 @@ async function startStudentLesson(sessionUpdate = null) {
     const hasRenderedLessonContent = Boolean(questionContainer?.innerHTML?.trim()) && existingQuestionCount > 0;
     console.log("START STUDENT LESSON ALREADY RENDERED CHECK", { currentSession, currentLessonData, questionContainerFound: !!questionContainer, existingQuestionCount, hasRenderedLessonContent });
     if (hasRenderedLessonContent) {
+      console.warn("START STUDENT LESSON EARLY RETURN CHECK", { reason: "already rendered", currentSession, currentLessonData, existingQuestionCount });
       console.log("START STUDENT LESSON EARLY RETURN: already rendered", { currentSession, currentLessonData, existingQuestionCount });
       return;
     }
@@ -2543,6 +2610,7 @@ async function startStudentLesson(sessionUpdate = null) {
         .eq("code", currentSession.code)
         .maybeSingle();
       console.log("START STUDENT LESSON AFTER AWAIT refresh session lookup", { sessionResult, currentSession });
+      console.log("SESSION REFRESH RESULT", sessionResult.data);
       sessionLookup = sessionResult.data;
       sessionError = sessionResult.error;
       logStudentSessionState("STUDENT SESSION UPDATE:", sessionLookup);
@@ -2556,6 +2624,7 @@ async function startStudentLesson(sessionUpdate = null) {
 
     console.log("LESSON LOOKUP:", { sessionLookup, lessonData, error: sessionError, currentSession });
     if (sessionError || !lessonData) {
+      console.warn("START STUDENT LESSON EARLY RETURN CHECK", { reason: "session error or missing lesson data", sessionError, lessonData, currentSession, sessionLookup });
       lessonStarted = false;
       setWaitingScreenVisible(false, "startStudentLesson missing lesson data");
       setStatus("⚠️ Your teacher started the live session, but the lesson did not arrive. Ask your teacher to restart the live session.", "error");
@@ -2596,6 +2665,7 @@ async function startStudentLesson(sessionUpdate = null) {
     setWaitingScreenVisible(false, "startStudentLesson render");
     console.log("STARTING STUDENT LESSON", { currentSession, lessonData });
     console.log("ABOUT TO CALL renderLesson()");
+    console.log("RENDER QUESTIONS INVOCATION", { source: "startStudentLesson", lessonData, currentSession });
     const rendered = renderQuestions(lessonData) !== false;
     if (!rendered) {
       console.error("LESSON RENDER FAILURE DETECTED");
@@ -2714,9 +2784,18 @@ function subscribeToSessionStatus(code) {
 
 async function handleLiveSessionTransition(source, sessionPayload) {
   console.log("HANDLE LIVE SESSION TRANSITION ENTERED", { source, sessionPayload, currentSession, payloadHasLessonData: hasSessionLessonData(sessionPayload), currentHasLessonData: hasSessionLessonData(currentSession) });
+  console.log("ATTEMPTING STUDENT LESSON START", {
+    source,
+    session: sessionPayload,
+    currentSession,
+    lessonStarted,
+    hasLessonData: hasSessionLessonData(sessionPayload)
+  });
+  logLiveSessionEvaluation(sessionPayload, `transition payload ${source}`);
   if (!sessionPayload) {
     console.warn(`[${source}] Empty session payload received`, { currentSession });
     console.warn("HANDLE LIVE SESSION TRANSITION EARLY RETURN: empty session payload", { source, sessionPayload, currentSession });
+    console.log("WHY TRANSITION FAILED", { failedLiveCheck: true, failedLessonDataCheck: true, failedRenderCheck: true, reason: "empty session payload", source, sessionPayload, currentSession });
     return;
   }
 
@@ -2738,8 +2817,19 @@ async function handleLiveSessionTransition(source, sessionPayload) {
   console.log("SESSION IS_ACTIVE", currentSession?.is_active);
   console.log("LESSON DATA EXISTS", Boolean(currentSession?.lesson_data));
   console.log("LESSON DATA KEYS", currentSession?.lesson_data && typeof currentSession.lesson_data === "object" ? Object.keys(currentSession.lesson_data) : []);
+  logLiveSessionEvaluation(currentSession, `transition merged ${source}`);
 
-  if (isSessionLive(currentSession)) {
+  const finalLiveCheck = isSessionLive(currentSession);
+  const finalLessonDataCheck = hasSessionLessonData(currentSession);
+  console.log("WHY TRANSITION FAILED", {
+    failedLiveCheck: !finalLiveCheck,
+    failedLessonDataCheck: finalLiveCheck && !finalLessonDataCheck,
+    failedRenderCheck: finalLiveCheck && finalLessonDataCheck && !lessonStarted,
+    source,
+    currentSession
+  });
+
+  if (finalLiveCheck) {
     if (currentSession.status !== "live") {
       console.warn("LIVE STATUS INFERRED FROM SESSION ACTIVATION SIGNAL", currentSession);
       currentSession.status = "live";
@@ -2758,12 +2848,15 @@ async function handleLiveSessionTransition(source, sessionPayload) {
     } else {
       setWaitingScreenVisible(false, `live transition ${source} missing lesson data`);
       console.error("START STUDENT LESSON FAILED", { reason: `[${source}] LIVE STATUS DETECTED WITHOUT LESSON DATA`, currentSession, sessionPayload });
+      console.log("WHY TRANSITION FAILED", { failedLiveCheck: false, failedLessonDataCheck: true, failedRenderCheck: true, source, currentSession, sessionPayload });
       setStatus("⚠️ Your teacher started the live session, but the lesson did not arrive. Ask your teacher to restart the live session.", "error");
     }
+    console.log("HANDLE LIVE SESSION TRANSITION EARLY RETURN: live path complete", { source, currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
     return;
   }
 
-  console.log("HANDLE LIVE SESSION TRANSITION NON-LIVE PATH", { source, currentSession, sessionPayload, isLive: isSessionLive(currentSession), status: currentSession?.status, is_active: currentSession?.is_active, allow_join: currentSession?.allow_join, lessonDataExists: hasSessionLessonData(currentSession) });
+  console.log("HANDLE LIVE SESSION TRANSITION NON-LIVE PATH", { source, currentSession, sessionPayload, isLive: finalLiveCheck, status: currentSession?.status, is_active: currentSession?.is_active, allow_join: currentSession?.allow_join, lessonDataExists: finalLessonDataCheck });
+  console.log("WHY TRANSITION FAILED", { failedLiveCheck: true, failedLessonDataCheck: !finalLessonDataCheck, failedRenderCheck: true, source, currentSession, sessionPayload });
   setWaitingScreenVisible(true, `non-live transition ${source}`);
   console.log("WAITING STATE ACTIVE", currentSession);
 }
@@ -3090,6 +3183,8 @@ function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex, s
 }
 
 function renderQuestions(lesson) {
+  console.log("QUESTIONS RENDER START", { lesson, currentSession, lessonStarted, currentLessonDataExists: !!currentLessonData });
+  console.log("RENDER QUESTIONS INVOCATION", { source: "renderQuestions", lesson, currentSession });
   console.log("RENDER QUESTIONS CALLED", { lesson });
   try {
     const qf = document.getElementById("questions");
