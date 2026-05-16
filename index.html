@@ -4270,6 +4270,8 @@
       };
 
       const normalizedLesson = normalizeWorkerPayload(sourceLesson, { fallbackPassage: sourceLesson.passage || generatedPassage || "" });
+      console.log("FINAL LESSON OBJECT BEFORE SAVE", normalizedLesson);
+      logCrossPresence("FINAL LESSON OBJECT BEFORE SAVE CROSS CHECK", normalizedLesson);
       validateAlignment(normalizedLesson);
       return normalizedLesson;
     }
@@ -4310,9 +4312,13 @@
 
       cachedUser = user;
 
+      console.log("SAVING LESSON DATA", lessonData);
+      logCrossPresence("SAVE LESSON INPUT CROSS CHECK", lessonData);
       const normalizedLesson = normalizeWorkerPayload(lessonData, { fallbackPassage: lessonData?.passage || lessonData?.practice?.passage || generatedPassage || "" });
+      logCrossPresence("SAVE LESSON NORMALIZED CROSS CHECK", normalizedLesson);
       validateAlignment(normalizedLesson);
       const lessonPayload = buildLessonSavePayload(normalizedLesson);
+      logCrossPresence("SAVE LESSON PAYLOAD CROSS CHECK", lessonPayload);
       const title = lessonPayload.title || `${lessonPayload.subject || "Reading"} - ${lessonPayload.skill || "Skill"}`;
       const insertPayload = {
         user_id: user.id,
@@ -4422,13 +4428,86 @@
     }
 
 
+    function getCrossCandidates(lesson = {}) {
+      const safe = lesson && typeof lesson === "object" ? lesson : {};
+      return {
+        nested: safe?.cross && typeof safe.cross === "object" ? safe.cross : null,
+        topLevelCamelQuestions: Array.isArray(safe?.crossQuestions) ? safe.crossQuestions : null,
+        topLevelSnakeQuestions: Array.isArray(safe?.cross_questions) ? safe.cross_questions : null,
+        topLevelCamelPassage: safe?.crossPassage ?? null,
+        topLevelSnakePassage: safe?.cross_passage ?? null
+      };
+    }
+
+    function normalizeCrossFromAnyPath(lesson = {}, lessonMeta = {}) {
+      const candidates = getCrossCandidates(lesson);
+      const nestedQuestions = Array.isArray(candidates.nested?.questions) ? candidates.nested.questions : null;
+      const questions = nestedQuestions
+        ?? candidates.topLevelCamelQuestions
+        ?? candidates.topLevelSnakeQuestions
+        ?? [];
+      const passage = normalizePassageValue(candidates.nested?.passage)
+        || normalizePassageValue(candidates.topLevelCamelPassage)
+        || normalizePassageValue(candidates.topLevelSnakePassage);
+      const normalizedCross = {
+        passage,
+        questions: ensureQuestionIds(questions, "cross", lessonMeta)
+      };
+      console.log("CROSS NORMALIZATION RESULT", {
+        normalizedCross,
+        sourcePaths: {
+          lessonCrossQuestions: Array.isArray(candidates.nested?.questions) ? candidates.nested.questions.length : null,
+          lessonCrossQuestionsCamel: Array.isArray(candidates.topLevelCamelQuestions) ? candidates.topLevelCamelQuestions.length : null,
+          lessonCrossQuestionsSnake: Array.isArray(candidates.topLevelSnakeQuestions) ? candidates.topLevelSnakeQuestions.length : null,
+          hasLessonCrossPassage: Boolean(candidates.nested?.passage),
+          hasCrossPassageCamel: Boolean(candidates.topLevelCamelPassage),
+          hasCrossPassageSnake: Boolean(candidates.topLevelSnakePassage)
+        },
+        rawLessonCross: candidates.nested
+      });
+      if (!normalizedCross.passage || !normalizedCross.questions.length) {
+        console.error("❌ CROSS NORMALIZATION EMPTY", { normalizedCross, candidates, lesson });
+      }
+      return normalizedCross;
+    }
+
+    function logCrossPresence(label, lessonData) {
+      const safe = lessonData && typeof lessonData === "object" ? lessonData : {};
+      const normalizedCross = normalizeCrossFromAnyPath(safe, {
+        title: safe.title || "",
+        subject: safe.subject || selectedSubject || "Reading",
+        grade: safe.grade || document.getElementById("grade")?.value || "",
+        level: safe.level || document.getElementById("level")?.value || "",
+        purpose: safe.purpose || selectedPurpose || "",
+        skill: safe.skill || document.getElementById("skill")?.value || "",
+        teks: safe.teks || safe.standard || safe?.metadata?.teks || safe?.metadata?.standard || "",
+        standard: safe.standard || safe.teks || safe?.metadata?.standard || safe?.metadata?.teks || ""
+      });
+      console.log(label, {
+        hasCross: Boolean(safe.cross),
+        crossPassageExists: Boolean(normalizedCross.passage),
+        crossQuestionsExist: Array.isArray(normalizedCross.questions),
+        crossQuestionCount: normalizedCross.questions.length,
+        lessonCrossQuestionsCount: Array.isArray(safe?.cross?.questions) ? safe.cross.questions.length : null,
+        lessonCrossQuestionsCamelCount: Array.isArray(safe?.crossQuestions) ? safe.crossQuestions.length : null,
+        lessonCrossQuestionsSnakeCount: Array.isArray(safe?.cross_questions) ? safe.cross_questions.length : null,
+        normalizedCross,
+        lessonData: safe
+      });
+      if (!normalizedCross.passage || !normalizedCross.questions.length) {
+        console.error("❌ CROSS CONTENT MISSING", { label, normalizedCross, lessonData: safe });
+      }
+      return normalizedCross;
+    }
+
     function getLiveQuestionSections() {
       const practiceQuestions =
         coreData?.practice?.questions ||
         practiceDataState?.questions ||
         [];
+      const normalizedCross = normalizeCrossFromAnyPath(coreData || { cross: crossDataState });
       const crossQuestions =
-        coreData?.cross?.questions ||
+        normalizedCross.questions.length ? normalizedCross.questions :
         crossDataState?.questions ||
         [];
       return {
@@ -4467,6 +4546,7 @@
         generatedPassage ||
         "";
       const normalizedLesson = normalizeWorkerPayload(lessonData, { fallbackPassage });
+      logCrossPresence("LOAD LIVE LESSON DATA CROSS CHECK", normalizedLesson);
       validateAlignment(normalizedLesson);
 
       currentLessonId = lesson.id || lessonId;
@@ -5282,10 +5362,13 @@
     }
 
     function normalizeLiveLessonPayloadForSession(lessonPayload = {}) {
+      console.log("LIVE SESSION LESSON PAYLOAD INPUT", lessonPayload);
+      logCrossPresence("LIVE SESSION INPUT CROSS CHECK", lessonPayload);
       const normalized = normalizeWorkerPayload(lessonPayload, {
         fallbackPassage: lessonPayload?.passage || lessonPayload?.practice?.passage || generatedPassage || ""
       });
-      return {
+      logCrossPresence("LIVE SESSION NORMALIZED CROSS CHECK", normalized);
+      const sessionPayload = {
         ...normalized,
         metadata: {
           ...(normalized.metadata && typeof normalized.metadata === "object" ? normalized.metadata : {}),
@@ -5299,6 +5382,9 @@
         tutor: normalized.tutor || supportData?.tutor || { practice: [], cross: [] },
         answerKey: normalized.answerKey || supportData?.answerKey || { practice: [], cross: [] }
       };
+      console.log("LIVE SESSION LESSON PAYLOAD", sessionPayload);
+      logCrossPresence("LIVE SESSION FINAL PAYLOAD CROSS CHECK", sessionPayload);
+      return sessionPayload;
     }
 
     async function startSession(sessionId) {
@@ -5324,23 +5410,37 @@
       const lessonPayload = currentGeneratedLesson && currentLessonId === lessonId
         ? currentGeneratedLesson
         : await loadLiveLessonData(lessonId);
+      console.log("START SESSION LESSON SOURCE", {
+        usingCurrentGeneratedLesson: Boolean(currentGeneratedLesson && currentLessonId === lessonId),
+        lessonId,
+        currentLessonId,
+        lessonPayload
+      });
+      const startingCross = logCrossPresence("START SESSION LESSON PAYLOAD CROSS CHECK", lessonPayload);
 
       if (!lessonPayload?.practice?.questions?.length && !lessonPayload?.cross?.questions?.length) {
         throw new Error("Cannot start a live session without lesson questions.");
+      }
+      if (!startingCross.passage || !startingCross.questions.length) {
+        console.error("❌ START SESSION BLOCKED: cross content missing before live payload", { lessonPayload, startingCross });
+        throw new Error("Cannot start a live session until cross passage and cross questions are generated and saved.");
       }
 
       console.log("SESSION BEFORE UPDATE", existingSession);
       logSessionState("SESSION BEFORE UPDATE", existingSession);
 
+      const normalizedSessionLessonData = normalizeLiveLessonPayloadForSession(lessonPayload);
+      logCrossPresence("START SESSION SERIALIZED LESSON_DATA CROSS CHECK", normalizedSessionLessonData);
       const updatePayload = {
         lesson_id: lessonId,
-        lesson_data: normalizeLiveLessonPayloadForSession(lessonPayload),
+        lesson_data: normalizedSessionLessonData,
         status: "live",
         is_active: true,
         allow_join: true,
         started_at: new Date().toISOString()
       };
       console.log("LESSON DATA ATTACHED", updatePayload.lesson_data);
+      console.log("LIVE SESSION LESSON PAYLOAD", updatePayload.lesson_data);
       logSessionState("SESSION PAYLOAD:", { ...existingSession, ...updatePayload });
       console.log("SESSION LESSON DATA:", updatePayload.lesson_data);
 
@@ -6755,7 +6855,13 @@
         throw new Error(`ENRICHMENT_STATUS_${response.status}`);
       }
 
-      return response.json();
+      const enrichmentJson = await response.json();
+      console.log("RAW CROSS GENERATION RESPONSE", enrichmentJson);
+      logCrossPresence("RAW CROSS GENERATION RESPONSE CROSS CHECK", enrichmentJson);
+      if (!enrichmentJson?.cross?.passage || !Array.isArray(enrichmentJson?.cross?.questions) || enrichmentJson.cross.questions.length === 0) {
+        console.error("❌ CROSS GENERATION RETURNED EMPTY", { enrichmentJson });
+      }
+      return enrichmentJson;
     }
 
     function getTodayKey() {
@@ -6973,6 +7079,8 @@
 
     function patchEnrichmentUI(enrichmentPayload) {
       if (!coreData) return;
+      console.log("RAW CROSS GENERATION RESPONSE", enrichmentPayload);
+      logCrossPresence("PATCH ENRICHMENT RAW CROSS CHECK", enrichmentPayload);
       const normalizedEnrichment = normalizeWorkerPayload({
         ...coreData,
         cross: enrichmentPayload?.cross || { passage: "", questions: [] },
@@ -6980,6 +7088,7 @@
         answerKey: enrichmentPayload?.answerKey || { practice: [], cross: [] }
       }, { fallbackPassage: coreData.passage });
 
+      logCrossPresence("PATCH ENRICHMENT NORMALIZED CROSS CHECK", normalizedEnrichment);
       coreData = {
         ...coreData,
         cross: normalizedEnrichment.cross,
@@ -6988,6 +7097,8 @@
       };
       currentGeneratedLesson = normalizedEnrichment;
       crossDataState = normalizedEnrichment.cross;
+      console.log("FINAL LESSON OBJECT BEFORE SAVE", currentGeneratedLesson);
+      logCrossPresence("FINAL LESSON OBJECT AFTER CROSS GENERATION", currentGeneratedLesson);
 
       supportData = {
         tutor: normalizedEnrichment?.tutor || { practice: [], cross: [] },
@@ -7366,7 +7477,6 @@
       const legacyQuestions = Array.isArray(safe?.questions) ? safe.questions : [];
       const explicitPracticeQuestions = Array.isArray(safe?.practice?.questions) ? safe.practice.questions : null;
       const practiceQuestions = explicitPracticeQuestions ?? legacyQuestions;
-      const crossQuestions = Array.isArray(safe?.cross?.questions) ? safe.cross.questions : [];
       const lessonMeta = {
         title: safe.title || "",
         subject: safe.subject || selectedSubject || "Reading",
@@ -7396,10 +7506,7 @@
           passage: normalizePassageValue(safe?.practice?.passage) || normalizePassageValue(safe?.passage) || normalizePassageValue(fallbackPassage),
           questions: ensureQuestionIds(practiceQuestions, "practice", lessonMeta)
         },
-        cross: {
-          passage: normalizePassageValue(safe?.cross?.passage),
-          questions: ensureQuestionIds(crossQuestions, "cross", lessonMeta)
-        },
+        cross: normalizeCrossFromAnyPath(safe, lessonMeta),
         tutor: {
           practice: Array.isArray(safe?.tutor?.practice) ? safe.tutor.practice : [],
           cross: Array.isArray(safe?.tutor?.cross) ? safe.tutor.cross : []
@@ -8004,6 +8111,8 @@ Create your second version now.`;
           practiceQuestions: coreData?.practice?.questions
         })
           .then((enrichment) => {
+            console.log("RAW CROSS GENERATION RESPONSE", enrichment);
+            logCrossPresence("ENRICHMENT PROMISE CROSS CHECK", enrichment);
             if (currentRequestId !== requestId || !coreData) return;
             patchEnrichmentUI(enrichment);
 
@@ -8024,6 +8133,7 @@ Create your second version now.`;
           })
           .catch((supportErr) => {
             console.warn("⚠️ Enrichment failed:", supportErr);
+            console.error("❌ CROSS GENERATION FAILED BEFORE SAVE", supportErr);
           });
 
         if (cachedUser?.id) {
