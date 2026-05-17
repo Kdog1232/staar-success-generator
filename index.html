@@ -5015,29 +5015,37 @@
     }
 
     async function startLiveSession(event) {
-      event?.preventDefault?.();
-      event?.stopPropagation?.();
+      console.log("GO LIVE BUTTON CLICKED");
+      console.log("START LIVE SESSION ENTERED");
 
       const sessionStatus = document.getElementById("live-session-status");
       const startLiveBtn = document.getElementById("start-live-session-btn");
-      console.log("START CLASS CLICKED");
-      console.log("🚀 START BUTTON CLICKED");
-      console.log("👉 START CLICK HANDLER RUNNING");
-
-      if (window.__isStartingLiveSession === true) {
-        console.warn("⚠️ Go live already in progress.");
-        return;
-      }
+      let lockAcquired = false;
 
       try {
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+
+        console.log("START CLASS CLICKED");
+        console.log("🚀 START BUTTON CLICKED");
+        console.log("👉 START CLICK HANDLER RUNNING");
+
+        if (window.__isStartingLiveSession === true) {
+          console.log("GO LIVE EARLY RETURN", { reason: "already starting" });
+          console.warn("⚠️ Go live already in progress.");
+          return;
+        }
+
         const sessionId = getCurrentLiveSessionId();
         console.log("🚀 USING SESSION:", sessionId);
         if (!sessionId) {
+          console.log("GO LIVE EARLY RETURN", { reason: "missing session id", currentLiveSession: getCurrentLiveSession() });
           alert("No active session found.");
           return;
         }
 
         window.__isStartingLiveSession = true;
+        lockAcquired = true;
         if (startLiveBtn) {
           startLiveBtn.disabled = true;
           startLiveBtn.textContent = "Going Live...";
@@ -5059,13 +5067,16 @@
         }
         updateLiveSessionStats();
       } catch (error) {
+        console.error("START LIVE SESSION ERROR MESSAGE", error?.message);
+        console.error("START LIVE SESSION ERROR STACK", error?.stack);
+        console.error("START LIVE SESSION FULL ERROR", error);
         if (sessionStatus) sessionStatus.textContent = `❌ ${error.message || "Could not start session."}`;
         if (startLiveBtn) {
           startLiveBtn.disabled = false;
           startLiveBtn.textContent = "Go Live";
         }
       } finally {
-        window.__isStartingLiveSession = false;
+        if (lockAcquired) window.__isStartingLiveSession = false;
       }
     }
 
@@ -5400,16 +5411,21 @@
       logFullSessionDebug(existingSession);
 
       if (lookupError) {
+        console.log("START SESSION EARLY THROW", { reason: "lookup error", lookupError });
         console.error("❌ START SESSION LOOKUP ERROR:", lookupError);
         throw lookupError;
       }
 
       const lessonId = existingSession?.lesson_id || currentLessonId;
-      if (!lessonId) throw new Error("No lesson is attached to this live session.");
+      if (!lessonId) {
+        console.log("START SESSION EARLY THROW", { reason: "missing lesson id", existingSession, currentLessonId });
+        throw new Error("No lesson is attached to this live session.");
+      }
 
       const lessonPayload = currentGeneratedLesson && currentLessonId === lessonId
         ? currentGeneratedLesson
         : await loadLiveLessonData(lessonId);
+      const lessonData = lessonPayload;
       console.log("START SESSION LESSON SOURCE", {
         usingCurrentGeneratedLesson: Boolean(currentGeneratedLesson && currentLessonId === lessonId),
         lessonId,
@@ -5418,12 +5434,37 @@
       });
       const startingCross = logCrossPresence("START SESSION LESSON PAYLOAD CROSS CHECK", lessonPayload);
 
-      if (!lessonPayload?.practice?.questions?.length && !lessonPayload?.cross?.questions?.length) {
+      console.log("LESSON DATA BEFORE LIVE VALIDATION", lessonData);
+      const practiceQuestionCount = Array.isArray(lessonData?.practice?.questions) ? lessonData.practice.questions.length : 0;
+      const crossQuestionCount = Array.isArray(lessonData?.cross?.questions) ? lessonData.cross.questions.length : startingCross.questions.length;
+      const hasPracticePassage = Boolean(cleanText(lessonData?.practice?.passage || lessonData?.passage || ""));
+      const hasCrossPassage = Boolean(startingCross.passage);
+      const validationPassed = practiceQuestionCount > 0 || crossQuestionCount > 0;
+      console.log("LIVE SESSION VALIDATION RESULT", {
+        practiceQuestionCount,
+        crossQuestionCount,
+        hasPracticePassage,
+        hasCrossPassage,
+        validationPassed
+      });
+
+      if (!validationPassed) {
+        console.log("START SESSION EARLY THROW", {
+          reason: "missing lesson questions",
+          practiceQuestionCount,
+          crossQuestionCount,
+          lessonData
+        });
         throw new Error("Cannot start a live session without lesson questions.");
       }
-      if (!startingCross.passage || !startingCross.questions.length) {
-        console.error("❌ START SESSION BLOCKED: cross content missing before live payload", { lessonPayload, startingCross });
-        throw new Error("Cannot start a live session until cross passage and cross questions are generated and saved.");
+      if (!hasCrossPassage || !crossQuestionCount) {
+        console.warn("⚠️ START SESSION CROSS OPTIONAL: allowing live activation with missing cross content", {
+          practiceQuestionCount,
+          crossQuestionCount,
+          hasCrossPassage,
+          lessonData,
+          startingCross
+        });
       }
 
       console.log("SESSION BEFORE UPDATE", existingSession);
@@ -5439,31 +5480,46 @@
         allow_join: true,
         started_at: new Date().toISOString()
       };
+      const payload = updatePayload;
       console.log("LESSON DATA ATTACHED", updatePayload.lesson_data);
       console.log("LIVE SESSION LESSON PAYLOAD", updatePayload.lesson_data);
       logSessionState("SESSION PAYLOAD:", { ...existingSession, ...updatePayload });
       console.log("SESSION LESSON DATA:", updatePayload.lesson_data);
+      console.log("ABOUT TO UPDATE SESSION LIVE STATUS");
+      console.log("SESSION UPDATE PAYLOAD", payload);
 
       const url = `${SUPABASE_URL}/rest/v1/sessions?id=eq.${encodeURIComponent(sessionId)}&select=id,lesson_id,code,status,is_active,allow_join,lesson_data,started_at`;
 
-      const response = await fetch(url, {
-        method: "PATCH",
-        headers: {
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: cachedSession?.access_token
-            ? `Bearer ${cachedSession.access_token}`
-            : `Bearer ${SUPABASE_ANON_KEY}`,
-          "Content-Type": "application/json",
-          Prefer: "return=representation"
-        },
-        body: JSON.stringify(updatePayload)
-      });
+      let response;
+      let updateError = null;
+      try {
+        response = await fetch(url, {
+          method: "PATCH",
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: cachedSession?.access_token
+              ? `Bearer ${cachedSession.access_token}`
+              : `Bearer ${SUPABASE_ANON_KEY}`,
+            "Content-Type": "application/json",
+            Prefer: "return=representation"
+          },
+          body: JSON.stringify(updatePayload)
+        });
+      } catch (error) {
+        updateError = error;
+        console.log("SESSION UPDATE RESPONSE", response);
+        console.log("SESSION UPDATE ERROR", updateError);
+        throw error;
+      }
 
+      console.log("SESSION UPDATE RESPONSE", response);
+      console.log("SESSION UPDATE ERROR", updateError);
       console.log("START SESSION RESPONSE:", response.status);
       console.log("🔥 REST UPDATE STATUS:", response.status);
 
       if (!response.ok) {
         const text = await response.text();
+        console.log("START SESSION EARLY THROW", { reason: "rest update failed", status: response.status, text });
         console.error("❌ REST UPDATE ERROR:", text);
         throw new Error(text || "Could not start session.");
       }
@@ -5471,6 +5527,7 @@
       const updatedRows = await response.json();
       const updatedSession = Array.isArray(updatedRows) ? updatedRows[0] : updatedRows;
       if (updatedSession?.status !== "live" || !updatedSession?.lesson_data) {
+        console.log("START SESSION EARLY THROW", { reason: "update response missing live lesson data", updatedSession });
         throw new Error("Live session update response did not include status=live and lesson_data.");
       }
       console.log("SESSION AFTER UPDATE", updatedSession);
@@ -5485,12 +5542,14 @@
         .maybeSingle();
 
       if (verifyError) {
+        console.log("START SESSION EARLY THROW", { reason: "verify error", verifyError });
         console.error("❌ START SESSION VERIFY ERROR:", verifyError);
         throw verifyError;
       } else {
         console.log("✅ START SESSION VERIFY ROW:", verifiedSession);
         logFullSessionDebug(verifiedSession);
         if (verifiedSession?.status !== "live" || !verifiedSession?.lesson_data) {
+          console.log("START SESSION EARLY THROW", { reason: "verified row missing live lesson data", verifiedSession });
           throw new Error("Live status did not persist with lesson_data.");
         }
         console.log("LIVE STATUS SAVED", verifiedSession);
