@@ -8,6 +8,7 @@ const corsHeaders = {
 
 const apiKey = Deno.env.get("GOOGLE_TRANSLATE_API_KEY");
 const googleTranslateUrl = "https://translation.googleapis.com/language/translate/v2";
+const FUNCTION_VERSION = "translate-lesson-v3-debug";
 
 type Choice = string | { text?: string; choice?: string };
 
@@ -56,6 +57,7 @@ function getMutableSection(
 }
 
 async function translateText(text: string): Promise<string> {
+  console.log("STEP 6 - translateText executing");
   console.log("[translate-lesson] translateText executing", { hasText: Boolean(text), length: text?.length || 0 });
   if (!text) return text;
 
@@ -75,6 +77,7 @@ async function translateText(text: string): Promise<string> {
         format: "text",
       }),
     });
+    console.log("STEP 7 - google response received");
 
     if (!response.ok) {
       throw new Error(`google_translate_status_${response.status}`);
@@ -84,6 +87,7 @@ async function translateText(text: string): Promise<string> {
       data?: { translations?: Array<{ translatedText?: string }> };
     };
     const translatedText = payload?.data?.translations?.[0]?.translatedText;
+    console.log("STEP 8 - translated text parsed", translatedText);
     console.log("[translate-lesson] google translate parsed translatedText", { hasTranslatedText: typeof translatedText === "string" && translatedText.length > 0 });
 
     return typeof translatedText === "string" && translatedText.length > 0
@@ -132,6 +136,7 @@ async function translateQuestion(
 }
 
 async function translateLessonContent(lesson: Record<string, unknown>) {
+  console.log("STEP 4 - entered translateLessonContent");
   console.log("[translate-lesson] entering translation pipeline");
   const translatedLesson = structuredClone(lesson || {}) as Record<
     string,
@@ -141,6 +146,7 @@ async function translateLessonContent(lesson: Record<string, unknown>) {
   const cross = getSection(translatedLesson, "cross");
 
   console.log("[translate-lesson] translating practice passage");
+  console.log("STEP 5 - about to call translateText");
   const spanishPracticePassage = await translateText(practice.passage || "");
   console.log("[translate-lesson] translating cross passage");
   const spanishCrossPassage = await translateText(cross.passage || "");
@@ -202,14 +208,21 @@ async function translateLessonContent(lesson: Record<string, unknown>) {
 }
 
 serve(async (req) => {
-  console.log("TRANSLATE LESSON FUNCTION HIT");
-  console.log("[translate-lesson] request received");
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-
-  let lesson: Record<string, unknown> = {};
-
   try {
+    console.log("STEP 1 - handler entered");
+    console.log("FUNCTION VERSION", FUNCTION_VERSION);
+    console.log(
+      "GOOGLE_TRANSLATE_API_KEY EXISTS",
+      !!Deno.env.get("GOOGLE_TRANSLATE_API_KEY"),
+    );
+    console.log("TRANSLATE LESSON FUNCTION HIT");
+    console.log("[translate-lesson] request received");
+    if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+    let lesson: Record<string, unknown> = {};
+
     const body = await req.json();
+    console.log("STEP 2 - body parsed");
     const targetLanguage = String(body?.targetLanguage || "spanish").toLowerCase();
     lesson = body?.lesson && typeof body.lesson === "object"
       ? body.lesson as Record<string, unknown>
@@ -219,18 +232,33 @@ serve(async (req) => {
     if (targetLanguage !== "spanish") {
       console.warn("[translate-lesson] unsupported target language; translating Spanish fields only");
     }
+    console.log("STEP 3 - about to translate lesson");
     const translatedLesson = await translateLessonContent(lesson);
     console.log("[translate-lesson] sending response");
-    return jsonResponse(translatedLesson);
-  } catch (error) {
-    console.warn("[translate-lesson] failed:", error instanceof Error ? error.message : String(error));
+    console.log("STEP 9 - returning translated lesson");
     return jsonResponse({
-      lesson,
-      translations: {
-        spanish: {
-          enabled: true,
-        },
+      ...translatedLesson,
+      version: FUNCTION_VERSION,
+    });
+  } catch (err) {
+    const errorDetails = err as { message?: string; stack?: string };
+    console.warn("[translate-lesson] failed:", errorDetails?.message || String(err));
+    console.error("TRANSLATE LESSON FATAL ERROR", {
+      message: errorDetails?.message,
+      stack: errorDetails?.stack,
+      error: err,
+    });
+
+    return new Response(
+      JSON.stringify({
+        error: true,
+        message: errorDetails?.message,
+        stack: errorDetails?.stack,
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       },
-    }, 200);
+    );
   }
 });
