@@ -56,6 +56,7 @@ function getMutableSection(
 }
 
 async function translateText(text: string): Promise<string> {
+  console.log("[translate-lesson] translateText executing", { hasText: Boolean(text), length: text?.length || 0 });
   if (!text) return text;
 
   try {
@@ -83,6 +84,7 @@ async function translateText(text: string): Promise<string> {
       data?: { translations?: Array<{ translatedText?: string }> };
     };
     const translatedText = payload?.data?.translations?.[0]?.translatedText;
+    console.log("[translate-lesson] google translate parsed translatedText", { hasTranslatedText: typeof translatedText === "string" && translatedText.length > 0 });
 
     return typeof translatedText === "string" && translatedText.length > 0
       ? translatedText
@@ -109,8 +111,11 @@ async function translateQuestion(
   const choiceTexts = Array.isArray(question.choices)
     ? question.choices.map(extractChoiceText)
     : [];
-  const logPrefix = sectionName === "practice" ? "practice" : "cross";
-  console.log(`[translate-lesson] translating ${logPrefix} question:`, index);
+  if (sectionName === "practice") {
+    console.log("[translate-lesson] translating practice question", index);
+  } else {
+    console.log("[translate-lesson] translating cross question", index);
+  }
 
   const [spanishQuestion, spanishChoices, spanishHint, spanishExplanation] =
     await Promise.all([
@@ -127,6 +132,7 @@ async function translateQuestion(
 }
 
 async function translateLessonContent(lesson: Record<string, unknown>) {
+  console.log("[translate-lesson] entering translation pipeline");
   const translatedLesson = structuredClone(lesson || {}) as Record<
     string,
     unknown
@@ -135,13 +141,24 @@ async function translateLessonContent(lesson: Record<string, unknown>) {
   const cross = getSection(translatedLesson, "cross");
 
   console.log("[translate-lesson] translating practice passage");
-  const [spanishPracticePassage, spanishCrossPassage] = await Promise.all([
-    translateText(practice.passage || ""),
-    translateText(cross.passage || ""),
-  ]);
+  const spanishPracticePassage = await translateText(practice.passage || "");
+  console.log("[translate-lesson] translating cross passage");
+  const spanishCrossPassage = await translateText(cross.passage || "");
 
   translatedLesson.spanish_practice_passage = spanishPracticePassage;
   translatedLesson.spanish_cross_passage = spanishCrossPassage;
+
+  const mutablePractice = getMutableSection(translatedLesson, "practice");
+  if (mutablePractice) {
+    mutablePractice.spanish_passage = spanishPracticePassage;
+    mutablePractice.passage_es = spanishPracticePassage;
+  }
+
+  const mutableCross = getMutableSection(translatedLesson, "cross");
+  if (mutableCross) {
+    mutableCross.spanish_passage = spanishCrossPassage;
+    mutableCross.passage_es = spanishCrossPassage;
+  }
 
   const translateSectionQuestions = async (
     sectionName: "practice" | "cross",
@@ -169,6 +186,10 @@ async function translateLessonContent(lesson: Record<string, unknown>) {
   ]);
 
   console.log("[translate-lesson] translation complete");
+  console.log("SPANISH PRACTICE PASSAGE", translatedLesson.spanish_practice_passage);
+  console.log("FIRST SPANISH QUESTION", (translatedLesson.practice as LessonSection | undefined)?.questions?.[0]?.spanish_question);
+  console.log("FIRST SPANISH CHOICES", (translatedLesson.practice as LessonSection | undefined)?.questions?.[0]?.spanish_choices);
+  console.log("FINAL TRANSLATED LESSON", JSON.stringify(translatedLesson, null, 2));
 
   return {
     lesson: translatedLesson,
@@ -184,11 +205,6 @@ serve(async (req) => {
   console.log("TRANSLATE LESSON FUNCTION HIT");
   console.log("[translate-lesson] request received");
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-
-  return jsonResponse({
-    smoke_test: true,
-    timestamp: Date.now(),
-  });
 
   let lesson: Record<string, unknown> = {};
 
