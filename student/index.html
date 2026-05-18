@@ -798,7 +798,7 @@
       border-top: 1px solid #ddd6fe;
     }
 
-    .line-reader-strip {
+    .line-reader-status {
       padding: 10px 12px;
       border-radius: 14px;
       color: #1e1b4b;
@@ -806,6 +806,51 @@
       border: 1px solid #fde68a;
       font-weight: 900;
     }
+
+    .passage-copy.has-focused-reading .reading-line {
+      display: inline;
+      border-radius: 8px;
+      cursor: pointer;
+      opacity: 0.28;
+      filter: blur(1px);
+      transition: opacity 0.2s ease, filter 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    }
+
+    .passage-copy.has-focused-reading .reading-line.is-active {
+      display: inline-block;
+      opacity: 1;
+      filter: none;
+      background: rgba(255, 255, 120, 0.35);
+      box-shadow: 0 0 0 4px rgba(255, 255, 120, 0.16);
+      transform: scale(1.015);
+    }
+
+    .passage-copy.has-focused-reading .reading-line:focus {
+      outline: 3px solid rgba(124, 92, 255, 0.45);
+      outline-offset: 3px;
+    }
+
+    .student-text-highlight {
+      border-radius: 5px;
+      padding: 0 2px;
+      box-decoration-break: clone;
+      -webkit-box-decoration-break: clone;
+    }
+
+    .student-selection-popover {
+      position: fixed;
+      z-index: 1000;
+      display: none;
+      gap: 6px;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid rgba(124, 92, 255, 0.22);
+      border-radius: 999px;
+      background: #ffffff;
+      box-shadow: 0 14px 34px rgba(45, 34, 89, 0.2);
+    }
+
+    .student-selection-popover.is-visible { display: flex; }
 
     .chunk-card {
       display: grid;
@@ -826,9 +871,9 @@
       text-transform: uppercase;
     }
 
-    .highlight-yellow { background: #fef3c7 !important; }
-    .highlight-blue { background: #dbeafe !important; }
-    .highlight-pink { background: #fce7f3 !important; }
+    .highlight-yellow, .student-highlight-yellow { background: #fef3c7 !important; }
+    .highlight-blue, .student-highlight-blue { background: #dbeafe !important; }
+    .highlight-pink, .student-highlight-pink { background: #fce7f3 !important; }
 
     .answer-choice.is-eliminated {
       opacity: 0.42;
@@ -1028,6 +1073,7 @@ function hasSpanishAccommodation() {
 let highlightColor = "yellow";
 let lineReaderIndex = 0;
 let visibleChunkCount = 1;
+let pendingHighlightSelection = null;
 let localWorkspacePrefs = {};
 let currentLanguage = "english";
 let spanishMode = false;
@@ -1499,6 +1545,38 @@ function saveLocalHighlight(key = "", color = "") {
   }
 }
 
+function getTextHighlights(key = "") {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(getSessionStorageKey(`text-highlights-${key}`)) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveTextHighlights(key = "", highlights = []) {
+  try {
+    const cleaned = Array.isArray(highlights)
+      ? highlights.filter((item) => item && String(item.text || "").trim()).slice(0, 80)
+      : [];
+    if (cleaned.length) localStorage.setItem(getSessionStorageKey(`text-highlights-${key}`), JSON.stringify(cleaned));
+    else localStorage.removeItem(getSessionStorageKey(`text-highlights-${key}`));
+  } catch (error) {
+    console.warn("Could not save text highlights", error);
+  }
+}
+
+function addTextHighlight({ passageKey = "passage", sentenceIndex = 0, text = "", color = highlightColor } = {}) {
+  const cleanText = String(text || "").replace(/\s+/g, " ").trim();
+  if (!cleanText || cleanText.length < 2) return;
+  const highlights = getTextHighlights(passageKey);
+  const exists = highlights.some((item) => item.sentenceIndex === sentenceIndex && item.text === cleanText && item.color === color);
+  if (!exists) {
+    highlights.push({ sentenceIndex, text: cleanText, color, createdAt: Date.now() });
+    saveTextHighlights(passageKey, highlights);
+  }
+}
+
 function getEliminatedChoice(key = "") {
   try {
     return localStorage.getItem(getSessionStorageKey(`eliminate-${key}`)) === "true";
@@ -1582,12 +1660,12 @@ function renderAccommodationToolbar() {
   </select></label>`;
   const highlightTools = currentAccommodations.highlighting_tools
     ? `<div class="highlight-tools" aria-label="Highlight colors">
-        <span>Highlight</span>
+        <span>${escapeHtml(getDisplayText("Select text, then highlight", "Selecciona texto y resalta"))}</span>
         ${["yellow", "blue", "pink"].map((color) => `<button class="tool-btn highlight-${color}" type="button" data-highlight-color="${color}" aria-pressed="${highlightColor === color}">${color}</button>`).join("")}
       </div>`
     : "";
   const lineReader = currentAccommodations.line_reader
-    ? `<div class="line-reader-controls"><button class="tool-btn" type="button" data-line-reader-move="up">↑ Focus line</button><span id="line-reader-strip" class="line-reader-strip">Focus strip ready</span><button class="tool-btn" type="button" data-line-reader-move="down">↓ Focus line</button></div>`
+    ? `<div class="line-reader-controls"><button class="tool-btn" type="button" data-line-reader-move="up">↑ ${escapeHtml(getDisplayText("Previous line", "Línea anterior"))}</button><span id="line-reader-status" class="line-reader-status">${escapeHtml(getDisplayText("Click a sentence to focus", "Haz clic en una oración"))}</span><button class="tool-btn" type="button" data-line-reader-move="down">↓ ${escapeHtml(getDisplayText("Next line", "Siguiente línea"))}</button></div>`
     : "";
   const extended = currentAccommodations.extended_time ? `<span class="extended-time-note">⏱ Extended time is active. Future timers will honor this support.</span>` : "";
   toolbar.innerHTML = `
@@ -1801,43 +1879,100 @@ function renderAnnotationCard(key = "", label = "Note") {
   `;
 }
 
+function splitPassageSentences(text = "") {
+  return String(text || "").match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map((part) => part.trim()).filter(Boolean) || [];
+}
+
 function splitPassageChunks(text = "") {
   const paragraphs = String(text || "").split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
   if (paragraphs.length > 1) return paragraphs;
-  const sentences = String(text || "").match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
+  const sentences = splitPassageSentences(text);
   const chunks = [];
   for (let i = 0; i < sentences.length; i += 3) chunks.push(sentences.slice(i, i + 3).join(" ").trim());
   return chunks.filter(Boolean);
 }
 
+function renderHighlightedSentenceText(sentence = "", passageKey = "passage", sentenceIndex = 0) {
+  const highlights = getTextHighlights(passageKey)
+    .filter((item) => item.sentenceIndex === sentenceIndex && String(item.text || "").trim())
+    .sort((a, b) => String(b.text || "").length - String(a.text || "").length);
+  if (!highlights.length) return highlightVocabularyHtml(sentence);
+  let remaining = String(sentence || "");
+  let html = "";
+  while (remaining) {
+    const match = highlights
+      .map((item) => ({ item, index: remaining.toLowerCase().indexOf(String(item.text || "").toLowerCase()) }))
+      .filter((entry) => entry.index >= 0)
+      .sort((a, b) => a.index - b.index || String(b.item.text || "").length - String(a.item.text || "").length)[0];
+    if (!match) {
+      html += highlightVocabularyHtml(remaining);
+      break;
+    }
+    if (match.index > 0) html += highlightVocabularyHtml(remaining.slice(0, match.index));
+    const selected = remaining.slice(match.index, match.index + String(match.item.text || "").length);
+    const safeColor = ["yellow", "blue", "pink"].includes(match.item.color) ? match.item.color : "yellow";
+    html += `<span class="student-text-highlight student-highlight-${safeColor}" data-student-highlight>${highlightVocabularyHtml(selected)}</span>`;
+    remaining = remaining.slice(match.index + selected.length);
+  }
+  return html;
+}
+
+function renderReadingLine(sentence = "", passageKey = "passage", sentenceIndex = 0) {
+  const canFocus = currentAccommodations.line_reader;
+  return `<span class="reading-line" data-reading-line data-passage-key="${escapeHtml(passageKey)}" data-reading-index="${sentenceIndex}" tabindex="${canFocus ? "0" : "-1"}">${renderHighlightedSentenceText(sentence, passageKey, sentenceIndex)}</span>`;
+}
+
+function renderReadingLines(text = "", passageKey = "passage", startIndex = 0) {
+  const sentences = splitPassageSentences(text);
+  if (!sentences.length) return highlightVocabularyHtml(text);
+  return sentences.map((sentence, offset) => renderReadingLine(sentence, passageKey, startIndex + offset)).join(" ");
+}
+
+function countSentences(text = "") {
+  return splitPassageSentences(text).length;
+}
+
 function renderChunkedPassage(displayPassage = "", passageKey = "passage") {
   const chunks = splitPassageChunks(displayPassage);
+  const focusClass = currentAccommodations.line_reader ? " has-focused-reading" : "";
   if (!currentAccommodations.chunked_reading || chunks.length <= 1) {
-    return `<div class="passage-copy">${highlightVocabularyHtml(displayPassage)}</div>`;
+    return `<div class="passage-copy${focusClass}" data-passage-key="${escapeHtml(passageKey)}">${renderReadingLines(displayPassage, passageKey)}</div>`;
   }
-  return `<div class="passage-copy chunked-passage" data-passage-key="${escapeHtml(passageKey)}">
-    ${chunks.map((chunk, index) => `
+  let sentenceOffset = 0;
+  return `<div class="passage-copy chunked-passage${focusClass}" data-passage-key="${escapeHtml(passageKey)}">
+    ${chunks.map((chunk, index) => {
+      const chunkStart = sentenceOffset;
+      sentenceOffset += countSentences(chunk);
+      return `
       <section class="chunk-card ${index >= visibleChunkCount ? "is-hidden" : ""}" data-chunk-index="${index}">
         <span class="chunk-label">${escapeHtml(getDisplayText("Paragraph", "Párrafo"))} ${index + 1} of ${chunks.length}</span>
-        <div>${highlightVocabularyHtml(chunk)}</div>
+        <div>${renderReadingLines(chunk, passageKey, chunkStart)}</div>
         ${currentAccommodations.guided_reading_prompts ? `<div class="guided-prompt">${escapeHtml(getDisplayText(getGuidedPrompt(chunk, index), translateText(getGuidedPrompt(chunk, index))))}</div>` : ""}
         ${index < chunks.length - 1 && index === visibleChunkCount - 1 ? `<button class="chunk-continue-btn" type="button" data-reveal-next-chunk>${escapeHtml(getDisplayText("Continue", "Continuar"))}</button>` : ""}
-      </section>
-    `).join("")}
+      </section>`;
+    }).join("")}
   </div>`;
 }
 
-function updateLineReaderStrip(direction = "down") {
-  const lines = Array.from(document.querySelectorAll(".passage-copy .chunk-card div, .passage-copy"));
-  const strip = document.getElementById("line-reader-strip");
-  if (!strip || !lines.length) return;
-  const delta = direction === "up" ? -1 : (direction === "down" ? 1 : 0);
-  lineReaderIndex = Math.max(0, Math.min(lines.length - 1, lineReaderIndex + delta));
+function setActiveReadingLine(index = 0, { scroll = true } = {}) {
+  const lines = Array.from(document.querySelectorAll(".passage-copy [data-reading-line]")).filter((line) => !line.closest(".chunk-card.is-hidden"));
+  const status = document.getElementById("line-reader-status");
+  if (!lines.length) return;
+  lineReaderIndex = Math.max(0, Math.min(lines.length - 1, Number(index) || 0));
+  lines.forEach((line, idx) => {
+    const isActive = idx === lineReaderIndex;
+    line.classList.toggle("is-active", isActive);
+    line.setAttribute("aria-current", isActive ? "true" : "false");
+  });
   const active = lines[lineReaderIndex];
-  lines.forEach((line, idx) => { line.style.opacity = idx === lineReaderIndex ? "1" : "0.38"; });
-  strip.textContent = active.textContent.trim().slice(0, 120) || "Focus strip ready";
-  active.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (status) status.textContent = active.textContent.trim().slice(0, 120) || getDisplayText("Focused sentence", "Oración enfocada");
+  if (scroll) active.scrollIntoView({ behavior: "smooth", block: "center" });
   saveLocalWorkspaceState();
+}
+
+function updateLineReaderStrip(direction = "down") {
+  const delta = direction === "up" ? -1 : (direction === "down" ? 1 : 0);
+  setActiveReadingLine(lineReaderIndex + delta);
 }
 
 function cycleHighlightForElement(element, key) {
@@ -1852,6 +1987,77 @@ function cycleHighlightForElement(element, key) {
 function applyStoredHighlight(element, key) {
   const color = getLocalHighlight(key);
   if (color) element.classList.add(`highlight-${color}`);
+}
+
+function ensureSelectionPopover() {
+  let popover = document.getElementById("student-selection-popover");
+  if (popover) return popover;
+  popover = document.createElement("div");
+  popover.id = "student-selection-popover";
+  popover.className = "student-selection-popover";
+  popover.setAttribute("role", "toolbar");
+  popover.setAttribute("aria-label", "Highlight selected text");
+  popover.innerHTML = `
+    <button class="tool-btn highlight-${highlightColor}" type="button" data-apply-selection-highlight>✨ Highlight</button>
+    <button class="tool-btn" type="button" data-cancel-selection-highlight>Cancel</button>
+  `;
+  document.body.appendChild(popover);
+  return popover;
+}
+
+function hideSelectionPopover() {
+  const popover = document.getElementById("student-selection-popover");
+  popover?.classList.remove("is-visible");
+  pendingHighlightSelection = null;
+}
+
+function updateSelectionPopoverLabel() {
+  const popover = ensureSelectionPopover();
+  const applyButton = popover.querySelector("[data-apply-selection-highlight]");
+  if (!applyButton) return;
+  ["yellow", "blue", "pink"].forEach((color) => applyButton.classList.remove(`highlight-${color}`));
+  applyButton.classList.add(`highlight-${highlightColor}`);
+  applyButton.textContent = `✨ ${getDisplayText("Highlight", "Resaltar")}`;
+}
+
+function showSelectionPopoverForRange(range) {
+  if (!range || !currentAccommodations.highlighting_tools) return;
+  const line = range.commonAncestorContainer?.nodeType === Node.ELEMENT_NODE
+    ? range.commonAncestorContainer.closest?.("[data-reading-line]")
+    : range.commonAncestorContainer?.parentElement?.closest?.("[data-reading-line]");
+  if (!line) return;
+  const selectedText = String(range.toString() || "").replace(/\s+/g, " ").trim();
+  if (!selectedText) return;
+  const passageKey = line.getAttribute("data-passage-key") || "passage";
+  const sentenceIndex = Number(line.getAttribute("data-reading-index") || 0);
+  pendingHighlightSelection = { passageKey, sentenceIndex, text: selectedText };
+  const rect = range.getBoundingClientRect();
+  const popover = ensureSelectionPopover();
+  updateSelectionPopoverLabel();
+  popover.style.left = `${Math.max(8, Math.min(window.innerWidth - 190, rect.left + (rect.width / 2) - 85))}px`;
+  popover.style.top = `${Math.max(8, rect.top - 54)}px`;
+  popover.classList.add("is-visible");
+}
+
+function handleStudentTextSelection() {
+  if (!currentAccommodations.highlighting_tools) return;
+  const selection = window.getSelection?.();
+  if (!selection || selection.isCollapsed || !selection.rangeCount) {
+    hideSelectionPopover();
+    return;
+  }
+  const range = selection.getRangeAt(0);
+  showSelectionPopoverForRange(range);
+}
+
+function applyPendingSelectionHighlight() {
+  if (!pendingHighlightSelection) return;
+  addTextHighlight({ ...pendingHighlightSelection, color: highlightColor });
+  window.getSelection?.()?.removeAllRanges?.();
+  const checked = getCheckedAnswers();
+  if (currentLessonData) renderQuestions(currentLessonData);
+  restoreCheckedAnswers(checked);
+  hideSelectionPopover();
 }
 
 
@@ -3218,7 +3424,7 @@ function renderPassage(title, passage, translatedPassage = "") {
     ? `<button class="read-btn" type="button" data-read-text="${escapeHtml(displayPassage)}">🔊 ${escapeHtml(getDisplayText("Read Passage", "Leer lectura"))}</button>`
     : "";
   const highlightButton = currentAccommodations.highlighting_tools
-    ? `<button class="tool-btn" type="button" data-highlight-target="${escapeHtml(passageKey)}">${escapeHtml(getDisplayText("Highlight passage", "Resaltar lectura"))}</button>`
+    ? `<span class="support-chip">${escapeHtml(getDisplayText("Drag text to highlight a clue", "Arrastra texto para resaltar una pista"))}</span>`
     : "";
   return `
     <article class="passage-card" data-highlightable="${escapeHtml(passageKey)}">
@@ -3405,7 +3611,7 @@ function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex, s
     ? `<div class="guided-prompt">${escapeHtml(getDisplayText(guidedPrompt, cachedSpanishQuestion.guided_prompt || translateText(guidedPrompt)))}</div>`
     : "";
   const highlightButton = currentAccommodations.highlighting_tools
-    ? `<button class="tool-btn" type="button" data-highlight-target="${escapeHtml(questionKey)}">${escapeHtml(getDisplayText("Highlight question", "Resaltar pregunta"))}</button>`
+    ? `<span class="support-chip">${escapeHtml(getDisplayText("Highlight clues in the passage", "Resalta pistas en la lectura"))}</span>`
     : "";
   return `
     <article class="question-card" data-highlightable="${escapeHtml(questionKey)}" style="animation-delay:${Math.min(displayIndex * 0.02, 0.22)}s">
@@ -4015,6 +4221,25 @@ document.addEventListener("DOMContentLoaded", () => {
       highlightColor = highlightColorBtn.getAttribute("data-highlight-color") || "yellow";
       saveLocalWorkspaceState();
       renderAccommodationToolbar();
+      updateSelectionPopoverLabel();
+      return;
+    }
+    if (event.target.closest?.("[data-apply-selection-highlight]")) {
+      event.preventDefault();
+      applyPendingSelectionHighlight();
+      return;
+    }
+    if (event.target.closest?.("[data-cancel-selection-highlight]")) {
+      event.preventDefault();
+      window.getSelection?.()?.removeAllRanges?.();
+      hideSelectionPopover();
+      return;
+    }
+    const readingLine = event.target.closest?.("[data-reading-line]");
+    if (readingLine && currentAccommodations.line_reader) {
+      const visibleLines = Array.from(document.querySelectorAll(".passage-copy [data-reading-line]")).filter((line) => !line.closest(".chunk-card.is-hidden"));
+      const lineIndex = visibleLines.indexOf(readingLine);
+      if (lineIndex >= 0) setActiveReadingLine(lineIndex);
       return;
     }
     const highlightTarget = event.target.closest?.("[data-highlight-target]");
@@ -4092,6 +4317,22 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("input", (event) => {
     const note = event.target.closest?.("[data-annotation-key]");
     if (note) saveAnnotation(note.getAttribute("data-annotation-key") || "", note.value || "");
+  });
+
+  document.addEventListener("mouseup", () => {
+    window.setTimeout(handleStudentTextSelection, 0);
+  });
+
+  document.addEventListener("keyup", (event) => {
+    if (event.target?.closest?.("input, textarea, select, button")) return;
+    if (event.key === "Enter" && event.target?.closest?.("[data-reading-line]") && currentAccommodations.line_reader) {
+      const visibleLines = Array.from(document.querySelectorAll(".passage-copy [data-reading-line]")).filter((line) => !line.closest(".chunk-card.is-hidden"));
+      const lineIndex = visibleLines.indexOf(event.target.closest("[data-reading-line]"));
+      if (lineIndex >= 0) setActiveReadingLine(lineIndex);
+      return;
+    }
+    if (["ArrowDown", "ArrowRight"].includes(event.key) && currentAccommodations.line_reader) updateLineReaderStrip("down");
+    if (["ArrowUp", "ArrowLeft"].includes(event.key) && currentAccommodations.line_reader) updateLineReaderStrip("up");
   });
 
   window.addEventListener("beforeunload", stopSpeech);
