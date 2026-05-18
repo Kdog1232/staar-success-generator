@@ -3086,9 +3086,12 @@ function renderPassage(title, passage, translatedPassage = "") {
   let displayTitle = "";
   let displayPassage = "";
   try {
+    const activeLanguage = getActiveLanguage();
+    const isSpanish = activeLanguage === "spanish";
     displayTitle = getDisplayText(title, SPANISH_GLOSSARY[title] || "");
-    displayPassage = getActiveLanguage() === "spanish" ? (translatedPassage || passage || "") : (passage || "");
-    console.log("LANGUAGE:", getActiveLanguage());
+    displayPassage = isSpanish ? (translatedPassage || passage || "") : (passage || "");
+    console.log("ACTIVE LANGUAGE STATE", activeLanguage);
+    console.log("LANGUAGE:", activeLanguage);
     console.log("DISPLAY PASSAGE:", { title, displayPassage });
   } catch (passageError) {
     console.error("PASSAGE RENDERING ERROR", { passageError, title, passage, translatedPassage });
@@ -3170,6 +3173,9 @@ function renderQuestionDebugCard(question, reason, sectionName, displayIndex) {
 
 function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex, sectionName = "practice") {
   const currentQuestion = question && typeof question === "object" ? question : {};
+  const activeLanguage = getActiveLanguage();
+  const isSpanish = activeLanguage === "spanish";
+  console.log("ACTIVE LANGUAGE STATE", activeLanguage);
   const rawChoicesForRender = Array.isArray(currentQuestion?.choices) ? currentQuestion.choices : [];
   const choices = rawChoicesForRender.map((choice) => normalizeAnswerChoiceForStudent(choice));
   const questionKey = `${sectionPrefix}${localIndex}`;
@@ -3181,22 +3187,40 @@ function renderQuestionCard(question, sectionPrefix, displayIndex, localIndex, s
   const spanishText = explicitSpanishQuestion
     ? getLanguageText(explicitSpanishQuestion, "spanish")
     : (hasLanguageText(currentQuestion?.question, "spanish") ? getLanguageText(currentQuestion?.question, "spanish") : "");
-  const questionText = getActiveLanguage() === "spanish" ? (spanishText || englishText) : englishText;
-  const safeSpanishChoices = Array.isArray(currentQuestion?.spanish_choices) && currentQuestion.spanish_choices.length ? currentQuestion.spanish_choices : cachedSpanishChoices;
+  const selectedQuestion = isSpanish
+    ? (currentQuestion?.spanish_question || spanishText || currentQuestion?.question)
+    : currentQuestion?.question;
+  const questionText = isSpanish
+    ? (currentQuestion?.spanish_question || spanishText || englishText)
+    : englishText;
+  const directSpanishChoices = Array.isArray(currentQuestion?.spanish_choices) ? currentQuestion.spanish_choices : [];
+  const choiceList = isSpanish
+    ? (directSpanishChoices?.length ? directSpanishChoices : choices)
+    : choices;
+  const selectedChoices = choiceList;
+  const safeSpanishChoices = directSpanishChoices.length ? directSpanishChoices : cachedSpanishChoices;
   const hasValidSpanishChoices = Array.isArray(safeSpanishChoices) && safeSpanishChoices.length === choices.length;
-  if (getActiveLanguage() === "spanish" && safeSpanishChoices?.length && !hasValidSpanishChoices) {
-    console.error("MALFORMED SPANISH CHOICES; FALLING BACK TO ENGLISH", {
+  if (isSpanish && safeSpanishChoices?.length && !hasValidSpanishChoices) {
+    console.error("MALFORMED SPANISH CHOICES; USING SELECTED LANGUAGE CHOICES", {
       sectionName,
       displayIndex,
       englishChoices: choices,
       spanishChoices: safeSpanishChoices
     });
   }
-  const safeChoices = getActiveLanguage() === "spanish"
-    ? (hasValidSpanishChoices ? safeSpanishChoices : choices)
-    : choices;
+  const safeChoices = choiceList;
+  console.log("QUESTION LANGUAGE CHECK", {
+    englishQuestion: currentQuestion?.question,
+    spanishQuestion: currentQuestion?.spanish_question,
+    selectedQuestion
+  });
+  console.log("CHOICE LANGUAGE CHECK", {
+    englishChoices: currentQuestion?.choices,
+    spanishChoices: currentQuestion?.spanish_choices,
+    selectedChoices
+  });
   console.log("FINAL QUESTION RENDER", {
-    language: getActiveLanguage(),
+    language: activeLanguage,
     englishChoices: choices,
     spanishChoices: safeSpanishChoices,
     renderedChoices: safeChoices
@@ -3397,15 +3421,34 @@ lesson?.cross?.passage);
       rawLessonTopLevelCrossQuestionsIsArray: Array.isArray(lesson?.crossQuestions),
       rawLessonTopLevelCrossSnakeQuestionsIsArray: Array.isArray(lesson?.cross_questions)
     });
-    const practicePassage = practiceSection.passage || data?.practicePassage || data?.passage || "";
-    const crossPassage = crossSection.passage || data?.crossPassage || "";
-    const spanishPracticePassage = data?.spanish_practice_passage || practiceSection.spanish_passage || practiceSection.passage_es || data?.spanish_passage || data?.passage_es || "";
-    const spanishCrossPassage = data?.spanish_cross_passage || crossSection.spanish_passage || crossSection.passage_es || "";
+    const activeLanguage = getActiveLanguage();
+    const isSpanish = activeLanguage === "spanish";
+    console.log("ACTIVE LANGUAGE STATE", activeLanguage);
+    const englishPracticePassage = data?.practice?.passage || practiceSection.passage || data?.practicePassage || data?.passage || "";
+    const selectedPracticePassage = isSpanish
+      ? (data?.spanish_practice_passage
+        || data?.practice?.spanish_passage
+        || data?.practice?.passage_es
+        || englishPracticePassage)
+      : englishPracticePassage;
+    const practicePassage = selectedPracticePassage;
+    const crossPassage = isSpanish
+      ? (data?.spanish_cross_passage || crossSection.spanish_passage || crossSection.passage_es || crossSection.passage || data?.crossPassage || "")
+      : (crossSection.passage || data?.crossPassage || "");
+    const spanishPracticePassage = isSpanish ? "" : (data?.spanish_practice_passage || practiceSection.spanish_passage || practiceSection.passage_es || data?.spanish_passage || data?.passage_es || "");
+    const spanishCrossPassage = isSpanish ? "" : (data?.spanish_cross_passage || crossSection.spanish_passage || crossSection.passage_es || "");
+    console.log("PASSAGE SOURCE CHECK", {
+      englishPassage: data?.practice?.passage,
+      spanishPassageTopLevel: data?.spanish_practice_passage,
+      spanishPassageNested: data?.practice?.spanish_passage,
+      spanishPassageES: data?.practice?.passage_es,
+      selectedPassage: selectedPracticePassage
+    });
     console.log("PRACTICE QUESTION COUNT", practice.length);
     console.log("CROSS QUESTION COUNT", cross.length);
     console.log("PRACTICE PASSAGE EXISTS", Boolean(practicePassage));
     console.log("CROSS PASSAGE EXISTS", Boolean(crossPassage));
-    console.log("RENDERING LANGUAGE:", getActiveLanguage());
+    console.log("RENDERING LANGUAGE:", activeLanguage);
     console.log("SPANISH TRANSLATION CACHE:", data?.translations?.spanish);
     console.log("RENDER LESSON DATA:", { data, practiceQuestions: practice.length, crossQuestions: cross.length, practicePassage: !!practicePassage, crossPassage: !!crossPassage });
     totalQuestionCount = practice.length + cross.length;
@@ -3419,7 +3462,7 @@ lesson?.cross?.passage);
       blockedByConditionalRenderingGuard: false,
       blockedBySectionVisibilityLogic: false,
       blockedByTranslationGating: false,
-      activeLanguage: getActiveLanguage(),
+      activeLanguage,
       hasSpanishAccommodation: hasSpanishAccommodation(),
       crossHtmlContainersBeforeInsertion: {
         crossQuestions: Boolean(document.getElementById("cross-questions")),
