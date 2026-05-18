@@ -1855,8 +1855,101 @@ function applyStoredHighlight(element, key) {
 }
 
 
+let speechQueueTimer = null;
+
+const WARM_TTS_SETTINGS = {
+  rate: 0.9,
+  pitch: 1.05,
+  volume: 1,
+  sentencePauseMs: 260
+};
+
+const PREFERRED_TTS_VOICES = {
+  english: [
+    "Microsoft Aria",
+    "Microsoft Jenny",
+    "Google US English Female",
+    "Google US English"
+  ],
+  spanish: [
+    "Microsoft Elvira",
+    "Google español",
+    "Google US Spanish",
+    "Microsoft Dalia"
+  ]
+};
+
 function stopSpeech() {
+  if (speechQueueTimer) {
+    clearTimeout(speechQueueTimer);
+    speechQueueTimer = null;
+  }
   if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+}
+
+function normalizeVoiceName(name = "") {
+  return String(name || "").toLowerCase();
+}
+
+function getWarmTeacherVoice(langCode = "en-US") {
+  const voices = window.speechSynthesis.getVoices?.() || [];
+  const activeLanguage = getActiveLanguage();
+  const preferredNames = PREFERRED_TTS_VOICES[activeLanguage] || PREFERRED_TTS_VOICES.english;
+  const normalizedPreferred = preferredNames.map(normalizeVoiceName);
+  const matchingLanguageVoices = voices.filter((voice) => normalizeVoiceName(voice.lang).startsWith(langCode.slice(0, 2).toLowerCase()));
+  return matchingLanguageVoices.find((voice) => normalizedPreferred.some((name) => normalizeVoiceName(voice.name).includes(name)))
+    || voices.find((voice) => normalizedPreferred.some((name) => normalizeVoiceName(voice.name).includes(name)))
+    || matchingLanguageVoices.find((voice) => /female|aria|jenny|elvira|dalia|google/i.test(voice.name))
+    || matchingLanguageVoices[0]
+    || null;
+}
+
+function addTeacherPauses(text = "") {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .replace(/([,;:])/g, "$1 ")
+    .replace(/([.!?])/g, "$1 ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function splitSpeechChunks(text = "") {
+  const preparedText = addTeacherPauses(text);
+  const sentences = preparedText.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [];
+  const chunks = [];
+  let currentChunk = "";
+  sentences.forEach((sentence) => {
+    const nextChunk = `${currentChunk} ${sentence}`.trim();
+    if (currentChunk && nextChunk.length > 220) {
+      chunks.push(currentChunk);
+      currentChunk = sentence.trim();
+    } else {
+      currentChunk = nextChunk;
+    }
+  });
+  if (currentChunk) chunks.push(currentChunk);
+  return chunks.length ? chunks : [preparedText].filter(Boolean);
+}
+
+function speakSpeechChunks(chunks = [], index = 0, langCode = "en-US") {
+  if (index >= chunks.length) {
+    speechQueueTimer = null;
+    return;
+  }
+  const utterance = new SpeechSynthesisUtterance(chunks[index]);
+  utterance.lang = langCode;
+  utterance.rate = WARM_TTS_SETTINGS.rate;
+  utterance.pitch = WARM_TTS_SETTINGS.pitch;
+  utterance.volume = WARM_TTS_SETTINGS.volume;
+  const warmVoice = getWarmTeacherVoice(langCode);
+  if (warmVoice) utterance.voice = warmVoice;
+  utterance.onend = () => {
+    speechQueueTimer = setTimeout(() => speakSpeechChunks(chunks, index + 1, langCode), WARM_TTS_SETTINGS.sentencePauseMs);
+  };
+  utterance.onerror = () => {
+    speechQueueTimer = null;
+  };
+  window.speechSynthesis.speak(utterance);
 }
 
 function speakText(text = "") {
@@ -1865,10 +1958,27 @@ function speakText(text = "") {
     return;
   }
   stopSpeech();
-  const utterance = new SpeechSynthesisUtterance(String(text || ""));
-  utterance.lang = getActiveLanguage() === "spanish" ? "es-US" : "en-US";
-  window.speechSynthesis.speak(utterance);
-  console.log("TEXT TO SPEECH STARTED");
+  const langCode = getActiveLanguage() === "spanish" ? "es-US" : "en-US";
+  const chunks = splitSpeechChunks(text);
+  if (!chunks.length) return;
+  let hasStarted = false;
+  const startSpeaking = () => {
+    if (hasStarted) return;
+    hasStarted = true;
+    if (speechQueueTimer) {
+      clearTimeout(speechQueueTimer);
+      speechQueueTimer = null;
+    }
+    window.speechSynthesis.onvoiceschanged = null;
+    speakSpeechChunks(chunks, 0, langCode);
+  };
+  if ((window.speechSynthesis.getVoices?.() || []).length) {
+    startSpeaking();
+  } else {
+    window.speechSynthesis.onvoiceschanged = startSpeaking;
+    speechQueueTimer = setTimeout(startSpeaking, 300);
+  }
+  console.log("WARM TEACHER TEXT TO SPEECH STARTED", { chunks: chunks.length, langCode });
 }
 
 function questionSpeechText(question = {}, sectionName = "practice", localIndex = 0) {
@@ -1883,8 +1993,12 @@ function questionSpeechText(question = {}, sectionName = "practice", localIndex 
   const spanishChoices = Array.isArray(question.spanish_choices) && question.spanish_choices.length
     ? question.spanish_choices
     : (Array.isArray(cachedSpanishQuestion.choices) ? cachedSpanishQuestion.choices : []);
-  const safeChoices = getActiveLanguage() === "spanish" && Array.isArray(spanishChoices) && spanishChoices.length === choices.length ? spanishChoices : (choices || []);
-  return [questionText, ...safeChoices.map((choice, idx) => {
+  const isSpanish = getActiveLanguage() === "spanish";
+  const safeChoices = isSpanish && Array.isArray(spanishChoices) && spanishChoices.length === choices.length ? spanishChoices : (choices || []);
+  const teacherFrame = isSpanish
+    ? "Ahora piensa en esta pregunta."
+    : "Now think about this question.";
+  return [teacherFrame, questionText, ...safeChoices.map((choice, idx) => {
     const displayChoice = String(choice || "");
     return `${String.fromCharCode(65 + idx)}. ${sanitizeAnswerChoiceText(displayChoice)}`;
   })].join(" ");
