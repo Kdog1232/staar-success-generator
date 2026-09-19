@@ -2433,7 +2433,6 @@ async function joinSession(code, studentName) {
       joinResult = await studentSupabase
         .from("participants")
         .insert([participantPayload])
-        .select("id,session_id,session_code,student_name,joined_at")
         .abortSignal(insertAbortController.signal);
       console.log("JOIN FLOW AFTER AWAIT participant insert", { joinTraceId, joinResult, currentSession });
     } finally {

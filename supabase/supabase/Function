@@ -38,25 +38,6 @@ serve(async (req) => {
     });
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("plan, generations_used")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile) {
-    return new Response(JSON.stringify({ error: "Profile not found" }), {
-      status: 404,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  if (profile.plan !== "paid" && profile.generations_used >= 5) {
-    return new Response(JSON.stringify({ error: "Free limit reached" }), {
-      status: 403,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
     const {
       mode = "practice",
       grade,
@@ -90,13 +71,6 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    await supabase
-      .from("profiles")
-      .update({
-        generations_used: profile.generations_used + 1,
-      })
-      .eq("id", user.id);
 
     return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
