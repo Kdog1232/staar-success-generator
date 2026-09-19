@@ -2234,17 +2234,6 @@
       animation: fadeIn 0.4s ease;
     }
 
-    .outage-banner {
-      background: #eff6ff;
-      border: 1px solid #bfdbfe;
-      color: #1e3a8a;
-      padding: 12px 14px;
-      border-radius: 10px;
-      margin-bottom: 12px;
-      text-align: center;
-      font-weight: 600;
-    }
-
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(-4px); }
       to { opacity: 1; transform: translateY(0); }
@@ -3394,7 +3383,6 @@
 </head>
 <body>
   <div class="container app-container">
-    <div id="outage-banner" class="outage-banner" style="display:none;">We had a temporary outage last week — everything is now fully working. Thanks for your patience!</div>
     <div id="upgrade-banner" class="upgrade-banner">🎉 You now have unlimited Live Classroom!</div>
 
     <section id="login-view" class="login-view active" aria-label="Sign in to Lessons Ready">
@@ -4207,13 +4195,8 @@
       const profileSection = document.getElementById("profile-section");
       const loginView = document.getElementById("login-view");
       const appShell = document.getElementById("app-shell");
-      const outageBanner = document.getElementById("outage-banner");
-
       loginView?.classList.toggle("active", !isAuthenticated);
       appShell?.classList.toggle("authenticated", isAuthenticated);
-      if (outageBanner) {
-        outageBanner.style.display = isAuthenticated ? "block" : "none";
-      }
       if (authSection) {
         authSection.style.display = isAuthenticated ? "none" : "block";
       }
