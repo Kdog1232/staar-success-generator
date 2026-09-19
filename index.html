@@ -3395,7 +3395,7 @@
 <body>
   <div class="container app-container">
     <div id="outage-banner" class="outage-banner" style="display:none;">We had a temporary outage last week — everything is now fully working. Thanks for your patience!</div>
-    <div id="upgrade-banner" class="upgrade-banner">🎉 You now have unlimited access!</div>
+    <div id="upgrade-banner" class="upgrade-banner">🎉 You now have unlimited Live Classroom!</div>
 
     <section id="login-view" class="login-view active" aria-label="Sign in to Lessons Ready">
       <nav class="login-top-nav" aria-label="Lessons Ready overview navigation">
@@ -3600,7 +3600,7 @@
       <div id="profile-section" class="profile-section">
         <div class="profile-meta">
           <p class="profile-email" id="logged-in-email">Logged in as: —</p>
-          <p class="profile-plan" id="profile-plan">Plan: Free</p>
+          <p class="profile-plan" id="profile-plan">Free Plan • 3 Live Classroom sessions per month</p>
         </div>
         <button id="logout-btn" class="logout-btn" type="button" onclick="logout()">
           Log Out
@@ -3890,7 +3890,7 @@
     const SUPABASE_URL = "https://qadfehickkkvirtcnska.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFhZGZlaGlja2trdmlydGNuc2thIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NTQ0NTcsImV4cCI6MjA5MTIzMDQ1N30.G9YhkEije7yI7rCC2nFfZ5j1btUUIci81VZhLQ48JJ4";
     const GUMROAD_URL = "https://garyverse68.gumroad.com/l/uvqtl";
-    const FREE_PLAN_LIMIT = 5;
+    const FREE_LIVE_SESSION_LIMIT = 3;
 
     // Keep a single Supabase client declaration in this script scope.
     let supabaseClient = null;
@@ -4085,19 +4085,17 @@
       }, 4000);
     }
 
-    function showPaywall() {
-      const output = document.getElementById("output");
-      if (!output) return;
-
-      output.innerHTML = `
+    function showLiveClassroomUpgrade(target = document.getElementById("live-session-status")) {
+      if (!target) return;
+      target.innerHTML = `
         <div class="locked">
-          <strong>You’ve used your ${FREE_PLAN_LIMIT} free STAAR packs</strong>
-          Unlock unlimited access for $12.
+          <strong>You've used your ${FREE_LIVE_SESSION_LIMIT} free Live Classroom sessions this month.</strong>
+          Upgrade to Pro for unlimited Live Classroom sessions.
           <p style="font-size:13px; color:#64748b; margin-top:10px;">
             Important: Use the same email you signed up with so your access unlocks instantly.
           </p>
           <a href="${GUMROAD_URL}" class="unlock-btn" target="_blank" rel="noopener noreferrer">
-            Unlock Full Access
+            Upgrade to Pro
           </a>
         </div>
       `;
@@ -4378,15 +4376,10 @@
       const code = generateCode();
 
       const { data: session, error } = await supabaseClient
-        .from("sessions")
-        .insert({
-          lesson_id: lessonId,
-          code: code,
-          status: "lobby",
-          is_active: false,
-          allow_join: true
+        .rpc("create_live_classroom_session", {
+          p_lesson_id: lessonId,
+          p_code: code
         })
-        .select("id, lesson_id, code, status, is_active, allow_join, lesson_data, started_at")
         .single();
 
       if (error) {
@@ -5734,7 +5727,7 @@
       if (welcomeName) welcomeName.textContent = getTeacherDisplayName();
       if (weekLessons && lessonsThisWeek !== null) weekLessons.textContent = String(lessonsThisWeek);
       if (activeSession) activeSession.textContent = currentLiveCode ? `Code ${currentLiveCode}` : "None";
-      if (plan) plan.textContent = currentProfile?.plan === "paid" ? "Paid" : "Free";
+      if (plan) plan.textContent = currentProfile?.plan === "paid" || currentProfile?.plan === "pro" ? "Pro" : "Free";
     }
 
     function renderList(targetId, items, emptyText) {
@@ -6117,7 +6110,9 @@
       const profilePlan = document.getElementById("profile-plan");
 
       emailLabel.textContent = `Logged in as: ${user?.email || "Unknown user"}`;
-      profilePlan.textContent = profile?.plan === "paid" ? "Plan: Paid (Unlimited)" : "Plan: Free";
+      profilePlan.textContent = profile?.plan === "paid" || profile?.plan === "pro"
+        ? "Pro Plan • Unlimited Live Classroom"
+        : "Free Plan • 3 Live Classroom sessions per month";
       updateTopStatusBar();
     }
 
@@ -6138,7 +6133,7 @@
       structuredQuestions = [];
       usageStatus.textContent = "";
       emailLabel.textContent = "Logged in as: —";
-      profilePlan.textContent = "Plan: Free";
+      profilePlan.textContent = "Free Plan • 3 Live Classroom sessions per month";
       banner.style.display = "none";
       currentProfile = null;
       updateTopStatusBar({ lessonsThisWeek: 0 });
@@ -6147,25 +6142,23 @@
       setMode("practice");
     }
 
-    function renderUsageStatus(profile) {
+    async function renderUsageStatus(profile) {
       const usageStatus = document.getElementById("usage-status");
       const plan = profile?.plan || "free";
-      const used = Number(profile?.generations_used || 0);
 
-      if (plan === "paid") {
-        usageStatus.textContent = "Plan: Paid (Unlimited generations)";
+      if (plan === "paid" || plan === "pro") {
+        usageStatus.textContent = "Pro Plan • Unlimited Live Classroom";
         updateTopStatusBar();
         return;
       }
 
-      const boundedUsed = Math.min(used, FREE_PLAN_LIMIT);
-      const remaining = Math.max(0, FREE_PLAN_LIMIT - used);
-      usageStatus.textContent = `Plan: Free (${boundedUsed}/${FREE_PLAN_LIMIT} used, ${remaining} remaining)`;
-      updateTopStatusBar();
-
-      if (used >= FREE_PLAN_LIMIT) {
-        showPaywall();
+      usageStatus.textContent = "Free Plan • 3 Live Classroom sessions per month";
+      const { data, error } = await supabaseClient.rpc("get_live_classroom_usage");
+      const usage = Array.isArray(data) ? data[0] : data;
+      if (!error && usage) {
+        usageStatus.textContent = `Live Classroom: ${Number(usage.sessions_used || 0)} of ${FREE_LIVE_SESSION_LIMIT} sessions used this month`;
       }
+      updateTopStatusBar();
     }
 
     async function refreshUsageStatus(userId) {
@@ -6178,7 +6171,7 @@
       if (profile) {
         currentProfile = profile;
         updateProfileSection({ email: profile.email }, profile);
-        renderUsageStatus(profile);
+        await renderUsageStatus(profile);
       }
     }
 
@@ -8060,33 +8053,6 @@ Create your second version now.`;
         console.log("🟢 TOKEN READY");
 
         console.log("🚀 ABOUT TO FETCH PROFILE");
-        const profileResult = await withTimeout(
-          supabaseClient
-            .from("profiles")
-            .select("plan, generations_used")
-            .eq("id", cachedUser.id)
-            .single(),
-          AUTH_TIMEOUT_MS
-        );
-
-        if (profileResult?.error) {
-          console.error("💥 PROFILE FETCH FAILED", profileResult.error);
-          throw profileResult.error;
-        }
-
-        const liveProfile = profileResult?.data || {};
-        console.log("✅ PROFILE READY", {
-          plan: liveProfile?.plan || "free",
-          generations_used: Number(liveProfile?.generations_used || 0)
-        });
-
-        const used = Number(liveProfile?.generations_used || 0);
-        const plan = liveProfile?.plan || "free";
-        if (plan === "free" && used >= FREE_PLAN_LIMIT) {
-          showPaywall();
-          return;
-        }
-
         const grade = document.getElementById("grade")?.value;
         const subject = selectedSubject;
         const skill = document.getElementById("skill")?.value;
@@ -8108,14 +8074,6 @@ Create your second version now.`;
         });
 
         console.log("✅ CORE DATA RECEIVED:", coreResponse);
-
-        if (plan === "free") {
-          await supabaseClient
-            .from("profiles")
-            .update({ generations_used: used + 1 })
-            .eq("id", cachedUser.id);
-          await refreshUsageStatus(cachedUser.id);
-        }
 
         const selectedSkillMeta = getSelectedSkillMetadata(subject, skill);
         const core = {
@@ -8217,21 +8175,6 @@ Create your second version now.`;
         console.error("💥 GENERATE FAILED:", err);
 
         const outputDiv = document.getElementById("output");
-        const errorMessage = err?.message || "";
-        const freeLimitReached = errorMessage.toLowerCase().includes("free limit reached");
-
-        if (freeLimitReached) {
-          if (outputDiv) {
-            outputDiv.innerHTML = `
-              <div style="color:#ffb347;font-weight:700; text-align:center; padding:20px;">
-                Free limit reached. Upgrade to keep generating.
-              </div>
-            `;
-          }
-          window.open(GUMROAD_URL, "_blank", "noopener,noreferrer");
-          return;
-        }
-
         if (outputDiv) {
           outputDiv.innerHTML = `
             <div style="color:red;font-weight:600;">
@@ -8706,10 +8649,13 @@ Create your second version now.`;
           console.log("➡️ SUBSCRIBING TO HELP REQUESTS", session.id);
           initializeLiveSubscription("help requests", () => subscribeToHelpRequests(session.id));
           initializeLiveSubscription("accommodations", () => subscribeToAccommodations(session.id));
+          await refreshUsageStatus(cachedUser.id);
           console.log("START SESSION COMPLETE");
         } catch (error) {
           console.error("❌ START CLASS ERROR:", error);
-          if (sessionStatus) sessionStatus.textContent = `❌ ${error.message || "Could not start live class."}`;
+          const limitReached = String(error?.message || "").includes("LIVE_CLASSROOM_MONTHLY_LIMIT_REACHED");
+          if (limitReached) showLiveClassroomUpgrade(sessionStatus);
+          else if (sessionStatus) sessionStatus.textContent = `❌ ${error.message || "Could not start live class."}`;
         } finally {
           if (document.body.contains(btnEl)) {
             btnEl.disabled = false;

@@ -5300,12 +5300,23 @@ serve(async (req) => {
     let generationTracked = false;
     const trackGeneration = async () => {
       if (generationTracked || !supabaseAdmin) return;
-      const { error } = await supabaseAdmin.rpc("increment_generations", { user_id: user.id });
-      if (error) {
-        console.error("Failed to increment generations:", error);
-        return;
-      }
+      // Mark first so a retry/alternate successful return path cannot double-log
+      // the same worker request. Analytics is deliberately best-effort: a
+      // reporting outage must never discard an otherwise successful lesson.
       generationTracked = true;
+      const [{ error: incrementError }, { error: eventError }] = await Promise.all([
+        supabaseAdmin.rpc("increment_generations", { user_id: user.id }),
+        supabaseAdmin.from("generations").insert({
+          user_id: user.id,
+          subject,
+          grade: String(grade),
+          skill,
+          level,
+          mode: effectiveMode,
+        }),
+      ]);
+      if (incrementError) console.error("Failed to increment generations:", incrementError);
+      if (eventError) console.error("Failed to record generation event:", eventError);
     };
 
     let body: Record<string, unknown>;
@@ -6044,6 +6055,7 @@ serve(async (req) => {
     if (bestAttempt) {
       returnType = "BEST_ATTEMPT";
       logReturnMetrics();
+      await trackGeneration();
       return returnEnrichment(bestAttempt);
     }
     const fallbackPracticeSource = Array.isArray(generatedCoreQuestions) && generatedCoreQuestions.length
@@ -6083,6 +6095,7 @@ serve(async (req) => {
     };
     returnType = "SAFE_FALLBACK";
     logReturnMetrics();
+    await trackGeneration();
     return jsonResponse({
       teks: teksCode,
       skill,
