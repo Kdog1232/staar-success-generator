@@ -3588,7 +3588,7 @@
       <div id="profile-section" class="profile-section">
         <div class="profile-meta">
           <p class="profile-email" id="logged-in-email">Logged in as: —</p>
-          <p class="profile-plan" id="profile-plan">Free Plan • 3 Live Classroom sessions per month</p>
+          <p class="profile-plan" id="profile-plan">Free Plan • 3 free Live Classroom sessions total</p>
         </div>
         <button id="logout-btn" class="logout-btn" type="button" onclick="logout()">
           Log Out
@@ -3877,7 +3877,6 @@
 
     const SUPABASE_URL = "https://qadfehickkkvirtcnska.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFhZGZlaGlja2trdmlydGNuc2thIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NTQ0NTcsImV4cCI6MjA5MTIzMDQ1N30.G9YhkEije7yI7rCC2nFfZ5j1btUUIci81VZhLQ48JJ4";
-    const GUMROAD_URL = "https://garyverse68.gumroad.com/l/uvqtl";
     const FREE_LIVE_SESSION_LIMIT = 3;
 
     // Keep a single Supabase client declaration in this script scope.
@@ -3921,6 +3920,7 @@
     let bannerTimeoutId = null;
     let isRedirectingToLogin = false;
     let upgradeChecked = false;
+    let hasUnlimitedLiveAccess = false;
     let selectedPurpose = "Do Now";
     let isGenerating = false;
     let pendingRegenerate = false;
@@ -4073,20 +4073,57 @@
       }, 4000);
     }
 
+    async function startStripeCheckout(button = null) {
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Opening secure checkout...";
+      }
+      try {
+        const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
+        if (sessionError || !session?.access_token) throw new Error("Please sign in again before upgrading.");
+        const { data, error } = await supabaseClient.functions.invoke("create-checkout-session", {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          body: {}
+        });
+        if (error) {
+          let message = error.message || "Unable to start checkout.";
+          try {
+            const detail = await error.context?.json();
+            if (detail?.error) message = detail.error;
+          } catch (_) {}
+          throw new Error(message);
+        }
+        if (!data?.url || !data.url.startsWith("https://checkout.stripe.com/")) {
+          throw new Error("Stripe did not return a valid checkout page.");
+        }
+        window.location.assign(data.url);
+      } catch (error) {
+        console.error("Stripe checkout failed:", error);
+        alert(error.message || "Unable to open checkout. Please try again.");
+        if (button) {
+          button.disabled = false;
+          button.textContent = "Upgrade to Pro — $12.99/month";
+        }
+      }
+    }
+
     function showLiveClassroomUpgrade(target = document.getElementById("live-session-status")) {
       if (!target) return;
       target.innerHTML = `
         <div class="locked">
-          <strong>You've used your ${FREE_LIVE_SESSION_LIMIT} free Live Classroom sessions this month.</strong>
-          Upgrade to Pro for unlimited Live Classroom sessions.
+          <strong>You've used your ${FREE_LIVE_SESSION_LIMIT} free Live Classroom sessions total.</strong>
+          Upgrade to Pro for unlimited Live Classroom sessions at $12.99/month.
           <p style="font-size:13px; color:#64748b; margin-top:10px;">
-            Important: Use the same email you signed up with so your access unlocks instantly.
+            Your subscription will be linked to your signed-in teacher account.
           </p>
-          <a href="${GUMROAD_URL}" class="unlock-btn" target="_blank" rel="noopener noreferrer">
-            Upgrade to Pro
-          </a>
+          <button type="button" class="unlock-btn" data-stripe-upgrade>
+            Upgrade to Pro — $12.99/month
+          </button>
         </div>
       `;
+      target.querySelector("[data-stripe-upgrade]")?.addEventListener("click", (event) => {
+        void startStripeCheckout(event.currentTarget);
+      });
     }
 
     function handleProfileUpdate(profile, previousProfile = null) {
@@ -5710,7 +5747,7 @@
       if (welcomeName) welcomeName.textContent = getTeacherDisplayName();
       if (weekLessons && lessonsThisWeek !== null) weekLessons.textContent = String(lessonsThisWeek);
       if (activeSession) activeSession.textContent = currentLiveCode ? `Code ${currentLiveCode}` : "None";
-      if (plan) plan.textContent = currentProfile?.plan === "paid" || currentProfile?.plan === "pro" ? "Pro" : "Free";
+      if (plan) plan.textContent = hasUnlimitedLiveAccess || currentProfile?.plan === "paid" || currentProfile?.plan === "pro" ? "Pro" : "Free";
     }
 
     function renderList(targetId, items, emptyText) {
@@ -6093,9 +6130,9 @@
       const profilePlan = document.getElementById("profile-plan");
 
       emailLabel.textContent = `Logged in as: ${user?.email || "Unknown user"}`;
-      profilePlan.textContent = profile?.plan === "paid" || profile?.plan === "pro"
+      profilePlan.textContent = hasUnlimitedLiveAccess || profile?.plan === "paid" || profile?.plan === "pro"
         ? "Pro Plan • Unlimited Live Classroom"
-        : "Free Plan • 3 Live Classroom sessions per month";
+        : "Free Plan • 3 free Live Classroom sessions total";
       updateTopStatusBar();
     }
 
@@ -6116,9 +6153,10 @@
       structuredQuestions = [];
       usageStatus.textContent = "";
       emailLabel.textContent = "Logged in as: —";
-      profilePlan.textContent = "Free Plan • 3 Live Classroom sessions per month";
+      profilePlan.textContent = "Free Plan • 3 free Live Classroom sessions total";
       banner.style.display = "none";
       currentProfile = null;
+      hasUnlimitedLiveAccess = false;
       updateTopStatusBar({ lessonsThisWeek: 0 });
       updateReportsSummary([], []);
       renderRecentActivity();
@@ -6127,20 +6165,18 @@
 
     async function renderUsageStatus(profile) {
       const usageStatus = document.getElementById("usage-status");
-      const plan = profile?.plan || "free";
-
-      if (plan === "paid" || plan === "pro") {
-        usageStatus.textContent = "Pro Plan • Unlimited Live Classroom";
-        updateTopStatusBar();
-        return;
-      }
-
-      usageStatus.textContent = "Free Plan • 3 Live Classroom sessions per month";
       const { data, error } = await supabaseClient.rpc("get_live_classroom_usage");
       const usage = Array.isArray(data) ? data[0] : data;
-      if (!error && usage) {
-        usageStatus.textContent = `Live Classroom: ${Number(usage.sessions_used || 0)} of ${FREE_LIVE_SESSION_LIMIT} sessions used this month`;
+      if (error) {
+        console.error("Unable to load classroom usage:", error);
+        usageStatus.textContent = "Live Classroom usage temporarily unavailable";
+        return;
       }
+      hasUnlimitedLiveAccess = usage?.plan === "paid" || usage?.plan === "pro";
+      usageStatus.textContent = hasUnlimitedLiveAccess
+        ? "Pro Plan • Unlimited Live Classroom"
+        : `Live Classroom: ${Number(usage?.sessions_used || 0)} of ${FREE_LIVE_SESSION_LIMIT} free sessions used total`;
+      updateProfileSection({ email: cachedUser?.email || profile?.email }, profile);
       updateTopStatusBar();
     }
 
@@ -6159,41 +6195,9 @@
     }
 
     async function checkAndUpgradeUser(user) {
-      if (upgradeChecked) return;
-      upgradeChecked = true;
-
-      if (!user?.email) return;
-
-      const email = user.email.toLowerCase().trim();
-
-      // 👇 TEMP: add ANY buyers here
-      const paidEmails = [
-        "mdhowell64@gmail.com"
-      ];
-
-      if (!paidEmails.includes(email)) return;
-
-      const { data: profile } = await supabaseClient
-        .from("profiles")
-        .select("id, plan")
-        .ilike("email", email)
-        .maybeSingle();
-
-      if (!profile?.id || profile.plan === "paid") return;
-
-      console.log("Upgrading user to paid:", email);
-
-      await supabaseClient
-        .from("profiles")
-        .update({
-          plan: "paid",
-          generations_used: 0,
-          upgraded_at: new Date().toISOString()
-        })
-        .eq("id", profile.id);
-
-      await refreshUsageStatus(user.id);
-      showUpgradeBanner?.();
+      // Paid access is determined by the database and verified Stripe webhook.
+      // Existing Gumroad entitlements already recorded in profiles are preserved.
+      return;
     }
 
     async function requireAuth({ showPrompt = true } = {}) {
@@ -6301,6 +6305,16 @@
       void refreshUsageStatus(user.id).catch((error) => {
         console.error("❌ Usage status refresh failed after login:", error);
       });
+      const stripeReturn = new URLSearchParams(window.location.search).get("stripe");
+      if (stripeReturn === "success") {
+        const usageStatus = document.getElementById("usage-status");
+        if (usageStatus) usageStatus.textContent = "Payment submitted. Confirming subscription access...";
+        setTimeout(() => void refreshUsageStatus(user.id), 2500);
+        setTimeout(() => void refreshUsageStatus(user.id), 7500);
+        window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+      } else if (stripeReturn === "cancelled") {
+        window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+      }
     }
 
     async function initAuth() {
